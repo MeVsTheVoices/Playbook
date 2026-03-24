@@ -1,0 +1,69 @@
+---
+- name: Configure Ansible Control Node (Multi-Platform)
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars.yml
+
+  tasks:
+    # --- macOS SPECIFIC: XCODE LICENSE ---
+    - name: Accept Xcode license (macOS only)
+      become: true
+      shell: xcodebuild -license accept
+      when: ansible_facts['os_family'] == "Darwin"
+      register: xcode_result
+      changed_when: "'accepted' in xcode_result.stdout"
+      failed_when: false 
+
+    # --- OS SPECIFIC PACKAGE INSTALLS ---
+    - name: Install system dependencies (Linux/Debian)
+      become: true
+      apt:
+        name: "{{ system_dependencies_linux }}"
+        state: present
+        update_cache: yes
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install system dependencies (macOS)
+      community.general.homebrew:
+        name: "{{ system_dependencies_macos }}"
+        state: present
+      when: ansible_facts['os_family'] == "Darwin"
+
+    # --- SHARED VENV SETUP ---
+    - name: Create Ansible directory structure
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ ansible_dir }}"
+        - "{{ ansible_dir }}/inventory"
+        - "{{ ansible_dir }}/roles"
+
+    - name: Create Python virtual environment
+      command:
+        cmd: "python3 -m venv {{ venv_path }}"
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Install Ansible and Lint in venv
+      pip:
+        name: "{{ python_packages }}"
+        virtualenv: "{{ venv_path }}"
+
+    - name: Fallback Install Tailscale Collection via CLI
+      command:
+        cmd: "{{ venv_path }}/bin/ansible-galaxy collection install artis3n.tailscale"
+
+    - name: Configure ansible.cfgx
+      copy:
+        dest: "{{ ansible_dir }}/ansible.cfg"
+        content: |
+          [defaults]
+          inventory = ./inventory/tailscale_inventory.yml
+          host_key_checking = False
+          interpreter_python = {{ venv_path }}/bin/python
+          roles_path = ./roles
+          
+          [ssh_connection]
+          pipelining = True

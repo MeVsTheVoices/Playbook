@@ -1,0 +1,179 @@
+- hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    desired_tags:
+      - tag:media-add
+      - tag:media-view
+      - tag:unraid
+      - tag:devboxes
+    ansible_ssh_user: "YOUR_SSH_USER"
+    ansible_ssh_private_key_file: "/Users/joshuadunne/.ssh/id_ed25519"
+  tasks:
+    - name: Fetch current Tailnet status via CLI
+      command: /Applications/Tailscale.app/Contents/MacOS/Tailscale status --json
+      environment:
+        PATH: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:{{ ansible_env.PATH }}"
+      register: ts_status_raw
+      changed_when: false
+
+    - name: Parse Tailnet JSON response
+      set_fact:
+        tailnet_status: "{{ ts_status_raw.stdout | from_json }}"
+        tailnet_peers: "{{ (ts_status_raw.stdout | from_json).Peer | default({}) }}"
+
+    - name: Initialize nodes_by_tag structure (by tag type)
+      set_fact:
+        nodes_by_tag: |
+          {
+            "media": [],
+            "unraid": [],
+            "devboxes": []
+          }
+
+    - name: Save Tailnet status JSON to temp file
+      copy:
+        content: "{{ ts_status_raw.stdout }}"
+        dest: "/tmp/tailscale_status.json"
+        mode: '0600'
+
+    - name: Save Python helper script
+      copy:
+        dest: "/tmp/tailscale_node_by_tag.py"
+        mode: '0700'
+        content: |
+          #!/usr/bin/env python3
+          import json
+
+          desired_tags = {{ desired_tags | to_json }}
+
+          def normalize_tag(tag):
+              if isinstance(tag, str) and tag.startswith('tag:'):
+                  return tag.split(':', 1)[1]
+              return tag
+
+          def tag_type_for(tag):
+              tag = normalize_tag(tag)
+              if not isinstance(tag, str):
+                  return None
+              if '-' in tag:
+                  return tag.split('-', 1)[0]
+              return tag
+
+          tag_list = []
+          if isinstance(desired_tags, list):
+              for item in desired_tags:
+                  if isinstance(item, dict):
+                      tag = item.get('tag') or item.get('name') or item.get('Tag')
+                      if tag:
+                          tag_list.append(tag)
+                  elif isinstance(item, str):
+                      tag_list.append(item)
+          elif isinstance(desired_tags, str):
+              tag_list = [desired_tags]
+
+          tag_list = [t for t in tag_list if t]
+
+          target_tag_types = {}
+          for t in tag_list:
+              typ = tag_type_for(t)
+              if typ:
+                  target_tag_types[t] = typ
+
+          data = json.load(open('/tmp/tailscale_status.json'))
+          peers = data.get('Peer', {}) or {}
+
+          result = {typ: [] for typ in set(target_tag_types.values())}
+
+          for p in peers.values():
+              tags = p.get('Tags') or []
+              hostname = p.get('HostName')
+              if not hostname:
+                  continue
+
+              ips = p.get('TailscaleIPs') or p.get('IPs') or []
+              ip = None
+              for x in ips:
+                  if x and ':' not in x:  # prefer IPv4
+                      ip = x
+                      break
+              if not ip and ips:
+                  ip = ips[0]
+              if not ip:
+                  continue
+
+              for t, typ in target_tag_types.items():
+                  if t in tags or normalize_tag(t) in tags:
+                      entry = {'hostname': hostname, 'ip': ip}
+                      if entry not in result[typ]:
+                          result[typ].append(entry)
+
+          print(json.dumps(result))
+
+    - name: Build nodes_by_tag with Python helper
+      shell: /usr/bin/env python3 /tmp/tailscale_node_by_tag.py
+      register: nodes_by_tag_json
+      changed_when: false
+
+    - name: Set nodes_by_tag fact
+      set_fact:
+        nodes_by_tag: "{{ nodes_by_tag_json.stdout | from_json }}"
+
+    - name: Show nodes grouped by tag
+      debug:
+        var: nodes_by_tag
+
+    - name: Flatten nodes_by_tag into hosts_list
+      set_fact:
+        hosts_list: "{{ hosts_list | default([]) + item.value }}"
+      loop: "{{ nodes_by_tag | dict2items }}"
+
+    - name: Ensure local hosts folder exists in repository
+      file:
+        path: "{{ playbook_dir }}/hosts"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure groups are represented in a local Ansible inventory YAML file
+      copy:
+        dest: "{{ playbook_dir }}/hosts/tailscale_hosts.yaml"
+        mode: '0644'
+        content: |
+          # Auto-generated Tailnet hosts as Ansible inventory
+          all:
+            hosts:
+          {% for tag, peers in nodes_by_tag.items() %}
+          {% for peer in peers %}
+              {{ peer.hostname }}:
+                ansible_host: "{{ peer.ip }}"
+                ansible_user: "{{ ansible_ssh_user }}"
+                ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file }}"
+          {% endfor %}
+          {% endfor %}
+            children:
+          {% for tag, peers in nodes_by_tag.items() %}
+              {{ tag }}:
+                hosts:
+          {% if peers|length == 0 %}
+                  {}
+          {% else %}
+          {% for peer in peers %}
+                  {{ peer.hostname }}: {}
+          {% endfor %}
+          {% endif %}
+          {% endfor %}
+
+    - name: (Optional) Save flat hosts list to local YAML file
+      copy:
+        dest: "{{ playbook_dir }}/hosts/tailscale_hosts_flat.yaml"
+        mode: '0644'
+        content: |
+          # Auto-generated flat Tailnet hosts list
+          hosts_list:
+          {% for host in hosts_list %}
+          - ip: {{ host.ip }}
+            hostname: {{ host.hostname }}
+          {% endfor %}
+      when: hosts_list is defined and hosts_list | length > 0
+
+

@@ -1,7 +1,7 @@
 ---
 # Project Paths
 ansible_dir: "{{ ansible_env.HOME }}/ansible"
-venv_path: "{{ ansible_dir }}/venv"
+venv_path: ".venv"
 
 # OS Specific Dependencies
 system_dependencies_linux:

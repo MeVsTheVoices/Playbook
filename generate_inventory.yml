@@ -3,12 +3,19 @@
   connection: local
   vars:
     desired_tags:
-      - tag:media-add
-      - tag:media-view
       - tag:unraid
+      - tag:shared
       - tag:devboxes
-    ansible_ssh_user: "YOUR_SSH_USER"
-    ansible_ssh_private_key_file: "/Users/joshuadunne/.ssh/id_ed25519"
+      - tag:media-view
+      - tag:media-add
+      - tag:game-servers
+      - tag:gateway
+      - tag:media-viewer
+      - tag:google-workspace
+      - tag:needs-exit
+    ansible_ssh_user: "root"
+    ansible_ssh_private_key_file: "ssh_keys/tailscale_id_ed25519"
+    generated_ssh_key_path: "{{ playbook_dir }}/ssh_keys/tailscale_id_ed25519"
   tasks:
     - name: Fetch current Tailnet status via CLI
       command: /Applications/Tailscale.app/Contents/MacOS/Tailscale status --json
@@ -22,13 +29,20 @@
         tailnet_status: "{{ ts_status_raw.stdout | from_json }}"
         tailnet_peers: "{{ (ts_status_raw.stdout | from_json).Peer | default({}) }}"
 
-    - name: Initialize nodes_by_tag structure (by tag type)
+    - name: Initialize nodes_by_tag structure (preserve full tag names)
       set_fact:
         nodes_by_tag: |
           {
-            "media": [],
             "unraid": [],
-            "devboxes": []
+            "shared": [],
+            "devboxes": [],
+            "media-view": [],
+            "media-add": [],
+            "game-servers": [],
+            "gateway": [],
+            "media-viewer": [],
+            "google-workspace": [],
+            "needs-exit": []
           }
 
     - name: Save Tailnet status JSON to temp file
@@ -44,53 +58,54 @@
         content: |
           #!/usr/bin/env python3
           import json
+          import re
 
           desired_tags = {{ desired_tags | to_json }}
 
           def normalize_tag(tag):
+              """Remove 'tag:' prefix if present"""
               if isinstance(tag, str) and tag.startswith('tag:'):
                   return tag.split(':', 1)[1]
               return tag
 
-          def tag_type_for(tag):
-              tag = normalize_tag(tag)
-              if not isinstance(tag, str):
-                  return None
-              if '-' in tag:
-                  return tag.split('-', 1)[0]
-              return tag
+          def is_mullvad_node(hostname):
+              """Filter out Mullvad VPN exit nodes (pattern: cc-ccc-wg-###)"""
+              return bool(re.match(r'^[a-z]{2}-[a-z]{3}-wg-\d+$', hostname))
 
-          tag_list = []
-          if isinstance(desired_tags, list):
-              for item in desired_tags:
-                  if isinstance(item, dict):
-                      tag = item.get('tag') or item.get('name') or item.get('Tag')
-                      if tag:
-                          tag_list.append(tag)
-                  elif isinstance(item, str):
-                      tag_list.append(item)
-          elif isinstance(desired_tags, str):
-              tag_list = [desired_tags]
+          # Build list of desired tag names (normalized)
+          target_tags = {}
+          for item in desired_tags:
+              if isinstance(item, str):
+                  normalized = normalize_tag(item)
+                  # Map both 'tag:NAME' and 'NAME' to the normalized form
+                  target_tags[item] = normalized
+                  target_tags[normalized] = normalized
 
-          tag_list = [t for t in tag_list if t]
-
-          target_tag_types = {}
-          for t in tag_list:
-              typ = tag_type_for(t)
-              if typ:
-                  target_tag_types[t] = typ
-
+          # Load Tailscale peers
           data = json.load(open('/tmp/tailscale_status.json'))
           peers = data.get('Peer', {}) or {}
 
-          result = {typ: [] for typ in set(target_tag_types.values())}
+          # Initialize result dict with all desired tag groups (even empty ones)
+          result = {normalize_tag(t): [] for t in desired_tags}
 
+          # Process each peer
           for p in peers.values():
-              tags = p.get('Tags') or []
               hostname = p.get('HostName')
               if not hostname:
                   continue
 
+              # Skip Mullvad exit nodes
+              if is_mullvad_node(hostname):
+                  continue
+
+              peer_tags = p.get('Tags') or []
+
+              # Get FQDN (DNSName) for ansible_host
+              fqdn = p.get('DNSName')
+              if not fqdn:
+                  continue
+
+              # Get IP (prefer IPv4) - keep for reference
               ips = p.get('TailscaleIPs') or p.get('IPs') or []
               ip = None
               for x in ips:
@@ -99,14 +114,18 @@
                       break
               if not ip and ips:
                   ip = ips[0]
-              if not ip:
-                  continue
 
-              for t, typ in target_tag_types.items():
-                  if t in tags or normalize_tag(t) in tags:
-                      entry = {'hostname': hostname, 'ip': ip}
-                      if entry not in result[typ]:
-                          result[typ].append(entry)
+              # Check each peer's tags against desired tags
+              for peer_tag in peer_tags:
+                  normalized_peer_tag = normalize_tag(peer_tag)
+                  # Find matching desired tag
+                  for desired in desired_tags:
+                      if normalize_tag(desired) == normalized_peer_tag:
+                          entry = {'hostname': hostname, 'fqdn': fqdn.rstrip('.'), 'ip': ip}
+                          group_name = normalize_tag(desired)
+                          if entry not in result[group_name]:
+                              result[group_name].append(entry)
+                          break
 
           print(json.dumps(result))
 
@@ -145,11 +164,13 @@
           {% for tag, peers in nodes_by_tag.items() %}
           {% for peer in peers %}
               {{ peer.hostname }}:
-                ansible_host: "{{ peer.ip }}"
-                ansible_user: "{{ ansible_ssh_user }}"
-                ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file }}"
+                ansible_host: "{{ peer.hostname }}"
+                ansible_ssh_common_args: "-o ProxyCommand='tailscale ssh %h --ssh' -o StrictHostKeyChecking=no"
           {% endfor %}
           {% endfor %}
+            vars:
+              ansible_user: "{{ ansible_ssh_user }}"
+              ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file }}"
             children:
           {% for tag, peers in nodes_by_tag.items() %}
               {{ tag }}:

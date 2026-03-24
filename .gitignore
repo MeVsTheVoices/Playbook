@@ -1,2 +1,4 @@
 /hosts/*
 /hosts
+/ssh_keys/*
+/ssh_keys

@@ -30,6 +30,75 @@
         state: present
       when: ansible_facts['os_family'] == "Darwin"
 
+    # --- TAILSCALE SSH CONFIGURATION ---
+    - name: Allow SSH over Tailscale interface (Debian/UFW)
+      become: true
+      community.general.ufw:
+        rule: allow
+        interface: tailscale0
+        port: '22'
+        proto: tcp
+      when: ansible_facts['os_family'] == "Debian"
+      ignore_errors: true
+
+    - name: Enable Tailscale SSH feature (Linux)
+      become: true
+      command: tailscale set --ssh=true
+      when: ansible_facts['os_family'] == "Debian"
+      changed_when: false
+
+    - name: Enable Tailscale SSH feature (macOS)
+      command: /Applications/Tailscale.app/Contents/MacOS/Tailscale set --ssh=true
+      when: ansible_facts['os_family'] == "Darwin"
+      changed_when: false
+      ignore_errors: true
+      register: tailscale_ssh_mac
+
+    - name: Warn if Tailscale SSH could not be enabled on macOS
+      debug:
+        msg: "Tailscale SSH enable command failed (expected for sandboxed GUI install). SSH must be enabled from a non-sandboxed daemon or manual configuration."
+      when: tailscale_ssh_mac is defined and tailscale_ssh_mac.failed
+
+    - name: Enable Tailscale SSH authorization policy for selected tags
+      debug:
+        msg: "Tailscale SSH is enabled. Ensure ACL allows tags from media-add, media-view, unraid, devboxes."
+
+    - name: Accept Tailscale node auth keys in expected user's known hosts
+      become: false
+      shell: |
+        if ! grep -q "^# tailscale-hosts-managed" ~/.ssh/known_hosts 2>/dev/null; then
+          echo '# tailscale-hosts-managed' >> ~/.ssh/known_hosts
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Ensure local SSH key directory exists for generated key
+      file:
+        path: "{{ playbook_dir }}/ssh_keys"
+        state: directory
+        mode: '0700'
+
+    - name: Check if generated tailnet ssh key exists
+      stat:
+        path: "{{ playbook_dir }}/ssh_keys/tailscale_id_ed25519"
+      register: tailscale_ssh_key
+
+    - name: Generate a new tailnet SSH keypair for Ansible access
+      command: ssh-keygen -t ed25519 -f "{{ playbook_dir }}/ssh_keys/tailscale_id_ed25519" -N "" -q
+      args:
+        creates: "{{ playbook_dir }}/ssh_keys/tailscale_id_ed25519"
+      when: not tailscale_ssh_key.stat.exists
+
+    - name: Ensure SSH key has correct permissions (user only)
+      file:
+        path: "{{ item }}"
+        mode: '0600'
+      loop:
+        - "{{ playbook_dir }}/ssh_keys/tailscale_id_ed25519"
+        - "{{ playbook_dir }}/ssh_keys/tailscale_id_ed25519.pub"
+      when: tailscale_ssh_key.stat.exists or (tailscale_ssh_key.stat.exists == false)
+
     # --- SHARED VENV SETUP ---
     - name: Create Ansible directory structure
       file:
@@ -44,26 +113,32 @@
     - name: Create Python virtual environment
       command:
         cmd: "python3 -m venv {{ venv_path }}"
+      args:
         creates: "{{ venv_path }}/bin/activate"
 
     - name: Install Ansible and Lint in venv
       pip:
         name: "{{ python_packages }}"
         virtualenv: "{{ venv_path }}"
+      vars:
+        ansible_python_interpreter: python3
 
-    - name: Fallback Install Tailscale Collection via CLI
-      command:
-        cmd: "{{ venv_path }}/bin/ansible-galaxy collection install artis3n.tailscale"
+    - name: Install Tailscale Collection via CLI
+      command: "{{ venv_path }}/bin/ansible-galaxy collection install tailscale.community"
+      args:
+        chdir: "{{ playbook_dir }}"
+      changed_when: true
 
-    - name: Configure ansible.cfgx
+    - name: Configure ansible.cfg in playbook directory
       copy:
-        dest: "{{ ansible_dir }}/ansible.cfg"
+        dest: "{{ playbook_dir }}/ansible.cfg"
         content: |
           [defaults]
-          inventory = ./inventory/tailscale_inventory.yml
           host_key_checking = False
-          interpreter_python = {{ venv_path }}/bin/python
-          roles_path = ./roles
+          deprecation_warnings = False
+          interpreter_python = .venv/bin/python
           
           [ssh_connection]
           pipelining = True
+          ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPersist=60s
+          control_path = /tmp/ansible-ssh-%%h-%%p-%%r

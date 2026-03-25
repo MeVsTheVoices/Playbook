@@ -1,0 +1,221 @@
+- hosts: localhost
+  gather_facts: true
+  connection: local
+  vars:
+    desired_tags:
+      - tag:unraid
+      - tag:shared
+      - tag:devboxes
+      - tag:media-view
+      - tag:media-add
+      - tag:game-servers
+      - tag:gateway
+      - tag:media-viewer
+      - tag:google-workspace
+      - tag:needs-exit
+    ansible_ssh_user: "root"
+    ansible_ssh_private_key_file: "ssh_keys/tailscale_id_ed25519"
+    generated_ssh_key_path: "{{ playbook_dir }}/ssh_keys/tailscale_id_ed25519"
+  tasks:
+    - name: Ensure hosts directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/hosts"
+        state: directory
+        mode: '0755'
+
+    - name: Generate FQDN list from Tailscale status
+      ansible.builtin.shell: "tailscale status --json | gron | grep 'DNSName' | awk -F' = ' '{print $2}' | tr -d '\";' | sort | uniq > \"{{ playbook_dir }}/hosts/tailscale_fqdns.txt\""
+      args:
+        executable: /bin/bash
+      changed_when: false
+      when: ansible_facts['os_family'] == 'Debian'
+    - name: Fetch current Tailnet status via CLI
+      block:
+        - name: Try Linux Tailscale CLI
+          ansible.builtin.command: tailscale status --json
+          register: ts_status_raw
+          changed_when: false
+          failed_when: false
+
+        - name: Try macOS Tailscale CLI (if Linux failed)
+          command: /Applications/Tailscale.app/Contents/MacOS/Tailscale status --json
+          register: ts_status_raw
+          changed_when: false
+          when: ts_status_raw.rc != 0
+
+    - name: Parse Tailnet JSON response
+      ansible.builtin.set_fact:
+        tailnet_status: "{{ ts_status_raw.stdout | from_json }}"
+        tailnet_peers: "{{ (ts_status_raw.stdout | from_json).Peer | default({}) }}"
+      when: ts_status_raw is defined and ts_status_raw.stdout is defined
+
+    - name: Initialize nodes_by_tag structure (preserve full tag names)
+      ansible.builtin.set_fact:
+        nodes_by_tag:
+          unraid: []
+          shared: []
+          devboxes: []
+          media-view: []
+          media-add: []
+          game-servers: []
+          gateway: []
+          media-viewer: []
+          google-workspace: []
+          needs-exit: []
+
+    - name: Save Tailnet status JSON to temp file
+      ansible.builtin.copy:
+        content: "{{ ts_status_raw.stdout }}"
+        dest: "/tmp/tailscale_status.json"
+        mode: '0600'
+      when: ts_status_raw is defined and ts_status_raw.stdout is defined
+
+    - name: Save Python helper script
+      ansible.builtin.copy:
+        dest: "/tmp/tailscale_node_by_tag.py"
+        mode: '0700'
+        content: |
+          #!/usr/bin/env python3
+          import json
+          import re
+
+          desired_tags = {{ desired_tags | to_json }}
+
+          def normalize_tag(tag):
+              """Remove 'tag:' prefix if present"""
+              if isinstance(tag, str) and tag.startswith('tag:'):
+                  return tag.split(':', 1)[1]
+              return tag
+
+          def is_mullvad_node(hostname):
+              """Filter out Mullvad VPN exit nodes (pattern: cc-ccc-wg-###)"""
+              return bool(re.match(r'^[a-z]{2}-[a-z]{3}-wg-\d+$', hostname))
+
+          # Build list of desired tag names (normalized)
+          target_tags = {}
+          for item in desired_tags:
+              if isinstance(item, str):
+                  normalized = normalize_tag(item)
+                  # Map both 'tag:NAME' and 'NAME' to the normalized form
+                  target_tags[item] = normalized
+                  target_tags[normalized] = normalized
+
+          # Load Tailscale peers
+          data = json.load(open('/tmp/tailscale_status.json'))
+          peers = data.get('Peer', {}) or {}
+
+          # Initialize result dict with all desired tag groups (even empty ones)
+          result = {normalize_tag(t): [] for t in desired_tags}
+
+          # Process each peer
+          for p in peers.values():
+              hostname = p.get('HostName')
+              if not hostname:
+                  continue
+
+              # Skip Mullvad exit nodes
+              if is_mullvad_node(hostname):
+                  continue
+
+              peer_tags = p.get('Tags') or []
+
+              # Get FQDN (DNSName) for ansible_host
+              fqdn = p.get('DNSName')
+              if not fqdn:
+                  continue
+
+              # Get IP (prefer IPv4) - keep for reference
+              ips = p.get('TailscaleIPs') or p.get('IPs') or []
+              ip = None
+              for x in ips:
+                  if x and ':' not in x:  # prefer IPv4
+                      ip = x
+                      break
+              if not ip and ips:
+                  ip = ips[0]
+
+              # Check each peer's tags against desired tags
+              for peer_tag in peer_tags:
+                  normalized_peer_tag = normalize_tag(peer_tag)
+                  # Find matching desired tag
+                  for desired in desired_tags:
+                      if normalize_tag(desired) == normalized_peer_tag:
+                          entry = {'hostname': hostname, 'fqdn': fqdn.rstrip('.'), 'ip': ip}
+                          group_name = normalize_tag(desired)
+                          if entry not in result[group_name]:
+                              result[group_name].append(entry)
+                          break
+
+          print(json.dumps(result))
+
+    - name: Build nodes_by_tag with Python helper
+      ansible.builtin.command: /usr/bin/env python3 /tmp/tailscale_node_by_tag.py
+      register: nodes_by_tag_json
+      changed_when: false
+      when: ts_status_raw is defined and ts_status_raw.stdout is defined
+
+    - name: Set nodes_by_tag fact
+      ansible.builtin.set_fact:
+        nodes_by_tag: "{{ nodes_by_tag_json.stdout | from_json }}"
+      when: nodes_by_tag_json is defined and nodes_by_tag_json.stdout is defined
+
+    - name: Show nodes grouped by tag
+      ansible.builtin.debug:
+        var: nodes_by_tag
+      when: nodes_by_tag is defined
+
+    - name: Flatten nodes_by_tag into hosts_list
+      ansible.builtin.set_fact:
+        hosts_list: "{{ (hosts_list | default([]) + item.value) | unique(attribute='hostname') }}"
+      loop: "{{ nodes_by_tag | dict2items }}"
+      when: nodes_by_tag is defined
+
+    - name: Ensure local hosts folder exists in repository
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/hosts"
+        state: directory
+        mode: '0755'
+      when: nodes_by_tag is defined
+
+    - name: Ensure groups are represented in a local Ansible inventory YAML file
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/hosts/tailscale_hosts.yaml"
+        mode: '0644'
+        content: |
+          # Auto-generated Tailnet hosts as Ansible inventory
+          all:
+            hosts:
+              {% for host in hosts_list | default([]) %}
+              {{ host.hostname }}:
+                ansible_host: "{{ host.hostname }}"
+                ansible_ssh_common_args: "-o ProxyCommand='tailscale ssh %h --ssh' -o StrictHostKeyChecking=no"
+              {% endfor %}
+            vars:
+              ansible_user: "{{ ansible_ssh_user }}"
+              ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file }}"
+            children:
+              {% for tag, peers in nodes_by_tag.items() %}
+              {{ tag }}:
+                {% if peers|length == 0 %}
+                hosts: {}
+                {% else %}
+                hosts:
+                  {% for peer in peers %}
+                  {{ peer.hostname }}: {}
+                  {% endfor %}
+                {% endif %}
+              {% endfor %}
+      when: nodes_by_tag is defined
+
+    - name: (Optional) Save flat hosts list to local YAML file
+      copy:
+        dest: "{{ playbook_dir }}/hosts/tailscale_hosts_flat.yaml"
+        mode: '0644'
+        content: |
+          # Auto-generated flat Tailnet hosts list
+          hosts_list:
+          {% for host in hosts_list %}
+          - ip: {{ host.ip }}
+            hostname: {{ host.hostname }}
+          {% endfor %}
+      when: hosts_list is defined and hosts_list | length > 0

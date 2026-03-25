@@ -145,6 +145,7 @@
           host_key_checking = False
           deprecation_warnings = False
           interpreter_python = .venv/bin/python
+          ansible_nocows = True
           
           [ssh_connection]
           pipelining = True

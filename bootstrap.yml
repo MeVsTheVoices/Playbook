@@ -57,7 +57,7 @@
     - name: Warn if Tailscale SSH could not be enabled on macOS
       debug:
         msg: "Tailscale SSH enable command failed (expected for sandboxed GUI install). SSH must be enabled from a non-sandboxed daemon or manual configuration."
-      when: tailscale_ssh_mac is defined and tailscale_ssh_mac.failed
+      when: tailscale_ssh_mac is defined and tailscale_ssh_mac.rc is defined and tailscale_ssh_mac.rc != 0
 
     - name: Enable Tailscale SSH authorization policy for selected tags
       debug:
@@ -124,10 +124,18 @@
         ansible_python_interpreter: python3
 
     - name: Install Tailscale Collection via CLI
-      command: "{{ venv_path }}/bin/ansible-galaxy collection install tailscale.community"
+      command: "{{ venv_path }}/bin/ansible-galaxy collection install tailscale.community --pre"
       args:
         chdir: "{{ playbook_dir }}"
-      changed_when: true
+      register: tailscale_collection_install
+      changed_when: tailscale_collection_install.rc == 0
+      failed_when: false
+      ignore_errors: true
+
+    - name: Warn if Tailscale collection could not be installed
+      debug:
+        msg: "Tailscale Ansible collection installation failed; continuing anyway. Install it manually if required."
+      when: tailscale_collection_install is defined and tailscale_collection_install.rc != 0
 
     - name: Configure ansible.cfg in playbook directory
       copy:

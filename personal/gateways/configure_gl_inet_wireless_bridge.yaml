@@ -1,0 +1,39 @@
+- name: Configure GL.iNet Bridge and Tailscale
+  hosts: routers
+  gather_facts: false
+  vars:
+    tailscale_auth_key: "tskey-auth-yourkeyhere" # Grab this from your Tailscale admin console
+
+  tasks:
+    # --- Wireless Bridge Section ---
+    - name: Configure Bridge UCI Settings
+      gekmihesg.openwrt.uci:
+        command: section
+        config: "{{ item.config }}"
+        type: "{{ item.type }}"
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+      loop:
+        - { config: 'wireless', type: 'wifi-iface', name: 'sta', value: { device: 'radio0', mode: 'sta', network: 'wwan', ssid: 'YOUR_SSID', encryption: 'psk2', key: 'YOUR_PW', disabled: '0' } }
+        - { config: 'network', type: 'interface', name: 'wwan', value: { proto: 'dhcp' } }
+
+    - name: Commit Bridge Changes
+      gekmihesg.openwrt.uci:
+        command: commit
+        config: "{{ item }}"
+      loop: [wireless, network]
+
+    - name: Restart Network to Enable Internet
+      raw: "/sbin/wifi reload && /etc/init.d/network restart"
+
+    # --- Tailscale Section ---
+    - name: Update Package List and Install Tailscale
+      raw: "opkg update && opkg install tailscale tailscaled"
+
+    - name: Enable and Start Tailscaled
+      raw: "/etc/init.d/tailscale enable && /etc/init.d/tailscale start"
+
+    - name: Authenticate Tailscale
+      # We use 'command' here; 'raw' works too. 
+      # Adding --accept-routes since you often do subnet routing.
+      raw: "tailscale up --authkey={{ tailscale_auth_key }} --accept-routes"

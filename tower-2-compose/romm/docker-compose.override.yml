@@ -1,0 +1,13 @@
+services:
+  romm:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: ''
+      net.unraid.docker.webui: ''
+      net.unraid.docker.shell: ''
+  romm-db:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: ''
+      net.unraid.docker.webui: ''
+      net.unraid.docker.shell: ''

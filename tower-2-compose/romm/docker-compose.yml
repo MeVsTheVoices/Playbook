@@ -1,0 +1,58 @@
+services:
+  romm:
+    image: rommapp/romm:latest
+    container_name: romm
+    restart: unless-stopped
+    environment:
+      - DB_HOST=romm-db
+      - DB_NAME=romm
+      - DB_USER=romm-user
+      - DB_PASSWD=Qy1PZIo5LoU6
+      - ROMM_AUTH_SECRET_KEY=61f02d063297403b9584c2aef88c005554be82a63d0bc6c9751d92c479ab7ca6
+      - SCREENSCRAPER_USER=mevsthevoices
+      - SCREENSCRAPER_PASSWORD=CD5UFuS4A8dx
+      - RETROACHIEVEMENTS_API_KEY=CDVVey4kANKWJCrBrhcPqjTXFf5FBM8l
+      - HASHEOUS_API_ENABLED=true
+    volumes:
+      - /mnt/user/romms:/romm/resources # Changed to direct bind mount
+      - /mnt/user/appdata/romm/redis:/redis-data
+      - /mnt/user/appdata/romm/library:/romm/library
+      - /mnt/user/appdata/romm/assets:/romm/assets
+      - /mnt/user/appdata/romm/config:/romm/config
+    ports:
+      - 8974:8080
+    networks:
+      - media_ingress
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-romm"
+      tsdproxy.port.1: "80/http:8080/http" # Fixed port to match container internal port
+      tsdproxy.dash.label: "Romm"
+      tsdproxy.dash.icon: "si/romm"
+      tsdproxy.tags: "tag:view"
+    depends_on:
+      romm-db:
+        condition: service_healthy
+
+  romm-db:
+    image: mariadb:latest
+    container_name: romm-db
+    restart: unless-stopped
+    environment:
+      - MARIADB_ROOT_PASSWORD=Qy1PZIo5LoU6
+      - MARIADB_DATABASE=romm
+      - MARIADB_USER=romm-user
+      - MARIADB_PASSWORD=Qy1PZIo5LoU6
+    volumes:
+      - /mnt/user/appdata/mariadb/mysql_data:/var/lib/mysql # Direct bind mount
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - media_ingress
+      
+networks:
+  media_ingress:
+    external: true

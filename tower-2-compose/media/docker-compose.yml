@@ -1,0 +1,276 @@
+services:
+  tsdproxy:
+    image: almeidapaulopt/tsdproxy:dev
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/user/appdata/tsdproxy/data:/data
+      - /mnt/user/appdata/tsdproxy/config:/config
+    restart: unless-stopped
+    cpu_shares: 1024
+    mem_limit: 512m
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - media_ingress
+    environment:
+      - PUID=99
+      - PGID=100
+      - TS_AUTHKEY=tskey-auth-kzmRQam2F611CNTRL-ftXmbMbiUHcQ8pCktuyDHcLCuasNMvvj
+      - TSNET_FORCE_LOGIN=1
+      - TZ=America/Los_Angeles
+      - TSDPROXY_AUTHKEY_REUSABLE=true
+      - TSDPROXY_PRE_AUTH_TAGS=true
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-tsdproxy"
+      tsdproxy.port.1: "80/http:8080/http"
+      tsdproxy.dash.label: "TSDProxy Dashboard"
+      tsdproxy.dash.icon: "si/tailscale"
+      tsdproxy.description: "Management UI for Tailscale Docker proxies"
+      # for media add
+      tsdproxy.authkey: "tskey-auth-kNobCDkNmW11CNTRL-wGp65fxYSNgYCBCTYb8dPgPiMwHFddr2"
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    mem_limit: 512m
+    restart: unless-stopped
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+    volumes:
+      - /mnt/user/appdata/sonarr/config:/config
+      # Consolidate all media/downloads under /data
+      - /mnt/user/servarr:/data
+    networks:
+      - media_ingress
+    ports:
+      - "8989:8989"
+    labels:
+      tsdproxy.port.1: "80/http:8989/http"
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-sonarr"
+      tsdproxy.dash.label: "Sonarr"
+      tsdproxy.dash.icon: "si/sonarr"
+      tsdproxy.tags: "tag:media-add"
+      tsdproxy.ssh: "true"
+      # for media add
+      tsdproxy.authkey: "tskey-auth-kNobCDkNmW11CNTRL-wGp65fxYSNgYCBCTYb8dPgPiMwHFddr2"
+
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    mem_limit: 512m
+    restart: unless-stopped
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+    volumes:
+      - /mnt/user/appdata/radarr/config:/config
+      - /mnt/user/servarr:/data
+    networks:
+      - media_ingress
+    ports:
+      - "7878:7878"
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-radarr"
+      tsdproxy.port.1: "80/http:7878/http"
+      tsdproxy.dash.label: "Radarr"
+      tsdproxy.dash.icon: "si/radarr"
+      tsdproxy.tags: "tag:media-add"
+      tsdproxy.ssh: "true"
+      # for media add
+      tsdproxy.authkey: "tskey-auth-kNobCDkNmW11CNTRL-wGp65fxYSNgYCBCTYb8dPgPiMwHFddr2"
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    mem_limit: 512m
+    restart: unless-stopped
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+    volumes:
+      - /mnt/user/appdata/prowlarr/config:/config
+      - /mnt/user/servarr:/data
+    networks:
+      - media_ingress
+    ports:
+      - "9696:9696"
+    labels:
+      tsdproxy.port.1: "80/http:9696/http"
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-prowlarr"
+      tsdproxy.dash.label: "Prowlarr"
+      tsdproxy.dash.icon: "si/prowlarr"
+      tsdproxy.tags: "tag:media-add"
+      tsdproxy.ssh: "true"
+      # for media add
+      tsdproxy.authkey: "tskey-auth-kNobCDkNmW11CNTRL-wGp65fxYSNgYCBCTYb8dPgPiMwHFddr2"
+
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    mem_limit: 512m
+    restart: unless-stopped
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+    volumes:
+      - /mnt/user/appdata/lidarr/config:/config
+      - /mnt/user/servarr:/data
+    networks:
+      - media_ingress
+    ports:
+      - "8686:8686"
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-lidarr"
+      tsdproxy.port.1: "80/http:8686/http"
+      tsdproxy.dash.label: "Lidarr"
+      tsdproxy.dash.icon: "si/lidarr"
+      tsdproxy.tags: "tag:media-add"
+      tsdproxy.ssh: "true"
+      # for media add
+      tsdproxy.authkey: "tskey-auth-kNobCDkNmW11CNTRL-wGp65fxYSNgYCBCTYb8dPgPiMwHFddr2"
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    mem_limit: 4g
+    restart: unless-stopped
+    cpu_shares: 1024
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+    volumes:
+      - /mnt/user/jellyfin/appdata/jellyfin/config:/config
+      # Pointing directly to subfolders in the new share
+      - /mnt/user/servarr/media/tv:/data/tv
+      - /mnt/user/servarr/media/movies:/data/movies
+      - /mnt/user/servarr/media/music:/data/music
+      - /mnt/user/jellyfin/jellyfin/transcodes/:/transcodes
+    networks:
+      - media_ingress
+    ports:
+      - "8096:8096"
+    devices:
+      - /dev/dri:/dev/dri
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-jellyfin"
+      tsdproxy.port.1: "80/http:8096/http"
+      tsdproxy.dash.label: "Jellyfin"
+      tsdproxy.dash.icon: "si/jellyfin"
+      tsdproxy.tags: "tag:media-view"
+      tsdproxy.ssh: "true"
+      # for media view
+      tsdproxy.authkey: "tskey-auth-k5ZeJ9p9vL11CNTRL-n1ZzXsyvVcAT6gBKvkEvbASN6tKk7TiAJ"
+
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    mem_limit: 512m
+    restart: unless-stopped
+    # Seerr runs as a non-root user (UID 1000) by default now
+    user: "99:100"
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+    volumes:
+      - /mnt/user/seerr:/app/config
+    # Required for the new image's init process
+    init: true
+    networks:
+      - media_ingress
+    ports:
+      - "5055:5055"
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-seerr"
+      tsdproxy.port.1: "80/http:5055/http"
+      tsdproxy.dash.label: "Seerr"
+      tsdproxy.dash.icon: "si/overseerr"
+      tsdproxy.tags: "tag:media_view,tag:media_add"
+      tsdproxy.ssh: "true"
+      # for media view
+      tsdproxy.authkey: "tskey-auth-k5ZeJ9p9vL11CNTRL-n1ZzXsyvVcAT6gBKvkEvbASN6tKk7TiAJ"
+      
+      
+  readmeabook:
+    image: ghcr.io/kikootwo/readmeabook:latest
+    container_name: readmeabook
+    mem_limit: 1g
+    restart: unless-stopped
+    networks:
+      - media_ingress
+    ports:
+      - "3030:3030"
+    volumes:
+      # App Settings & Database
+      - /mnt/user/appdata/readmeabook/config:/app/config
+      - /mnt/user/appdata/readmeabook/cache:/app/cache
+      - /mnt/user/appdata/readmeabook/pgdata:/var/lib/postgresql/data
+      - /mnt/user/appdata/readmeabook/redis:/var/lib/redis
+      # Media & Downloads (Mapping to your 'servarr' share for Atomic Moves)
+      - /mnt/user/servarr:/data
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+      # Set this to your Tailscale address for proper OAuth/Login redirects
+      - PUBLIC_URL=http://tower-2-readmeabook.tail00c2ce.ts.net
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-readmeabook"
+      tsdproxy.port.1: "80/http:3030/http"
+      tsdproxy.dash.label: "ReadMeABook"
+      tsdproxy.dash.icon: "si/bookstack"
+      tsdproxy.tags: "tag:media-view"
+      # for media view
+      tsdproxy.authkey: "tskey-auth-k5ZeJ9p9vL11CNTRL-n1ZzXsyvVcAT6gBKvkEvbASN6tKk7TiAJ"
+      
+
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    mem_limit: 256m
+    restart: unless-stopped
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+    volumes:
+      - /mnt/user/appdata/audiobookshelf/config:/config
+      - /mnt/user/appdata/audiobookshelf/metadata:/metadata
+      - /mnt/user/servarr/media/audiobooks:/audiobooks
+    networks:
+      - media_ingress
+    ports:
+      - "8000:80"
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-audiobookshelf"
+      tsdproxy.port.1: "80/http:80/http"
+      tsdproxy.dash.label: "Audiobookshelf"
+      tsdproxy.dash.icon: "si/audiobookshelf"
+      tsdproxy.tags: "tag:media-view"
+      # for media view
+      tsdproxy.authkey: "tskey-auth-k5ZeJ9p9vL11CNTRL-n1ZzXsyvVcAT6gBKvkEvbASN6tKk7TiAJ"
+
+
+networks:
+  romm_internal:
+    driver: bridge
+  media_ingress:
+    name: media_ingress

@@ -1,0 +1,56 @@
+﻿services:
+  dockerbot:
+    image: ghcr.io/rhomelab/red-discordbot:latest
+    container_name: discord_bot-red-bot-1
+    restart: always
+    network_mode: discord_bot_default
+    mem_limit: 1073741824
+    shm_size: 67108864
+    entrypoint:
+      - "/usr/bin/tini"
+      - "--"
+      - "/redbot/entrypoint.sh"
+    environment:
+      - "PREFIX=^"
+      - "TOKEN=MTQ1MDM1MTg4NTk3MzE5Mjg0NQ.Gsh0To.B7j5-DhxZpyLKocEktFjH-uvoODr4DSusvyxPc"
+      - "PIP_REQUIREMENTS=matplotlib pandas psutil"
+      - "INSTANCE_NAME=tower-2-redbot"
+      - "PATH=/opt/java/openjdk/bin:/redbot/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      - "LANG=C.UTF-8"
+      - "GPG_KEY=A035C8C19219BA821ECEA86B64E628F8D684696D"
+      - "PYTHON_VERSION=3.11.15"
+      - "PYTHON_SHA256=272179ddd9a2e41a0fc8e42e33dfbdca0b3711aa5abf372d3f2d51543d09b625"
+      - "PYTHONUNBUFFERED=1"
+      - "PIP_DISABLE_PIP_VERSION_CHECK=1"
+      - "RED_HOME=/redbot"
+      - "RED_USER=reduser"
+      - "JAVA_HOME=/opt/java/openjdk"
+    volumes:
+      - "/mnt/user/appdata/redbot:/redbot/data:rw"
+    dns:
+      - "8.8.8.8"
+      - "1.1.1.1"
+    labels:
+      com.docker.compose.config-hash: "42f63843fae491ba6e30e3c1f4402fc08ca834cccf22957e01c3e7ef0b86fe49"
+      com.docker.compose.container-number: "1"
+      com.docker.compose.depends_on: ""
+      com.docker.compose.image: "sha256:3f31742eba3495a6455d4c27b07a90159431ea3ae11ec335d8d4b324ff56a0a8"
+      com.docker.compose.oneoff: "False"
+      com.docker.compose.project: "discord_bot"
+      com.docker.compose.project.config_files: "/boot/config/plugins/compose.manager/projects/discord_bot/docker-compose.yml,/boot/config/plugins/compose.manager/projects/discord_bot/docker-compose.override.yml"
+      com.docker.compose.project.working_dir: "/boot/config/plugins/compose.manager/projects/discord_bot"
+      com.docker.compose.replace: "red-bot-1"
+      com.docker.compose.service: "red-bot"
+      com.docker.compose.version: "2.40.3"
+      net.unraid.docker.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/discord.png"
+      net.unraid.docker.managed: "composeman"
+      net.unraid.docker.shell: ""
+      net.unraid.docker.webui: ""
+      org.opencontainers.image.created: "2026-03-06T02:53:12.817Z"
+      org.opencontainers.image.description: "Red Discord Bot Docker image"
+      org.opencontainers.image.licenses: ""
+      org.opencontainers.image.revision: "54ec112e1aa1cabd9b3311ada47d84e9d0782335"
+      org.opencontainers.image.source: "https://github.com/rHomelab/Red-DiscordBot-Docker"
+      org.opencontainers.image.title: "Red-DiscordBot-Docker"
+      org.opencontainers.image.url: "https://github.com/rHomelab/Red-DiscordBot-Docker"
+      org.opencontainers.image.version: "3.5.24"

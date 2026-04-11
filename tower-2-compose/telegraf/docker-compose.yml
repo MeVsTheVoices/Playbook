@@ -1,0 +1,44 @@
+services:
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    mem_limit: 256m
+    restart: unless-stopped
+    privileged: true # Required for system-level metrics
+    group_add:
+      - 281
+    networks:
+      - media_ingress
+    environment:
+      - HOST_PROC=/rootfs/proc
+      - HOST_SYS=/rootfs/sys
+      - HOST_ETC=/rootfs/etc
+      - HOST_MOUNT_PREFIX=/rootfs
+      - INFLUX_TOKEN=UM_dLKiFS6-AgVSxNwSPX7zWr111GyY61Qz6Qz1UwQat9okpEfItL0eKganekWe530NBt3H29TGrXsri-68Nmw== # Replace with your actual token
+    volumes:
+      #- /mnt/user/appdata/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/utmp:/var/run/utmp:ro
+      - /run/udev:/run/udev:ro
+      - /:/rootfs:ro
+      - /sys:/rootfs/sys:ro
+      - /etc:/rootfs/etc:ro
+      - /proc:/rootfs/proc:ro
+      
+      - /mnt/user/appdata/telegraf/scripts:/scripts
+    ports:
+      - "6514:6514"
+    command: >
+      telegraf 
+      --config "http://jdizzle-nucboxg5.tail00c2ce.ts.net:8086/api/v2/telegrafs/0ff484e2dbe70000"
+      --non-strict-env-handling
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: "tower-2-telegraf"
+      tsdproxy.dash.label: "Telegraf"
+      tsdproxy.dash.icon: "si/telegraf"
+    
+networks:
+  media_ingress:
+    external: true

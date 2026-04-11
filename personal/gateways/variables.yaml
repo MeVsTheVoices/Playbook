@@ -1,9 +1,0 @@
-# Wi-Fi Bridge Settings
-bridge_ssid: "YOUR_HOME_WIFI"
-bridge_password: "YOUR_WIFI_PASSWORD"
-bridge_radio: "radio0"  # Use radio1 for 5GHz if supported
-
-# Tailscale Settings
-# Note: Use a Pre-Authorized, Reusable, or Ephemeral key from Tailscale Admin
-ts_auth_key: "REDACTED"
-ts_extra_args: "--accept-routes --advertise-tags=tag:devboxes"

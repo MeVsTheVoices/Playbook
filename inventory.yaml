@@ -1,0 +1,10 @@
+all:
+  children:
+    devboxes:
+      hosts:
+        optiplex:
+          ansible_host: jdizzle-optiplex-home.tail00c2ce.ts.net
+    monitors:
+      hosts:
+        nucbox:
+          ansible_host: jdizzle-nucboxg5.tail00c2ce.ts.net

@@ -1,0 +1,12 @@
+hostname: joshs-pi-rack-node-1
+manage_etc_hosts: true
+
+ansible:
+  install_method: distro
+  galaxy:
+    - actions:
+      - ["collection", "install", "artis3n.tailscale"]
+  run_ansible:
+    - playbook_name: "configure_pi_5.yaml"
+      playbook_dir: "/root/ansible"
+      connection: local

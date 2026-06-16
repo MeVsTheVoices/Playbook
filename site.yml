@@ -1,0 +1,6 @@
+---
+- name: Configure Raspberry Pi 5 hosts
+  hosts: rpi5
+  become: true
+  roles:
+    - role: raspberry_pi5

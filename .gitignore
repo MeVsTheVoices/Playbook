@@ -1,3 +1,9 @@
 .ansible/
 .venv/
 *secrets*
+cloud-init/*.rendered.yml
+cloud-init/*-seed.iso
+*.retry
+callback_site/data/callbacks.jsonl
+callback_site/.venv/
+.build/

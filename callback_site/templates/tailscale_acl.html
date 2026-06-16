@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tailscale ACL Planner</title>
+    <style>
+      :root {
+        --bg: #f3f5f7;
+        --card: #ffffff;
+        --ink: #1d2939;
+        --muted: #52606d;
+        --accent: #0f766e;
+        --line: #d0d7de;
+      }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 12% 12%, #e6fffa 0, transparent 35%), var(--bg);
+        color: var(--ink);
+      }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 220px;
+        background: #0f172a;
+        color: #cbd5e1;
+        transition: width 0.2s ease;
+        overflow: hidden;
+        padding: 0.8rem;
+        box-sizing: border-box;
+      }
+      .sidebar a {
+        display: block;
+        color: #cbd5e1;
+        text-decoration: none;
+        padding: 0.55rem;
+        border-radius: 8px;
+        margin-bottom: 0.25rem;
+      }
+      .sidebar a:hover { background: rgba(148, 163, 184, 0.16); }
+      .toggle-btn {
+        width: 100%;
+        margin-bottom: 0.8rem;
+        border: 1px solid #334155;
+        background: #111827;
+        color: #cbd5e1;
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+      }
+      body.sidebar-collapsed .sidebar { width: 72px; }
+      body.sidebar-collapsed .sidebar .label { display: none; }
+      .content {
+        margin-left: 236px;
+        transition: margin-left 0.2s ease;
+      }
+      body.sidebar-collapsed .content { margin-left: 88px; }
+      .wrap {
+        max-width: 1150px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        margin-bottom: 1rem;
+      }
+      h1 { margin: 0 0 0.4rem; }
+      p { color: var(--muted); }
+      .top-nav a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.8rem;
+      }
+      label {
+        display: block;
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-bottom: 0.2rem;
+      }
+      input, textarea, button {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.6rem;
+        font-family: inherit;
+        font-size: 0.92rem;
+        box-sizing: border-box;
+      }
+      textarea { min-height: 84px; }
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+      pre {
+        background: #0b1020;
+        color: #d6deeb;
+        border-radius: 10px;
+        padding: 0.8rem;
+        overflow: auto;
+        font-size: 0.82rem;
+      }
+      .warn {
+        color: #7f1d1d;
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        border-radius: 10px;
+        padding: 0.6rem;
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
+      <a href="/"><span>Home</span> <span class="label">Dashboard</span></a>
+      <a href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
+      <a href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+    </aside>
+
+    <main class="content">
+    <div class="wrap">
+      <div class="panel top-nav">
+        <a href="/">Back To Callback Dashboard</a>
+      </div>
+
+      <div class="panel">
+        <h1>Tailscale ACL Planner</h1>
+        <p>Use this page to generate policy blocks for tags, tag owners, ACL rules, and auto-approvers. Paste output into the Tailscale admin policy file.</p>
+        <div class="warn">Generated policy is a baseline. Review before applying in production.</div>
+      </div>
+
+      <div class="panel">
+        <h2>Inputs</h2>
+        <div class="grid">
+          <div>
+            <label for="tailnet">Tailnet (for display)</label>
+            <input id="tailnet" value="{{ defaults.tailnet }}">
+          </div>
+          <div>
+            <label for="admin_group">Admin Group/User</label>
+            <input id="admin_group" value="{{ defaults.admin_group }}">
+          </div>
+          <div>
+            <label for="rpi5_tag">Pi 5 Tag</label>
+            <input id="rpi5_tag" value="{{ defaults.rpi5_tag }}">
+          </div>
+          <div>
+            <label for="rpi_bplus_tag">Pi B+ Tag</label>
+            <input id="rpi_bplus_tag" value="{{ defaults.rpi_bplus_tag }}">
+          </div>
+          <div>
+            <label for="homelab_tag">Homelab Tag</label>
+            <input id="homelab_tag" value="{{ defaults.homelab_tag }}">
+          </div>
+        </div>
+        <div style="margin-top: 0.8rem;">
+          <label for="pi5_subnets">Pi 5 Advertised Subnets (one CIDR per line)</label>
+          <textarea id="pi5_subnets">{{ defaults.pi5_subnets | join('\n') }}</textarea>
+        </div>
+        <div style="margin-top: 0.8rem;">
+          <button id="generate">Generate ACL Snippets</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Suggested Policy JSON</h2>
+        <pre id="policy_output"></pre>
+      </div>
+
+      <div class="panel">
+        <h2>Where To Apply</h2>
+        <p>1. Open Tailscale Admin Console -> Access Controls.</p>
+        <p>2. Merge the generated blocks into your existing policy file.</p>
+        <p>3. Validate and save policy changes.</p>
+      </div>
+    </div>
+    </main>
+
+    <script>
+      const body = document.body;
+      const toggleBtn = document.getElementById("sidebar-toggle");
+      const out = document.getElementById("policy_output");
+
+      function initSidebar() {
+        const saved = localStorage.getItem("sidebar-collapsed");
+        if (saved === "1") {
+          body.classList.add("sidebar-collapsed");
+        }
+      }
+
+      toggleBtn.addEventListener("click", () => {
+        body.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
+      });
+
+      function parseSubnets(text) {
+        return text
+          .split("\n")
+          .map(s => s.trim())
+          .filter(Boolean);
+      }
+
+      function generatePolicy() {
+        const admin = document.getElementById("admin_group").value.trim();
+        const rpi5Tag = document.getElementById("rpi5_tag").value.trim();
+        const bplusTag = document.getElementById("rpi_bplus_tag").value.trim();
+        const homelabTag = document.getElementById("homelab_tag").value.trim();
+        const subnets = parseSubnets(document.getElementById("pi5_subnets").value);
+
+        const policy = {
+          tagOwners: {
+            [rpi5Tag]: [admin],
+            [bplusTag]: [admin],
+            [homelabTag]: [admin]
+          },
+          autoApprovers: {
+            routes: {}
+          },
+          acls: [
+            {
+              action: "accept",
+              src: [admin],
+              dst: [`${rpi5Tag}:*`, `${bplusTag}:*`, `${homelabTag}:*`]
+            },
+            {
+              action: "accept",
+              src: [rpi5Tag, bplusTag],
+              dst: [`${homelabTag}:*`]
+            }
+          ],
+          ssh: [
+            {
+              action: "accept",
+              src: [admin],
+              dst: [rpi5Tag, bplusTag],
+              users: ["autogroup:nonroot", "root"]
+            }
+          ]
+        };
+
+        subnets.forEach((cidr) => {
+          policy.autoApprovers.routes[cidr] = [rpi5Tag, homelabTag];
+        });
+
+        out.textContent = JSON.stringify(policy, null, 2);
+      }
+
+      document.getElementById("generate").addEventListener("click", generatePolicy);
+      generatePolicy();
+      initSidebar();
+    </script>
+  </body>
+</html>

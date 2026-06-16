@@ -9,9 +9,74 @@ all:
       hosts:
         nucbox:
           ansible_host: jdizzle-nucboxg5.tail00c2ce.ts.net
-    rpi5:
-      hosts:
-        rpi5-01:
-          ansible_host: CHANGE_ME_RPI5_01
-        rpi5-02:
-          ansible_host: CHANGE_ME_RPI5_02
+    rack10:
+      vars:
+        rack_form_factor: "10-inch"
+        rack_power_profile: "poe"
+      children:
+        rack10_infra:
+          hosts:
+            glinet-openwrt-01:
+              ansible_host: CHANGE_ME_GLINET_OPENWRT_01
+              ansible_user: root
+              rack_device_role: router
+              rack_manage_with_ansible: false
+            poe-switch-01:
+              ansible_host: CHANGE_ME_POE_SWITCH_01
+              rack_device_role: poe-switch
+              rack_manage_with_ansible: false
+        rpi5:
+          vars:
+            rack_node_family: rpi5
+            rack_node_storage_profile: nvme
+          children:
+            rpi5_active:
+              hosts:
+                rpi5-01:
+                  ansible_host: CHANGE_ME_RPI5_01
+                  rack_state: up
+                  rack_slot: 1
+                rpi5-02:
+                  ansible_host: CHANGE_ME_RPI5_02
+                  rack_state: up
+                  rack_slot: 2
+            rpi5_planned:
+              hosts:
+                rpi5-03:
+                  ansible_host: CHANGE_ME_RPI5_03
+                  rack_state: planned
+                  rack_slot: 3
+                  rack_manage_with_ansible: false
+                rpi5-04:
+                  ansible_host: CHANGE_ME_RPI5_04
+                  rack_state: planned
+                  rack_slot: 4
+                  rack_manage_with_ansible: false
+        rpi_bplus:
+          vars:
+            rack_node_family: rpi-bplus
+            rack_node_storage_profile: sdcard
+          children:
+            rpi_bplus_active:
+              hosts:
+                rpi-bplus-01:
+                  ansible_host: CHANGE_ME_RPI_BPLUS_01
+                  rack_state: up
+                  rack_slot: 5
+            rpi_bplus_planned:
+              hosts:
+                rpi-bplus-02:
+                  ansible_host: CHANGE_ME_RPI_BPLUS_02
+                  rack_state: planned
+                  rack_slot: 6
+                  rack_manage_with_ansible: false
+                rpi-bplus-03:
+                  ansible_host: CHANGE_ME_RPI_BPLUS_03
+                  rack_state: planned
+                  rack_slot: 7
+                  rack_manage_with_ansible: false
+    rack19:
+      vars:
+        rack_form_factor: "19-inch"
+        rack_manage_with_ansible: false
+      hosts: {}

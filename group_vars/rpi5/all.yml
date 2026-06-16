@@ -5,9 +5,8 @@ raspberry_pi5_tailscale_tailnet: tail00c2ce
 raspberry_pi5_tailscale_oauth_client_id: "{{ vault_rpi5_tailscale_oauth_client_id }}"
 raspberry_pi5_tailscale_oauth_client_secret: "{{ vault_rpi5_tailscale_oauth_client_secret }}"
 
-raspberry_pi5_tailscale_advertise_exit_node: true
-raspberry_pi5_tailscale_advertise_routes:
-  - 192.168.174.0/24
+raspberry_pi5_tailscale_advertise_exit_node: false
+raspberry_pi5_tailscale_advertise_routes: []
 raspberry_pi5_tailscale_tags:
   - tag:rpi5
   - tag:homelab

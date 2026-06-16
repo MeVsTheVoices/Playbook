@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Node Ops</title>
+    <style>
+      :root {
+        --bg: #f3f5f7;
+        --card: #ffffff;
+        --ink: #1d2939;
+        --muted: #52606d;
+        --accent: #0f766e;
+        --line: #d0d7de;
+        --side: #0f172a;
+        --side-ink: #cbd5e1;
+      }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 12% 12%, #e6fffa 0, transparent 35%), var(--bg);
+        color: var(--ink);
+      }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 220px;
+        background: var(--side);
+        color: var(--side-ink);
+        transition: width 0.2s ease;
+        overflow: hidden;
+        padding: 0.8rem;
+        box-sizing: border-box;
+      }
+      .sidebar a {
+        display: block;
+        color: var(--side-ink);
+        text-decoration: none;
+        padding: 0.55rem;
+        border-radius: 8px;
+        margin-bottom: 0.25rem;
+      }
+      .sidebar a:hover { background: rgba(148, 163, 184, 0.16); }
+      .toggle-btn {
+        width: 100%;
+        margin-bottom: 0.8rem;
+        border: 1px solid #334155;
+        background: #111827;
+        color: var(--side-ink);
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+      }
+      body.sidebar-collapsed .sidebar { width: 72px; }
+      body.sidebar-collapsed .sidebar .label { display: none; }
+      .content {
+        margin-left: 236px;
+        transition: margin-left 0.2s ease;
+      }
+      body.sidebar-collapsed .content { margin-left: 88px; }
+      .wrap {
+        max-width: 1200px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        margin-bottom: 1rem;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.8rem;
+      }
+      label {
+        display: block;
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-bottom: 0.2rem;
+      }
+      input, button {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.6rem;
+        font-family: inherit;
+        font-size: 0.92rem;
+        box-sizing: border-box;
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        border-bottom: 1px solid var(--line);
+        padding: 0.55rem;
+        text-align: left;
+      }
+      .ok { color: #166534; font-weight: 700; }
+      .bad { color: #991b1b; font-weight: 700; }
+      .note { color: var(--muted); font-size: 0.85rem; }
+      @media (max-width: 900px) {
+        th:nth-child(6), td:nth-child(6) { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
+      <a href="/"><span>Home</span> <span class="label">Dashboard</span></a>
+      <a href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
+      <a href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+    </aside>
+
+    <main class="content">
+      <div class="wrap">
+        <div class="panel">
+          <h1>Node Ops</h1>
+          <p class="note">Credentials and webhook settings are stored locally for this service instance.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Credentials + Webhook</h2>
+          <div class="grid">
+            <div>
+              <label for="username">Username</label>
+              <input id="username" placeholder="ops">
+            </div>
+            <div>
+              <label for="password">Password / Token</label>
+              <input id="password" type="password" placeholder="optional">
+            </div>
+            <div>
+              <label for="webhook_url">Webhook URL</label>
+              <input id="webhook_url" placeholder="https://example/webhook">
+            </div>
+            <div>
+              <label for="verify_tls">Verify TLS (true/false)</label>
+              <input id="verify_tls" value="true">
+            </div>
+          </div>
+          <div style="margin-top: 0.8rem;">
+            <button id="save-config">Save Config</button>
+          </div>
+          <p id="config-status" class="note"></p>
+        </div>
+
+        <div class="panel">
+          <h2>Monitoring</h2>
+          <div class="grid">
+            <div>
+              <button id="refresh-monitor">Refresh Node Status</button>
+            </div>
+            <div>
+              <button id="refresh-monitor-webhook">Refresh + Send Webhook</button>
+            </div>
+          </div>
+          <p id="monitor-status" class="note"></p>
+          <table>
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>Group</th>
+                <th>Address</th>
+                <th>Reachable</th>
+                <th>Latency ms</th>
+                <th>Last Callback</th>
+              </tr>
+            </thead>
+            <tbody id="node-rows">
+              <tr><td colspan="6">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const body = document.body;
+      const toggleBtn = document.getElementById("sidebar-toggle");
+      const configStatus = document.getElementById("config-status");
+      const monitorStatus = document.getElementById("monitor-status");
+      const rows = document.getElementById("node-rows");
+
+      function initSidebar() {
+        const saved = localStorage.getItem("sidebar-collapsed");
+        if (saved === "1") {
+          body.classList.add("sidebar-collapsed");
+        }
+      }
+
+      toggleBtn.addEventListener("click", () => {
+        body.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
+      });
+
+      async function loadSummary() {
+        const res = await fetch("/api/nodes/summary");
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          monitorStatus.textContent = "Failed to load node summary.";
+          return;
+        }
+
+        document.getElementById("username").value = data.config.username || "";
+        document.getElementById("webhook_url").value = data.config.webhook_url || "";
+        document.getElementById("verify_tls").value = data.config.verify_tls ? "true" : "false";
+        if (data.config.password_set) {
+          document.getElementById("password").placeholder = "already configured";
+        }
+
+        rows.innerHTML = "";
+        if (!data.nodes.length) {
+          rows.innerHTML = "<tr><td colspan='6'>No active nodes found in inventory groups.</td></tr>";
+          return;
+        }
+
+        for (const node of data.nodes) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${node.name}</td>
+            <td>${node.group}</td>
+            <td>${node.address}</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+          `;
+          rows.appendChild(tr);
+        }
+      }
+
+      async function saveConfig() {
+        configStatus.textContent = "Saving...";
+        const payload = {
+          username: document.getElementById("username").value.trim(),
+          password: document.getElementById("password").value,
+          webhook_url: document.getElementById("webhook_url").value.trim(),
+          verify_tls: document.getElementById("verify_tls").value.trim().toLowerCase() !== "false",
+        };
+        const res = await fetch("/api/nodes/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          configStatus.textContent = "Failed to save config.";
+          return;
+        }
+        configStatus.textContent = `Saved. Password configured: ${data.config.password_set ? "yes" : "no"}`;
+      }
+
+      async function refreshMonitor(sendWebhook) {
+        monitorStatus.textContent = sendWebhook ? "Refreshing and sending webhook..." : "Refreshing monitoring...";
+        const res = await fetch("/api/nodes/monitor", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ send_webhook: sendWebhook }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          monitorStatus.textContent = "Failed to refresh monitor.";
+          return;
+        }
+
+        rows.innerHTML = "";
+        for (const node of data.statuses) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${node.name}</td>
+            <td>${node.group}</td>
+            <td>${node.address}</td>
+            <td class="${node.reachable ? "ok" : "bad"}">${node.reachable ? "UP" : "DOWN"}</td>
+            <td>${node.latency_ms ?? "-"}</td>
+            <td>${node.last_callback || "-"}</td>
+          `;
+          rows.appendChild(tr);
+        }
+
+        if (sendWebhook) {
+          monitorStatus.textContent = data.webhook.sent
+            ? (data.webhook.ok ? `Webhook sent (HTTP ${data.webhook.status}).` : `Webhook failed: ${data.webhook.error}`)
+            : "No webhook configured; monitor refreshed.";
+        } else {
+          monitorStatus.textContent = "Monitoring refreshed.";
+        }
+      }
+
+      document.getElementById("save-config").addEventListener("click", saveConfig);
+      document.getElementById("refresh-monitor").addEventListener("click", () => refreshMonitor(false));
+      document.getElementById("refresh-monitor-webhook").addEventListener("click", () => refreshMonitor(true));
+
+      initSidebar();
+      loadSummary();
+    </script>
+  </body>
+</html>

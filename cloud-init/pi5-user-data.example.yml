@@ -1,0 +1,39 @@
+#cloud-config
+hostname: CHANGE_ME_PI5_HOSTNAME
+manage_etc_hosts: true
+
+users:
+  - default
+  - name: ops
+    gecos: Rack Operations
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - CHANGE_ME_SSH_PUBLIC_KEY
+
+package_update: true
+package_upgrade: false
+packages:
+  - qemu-guest-agent
+  - curl
+  - git
+  - python3
+  - python3-apt
+  - nvme-cli
+  - htop
+
+write_files:
+  - path: /etc/rack-profile
+    permissions: "0644"
+    content: |
+      rack_role=pi5
+      storage=nvme
+      provisioner=cloud-init
+
+runcmd:
+  - [ systemctl, enable, ssh ]
+  - [ systemctl, restart, ssh ]
+  - [ sh, -c, "echo 'Pi5 bootstrap completed' > /var/log/rack-bootstrap.log" ]
+
+final_message: "Cloud-init finished for Pi5 node: $HOSTNAME"

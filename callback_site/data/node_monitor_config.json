@@ -1,0 +1,6 @@
+{
+  "username": "ops",
+  "password": "secret",
+  "webhook_url": "",
+  "verify_tls": true
+}

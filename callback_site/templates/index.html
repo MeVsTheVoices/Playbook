@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rack Cloud-Init Callback</title>
+    <style>
+      :root {
+        --bg: #f3f5f7;
+        --card: #ffffff;
+        --ink: #1d2939;
+        --muted: #52606d;
+        --accent: #0f766e;
+        --line: #d0d7de;
+      }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 10% 10%, #e6fffa 0, transparent 35%), var(--bg);
+        color: var(--ink);
+      }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 220px;
+        background: #0f172a;
+        color: #cbd5e1;
+        transition: width 0.2s ease;
+        overflow: hidden;
+        padding: 0.8rem;
+        box-sizing: border-box;
+      }
+      .sidebar a {
+        display: block;
+        color: #cbd5e1;
+        text-decoration: none;
+        padding: 0.55rem;
+        border-radius: 8px;
+        margin-bottom: 0.25rem;
+      }
+      .sidebar a:hover {
+        background: rgba(148, 163, 184, 0.16);
+      }
+      .toggle-btn {
+        width: 100%;
+        margin-bottom: 0.8rem;
+        border: 1px solid #334155;
+        background: #111827;
+        color: #cbd5e1;
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+      }
+      body.sidebar-collapsed .sidebar { width: 72px; }
+      body.sidebar-collapsed .sidebar .label { display: none; }
+      .content {
+        margin-left: 236px;
+        transition: margin-left 0.2s ease;
+      }
+      body.sidebar-collapsed .content { margin-left: 88px; }
+      .wrap {
+        max-width: 1100px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        margin-bottom: 1rem;
+      }
+      h1 {
+        margin: 0 0 0.4rem;
+        font-size: 1.6rem;
+      }
+      p {
+        margin: 0 0 1rem;
+        color: var(--muted);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        border-bottom: 1px solid var(--line);
+        padding: 0.6rem;
+        text-align: left;
+        vertical-align: top;
+        font-size: 0.92rem;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      code {
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .tag {
+        display: inline-block;
+        background: #ccfbf1;
+        color: #134e4a;
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.8rem;
+      }
+      label {
+        display: block;
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-bottom: 0.2rem;
+      }
+      input, select, textarea, button {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.6rem;
+        font-family: inherit;
+        font-size: 0.92rem;
+        box-sizing: border-box;
+      }
+      textarea {
+        min-height: 90px;
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+      .danger {
+        color: #7f1d1d;
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        border-radius: 10px;
+        padding: 0.6rem;
+        margin: 0.6rem 0;
+      }
+      .job-log {
+        background: #0b1020;
+        color: #d6deeb;
+        border-radius: 10px;
+        padding: 0.8rem;
+        max-height: 280px;
+        overflow: auto;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+      }
+      .inline-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.6rem;
+        align-items: end;
+      }
+      .inline-row button {
+        width: auto;
+        white-space: nowrap;
+      }
+      .muted-note {
+        margin-top: 0.4rem;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+      .top-link {
+        display: inline-block;
+        margin-bottom: 0.8rem;
+        text-decoration: none;
+        color: var(--accent);
+        font-weight: 600;
+      }
+      @media (max-width: 900px) {
+        th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
+      <a href="/"><span>Home</span> <span class="label">Dashboard</span></a>
+      <a href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
+      <a href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+    </aside>
+
+    <main class="content">
+    <div class="wrap">
+      <a class="top-link" href="/tailscale-acl">Open Tailscale ACL Planner</a>
+
+      <div class="panel">
+        <h1>SD Card Imager</h1>
+        <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init + callback.</p>
+        <div class="danger">
+          This operation erases the target device. Verify the selected disk before starting.
+        </div>
+        <form id="sd-form">
+          <div class="form-grid">
+            <div>
+              <label for="profile">Profile</label>
+              <select id="profile" name="profile">
+                <option value="pi5">pi5</option>
+                <option value="pibplus">pibplus</option>
+              </select>
+            </div>
+            <div>
+              <label for="hostname">Hostname</label>
+              <input id="hostname" name="hostname" placeholder="rpi5-03" required>
+            </div>
+            <div>
+              <label for="device">Target SD Device</label>
+              <select id="device" name="device" required>
+                {% for d in devices %}
+                <option value="{{ d.path }}">{{ d.path }} - {{ d.size }} - {{ d.model }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="callback_url">Callback URL</label>
+              <input id="callback_url" name="callback_url" value="http://127.0.0.1:8088/api/cloud-init/callback" required>
+            </div>
+            <div>
+              <label for="image_url">Image URL (optional)</label>
+              <input id="image_url" name="image_url" placeholder="https://...img.xz">
+            </div>
+            <div>
+              <label for="image_file">Image File (optional)</label>
+              <input id="image_file" name="image_file" placeholder="/path/to/file.img.xz">
+            </div>
+          </div>
+          <div style="margin-top: 0.8rem;">
+            <label for="ssh_key_name">First-Time SSH Key Generation (optional)</label>
+            <div class="inline-row">
+              <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
+              <button type="button" id="generate-ssh-key">Generate Or Load Key</button>
+            </div>
+            <div class="muted-note" id="ssh-key-status">Generates key files on this host under callback_site/data/ssh_keys/ and fills the public key below.</div>
+          </div>
+          <div style="margin-top: 0.8rem;">
+            <label for="ssh_public_key">SSH Public Key</label>
+            <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
+          </div>
+          <div style="margin-top: 0.8rem;">
+            <button type="submit">Format + Write SD Card</button>
+          </div>
+        </form>
+        <p id="job-status"></p>
+        <div class="job-log" id="job-log"></div>
+      </div>
+
+      <div class="panel">
+        <h1>Rack Cloud-Init Callback Dashboard</h1>
+        <p>Inbound callback events from first boot and cloud-init phone-home.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Received (UTC)</th>
+              <th>Hostname</th>
+              <th>Instance</th>
+              <th>FQDN</th>
+              <th>Profile</th>
+              <th>Stage</th>
+              <th>Raw Payload</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in events %}
+            <tr>
+              <td>{{ e.received_at }}</td>
+              <td>{{ e.hostname or '-' }}</td>
+              <td>{{ e.instance_id or '-' }}</td>
+              <td>{{ e.fqdn or '-' }}</td>
+              <td><span class="tag">{{ e.profile or 'unknown' }}</span></td>
+              <td>{{ e.stage or 'phone_home' }}</td>
+              <td><code>{{ e.raw }}</code></td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7">No events received yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    </main>
+    <script>
+      const body = document.body;
+      const toggleBtn = document.getElementById("sidebar-toggle");
+      const form = document.getElementById("sd-form");
+      const statusEl = document.getElementById("job-status");
+      const logEl = document.getElementById("job-log");
+      const sshKeyStatusEl = document.getElementById("ssh-key-status");
+      let currentJob = null;
+
+      function initSidebar() {
+        const saved = localStorage.getItem("sidebar-collapsed");
+        if (saved === "1") {
+          body.classList.add("sidebar-collapsed");
+        }
+      }
+
+      toggleBtn.addEventListener("click", () => {
+        body.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
+      });
+
+      function renderJob(job) {
+        statusEl.textContent = `Job ${job.id}: ${job.status}`;
+        const out = (job.stdout || "").trim();
+        const err = (job.stderr || "").trim();
+        logEl.textContent = [
+          `exit_code: ${job.exit_code === null ? "running" : job.exit_code}`,
+          "",
+          "STDOUT:",
+          out || "(none)",
+          "",
+          "STDERR:",
+          err || "(none)",
+        ].join("\n");
+      }
+
+      async function pollJob() {
+        if (!currentJob) return;
+        const res = await fetch(`/api/sd/jobs/${currentJob}`);
+        const data = await res.json();
+        if (!data.ok) {
+          statusEl.textContent = data.error || "Failed to load job status";
+          return;
+        }
+        renderJob(data.job);
+        if (data.job.status === "queued" || data.job.status === "running") {
+          setTimeout(pollJob, 1200);
+        }
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        statusEl.textContent = "Submitting...";
+        logEl.textContent = "";
+        const payload = {
+          profile: form.profile.value,
+          hostname: form.hostname.value,
+          device: form.device.value,
+          callback_url: form.callback_url.value,
+          image_url: form.image_url.value,
+          image_file: form.image_file.value,
+          ssh_public_key: form.ssh_public_key.value,
+        };
+
+        const res = await fetch("/api/sd/prepare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          statusEl.textContent = (data.errors || ["Failed to start job"]).join("; ");
+          return;
+        }
+        currentJob = data.job_id;
+        statusEl.textContent = `Job started: ${currentJob}`;
+        pollJob();
+      });
+
+      document.getElementById("generate-ssh-key").addEventListener("click", async () => {
+        const keyName = document.getElementById("ssh_key_name").value.trim();
+        sshKeyStatusEl.textContent = "Generating/loading key...";
+        const res = await fetch("/api/ssh/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key_name: keyName, comment: "rack-bootstrap" }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          sshKeyStatusEl.textContent = (data.errors || ["Failed to generate key"]).join("; ");
+          return;
+        }
+        form.ssh_public_key.value = data.public_key;
+        sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}'. Public key inserted. Private key: ${data.private_key_path}`;
+      });
+
+      initSidebar();
+    </script>
+  </body>
+</html>

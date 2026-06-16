@@ -9,3 +9,9 @@ all:
       hosts:
         nucbox:
           ansible_host: jdizzle-nucboxg5.tail00c2ce.ts.net
+    rpi5:
+      hosts:
+        rpi5-01:
+          ansible_host: CHANGE_ME_RPI5_01
+        rpi5-02:
+          ansible_host: CHANGE_ME_RPI5_02

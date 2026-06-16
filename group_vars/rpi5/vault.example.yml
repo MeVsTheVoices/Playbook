@@ -1,0 +1,5 @@
+---
+# Encrypt this file into group_vars/rpi5/vault.yml with ansible-vault.
+# ansible-vault encrypt group_vars/rpi5/vault.yml
+vault_rpi5_tailscale_oauth_client_id: tskey-client-CHANGE_ME
+vault_rpi5_tailscale_oauth_client_secret: tskey-secret-CHANGE_ME

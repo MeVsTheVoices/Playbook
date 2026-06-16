@@ -1,0 +1,55 @@
+services:
+  tsdproxy:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/tailscale.png'
+      net.unraid.docker.webui: 'http://tower-2-tsdproxy.tail00c2ce.ts.net/'
+      net.unraid.docker.shell: ''
+  sonarr:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/sonarr.png'
+      net.unraid.docker.webui: 'tower-2-sonarr.tail00c2ce.ts.net'
+      net.unraid.docker.shell: ''
+  prowlarr:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/prowlarr.png'
+      net.unraid.docker.webui: 'tower-2-prowlarr.tail00c2ce.ts.net'
+      net.unraid.docker.shell: ''
+  radarr:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/radarr.png'
+      net.unraid.docker.webui: 'tower-2-radarr.tail00c2ce.ts.net'
+      net.unraid.docker.shell: ''
+  lidarr:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/lidarr.png'
+      net.unraid.docker.webui: 'http://tower-2-tsdproxy.tail00c2ce.ts.net/'
+      net.unraid.docker.shell: ''
+  jellyfin:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/jellyfin.png'
+      net.unraid.docker.webui: 'http://tower-2-jellyfin.tail00c2ce.ts.net'
+      net.unraid.docker.shell: ''
+  seerr:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://avatars.githubusercontent.com/u/101442446?s=48&v=4'
+      net.unraid.docker.webui: 'http://tower-2-seerr.tail00c2ce.ts.net/'
+      net.unraid.docker.shell: ''
+  audiobookshelf:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/audiobookshelf.png'
+      net.unraid.docker.webui: 'http://tower-2-audiobookshelf.tail00c2ce.ts.net'
+      net.unraid.docker.shell: ''
+  readmeabook:
+    labels:
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.icon: 'https://pb.dashboardicons.com/api/files/community_gallery/djlt8y8psyvnk4z/rmab_1024x1024_3spqysnn7d.png'
+      net.unraid.docker.webui: 'http://tower-2-readmeabook.tail00c2ce.ts.net'
+      net.unraid.docker.shell: ''

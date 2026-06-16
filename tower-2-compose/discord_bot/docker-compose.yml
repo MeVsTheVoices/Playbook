@@ -1,0 +1,27 @@
+services:
+  red-bot:
+    image: ghcr.io/rhomelab/red-discordbot:latest
+    restart: always
+    mem_limit: 1g
+    environment:
+      INSTANCE_NAME: "tower-2-redbot"
+      PREFIX: "^"
+      TOKEN: "MTQ1MDM1MTg4NTk3MzE5Mjg0NQ.Gsh0To.B7j5-DhxZpyLKocEktFjH-uvoODr4DSusvyxPc"
+      # RPC_ENABLED: "false"              # Optional, default false
+      # RPC_PORT: "6133"                  # Optional, default 6133
+      # TEAM_MEMBERS_ARE_OWNERS: "false"  # Optional, default false
+      PIP_REQUIREMENTS: "matplotlib pandas psutil"              # Optional, space-separated list of pip requirements, default empty
+    volumes:
+      - /mnt/user/appdata/redbot:/redbot/data
+    dns: 
+      - 8.8.8.8
+      - 1.1.1.1
+      
+  #lavalink:
+  #  image: fredboat/lavalink:3.7.12
+  #  container_name: lavalink
+  #  restart: unless-stopped
+  #  environment:
+  #    - LAVALINK_SERVER_PASSWORD=hVO8toZ1U5lP
+  #  ports:
+  #    - "2333:2333"

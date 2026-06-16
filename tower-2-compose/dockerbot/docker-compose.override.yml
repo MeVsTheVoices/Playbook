@@ -1,0 +1,7 @@
+﻿services:
+  dockerbot:
+    labels:
+      net.unraid.docker.icon: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/discord.png'
+      net.unraid.docker.managed: 'composeman'
+      net.unraid.docker.shell: ''
+      net.unraid.docker.webui: ''

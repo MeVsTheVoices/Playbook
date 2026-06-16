@@ -1,4 +1,27 @@
 ---
+- name: Skip host when it is marked unmanaged
+  ansible.builtin.meta: end_host
+  when: not (rack_manage_with_ansible | bool)
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: raspberry_pi5_manage_system | bool
+
+- name: Install baseline packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+  when:
+    - raspberry_pi5_manage_system | bool
+    - common_packages | length > 0
+
+- name: Optionally upgrade packages
+  ansible.builtin.apt:
+    upgrade: dist
+  when: raspberry_pi5_upgrade_packages | bool
+
 - name: Download Tailscale installation script
   ansible.builtin.get_url:
     url: https://tailscale.com/install.sh

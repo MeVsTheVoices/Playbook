@@ -1,0 +1,20 @@
+---
+# MAAS integration defaults. Override in vault-backed vars or environment-specific files.
+maas_manage: false
+maas_region_api_url: "http://CHANGE_ME_MAAS:5240/MAAS"
+maas_api_key: "{{ vault_maas_api_key | default('') }}"
+maas_cluster_name: "rack-cluster"
+maas_fabric: "fabric-0"
+maas_vlan: "untagged"
+maas_dns_domain: "lab.internal"
+
+# Keep node roles explicit so profile generation stays deterministic.
+maas_role_profiles:
+  rpi5:
+    architecture: arm64/generic
+    pool: default
+    zone: default
+  rpi_bplus:
+    architecture: armhf/generic
+    pool: default
+    zone: default

@@ -1,6 +1,12 @@
 ---
-- name: Configure Raspberry Pi 5 hosts
-  hosts: rpi5
+- name: Configure active Raspberry Pi 5 hosts
+  hosts: rpi5_active
   become: true
   roles:
     - role: raspberry_pi5
+
+- name: Configure active Raspberry Pi B+ hosts
+  hosts: rpi_bplus_active
+  become: true
+  roles:
+    - role: raspberry_pi_bplus

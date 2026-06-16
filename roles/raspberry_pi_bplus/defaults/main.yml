@@ -1,0 +1,28 @@
+---
+raspberry_pi_bplus_manage_system: true
+raspberry_pi_bplus_upgrade_packages: false
+raspberry_pi_bplus_tailscale_manage: true
+raspberry_pi_bplus_tailscale_oauth_enabled: true
+
+# Set this directly if you already have a reusable/preauth auth key.
+raspberry_pi_bplus_tailscale_auth_key: ""
+
+# OAuth client-credential flow inputs (recommended to source from vault).
+raspberry_pi_bplus_tailscale_oauth_client_id: ""
+raspberry_pi_bplus_tailscale_oauth_client_secret: ""
+raspberry_pi_bplus_tailscale_tailnet: ""
+raspberry_pi_bplus_tailscale_auth_key_ttl_seconds: 86400
+
+# Optional device tags. Must be allowed by your tailnet ACL policy.
+raspberry_pi_bplus_tailscale_tags:
+  - tag:rpi-bplus
+
+# Host behavior.
+raspberry_pi_bplus_tailscale_hostname: "{{ inventory_hostname }}"
+raspberry_pi_bplus_tailscale_accept_dns: true
+raspberry_pi_bplus_tailscale_enable_ssh: false
+raspberry_pi_bplus_tailscale_advertise_exit_node: false
+raspberry_pi_bplus_tailscale_advertise_routes: []
+
+# Force re-running tailscale up even if device is already connected.
+raspberry_pi_bplus_tailscale_force_reconfigure: false

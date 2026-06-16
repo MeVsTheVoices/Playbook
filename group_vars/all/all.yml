@@ -10,3 +10,21 @@ common_packages:
   - curl
   - vim
   - htop
+
+rack_cluster_name: "homelab-rack"
+rack_target_form_factors:
+  - "10-inch"
+  - "19-inch"
+
+rack_manage_with_ansible: true
+rack_state: up
+
+rack_nodes_expected:
+  rpi5:
+    current: 2
+    planned_total: 4
+    storage: nvme
+  rpi_bplus:
+    current: 1
+    planned_total: 3
+    storage: sdcard

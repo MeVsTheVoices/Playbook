@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import subprocess
 import tempfile
 import threading
@@ -13,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -32,6 +33,165 @@ TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
     "homelab_tag": "tag:homelab",
     "pi5_subnets": ["192.168.174.0/24", "192.168.175.0/24"],
 }
+
+IMAGE_CATALOG: List[Dict[str, Any]] = [
+    {
+        "id": "ubuntu-24.04-pi-arm64",
+        "label": "Ubuntu Server 24.04 LTS (Raspberry Pi ARM64)",
+        "distro": "Ubuntu",
+        "release": "24.04 LTS",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": True,
+        "image_url": "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-arm64+raspi.img.xz",
+        "image_sha256": "",
+        "docs_url": "https://ubuntu.com/download/raspberry-pi",
+        "notes": "Best tested default for Raspberry Pi 5 rack nodes.",
+    },
+    {
+        "id": "ubuntu-22.04-pi-arm64",
+        "label": "Ubuntu Server 22.04 LTS (Raspberry Pi ARM64)",
+        "distro": "Ubuntu",
+        "release": "22.04 LTS",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-preinstalled-server-arm64+raspi.img.xz",
+        "image_sha256": "",
+        "docs_url": "https://ubuntu.com/download/raspberry-pi",
+        "notes": "Useful for older automation or package compatibility.",
+    },
+    {
+        "id": "debian-bookworm-arm64",
+        "label": "Debian 12 Bookworm (ARM64)",
+        "distro": "Debian",
+        "release": "12 Bookworm",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://raspi.debian.net/tested-images/",
+        "notes": "Provide image URL manually from Debian Raspberry Pi tested images.",
+    },
+    {
+        "id": "debian-bookworm-armhf",
+        "label": "Debian 12 Bookworm (ARMHF)",
+        "distro": "Debian",
+        "release": "12 Bookworm",
+        "arch": "armhf",
+        "profiles": ["pibplus"],
+        "recommended": True,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://raspi.debian.net/tested-images/",
+        "notes": "Good baseline for Pi B+ 32-bit class hardware.",
+    },
+    {
+        "id": "raspios-bookworm-arm64-lite",
+        "label": "Raspberry Pi OS Lite (Bookworm, ARM64)",
+        "distro": "Raspberry Pi OS",
+        "release": "Bookworm",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://www.raspberrypi.com/software/operating-systems/",
+        "notes": "Provide a direct Lite image URL from official Raspberry Pi downloads.",
+    },
+    {
+        "id": "raspios-bookworm-armhf-lite",
+        "label": "Raspberry Pi OS Lite (Bookworm, 32-bit)",
+        "distro": "Raspberry Pi OS",
+        "release": "Bookworm",
+        "arch": "armhf",
+        "profiles": ["pibplus"],
+        "recommended": True,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://www.raspberrypi.com/software/operating-systems/",
+        "notes": "Recommended family for Pi B+ when Ubuntu ARM64 is not suitable.",
+    },
+    {
+        "id": "fedora-iot-arm64",
+        "label": "Fedora IoT (ARM64)",
+        "distro": "Fedora",
+        "release": "IoT Stable",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://fedoraproject.org/iot/download",
+        "notes": "Provide image URL manually from Fedora IoT download page.",
+    },
+    {
+        "id": "alpine-aarch64",
+        "label": "Alpine Linux (AArch64)",
+        "distro": "Alpine",
+        "release": "Stable",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://www.alpinelinux.org/downloads/",
+        "notes": "Great for lightweight containers and appliance-style nodes.",
+    },
+    {
+        "id": "kali-arm64-rpi",
+        "label": "Kali Linux Raspberry Pi (ARM64)",
+        "distro": "Kali",
+        "release": "Rolling",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://www.kali.org/get-kali/#kali-arm",
+        "notes": "Security testing distro option for lab nodes.",
+    },
+    {
+        "id": "archlinuxarm-rpi",
+        "label": "Arch Linux ARM (Raspberry Pi)",
+        "distro": "Arch Linux ARM",
+        "release": "Rolling",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://archlinuxarm.org/platforms/armv8/broadcom/raspberry-pi-4",
+        "notes": "Use with care in production due to rolling updates.",
+    },
+    {
+        "id": "custom-arm64",
+        "label": "Custom URL Or Local Image (ARM64)",
+        "distro": "Custom",
+        "release": "Manual",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "",
+        "notes": "Bring your own trusted image URL or local file path.",
+    },
+    {
+        "id": "custom-armhf",
+        "label": "Custom URL Or Local Image (ARMHF)",
+        "distro": "Custom",
+        "release": "Manual",
+        "arch": "armhf",
+        "profiles": ["pibplus"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "",
+        "notes": "Bring your own trusted image URL or local file path.",
+    },
+]
 
 app = Flask(__name__)
 
@@ -334,6 +494,29 @@ def _list_sd_devices() -> List[Dict[str, Any]]:
     return devices
 
 
+def _detect_local_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("1.1.1.1", 80))
+            ip = sock.getsockname()[0]
+            if ip and not ip.startswith("127."):
+                return ip
+    except OSError:
+        pass
+    return "127.0.0.1"
+
+
+def _default_callback_url() -> str:
+    host = os.getenv("CALLBACK_PUBLIC_HOST", "").strip()
+    if not host:
+        host = _detect_local_ip()
+
+    port = os.getenv("PORT", "8088").strip() or "8088"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"http://{host}:{port}/api/cloud-init/callback"
+
+
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
     with tempfile.TemporaryDirectory(prefix="sdprep-key-") as tdir:
         pubkey_file = Path(tdir) / "id.pub"
@@ -356,28 +539,68 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
 
         image_url = form.get("image_url", "").strip()
         image_file = form.get("image_file", "").strip()
+        image_sha256 = form.get("image_sha256", "").strip()
+        workspace = form.get("workspace", "").strip()
         if image_url:
             cmd.extend(["--image-url", image_url])
         if image_file:
             cmd.extend(["--image-file", image_file])
+        if image_sha256:
+            cmd.extend(["--image-sha256", image_sha256])
+        if workspace:
+            cmd.extend(["--workspace", workspace])
 
         run_cmd: List[str]
         if os.geteuid() == 0:
             run_cmd = cmd
         else:
-            run_cmd = ["sudo", "-n"] + cmd
+            suggested = " ".join(["sudo"] + cmd)
+            with JOBS_LOCK:
+                JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+                JOBS[job_id]["stdout"] = ""
+                JOBS[job_id]["stderr"] = (
+                    "SD preparation requires root privileges. "
+                    "Run the callback site as root (e.g. sudo PORT=9821 .venv/bin/python3 app.py) "
+                    f"or run this command manually: {suggested}"
+                )
+                JOBS[job_id]["exit_code"] = 1
+                JOBS[job_id]["status"] = "failed"
+                JOBS[job_id]["command"] = cmd
+            return
 
         with JOBS_LOCK:
             JOBS[job_id]["status"] = "running"
             JOBS[job_id]["started_at"] = datetime.now(timezone.utc).isoformat()
             JOBS[job_id]["command"] = run_cmd
+            JOBS[job_id]["stdout"] = (
+                "Starting SD preparation.\n"
+                f"Target device: {form.get('device', '')}\n"
+                "The selected device will be overwritten.\n"
+            )
 
-        proc = subprocess.run(run_cmd, capture_output=True, text=True)
+        proc = subprocess.Popen(
+            run_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        output_chunks: List[str] = []
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                output_chunks.append(line)
+                combined = "".join(output_chunks)[-50000:]
+                with JOBS_LOCK:
+                    JOBS[job_id]["stdout"] = combined
+
+        proc.wait()
+        final_stdout = "".join(output_chunks)[-50000:]
 
         with JOBS_LOCK:
             JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
-            JOBS[job_id]["stdout"] = proc.stdout[-50000:]
-            JOBS[job_id]["stderr"] = proc.stderr[-50000:]
+            JOBS[job_id]["stdout"] = final_stdout
+            JOBS[job_id]["stderr"] = ""
             JOBS[job_id]["exit_code"] = proc.returncode
             JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
 
@@ -385,7 +608,13 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
 @app.get("/")
 def index() -> str:
     events = _read_events(limit=200)
-    return render_template("index.html", events=events, devices=_list_sd_devices())
+    return render_template(
+        "index.html",
+        events=events,
+        devices=_list_sd_devices(),
+        callback_url_default=_default_callback_url(),
+        image_catalog=IMAGE_CATALOG,
+    )
 
 
 @app.get("/tailscale-acl")
@@ -458,6 +687,7 @@ def sd_prepare() -> Any:
                 "hostname": payload["hostname"],
                 "device": payload["device"],
                 "callback_url": payload["callback_url"],
+                "image_sha256": str(payload.get("image_sha256", "")).strip(),
             },
             "stdout": "",
             "stderr": "",
@@ -489,6 +719,21 @@ def ssh_generate() -> Any:
         return jsonify({"ok": False, "errors": [f"ssh-keygen failed: {stderr}"]}), 500
 
     return jsonify({"ok": True, **result})
+
+
+@app.get("/api/ssh/download/<key_name>/<kind>")
+def ssh_download(key_name: str, kind: str) -> Any:
+    if not _is_safe_key_name(key_name):
+        return jsonify({"ok": False, "error": "invalid key name"}), 400
+    if kind not in {"private", "public"}:
+        return jsonify({"ok": False, "error": "kind must be private or public"}), 400
+
+    file_name = key_name if kind == "private" else f"{key_name}.pub"
+    path = KEYS_DIR / file_name
+    if not path.exists() or not path.is_file():
+        return jsonify({"ok": False, "error": "key file not found"}), 404
+
+    return send_file(path, as_attachment=True, download_name=file_name)
 
 
 @app.get("/api/nodes/summary")

@@ -1,9 +1,13 @@
 .ansible/
 .venv/
+collections/ansible_collections/
 *secrets*
 cloud-init/*.rendered.yml
 cloud-init/*-seed.iso
 *.retry
 callback_site/data/callbacks.jsonl
+callback_site/data/ssh_keys/*
+!callback_site/data/ssh_keys/.gitkeep
 callback_site/.venv/
+callback_site/.build/
 .build/

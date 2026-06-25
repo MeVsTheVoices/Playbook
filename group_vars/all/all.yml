@@ -2,6 +2,8 @@
 ansible_user: root
 ansible_port: 22
 ansible_become: true
+ansible_become_method: sudo
+ansible_become_user: root
 
 timezone: "America/Los_Angeles"
 

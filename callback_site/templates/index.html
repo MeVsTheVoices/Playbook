@@ -69,17 +69,48 @@
         background: var(--card);
         border: 1px solid var(--line);
         border-radius: 14px;
-        padding: 1rem;
+        padding: 1.1rem;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
         margin-bottom: 1rem;
+      }
+      .hero {
+        background: linear-gradient(135deg, #ecfeff 0%, #f8fafc 60%, #f0fdfa 100%);
+        border: 1px solid #ccfbf1;
+        border-radius: 12px;
+        padding: 0.9rem;
+        margin-bottom: 0.8rem;
+      }
+      .hero-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.7rem;
+        flex-wrap: wrap;
       }
       h1 {
         margin: 0 0 0.4rem;
         font-size: 1.6rem;
       }
+      .hero h1 {
+        margin: 0;
+        font-size: 1.35rem;
+      }
       p {
         margin: 0 0 1rem;
         color: var(--muted);
+      }
+      .hero p {
+        margin: 0.35rem 0 0;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #115e59;
+        background: #ccfbf1;
+        border: 1px solid #99f6e4;
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
       }
       table {
         width: 100%;
@@ -112,8 +143,18 @@
       }
       .form-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 0.8rem;
+      }
+      .fieldset {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 0.9rem;
+        margin-top: 0.9rem;
+      }
+      .fieldset h2 {
+        margin: 0 0 0.7rem;
+        font-size: 1rem;
       }
       label {
         display: block;
@@ -172,6 +213,51 @@
         color: var(--muted);
         font-size: 0.84rem;
       }
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.8rem;
+      }
+      .checkbox-row input {
+        width: auto;
+      }
+      .key-links {
+        margin-top: 0.5rem;
+        font-size: 0.86rem;
+      }
+      .key-links a {
+        color: var(--accent);
+        text-decoration: none;
+        margin-right: 0.9rem;
+      }
+      .actions-row {
+        margin-top: 0.8rem;
+        display: flex;
+        gap: 0.7rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .actions-row button {
+        width: auto;
+        min-width: 220px;
+      }
+      .catalog-meta {
+        margin-top: 0.7rem;
+        padding: 0.7rem;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        background: #f8fafc;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+      .catalog-meta a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .grid-span-full {
+        grid-column: 1 / -1;
+      }
       .top-link {
         display: inline-block;
         margin-bottom: 0.8rem;
@@ -182,6 +268,10 @@
       @media (max-width: 900px) {
         th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) {
           display: none;
+        }
+        .actions-row button {
+          width: 100%;
+          min-width: 0;
         }
       }
     </style>
@@ -199,59 +289,110 @@
       <a class="top-link" href="/tailscale-acl">Open Tailscale ACL Planner</a>
 
       <div class="panel">
-        <h1>SD Card Imager</h1>
-        <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init + callback.</p>
+        <div class="hero">
+          <div class="hero-row">
+            <h1>SD Card Imager</h1>
+            <span class="pill">Operator Mode</span>
+          </div>
+          <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init plus callback metadata.</p>
+        </div>
         <div class="danger">
-          This operation erases the target device. Verify the selected disk before starting.
+          This operation erases the target device. Verify the selected disk and checksum before starting.
         </div>
         <form id="sd-form">
-          <div class="form-grid">
-            <div>
-              <label for="profile">Profile</label>
-              <select id="profile" name="profile">
-                <option value="pi5">pi5</option>
-                <option value="pibplus">pibplus</option>
-              </select>
-            </div>
-            <div>
-              <label for="hostname">Hostname</label>
-              <input id="hostname" name="hostname" placeholder="rpi5-03" required>
-            </div>
-            <div>
-              <label for="device">Target SD Device</label>
-              <select id="device" name="device" required>
-                {% for d in devices %}
-                <option value="{{ d.path }}">{{ d.path }} - {{ d.size }} - {{ d.model }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div>
-              <label for="callback_url">Callback URL</label>
-              <input id="callback_url" name="callback_url" value="http://127.0.0.1:8088/api/cloud-init/callback" required>
-            </div>
-            <div>
-              <label for="image_url">Image URL (optional)</label>
-              <input id="image_url" name="image_url" placeholder="https://...img.xz">
-            </div>
-            <div>
-              <label for="image_file">Image File (optional)</label>
-              <input id="image_file" name="image_file" placeholder="/path/to/file.img.xz">
+          <div class="fieldset">
+            <h2>Target Settings</h2>
+            <div class="form-grid">
+              <div>
+                <label for="profile">Profile</label>
+                <select id="profile" name="profile">
+                  <option value="pi5">pi5</option>
+                  <option value="pibplus">pibplus</option>
+                </select>
+              </div>
+              <div>
+                <label for="hostname">Hostname</label>
+                <input id="hostname" name="hostname" placeholder="rpi5-03" required>
+              </div>
+              <div>
+                <label for="device">Target SD Device</label>
+                <select id="device" name="device" required>
+                  {% for d in devices %}
+                  <option value="{{ d.path }}">{{ d.path }} - {{ d.size }} - {{ d.model }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label for="callback_url">Callback URL</label>
+                <input id="callback_url" name="callback_url" value="{{ callback_url_default }}" required>
+              </div>
             </div>
           </div>
-          <div style="margin-top: 0.8rem;">
-            <label for="ssh_key_name">First-Time SSH Key Generation (optional)</label>
-            <div class="inline-row">
-              <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
-              <button type="button" id="generate-ssh-key">Generate Or Load Key</button>
+
+          <div class="fieldset">
+            <h2>Image Source And Integrity</h2>
+            <div class="form-grid">
+              <div>
+                <label for="distro_family">Distro Family</label>
+                <select id="distro_family" name="distro_family"></select>
+              </div>
+              <div>
+                <label for="distro_release">Release Track</label>
+                <select id="distro_release" name="distro_release"></select>
+              </div>
+              <div>
+                <label for="image_search">Search Catalog</label>
+                <input id="image_search" name="image_search" placeholder="ubuntu, bookworm, arm64...">
+              </div>
+              <div class="grid-span-full">
+                <label for="os_preset">Distro Image Preset</label>
+                <select id="os_preset" name="os_preset"></select>
+              </div>
+              <div>
+                <label for="image_url">Image URL (optional)</label>
+                <input id="image_url" name="image_url" placeholder="https://...img.xz">
+              </div>
+              <div>
+                <label for="image_file">Image File (optional)</label>
+                <input id="image_file" name="image_file" placeholder="/path/to/file.img.xz">
+              </div>
+              <div>
+                <label for="image_sha256">Expected SHA256 (optional, recommended)</label>
+                <input id="image_sha256" name="image_sha256" placeholder="64 hex chars">
+              </div>
+              <div>
+                <label for="workspace">Cloud-Init Build Workspace (optional)</label>
+                <input id="workspace" name="workspace" placeholder="/tmp/sdprep-build">
+              </div>
             </div>
-            <div class="muted-note" id="ssh-key-status">Generates key files on this host under callback_site/data/ssh_keys/ and fills the public key below.</div>
+            <div class="muted-note" id="os-preset-note" style="margin-top: 0.7rem;"></div>
+            <div class="catalog-meta" id="catalog-meta"></div>
           </div>
-          <div style="margin-top: 0.8rem;">
-            <label for="ssh_public_key">SSH Public Key</label>
-            <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
+
+          <div class="fieldset">
+            <h2>SSH Access</h2>
+            <div>
+              <label for="ssh_key_name">First-Time SSH Key Generation (optional)</label>
+              <div class="inline-row">
+                <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
+                <button type="button" id="generate-ssh-key">Generate Or Load Key</button>
+              </div>
+              <div class="muted-note" id="ssh-key-status">Generates key files on this host under callback_site/data/ssh_keys/ and fills the public key below.</div>
+              <div class="key-links" id="key-links"></div>
+            </div>
+            <div style="margin-top: 0.8rem;">
+              <label for="ssh_public_key">SSH Public Key</label>
+              <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
+            </div>
           </div>
-          <div style="margin-top: 0.8rem;">
+
+          <div class="checkbox-row">
+            <input id="confirm_overwrite" name="confirm_overwrite" type="checkbox" required>
+            <label for="confirm_overwrite" style="margin: 0;">I confirm the selected drive will be overwritten.</label>
+          </div>
+          <div class="actions-row">
             <button type="submit">Format + Write SD Card</button>
+            <span class="muted-note">Job log includes checksum status. Missing hash defaults to skip.</span>
           </div>
         </form>
         <p id="job-status"></p>
@@ -301,6 +442,10 @@
       const statusEl = document.getElementById("job-status");
       const logEl = document.getElementById("job-log");
       const sshKeyStatusEl = document.getElementById("ssh-key-status");
+      const keyLinksEl = document.getElementById("key-links");
+      const osPresetNoteEl = document.getElementById("os-preset-note");
+      const catalogMetaEl = document.getElementById("catalog-meta");
+      const imageCatalog = {{ image_catalog | tojson }};
       let currentJob = null;
 
       function initSidebar() {
@@ -319,15 +464,234 @@
         statusEl.textContent = `Job ${job.id}: ${job.status}`;
         const out = (job.stdout || "").trim();
         const err = (job.stderr || "").trim();
+        const compactOutLines = compactLogLines(out ? out.split("\n") : []);
+        const compactErrLines = compactLogLines(err ? err.split("\n") : []);
+        const maxLines = 140;
+        const shownOut = compactOutLines.length > maxLines
+          ? ["... output trimmed ...", ...compactOutLines.slice(-maxLines)].join("\n")
+          : (compactOutLines.join("\n") || "(none)");
+        const shownErr = compactErrLines.length > maxLines
+          ? ["... output trimmed ...", ...compactErrLines.slice(-maxLines)].join("\n")
+          : (compactErrLines.join("\n") || "(none)");
         logEl.textContent = [
           `exit_code: ${job.exit_code === null ? "running" : job.exit_code}`,
           "",
           "STDOUT:",
-          out || "(none)",
+          shownOut,
           "",
           "STDERR:",
-          err || "(none)",
+          shownErr,
         ].join("\n");
+      }
+
+      function compactLogLines(lines) {
+        const result = [];
+        const progressLineIndexByKey = {};
+        let previous = null;
+        let repeatCount = 0;
+
+        function flushPrevious() {
+          if (previous === null) return;
+          if (repeatCount > 1) {
+            result.push(`${previous} (repeated ${repeatCount}x)`);
+          } else {
+            result.push(previous);
+          }
+          previous = null;
+          repeatCount = 0;
+        }
+
+        for (const rawLine of lines) {
+          const line = rawLine.trimEnd();
+          if (!line) {
+            flushPrevious();
+            if (result.length === 0 || result[result.length - 1] !== "") {
+              result.push("");
+            }
+            continue;
+          }
+
+          // Keep only the latest metric for each "<name> progress:" stream.
+          const progressMatch = line.match(/^([A-Za-z ]+progress):/i);
+          if (progressMatch) {
+            flushPrevious();
+            const progressKey = progressMatch[1].toLowerCase();
+            const idx = progressLineIndexByKey[progressKey];
+            if (idx !== undefined) {
+              result[idx] = line;
+            } else {
+              progressLineIndexByKey[progressKey] = result.length;
+              result.push(line);
+            }
+            continue;
+          }
+
+          if (line === previous) {
+            repeatCount += 1;
+          } else {
+            flushPrevious();
+            previous = line;
+            repeatCount = 1;
+          }
+        }
+
+        flushPrevious();
+        return result;
+      }
+
+      function profileArch(profile) {
+        return profile === "pibplus" ? "armhf" : "arm64";
+      }
+
+      function profileCatalog(profile) {
+        return imageCatalog.filter((item) => Array.isArray(item.profiles) && item.profiles.includes(profile));
+      }
+
+      function rebuildCatalogFilters() {
+        const profile = form.profile.value;
+        const entries = profileCatalog(profile);
+        const familySelect = form.distro_family;
+        const releaseSelect = form.distro_release;
+
+        const prevFamily = familySelect.value;
+        const families = [...new Set(entries.map((e) => e.distro))].sort();
+        familySelect.innerHTML = "";
+        const allFamily = document.createElement("option");
+        allFamily.value = "";
+        allFamily.textContent = "All distro families";
+        familySelect.appendChild(allFamily);
+        for (const family of families) {
+          const opt = document.createElement("option");
+          opt.value = family;
+          opt.textContent = family;
+          familySelect.appendChild(opt);
+        }
+        if (prevFamily && families.includes(prevFamily)) {
+          familySelect.value = prevFamily;
+        }
+
+        const selectedFamily = familySelect.value;
+        const familyEntries = selectedFamily ? entries.filter((e) => e.distro === selectedFamily) : entries;
+        const prevRelease = releaseSelect.value;
+        const releases = [...new Set(familyEntries.map((e) => e.release))].sort();
+        releaseSelect.innerHTML = "";
+        const allRelease = document.createElement("option");
+        allRelease.value = "";
+        allRelease.textContent = "All releases";
+        releaseSelect.appendChild(allRelease);
+        for (const release of releases) {
+          const opt = document.createElement("option");
+          opt.value = release;
+          opt.textContent = release;
+          releaseSelect.appendChild(opt);
+        }
+        if (prevRelease && releases.includes(prevRelease)) {
+          releaseSelect.value = prevRelease;
+        }
+
+        rebuildPresetOptions();
+      }
+
+      function rebuildPresetOptions() {
+        const profile = form.profile.value;
+        const family = form.distro_family.value;
+        const release = form.distro_release.value;
+        const query = (form.image_search.value || "").trim().toLowerCase();
+        const select = form.os_preset;
+        const previous = select.value;
+
+        let entries = profileCatalog(profile);
+        if (family) entries = entries.filter((e) => e.distro === family);
+        if (release) entries = entries.filter((e) => e.release === release);
+        if (query) {
+          entries = entries.filter((e) => {
+            const hay = [e.label, e.distro, e.release, e.arch, e.notes].join(" ").toLowerCase();
+            return hay.includes(query);
+          });
+        }
+
+        select.innerHTML = "";
+        if (!entries.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No presets match filters. Use manual URL/file.";
+          select.appendChild(opt);
+          applyOsPreset();
+          return;
+        }
+
+        entries.sort((a, b) => {
+          if (a.recommended !== b.recommended) return a.recommended ? -1 : 1;
+          return a.label.localeCompare(b.label);
+        });
+
+        for (const preset of entries) {
+          const option = document.createElement("option");
+          option.value = preset.id;
+          option.textContent = `${preset.label}${preset.recommended ? " [Recommended]" : ""}`;
+          option.dataset.imageUrl = preset.image_url || "";
+          option.dataset.imageSha256 = preset.image_sha256 || "";
+          option.dataset.notes = preset.notes || "";
+          option.dataset.docsUrl = preset.docs_url || "";
+          option.dataset.arch = preset.arch || "";
+          option.dataset.release = preset.release || "";
+          option.dataset.distro = preset.distro || "";
+          select.appendChild(option);
+        }
+
+        if (previous && Array.from(select.options).some((o) => o.value === previous)) {
+          select.value = previous;
+        }
+        applyOsPreset();
+      }
+
+      function applyOsPreset() {
+        const selected = form.os_preset.selectedOptions[0];
+        const profile = form.profile.value;
+        const arch = profileArch(profile);
+        if (!selected || !selected.value) {
+          osPresetNoteEl.textContent = `No preset selected for ${profile} (${arch}). You can provide Image URL or local file manually.`;
+          catalogMetaEl.textContent = "Tip: choose a distro family/release or search to narrow options.";
+          return;
+        }
+
+        const imageUrl = selected.dataset.imageUrl || "";
+        const imageSha = selected.dataset.imageSha256 || "";
+        const notes = selected.dataset.notes || "";
+        const docsUrl = selected.dataset.docsUrl || "";
+        const distro = selected.dataset.distro || "";
+        const release = selected.dataset.release || "";
+        if (imageUrl) {
+          form.image_url.value = imageUrl;
+          form.image_file.value = "";
+          osPresetNoteEl.textContent = `${distro} ${release} selected for ${profile} (${arch}). Image URL was populated.`;
+        } else if (profile === "pibplus") {
+          osPresetNoteEl.textContent = `${distro} ${release} selected. Provide a direct Image URL or local Image File for Pi B+.`;
+        } else {
+          osPresetNoteEl.textContent = `${distro} ${release} selected. Provide a direct Image URL or local Image File.`;
+        }
+
+        if (imageSha && !form.image_sha256.value.trim()) {
+          form.image_sha256.value = imageSha;
+        }
+
+        if (docsUrl) {
+          catalogMetaEl.innerHTML = `${notes ? `${notes} ` : ""}<a href="${docsUrl}" target="_blank" rel="noopener noreferrer">Open distro download docs</a>`;
+        } else {
+          catalogMetaEl.textContent = notes || "No docs URL for this preset. Provide image details manually.";
+        }
+      }
+
+      function refreshKeyLinks(forcedKeyName) {
+        const keyNameInput = (forcedKeyName || document.getElementById("ssh_key_name").value).trim();
+        if (!keyNameInput) {
+          keyLinksEl.innerHTML = "";
+          return;
+        }
+        const keyName = encodeURIComponent(keyNameInput);
+        keyLinksEl.innerHTML =
+          `<a href="/api/ssh/download/${keyName}/private">Download private key</a>` +
+          `<a href="/api/ssh/download/${keyName}/public">Download public key</a>`;
       }
 
       async function pollJob() {
@@ -355,6 +719,8 @@
           callback_url: form.callback_url.value,
           image_url: form.image_url.value,
           image_file: form.image_file.value,
+          image_sha256: form.image_sha256.value,
+          workspace: form.workspace.value,
           ssh_public_key: form.ssh_public_key.value,
         };
 
@@ -374,12 +740,12 @@
       });
 
       document.getElementById("generate-ssh-key").addEventListener("click", async () => {
-        const keyName = document.getElementById("ssh_key_name").value.trim();
+        const keyNameInput = document.getElementById("ssh_key_name").value.trim();
         sshKeyStatusEl.textContent = "Generating/loading key...";
         const res = await fetch("/api/ssh/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key_name: keyName, comment: "rack-bootstrap" }),
+          body: JSON.stringify({ key_name: keyNameInput, comment: "rack-bootstrap" }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
@@ -387,10 +753,25 @@
           return;
         }
         form.ssh_public_key.value = data.public_key;
+        refreshKeyLinks(data.key_name);
         sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}'. Public key inserted. Private key: ${data.private_key_path}`;
       });
 
+      document.getElementById("ssh_key_name").addEventListener("input", refreshKeyLinks);
+
+      form.profile.addEventListener("change", () => {
+        rebuildCatalogFilters();
+      });
+
+      form.distro_family.addEventListener("change", rebuildCatalogFilters);
+      form.distro_release.addEventListener("change", rebuildPresetOptions);
+      form.image_search.addEventListener("input", rebuildPresetOptions);
+
+      form.os_preset.addEventListener("change", applyOsPreset);
+
       initSidebar();
+      rebuildCatalogFilters();
+      refreshKeyLinks();
     </script>
   </body>
 </html>

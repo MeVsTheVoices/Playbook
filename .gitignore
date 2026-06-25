@@ -1,11 +1,17 @@
 .ansible/
 .venv/
+__pycache__/
+*.py[cod]
 collections/ansible_collections/
 *secrets*
 cloud-init/*.rendered.yml
 cloud-init/*-seed.iso
 *.retry
 callback_site/data/callbacks.jsonl
+callback_site/data/node_monitor_config.json
+callback_site/data/image_download_catalog.jsonl
+callback_site/data/ssh_key_archive.jsonl
+callback_site/data/ssh_key_archive/
 callback_site/data/ssh_keys/*
 !callback_site/data/ssh_keys/.gitkeep
 callback_site/.venv/

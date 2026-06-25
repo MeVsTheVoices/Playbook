@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import socket
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from urllib import error as urlerror
 from urllib import request as urlrequest
@@ -14,17 +16,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+APPDATA_DIR = Path(os.getenv("CALLBACK_APPDATA_DIR", str(BASE_DIR / "data"))).expanduser()
+DATA_DIR = APPDATA_DIR
 DATA_FILE = DATA_DIR / "callbacks.jsonl"
+IMAGE_HISTORY_FILE = DATA_DIR / "image_download_catalog.jsonl"
 KEYS_DIR = DATA_DIR / "ssh_keys"
+KEY_ARCHIVE_DIR = DATA_DIR / "ssh_key_archive"
+KEY_ARCHIVE_INDEX_FILE = DATA_DIR / "ssh_key_archive.jsonl"
 NODE_CONFIG_FILE = DATA_DIR / "node_monitor_config.json"
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 SCRIPT_PATH = BASE_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh"
 JOBS: Dict[str, Dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
+DEVICE_SUBSCRIBERS: List[queue.Queue[str]] = []
+DEVICE_SUBSCRIBERS_LOCK = threading.Lock()
+DEVICE_MONITOR_STARTED = False
+DEVICE_MONITOR_LOCK = threading.Lock()
 TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
     "tailnet": "tail00c2ce.ts.net",
     "admin_group": "group:admins",
@@ -44,7 +54,7 @@ IMAGE_CATALOG: List[Dict[str, Any]] = [
         "profiles": ["pi5"],
         "recommended": True,
         "image_url": "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-arm64+raspi.img.xz",
-        "image_sha256": "",
+        "image_sha256": "790652faeb4f61ce7bb12f5cb61734595c61d3cd882915b8b5f9918106c80d37",
         "docs_url": "https://ubuntu.com/download/raspberry-pi",
         "notes": "Best tested default for Raspberry Pi 5 rack nodes.",
     },
@@ -57,7 +67,7 @@ IMAGE_CATALOG: List[Dict[str, Any]] = [
         "profiles": ["pi5"],
         "recommended": False,
         "image_url": "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-preinstalled-server-arm64+raspi.img.xz",
-        "image_sha256": "",
+        "image_sha256": "fd7687c5c9422a6c7ba4717c227bf6473fe4e0c954d5a9f664201dcecc63e822",
         "docs_url": "https://ubuntu.com/download/raspberry-pi",
         "notes": "Useful for older automation or package compatibility.",
     },
@@ -202,6 +212,12 @@ def _ensure_data_file() -> None:
         DATA_FILE.touch()
 
 
+def _ensure_image_history_file() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not IMAGE_HISTORY_FILE.exists():
+        IMAGE_HISTORY_FILE.touch()
+
+
 def _ensure_keys_dir() -> None:
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -209,6 +225,58 @@ def _ensure_keys_dir() -> None:
     except PermissionError:
         # Best effort; keep running on filesystems that ignore chmod semantics.
         pass
+
+
+def _ensure_key_archive_dir() -> None:
+    KEY_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(KEY_ARCHIVE_DIR, 0o700)
+    except PermissionError:
+        pass
+
+
+def _archive_ssh_public_key(job_id: str, form: Dict[str, Any], public_key: str) -> Dict[str, str]:
+    _ensure_key_archive_dir()
+    if not KEY_ARCHIVE_INDEX_FILE.exists():
+        KEY_ARCHIVE_INDEX_FILE.touch()
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    profile = str(form.get("profile", "unknown")).strip() or "unknown"
+    hostname = str(form.get("hostname", "host")).strip() or "host"
+    safe_host = re.sub(r"[^A-Za-z0-9._-]+", "-", hostname)
+    archive_name = f"{ts}-{safe_host}-{profile}-{job_id[:8]}.pub"
+    archive_path = KEY_ARCHIVE_DIR / archive_name
+    archive_path.write_text(public_key.strip() + "\n", encoding="utf-8")
+
+    fingerprint = ""
+    try:
+        fp_proc = subprocess.run(
+            ["ssh-keygen", "-lf", str(archive_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if fp_proc.returncode == 0 and fp_proc.stdout:
+            # Output format example: "256 SHA256:abcd... comment (ED25519)"
+            parts = fp_proc.stdout.strip().split()
+            if len(parts) >= 2:
+                fingerprint = parts[1]
+    except FileNotFoundError:
+        fingerprint = ""
+
+    record = {
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "job_id": job_id,
+        "hostname": hostname,
+        "profile": profile,
+        "device": str(form.get("device", "")).strip(),
+        "archive_path": str(archive_path),
+        "fingerprint": fingerprint,
+    }
+    with KEY_ARCHIVE_INDEX_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, separators=(",", ":")) + "\n")
+
+    return {"archive_path": str(archive_path), "fingerprint": fingerprint}
 
 
 def _append_event(event: Dict[str, Any]) -> None:
@@ -229,6 +297,72 @@ def _read_events(limit: int = 200) -> List[Dict[str, Any]]:
             continue
     events.reverse()
     return events
+
+
+def _append_image_history(entry: Dict[str, Any]) -> None:
+    _ensure_image_history_file()
+    with IMAGE_HISTORY_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+
+
+def _read_image_history(limit: int = 200) -> List[Dict[str, Any]]:
+    _ensure_image_history_file()
+    lines = IMAGE_HISTORY_FILE.read_text(encoding="utf-8").splitlines()
+    selected = lines[-limit:]
+    entries: List[Dict[str, Any]] = []
+    for line in selected:
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    entries.reverse()
+    return entries
+
+
+def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> None:
+    image_url = str(form.get("image_url", "")).strip()
+    image_file = str(form.get("image_file", "")).strip()
+    expected_sha = str(form.get("image_sha256", "")).strip().lower()
+
+    download_match = re.search(r"Download complete:\s*(.+)", stdout)
+    verified_match = re.search(r"Image hash verified:\s*([A-Fa-f0-9]{64})", stdout)
+    fail_expected_match = re.search(r"Expected:\s*([A-Fa-f0-9]{64})", stdout)
+    fail_actual_match = re.search(r"Actual:\s*([A-Fa-f0-9]{64})", stdout)
+
+    if verified_match:
+        hash_status = "verified"
+    elif "Image hash verification failed" in stdout:
+        hash_status = "failed"
+    elif "Hash verification skipped" in stdout:
+        hash_status = "skipped"
+    elif expected_sha:
+        hash_status = "provided"
+    else:
+        hash_status = "unknown"
+
+    source = "image_url" if image_url else "image_file" if image_file else "default"
+    source_value = image_url or image_file
+    record = {
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "profile": str(form.get("profile", "")).strip(),
+        "hostname": str(form.get("hostname", "")).strip(),
+        "source": source,
+        "source_value": source_value,
+        "downloaded": bool(download_match),
+        "download_path": download_match.group(1).strip() if download_match else "",
+        "hash_status": hash_status,
+        "expected_sha256": (fail_expected_match.group(1).lower() if fail_expected_match else expected_sha),
+        "observed_sha256": (
+            verified_match.group(1).lower()
+            if verified_match
+            else fail_actual_match.group(1).lower()
+            if fail_actual_match
+            else ""
+        ),
+        "job_status": "completed" if exit_code == 0 else "failed",
+        "exit_code": exit_code,
+    }
+    _append_image_history(record)
 
 
 def _ensure_prereqs() -> List[str]:
@@ -494,6 +628,66 @@ def _list_sd_devices() -> List[Dict[str, Any]]:
     return devices
 
 
+def _device_signature(devices: List[Dict[str, Any]]) -> str:
+    reduced = [
+        {
+            "path": d.get("path", ""),
+            "size": d.get("size", ""),
+            "model": d.get("model", ""),
+            "transport": d.get("transport", ""),
+            "mountpoints": d.get("mountpoints", []),
+        }
+        for d in devices
+    ]
+    reduced.sort(key=lambda item: item.get("path", ""))
+    return json.dumps(reduced, sort_keys=True, separators=(",", ":"))
+
+
+def _device_event_message(devices: List[Dict[str, Any]]) -> str:
+    payload = {
+        "devices": devices,
+        "count": len(devices),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return f"event: devices\\ndata: {json.dumps(payload, separators=(',', ':'))}\\n\\n"
+
+
+def _broadcast_device_update(devices: List[Dict[str, Any]]) -> None:
+    message = _device_event_message(devices)
+    with DEVICE_SUBSCRIBERS_LOCK:
+        subscribers = list(DEVICE_SUBSCRIBERS)
+    for sub in subscribers:
+        try:
+            while sub.full():
+                sub.get_nowait()
+            sub.put_nowait(message)
+        except queue.Empty:
+            continue
+        except queue.Full:
+            continue
+
+
+def _device_monitor_loop() -> None:
+    last_sig = ""
+    while True:
+        devices = _list_sd_devices()
+        sig = _device_signature(devices)
+        if sig != last_sig:
+            last_sig = sig
+            _broadcast_device_update(devices)
+        time.sleep(2)
+
+
+def _ensure_device_monitor_started() -> None:
+    global DEVICE_MONITOR_STARTED
+    with DEVICE_MONITOR_LOCK:
+        if DEVICE_MONITOR_STARTED:
+            return
+        thread = threading.Thread(target=_device_monitor_loop, daemon=True)
+        thread.start()
+        DEVICE_MONITOR_STARTED = True
+
+
 def _detect_local_ip() -> str:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -520,7 +714,9 @@ def _default_callback_url() -> str:
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
     with tempfile.TemporaryDirectory(prefix="sdprep-key-") as tdir:
         pubkey_file = Path(tdir) / "id.pub"
-        pubkey_file.write_text(form["ssh_public_key"].strip() + "\n", encoding="utf-8")
+        ssh_public_key = form["ssh_public_key"].strip()
+        pubkey_file.write_text(ssh_public_key + "\n", encoding="utf-8")
+        archive_info = _archive_ssh_public_key(job_id, form, ssh_public_key)
 
         cmd = [
             str(SCRIPT_PATH),
@@ -575,6 +771,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             JOBS[job_id]["stdout"] = (
                 "Starting SD preparation.\n"
                 f"Target device: {form.get('device', '')}\n"
+                f"Archived SSH key: {archive_info.get('archive_path', '')}\n"
                 "The selected device will be overwritten.\n"
             )
 
@@ -604,13 +801,17 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             JOBS[job_id]["exit_code"] = proc.returncode
             JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
 
+        _record_image_history(form, final_stdout, proc.returncode)
+
 
 @app.get("/")
 def index() -> str:
+    _ensure_device_monitor_started()
     events = _read_events(limit=200)
     return render_template(
         "index.html",
         events=events,
+        image_history=_read_image_history(limit=150),
         devices=_list_sd_devices(),
         callback_url_default=_default_callback_url(),
         image_catalog=IMAGE_CATALOG,
@@ -657,8 +858,42 @@ def callback() -> Any:
 
 @app.get("/api/sd/devices")
 def sd_devices() -> Any:
+    _ensure_device_monitor_started()
     prereq_errors = _ensure_prereqs()
     return jsonify({"devices": _list_sd_devices(), "errors": prereq_errors})
+
+
+@app.get("/api/sd/devices/webhook")
+def sd_device_webhook() -> Response:
+    _ensure_device_monitor_started()
+
+    def event_stream() -> Any:
+        sub: queue.Queue[str] = queue.Queue(maxsize=4)
+        with DEVICE_SUBSCRIBERS_LOCK:
+            DEVICE_SUBSCRIBERS.append(sub)
+
+        try:
+            initial_devices = _list_sd_devices()
+            yield _device_event_message(initial_devices)
+            while True:
+                try:
+                    yield sub.get(timeout=20)
+                except queue.Empty:
+                    yield "event: ping\\ndata: {}\\n\\n"
+        finally:
+            with DEVICE_SUBSCRIBERS_LOCK:
+                if sub in DEVICE_SUBSCRIBERS:
+                    DEVICE_SUBSCRIBERS.remove(sub)
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/sd/prepare")
@@ -820,7 +1055,12 @@ def sd_job(job_id: str) -> Any:
     return jsonify({"ok": True, "job": job})
 
 
+@app.get("/api/sd/image-catalog")
+def sd_image_catalog() -> Any:
+    return jsonify({"ok": True, "entries": _read_image_history(limit=300)})
+
+
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8088"))
-    app.run(host=host, port=port, debug=False)
+    app.run(host=host, port=port, debug=False, threaded=True)

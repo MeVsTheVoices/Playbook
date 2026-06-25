@@ -12,20 +12,18 @@
 - Router and switch are represented in inventory as infrastructure placeholders and marked unmanaged.
 
 ## Provisioning Flow
+1. Bootstrap the local workspace once:
+   - `./scripts/bootstrap_project.sh`
 1. Bootstrap each node with the matching cloud-init example in `cloud-init/`.
 2. Set reachable hostnames or Tailscale hostnames in `inventory.yml`.
 3. Add secrets to your vault-backed files (Tailscale OAuth and optional MAAS API key).
 4. Run Ansible for active nodes:
-   - `ansible-playbook site.yml --check`
-   - `ansible-playbook site.yml`
+   - `./.venv/bin/ansible-playbook site.yml --check`
+   - `./.venv/bin/ansible-playbook site.yml`
 
 ## SD Bootstrap + Callback (Recommended)
 1. Start the callback site:
-   - `cd callback_site`
-   - `python3 -m venv .venv`
-   - `source .venv/bin/activate`
-   - `pip install -r requirements.txt`
-   - `python app.py`
+   - `./scripts/bootstrap_project.sh --start-callback`
 2. Prepare an SD card with cloud-init and callback baked in:
    - `cd ..`
    - `chmod +x scripts/prepare_sd_cloud_init.sh`
@@ -44,5 +42,5 @@
 1. Move host from planned group to active group in inventory.
 2. Set the node `ansible_host` to a reachable DNS/IP/Tailscale name.
 3. Validate SSH and Python availability on the node.
-4. Run `ansible-playbook site.yml --limit <hostname>` first.
+4. Run `./.venv/bin/ansible-playbook site.yml --limit <hostname>` first.
 5. Run full `site.yml` after host-level validation.

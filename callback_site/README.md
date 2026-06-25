@@ -80,3 +80,20 @@ Node Ops:
 - Callback event log: `callback_site/data/callbacks.jsonl`
 - Node monitor config: `callback_site/data/node_monitor_config.json`
 - Generated SSH keys: `callback_site/data/ssh_keys/`
+- Per-run archived SSH public keys: `callback_site/data/ssh_key_archive/`
+- Per-run key archive index: `callback_site/data/ssh_key_archive.jsonl`
+
+## Local Persistence (AppData Style)
+
+This app persists state to a local appdata directory.
+
+- Default path: `callback_site/data/`
+- Override path with environment variable: `CALLBACK_APPDATA_DIR`
+
+Example (local custom path):
+
+```bash
+CALLBACK_APPDATA_DIR=/home/jdizzle/appdata/callback_site sudo PORT=9821 .venv/bin/python3 app.py
+```
+
+This mirrors a simple Docker volume pattern (host path mounted as appdata) without requiring any other changes.

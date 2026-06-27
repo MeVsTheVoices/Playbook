@@ -59,6 +59,7 @@ The underlying script is:
 
 Core:
 - `GET /health`
+- `GET /settings`
 - `POST /api/cloud-init/callback`
 - `GET /api/cloud-init/events`
 
@@ -80,6 +81,9 @@ Node Ops:
 - `POST /api/nodes/node-configs`
 - `POST /api/nodes/node-inputs`
 - `POST /api/nodes/provision`
+
+Settings:
+- `POST /api/settings/reset` (`scope: node_ops`) to clean-slate Node Ops credentials, node profile selections, saved per-profile inputs, and provisioning results.
 
 ### Node Ops Workflow (Post-Callback)
 

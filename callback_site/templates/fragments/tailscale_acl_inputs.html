@@ -1,0 +1,30 @@
+<h2>Inputs</h2>
+<div class="grid">
+  <div>
+    <label for="tailnet">Tailnet (for display)</label>
+    <input id="tailnet" value="{{ defaults.tailnet }}">
+  </div>
+  <div>
+    <label for="admin_group">Admin Group/User</label>
+    <input id="admin_group" value="{{ defaults.admin_group }}">
+  </div>
+  <div>
+    <label for="rpi5_tag">Pi 5 Tag</label>
+    <input id="rpi5_tag" value="{{ defaults.rpi5_tag }}">
+  </div>
+  <div>
+    <label for="rpi_bplus_tag">Pi B+ Tag</label>
+    <input id="rpi_bplus_tag" value="{{ defaults.rpi_bplus_tag }}">
+  </div>
+  <div>
+    <label for="homelab_tag">Homelab Tag</label>
+    <input id="homelab_tag" value="{{ defaults.homelab_tag }}">
+  </div>
+</div>
+<div style="margin-top: 0.8rem;">
+  <label for="pi5_subnets">Pi 5 Advertised Subnets (one CIDR per line)</label>
+  <textarea id="pi5_subnets">{{ defaults.pi5_subnets | join('\n') }}</textarea>
+</div>
+<div style="margin-top: 0.8rem;">
+  <button id="generate">Generate ACL Snippets</button>
+</div>

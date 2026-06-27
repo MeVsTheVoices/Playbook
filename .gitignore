@@ -1,5 +1,8 @@
 .ansible/
 .venv/
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
 __pycache__/
 *.py[cod]
 collections/ansible_collections/

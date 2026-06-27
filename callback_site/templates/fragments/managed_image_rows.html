@@ -1,0 +1,22 @@
+{% set records = image_records if image_records is defined else image_history %}
+{% for row in records %}
+<tr>
+  <td>{{ row.recorded_at or '-' }}</td>
+  <td><code>{{ row.label or row.source_value or row.download_path or 'Retrieved image' }}</code></td>
+  <td>{{ row.profile or '-' }}</td>
+  <td><code>{{ row.source_value or row.download_path or '-' }}</code></td>
+  <td>{{ row.hash_status or '-' }}</td>
+  <td>{{ row.job_status or '-' }} ({{ row.exit_code if row.exit_code is not none else '-' }})</td>
+  <td><code>{{ row.notes or '-' }}</code></td>
+  <td>
+    <div class="row-actions">
+      <button type="button" onclick='fillImageRecordForm({{ row | tojson }})'>Edit</button>
+      <button type="button" class="danger-btn" onclick='deleteManagedImage({{ row.id | tojson }}, {{ (row.label or "Retrieved image") | tojson }})'>Delete</button>
+    </div>
+  </td>
+</tr>
+{% else %}
+<tr>
+  <td colspan="8">No managed image records yet.</td>
+</tr>
+{% endfor %}

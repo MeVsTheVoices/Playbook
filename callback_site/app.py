@@ -599,14 +599,22 @@ def _ensure_prereqs() -> List[str]:
     return errors
 
 
-def _load_node_config() -> Dict[str, Any]:
-    _ensure_data_file()
-    default = {
+def _default_node_config() -> Dict[str, Any]:
+    return {
         "username": "",
         "password": "",
         "webhook_url": "",
         "verify_tls": True,
     }
+
+
+def _default_node_provisioning() -> Dict[str, Any]:
+    return {"node_configs": {}, "results": {}, "node_inputs": {}}
+
+
+def _load_node_config() -> Dict[str, Any]:
+    _ensure_data_file()
+    default = _default_node_config()
     if not NODE_CONFIG_FILE.exists():
         return default
     try:
@@ -636,7 +644,7 @@ def _default_profiles_for_group(group: str) -> List[str]:
 
 def _load_node_provisioning() -> Dict[str, Any]:
     _ensure_data_file()
-    default = {"node_configs": {}, "results": {}, "node_inputs": {}}
+    default = _default_node_provisioning()
     if not NODE_PROVISION_FILE.exists():
         return default
     try:
@@ -661,6 +669,18 @@ def _load_node_provisioning() -> Dict[str, Any]:
 def _save_node_provisioning(state: Dict[str, Any]) -> None:
     _ensure_data_file()
     NODE_PROVISION_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _reset_node_ops_settings() -> Dict[str, Any]:
+    _ensure_data_file()
+    node_cfg = _default_node_config()
+    node_prov = _default_node_provisioning()
+    NODE_CONFIG_FILE.write_text(json.dumps(node_cfg, indent=2), encoding="utf-8")
+    NODE_PROVISION_FILE.write_text(json.dumps(node_prov, indent=2), encoding="utf-8")
+    return {
+        "node_config": True,
+        "node_provisioning": True,
+    }
 
 
 def _profile_map() -> Dict[str, Dict[str, Any]]:
@@ -1374,6 +1394,11 @@ def nodes_page() -> str:
     return render_template("nodes.html")
 
 
+@app.get("/settings")
+def settings_page() -> str:
+    return render_template("settings.html")
+
+
 @app.get("/health")
 def health() -> Any:
     return jsonify({"ok": True})
@@ -1757,6 +1782,18 @@ def nodes_provision() -> Any:
         results.append(_apply_node_provisioning(node["name"], profile_ids, mode=mode, run_ansible=run_ansible))
 
     return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "results": results})
+
+
+@app.post("/api/settings/reset")
+def settings_reset() -> Any:
+    payload = request.get_json(silent=True) or {}
+    scope = str(payload.get("scope", "node_ops")).strip().lower()
+
+    if scope != "node_ops":
+        return jsonify({"ok": False, "error": "scope must be node_ops"}), 400
+
+    reset_result = _reset_node_ops_settings()
+    return jsonify({"ok": True, "scope": scope, "reset": reset_result})
 
 
 @app.get("/api/sd/jobs/<job_id>")

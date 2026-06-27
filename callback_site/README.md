@@ -33,6 +33,8 @@ The UI supports end-to-end preparation of cloud-init capable images:
 - Optional SHA256 verification input.
 - SSH key generation and direct key download links.
 - Live job output with compacted progress lines.
+- The dashboard is split into smaller template fragments, with htmx-backed row refreshes for the image catalog, retrieved image manager, and callback event table.
+- Retrieved image records support create, update, and delete actions from the UI.
 
 The underlying script is:
 - `scripts/prepare_sd_cloud_init.sh`
@@ -74,6 +76,14 @@ Node Ops:
 - `GET /api/nodes/summary`
 - `POST /api/nodes/config`
 - `POST /api/nodes/monitor`
+
+Fragment endpoints:
+- `GET /fragments/sd/image-catalog-rows`
+- `GET /fragments/sd/images-rows`
+- `GET /fragments/cloud-init/event-rows`
+
+Tests:
+- `python -m unittest discover -s tests`
 
 ## Data Files
 

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Rack Cloud-Init Callback</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <style>
       :root {
         --bg: #f3f5f7;
@@ -18,11 +19,6 @@
         font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
         background: radial-gradient(circle at 10% 10%, #e6fffa 0, transparent 35%), var(--bg);
         color: var(--ink);
-        .hint {
-          margin-top: 0.4rem;
-          color: #3f4d5f;
-          font-size: 0.82rem;
-        }
       }
       .sidebar {
         position: fixed;
@@ -32,12 +28,26 @@
         width: 220px;
         background: #0f172a;
         color: #cbd5e1;
-          line-height: 1.45;
-          white-space: pre-wrap;
         transition: width 0.2s ease;
         overflow: hidden;
         padding: 0.8rem;
         box-sizing: border-box;
+      }
+      .sidebar-brand {
+        padding: 0.25rem 0.45rem 0.8rem;
+        margin-bottom: 0.7rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .sidebar-title {
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #f8fafc;
+        letter-spacing: 0.02em;
+      }
+      .sidebar-subtitle {
+        margin-top: 0.2rem;
+        color: #94a3b8;
+        font-size: 0.75rem;
       }
       .sidebar a {
         display: block;
@@ -49,6 +59,11 @@
       }
       .sidebar a:hover {
         background: rgba(148, 163, 184, 0.16);
+      }
+      .sidebar a.active {
+        background: rgba(20, 184, 166, 0.18);
+        color: #ecfeff;
+        border: 1px solid rgba(45, 212, 191, 0.2);
       }
       .toggle-btn {
         width: 100%;
@@ -295,6 +310,161 @@
         color: var(--accent);
         font-weight: 600;
       }
+      .split-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .mini-link {
+        display: inline-block;
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.88rem;
+        background: transparent;
+        border: none;
+        padding: 0;
+        width: auto;
+      }
+      .mini-link:hover {
+        text-decoration: underline;
+      }
+      .crud-form {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.75rem;
+        margin-top: 0.8rem;
+      }
+      .crud-form .grid-span-full {
+        grid-column: 1 / -1;
+      }
+      .crud-actions {
+        display: flex;
+        gap: 0.7rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 0.8rem;
+      }
+      .crud-actions button {
+        width: auto;
+        min-width: 160px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      .row-actions {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+      }
+      .row-actions button {
+        width: auto;
+        min-width: 72px;
+        padding: 0.45rem 0.55rem;
+      }
+      .danger-btn {
+        background: #b42318;
+      }
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.8rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.75rem;
+      }
+      .section-head h1 {
+        margin: 0;
+      }
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        border: 1px solid #bae6fd;
+        background: #ecfeff;
+        color: #0c4a6e;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        padding: 0.25rem 0.6rem;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #14b8a6;
+        box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.7);
+        animation: status-pulse 2s infinite;
+      }
+      @keyframes status-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.7); }
+        70% { box-shadow: 0 0 0 7px rgba(20, 184, 166, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 0.7rem;
+        margin-bottom: 0.8rem;
+      }
+      .stat-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        padding: 0.7rem;
+      }
+      .stat-card .k {
+        color: var(--muted);
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .stat-card .v {
+        margin-top: 0.25rem;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .filters-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.7rem;
+        margin-bottom: 0.8rem;
+      }
+      .small-note {
+        margin: 0;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .event-row-new {
+        animation: event-row-fade 900ms ease;
+      }
+      @keyframes event-row-fade {
+        from { background: #e0f2fe; }
+        to { background: transparent; }
+      }
+      .stage-pill {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 0.18rem 0.55rem;
+        font-size: 0.74rem;
+        font-weight: 700;
+        background: #e2e8f0;
+        color: #334155;
+      }
+      .stage-pill.stage-ready,
+      .stage-pill.stage-phone_home,
+      .stage-pill.stage-final {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .stage-pill.stage-error,
+      .stage-pill.stage-failed {
+        background: #fee2e2;
+        color: #991b1b;
+      }
       @media (max-width: 900px) {
         th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) {
           display: none;
@@ -308,10 +478,14 @@
   </head>
   <body>
     <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-title">Callback Site</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops</div>
+      </div>
       <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
-      <a href="/"><span>Home</span> <span class="label">Dashboard</span></a>
-      <a href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
-      <a href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span>Home</span> <span class="label">Dashboard</span></a>
+      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
+      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
     </aside>
 
     <main class="content">
@@ -326,10 +500,14 @@
           </div>
           <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init plus callback metadata.</p>
         </div>
-        <div class="danger">
+        <div class="panel" id="image-download-catalog">
           This operation erases the target device. Verify the selected disk and checksum before starting.
         </div>
-        <form id="sd-form">
+          <div class="split-head" style="margin-bottom: 0.6rem;">
+            <span class="pill">Read-only catalog</span>
+            <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
+          </div>
+          <div class="table-wrap">
           <div class="fieldset">
             <h2>Target Settings</h2>
             <div class="form-grid">
@@ -430,10 +608,17 @@
         <div class="job-log" id="job-log"></div>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="image-download-catalog">
         <h1>Image Download Catalog</h1>
         <p>Recent image runs, including source, verification state, and outcome.</p>
-        <div style="overflow-x: auto;">
+        <div class="split-head" style="margin-bottom: 0.6rem;">
+          <span class="pill">Read-only catalog</span>
+          <div class="actions-row" style="margin-top: 0;">
+            <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
+            <a class="mini-link" href="#retrieved-image-manager">Manage retrieved images</a>
+          </div>
+        </div>
+        <div class="table-wrap">
           <table>
             <thead>
               <tr>
@@ -446,28 +631,150 @@
               </tr>
             </thead>
             <tbody id="image-catalog-body">
-              {% for row in image_history %}
-              <tr>
-                <td>{{ row.recorded_at or '-' }}</td>
-                <td>{{ row.profile or '-' }}</td>
-                <td><code>{{ row.source_value or row.source or '-' }}</code></td>
-                <td>{{ row.hash_status or '-' }}</td>
-                <td><code>{{ row.observed_sha256 or row.expected_sha256 or '-' }}</code></td>
-                <td>{{ row.job_status or '-' }} ({{ row.exit_code if row.exit_code is not none else '-' }})</td>
-              </tr>
-              {% else %}
-              <tr>
-                <td colspan="6">No image catalog entries yet.</td>
-              </tr>
-              {% endfor %}
+              {% include "fragments/image_catalog_rows.html" %}
             </tbody>
           </table>
         </div>
       </div>
 
-      <div class="panel">
-        <h1>Rack Cloud-Init Callback Dashboard</h1>
+      <div class="panel" id="retrieved-image-manager">
+        <div class="split-head">
+          <h1>Retrieved Image Manager</h1>
+          <div class="actions-row" style="margin-top: 0;">
+            <a class="mini-link" href="/fragments/sd/images-rows" hx-get="/fragments/sd/images-rows" hx-target="#managed-images-body" hx-swap="innerHTML">Refresh rows</a>
+            <a class="mini-link" href="#image-download-catalog">Back to download catalog</a>
+          </div>
+        </div>
+        <p>Edit metadata for retrieved images, create curated records, or delete entries you no longer want to keep.</p>
+
+        <form id="image-record-form">
+          <input type="hidden" id="image_record_id">
+          <div class="crud-form">
+            <div>
+              <label for="image_label">Label</label>
+              <input id="image_label" placeholder="Ubuntu 24.04 LTS image">
+            </div>
+            <div>
+              <label for="image_profile">Profile</label>
+              <select id="image_profile">
+                <option value="">Unassigned</option>
+                <option value="pi5">pi5</option>
+                <option value="pibplus">pibplus</option>
+              </select>
+            </div>
+            <div>
+              <label for="image_source">Source</label>
+              <input id="image_source" placeholder="image_url, image_file, default">
+            </div>
+            <div>
+              <label for="image_source_value">Source Value</label>
+              <input id="image_source_value" placeholder="https://... or /path/to/image.img.xz">
+            </div>
+            <div>
+              <label for="image_download_path">Download Path</label>
+              <input id="image_download_path" placeholder="/tmp/downloaded.img.xz">
+            </div>
+            <div>
+              <label for="image_hash_status">Hash Status</label>
+              <input id="image_hash_status" placeholder="verified, skipped, failed">
+            </div>
+            <div>
+              <label for="image_expected_sha">Expected SHA256</label>
+              <input id="image_expected_sha" placeholder="64 hex chars">
+            </div>
+            <div>
+              <label for="image_observed_sha">Observed SHA256</label>
+              <input id="image_observed_sha" placeholder="64 hex chars">
+            </div>
+            <div>
+              <label for="image_job_status">Job Status</label>
+              <input id="image_job_status" placeholder="completed, failed">
+            </div>
+            <div>
+              <label for="image_exit_code">Exit Code</label>
+              <input id="image_exit_code" type="number" min="0" step="1" placeholder="0">
+            </div>
+            <div class="grid-span-full">
+              <label for="image_notes">Notes</label>
+              <textarea id="image_notes" placeholder="Optional operator notes about this retrieved image."></textarea>
+            </div>
+          </div>
+          <div class="crud-actions">
+            <button type="button" id="save-image-record">Save Image Record</button>
+            <button type="button" id="clear-image-record" style="background:#475569;">Clear Form</button>
+            <span class="hint" id="image-record-status">Select a row to edit it, or add a new record manually.</span>
+          </div>
+        </form>
+
+        <div class="table-wrap" style="margin-top: 0.9rem;">
+          <table>
+            <thead>
+              <tr>
+                <th>Recorded</th>
+                <th>Label</th>
+                <th>Profile</th>
+                <th>Source</th>
+                <th>Hash</th>
+                <th>Job</th>
+                <th>Notes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="managed-images-body">
+              {% include "fragments/managed_image_rows.html" %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" id="callback-dashboard">
+        <div class="section-head">
+          <h1>Rack Cloud-Init Callback Dashboard</h1>
+          <div class="actions-row" style="margin-top: 0;">
+            <a class="mini-link" href="/fragments/cloud-init/event-rows" hx-get="/fragments/cloud-init/event-rows" hx-target="#events-body" hx-swap="innerHTML">Refresh rows</a>
+            <span class="status-chip"><span class="status-dot"></span> Live Event Feed</span>
+          </div>
+        </div>
         <p>Inbound callback events from first boot and cloud-init phone-home.</p>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="k">Visible Events</div>
+            <div class="v" id="stat-visible">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="k">Total Pulled</div>
+            <div class="v" id="stat-total">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="k">Last 24h</div>
+            <div class="v" id="stat-24h">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="k">Unique Hosts</div>
+            <div class="v" id="stat-hosts">0</div>
+          </div>
+        </div>
+
+        <div class="filters-grid">
+          <div>
+            <label for="event-search">Search Host/FQDN/Instance</label>
+            <input id="event-search" placeholder="rpi5-01, rack.local, iid...">
+          </div>
+          <div>
+            <label for="event-profile">Profile Filter</label>
+            <select id="event-profile">
+              <option value="">All profiles</option>
+            </select>
+          </div>
+          <div>
+            <label for="event-stage">Stage Filter</label>
+            <select id="event-stage">
+              <option value="">All stages</option>
+            </select>
+          </div>
+        </div>
+        <p class="small-note" id="event-meta">Waiting for callback updates...</p>
         <table>
           <thead>
             <tr>
@@ -477,25 +784,13 @@
               <th>FQDN</th>
               <th>Profile</th>
               <th>Stage</th>
+              <th>Source IP</th>
+              <th>Cert</th>
               <th>Raw Payload</th>
             </tr>
           </thead>
           <tbody id="events-body">
-            {% for e in events %}
-            <tr>
-              <td>{{ e.received_at }}</td>
-              <td>{{ e.hostname or '-' }}</td>
-              <td>{{ e.instance_id or '-' }}</td>
-              <td>{{ e.fqdn or '-' }}</td>
-              <td><span class="tag">{{ e.profile or 'unknown' }}</span></td>
-              <td>{{ e.stage or 'phone_home' }}</td>
-              <td><code>{{ e.raw }}</code></td>
-            </tr>
-            {% else %}
-            <tr>
-              <td colspan="7">No events received yet.</td>
-            </tr>
-            {% endfor %}
+            {% include "fragments/callback_rows.html" %}
           </tbody>
         </table>
       </div>
@@ -514,9 +809,33 @@
       const osPresetNoteEl = document.getElementById("os-preset-note");
       const catalogMetaEl = document.getElementById("catalog-meta");
       const deviceWebhookStatusEl = document.getElementById("device-webhook-status");
+      const eventSearchEl = document.getElementById("event-search");
+      const eventProfileEl = document.getElementById("event-profile");
+      const eventStageEl = document.getElementById("event-stage");
+      const eventMetaEl = document.getElementById("event-meta");
+      const statVisibleEl = document.getElementById("stat-visible");
+      const statTotalEl = document.getElementById("stat-total");
+      const stat24hEl = document.getElementById("stat-24h");
+      const statHostsEl = document.getElementById("stat-hosts");
+      const managedImagesBodyEl = document.getElementById("managed-images-body");
+      const imageRecordStatusEl = document.getElementById("image-record-status");
+      const imageRecordIdEl = document.getElementById("image_record_id");
+      const imageLabelEl = document.getElementById("image_label");
+      const imageProfileEl = document.getElementById("image_profile");
+      const imageSourceEl = document.getElementById("image_source");
+      const imageSourceValueEl = document.getElementById("image_source_value");
+      const imageDownloadPathEl = document.getElementById("image_download_path");
+      const imageHashStatusEl = document.getElementById("image_hash_status");
+      const imageExpectedShaEl = document.getElementById("image_expected_sha");
+      const imageObservedShaEl = document.getElementById("image_observed_sha");
+      const imageJobStatusEl = document.getElementById("image_job_status");
+      const imageExitCodeEl = document.getElementById("image_exit_code");
+      const imageNotesEl = document.getElementById("image_notes");
       const imageCatalog = {{ image_catalog | tojson }};
       let currentJob = null;
       let deviceWebhookRetry = null;
+      let allEvents = [];
+      let managedImageRecords = [];
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -651,12 +970,283 @@
         }
       }
 
+      function normalizeManagedImage(record) {
+        return {
+          id: record.id || "",
+          recorded_at: record.recorded_at || "-",
+          profile: record.profile || "-",
+          label: record.label || record.source_value || record.download_path || "Retrieved image",
+          source: record.source || "-",
+          source_value: record.source_value || record.download_path || "-",
+          hash_status: record.hash_status || "-",
+          job_status: record.job_status || "-",
+          exit_code: record.exit_code,
+          notes: record.notes || "",
+          download_path: record.download_path || "",
+          expected_sha256: record.expected_sha256 || "",
+          observed_sha256: record.observed_sha256 || "",
+        };
+      }
+
+      function clearImageRecordForm() {
+        imageRecordIdEl.value = "";
+        imageLabelEl.value = "";
+        imageProfileEl.value = "";
+        imageSourceEl.value = "";
+        imageSourceValueEl.value = "";
+        imageDownloadPathEl.value = "";
+        imageHashStatusEl.value = "";
+        imageExpectedShaEl.value = "";
+        imageObservedShaEl.value = "";
+        imageJobStatusEl.value = "";
+        imageExitCodeEl.value = "";
+        imageNotesEl.value = "";
+        imageRecordStatusEl.textContent = "Form cleared. Add a record or edit an existing row.";
+      }
+
+      async function deleteManagedImage(recordId, label) {
+        if (!confirm(`Delete image record '${label}'?`)) {
+          return;
+        }
+        imageRecordStatusEl.textContent = "Deleting record...";
+        const res = await fetch(`/api/sd/images/${encodeURIComponent(recordId)}`, { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          imageRecordStatusEl.textContent = data.error || "Failed to delete image record.";
+          return;
+        }
+        imageRecordStatusEl.textContent = "Image record deleted.";
+        clearImageRecordForm();
+        loadManagedImages();
+      }
+
+      function fillImageRecordForm(record) {
+        imageRecordIdEl.value = record.id || "";
+        imageLabelEl.value = record.label || "";
+        imageProfileEl.value = record.profile || "";
+        imageSourceEl.value = record.source || "";
+        imageSourceValueEl.value = record.source_value || "";
+        imageDownloadPathEl.value = record.download_path || "";
+        imageHashStatusEl.value = record.hash_status || "";
+        imageExpectedShaEl.value = record.expected_sha256 || "";
+        imageObservedShaEl.value = record.observed_sha256 || "";
+        imageJobStatusEl.value = record.job_status || "";
+        imageExitCodeEl.value = record.exit_code === null || record.exit_code === undefined ? "" : String(record.exit_code);
+        imageNotesEl.value = record.notes || "";
+        imageRecordStatusEl.textContent = `Editing record ${record.id}. Update fields and save.`;
+        document.getElementById("retrieved-image-manager").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function renderManagedImages(entries) {
+        managedImagesBodyEl.innerHTML = "";
+        if (!entries || !entries.length) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 8;
+          td.textContent = "No managed image records yet.";
+          tr.appendChild(td);
+          managedImagesBodyEl.appendChild(tr);
+          return;
+        }
+
+        for (const row of entries) {
+          const normalized = normalizeManagedImage(row);
+          const tr = document.createElement("tr");
+          const cols = [
+            normalized.recorded_at,
+            normalized.label,
+            normalized.profile,
+            normalized.source_value,
+            normalized.hash_status,
+            `${normalized.job_status} (${normalized.exit_code === null || normalized.exit_code === undefined ? "-" : normalized.exit_code})`,
+            normalized.notes,
+          ];
+
+          cols.forEach((value, idx) => {
+            const td = document.createElement("td");
+            if (idx === 1 || idx === 3 || idx === 6) {
+              const code = document.createElement("code");
+              code.textContent = value || "-";
+              td.appendChild(code);
+            } else {
+              td.textContent = value || "-";
+            }
+            tr.appendChild(td);
+          });
+
+          const actionTd = document.createElement("td");
+          const actionWrap = document.createElement("div");
+          actionWrap.className = "row-actions";
+
+          const editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.textContent = "Edit";
+          editBtn.addEventListener("click", () => fillImageRecordForm(normalized));
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.textContent = "Delete";
+          deleteBtn.className = "danger-btn";
+          deleteBtn.addEventListener("click", () => deleteManagedImage(normalized.id, normalized.label));
+
+          actionWrap.appendChild(editBtn);
+          actionWrap.appendChild(deleteBtn);
+          actionTd.appendChild(actionWrap);
+          tr.appendChild(actionTd);
+          managedImagesBodyEl.appendChild(tr);
+        }
+      }
+
+      async function loadManagedImages() {
+        try {
+          const res = await fetch("/api/sd/images");
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            imageRecordStatusEl.textContent = "Failed to load managed image records.";
+            return;
+          }
+          managedImageRecords = Array.isArray(data.entries) ? data.entries : [];
+          renderManagedImages(managedImageRecords);
+        } catch (_) {
+          imageRecordStatusEl.textContent = "Failed to load managed image records.";
+        }
+      }
+
+      async function saveImageRecord() {
+        const payload = {
+          label: imageLabelEl.value.trim(),
+          profile: imageProfileEl.value,
+          source: imageSourceEl.value.trim(),
+          source_value: imageSourceValueEl.value.trim(),
+          download_path: imageDownloadPathEl.value.trim(),
+          hash_status: imageHashStatusEl.value.trim(),
+          expected_sha256: imageExpectedShaEl.value.trim(),
+          observed_sha256: imageObservedShaEl.value.trim(),
+          job_status: imageJobStatusEl.value.trim(),
+          exit_code: imageExitCodeEl.value.trim() === "" ? null : Number(imageExitCodeEl.value),
+          notes: imageNotesEl.value.trim(),
+        };
+
+        const recordId = imageRecordIdEl.value.trim();
+        if (!payload.label) {
+          imageRecordStatusEl.textContent = "Label is required to save a record.";
+          return;
+        }
+
+        imageRecordStatusEl.textContent = recordId ? "Updating record..." : "Creating record...";
+        const res = await fetch(recordId ? `/api/sd/images/${encodeURIComponent(recordId)}` : "/api/sd/images", {
+          method: recordId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          imageRecordStatusEl.textContent = data.error || "Failed to save image record.";
+          return;
+        }
+
+        imageRecordStatusEl.textContent = recordId ? "Image record updated." : "Image record created.";
+        clearImageRecordForm();
+        loadManagedImages();
+      }
+
+      function eventReceivedTs(event) {
+        const raw = event && event.received_at ? String(event.received_at) : "";
+        if (!raw) return null;
+        const normalized = raw.replace(" UTC", "Z").replace(" ", "T");
+        const ts = Date.parse(normalized);
+        return Number.isNaN(ts) ? null : ts;
+      }
+
+      function updateEventFilterOptions(events) {
+        const currentProfile = eventProfileEl.value;
+        const currentStage = eventStageEl.value;
+        const profiles = [...new Set(events.map((e) => e.profile || "unknown"))].sort();
+        const stages = [...new Set(events.map((e) => e.stage || "phone_home"))].sort();
+
+        eventProfileEl.innerHTML = "<option value=''>All profiles</option>";
+        for (const profile of profiles) {
+          const option = document.createElement("option");
+          option.value = profile;
+          option.textContent = profile;
+          eventProfileEl.appendChild(option);
+        }
+
+        eventStageEl.innerHTML = "<option value=''>All stages</option>";
+        for (const stage of stages) {
+          const option = document.createElement("option");
+          option.value = stage;
+          option.textContent = stage;
+          eventStageEl.appendChild(option);
+        }
+
+        if (currentProfile && profiles.includes(currentProfile)) {
+          eventProfileEl.value = currentProfile;
+        }
+        if (currentStage && stages.includes(currentStage)) {
+          eventStageEl.value = currentStage;
+        }
+      }
+
+      function filterEvents(events) {
+        const query = (eventSearchEl.value || "").trim().toLowerCase();
+        const profile = eventProfileEl.value;
+        const stage = eventStageEl.value;
+
+        return events.filter((e) => {
+          const evProfile = e.profile || "unknown";
+          const evStage = e.stage || "phone_home";
+          if (profile && evProfile !== profile) return false;
+          if (stage && evStage !== stage) return false;
+          if (!query) return true;
+          const haystack = [
+            e.hostname,
+            e.fqdn,
+            e.instance_id,
+            e.source_ip,
+            e.cert_subject,
+            e.cert_fingerprint,
+          ].map((v) => String(v || "").toLowerCase()).join(" ");
+          return haystack.includes(query);
+        });
+      }
+
+      function certSummary(event) {
+        const subject = String(event.cert_subject || "").trim();
+        const fingerprint = String(event.cert_fingerprint || "").trim();
+        if (!subject && !fingerprint) {
+          return "-";
+        }
+        if (subject && fingerprint) {
+          return `${subject} (${fingerprint})`;
+        }
+        return subject || fingerprint;
+      }
+
+      function updateEventStats(all, visible) {
+        const now = Date.now();
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        const recentCount = all.filter((e) => {
+          const ts = eventReceivedTs(e);
+          return ts !== null && (now - ts) <= oneDayMs;
+        }).length;
+        const uniqueHosts = new Set(all.map((e) => e.hostname || e.fqdn || "-").filter((v) => v && v !== "-")).size;
+        statVisibleEl.textContent = String(visible.length);
+        statTotalEl.textContent = String(all.length);
+        stat24hEl.textContent = String(recentCount);
+        statHostsEl.textContent = String(uniqueHosts);
+
+        const first = visible.length ? visible[0] : null;
+        const latestAt = first && first.received_at ? first.received_at : "n/a";
+        eventMetaEl.textContent = `Showing ${visible.length} of ${all.length} events. Latest callback: ${latestAt}. Auto-refresh every 5s.`;
+      }
+
       function renderEvents(events) {
         eventsBodyEl.innerHTML = "";
         if (!events || !events.length) {
           const tr = document.createElement("tr");
           const td = document.createElement("td");
-          td.colSpan = 7;
+          td.colSpan = 9;
           td.textContent = "No events received yet.";
           tr.appendChild(td);
           eventsBodyEl.appendChild(tr);
@@ -665,6 +1255,7 @@
 
         for (const e of events.slice(0, 200)) {
           const tr = document.createElement("tr");
+          tr.className = "event-row-new";
           const values = [
             e.received_at || "-",
             e.hostname || "-",
@@ -672,6 +1263,8 @@
             e.fqdn || "-",
             e.profile || "unknown",
             e.stage || "phone_home",
+            e.source_ip || e.remote_addr || "-",
+            certSummary(e),
           ];
 
           values.forEach((v, idx) => {
@@ -693,6 +1286,16 @@
           rawTd.appendChild(code);
           tr.appendChild(rawTd);
 
+          const stageTd = tr.children[5];
+          if (stageTd) {
+            const stageValue = values[5];
+            stageTd.innerHTML = "";
+            const stage = document.createElement("span");
+            stage.className = `stage-pill stage-${String(stageValue).toLowerCase().replace(/[^a-z0-9_]+/g, "_")}`;
+            stage.textContent = stageValue;
+            stageTd.appendChild(stage);
+          }
+
           eventsBodyEl.appendChild(tr);
         }
       }
@@ -704,7 +1307,11 @@
           if (!res.ok) {
             return;
           }
-          renderEvents(Array.isArray(data.events) ? data.events : []);
+          allEvents = Array.isArray(data.events) ? data.events : [];
+          updateEventFilterOptions(allEvents);
+          const visibleEvents = filterEvents(allEvents);
+          updateEventStats(allEvents, visibleEvents);
+          renderEvents(visibleEvents);
         } catch (_) {
           // Keep prior event table data if refresh fails.
         }
@@ -1059,6 +1666,8 @@
       });
 
       document.getElementById("ssh_key_name").addEventListener("input", refreshKeyLinks);
+      document.getElementById("save-image-record").addEventListener("click", saveImageRecord);
+      document.getElementById("clear-image-record").addEventListener("click", clearImageRecordForm);
 
       form.profile.addEventListener("change", () => {
         rebuildCatalogFilters();
@@ -1070,11 +1679,30 @@
 
       form.os_preset.addEventListener("change", applyOsPreset);
 
+      eventSearchEl.addEventListener("input", () => {
+        const visibleEvents = filterEvents(allEvents);
+        updateEventStats(allEvents, visibleEvents);
+        renderEvents(visibleEvents);
+      });
+
+      eventProfileEl.addEventListener("change", () => {
+        const visibleEvents = filterEvents(allEvents);
+        updateEventStats(allEvents, visibleEvents);
+        renderEvents(visibleEvents);
+      });
+
+      eventStageEl.addEventListener("change", () => {
+        const visibleEvents = filterEvents(allEvents);
+        updateEventStats(allEvents, visibleEvents);
+        renderEvents(visibleEvents);
+      });
+
       initSidebar();
       rebuildCatalogFilters();
       refreshKeyLinks();
       startDeviceWebhook();
       loadImageCatalog();
+      loadManagedImages();
       loadEvents();
       setInterval(loadEvents, 5000);
     </script>

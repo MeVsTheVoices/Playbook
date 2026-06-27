@@ -32,6 +32,22 @@
         padding: 0.8rem;
         box-sizing: border-box;
       }
+      .sidebar-brand {
+        padding: 0.25rem 0.45rem 0.8rem;
+        margin-bottom: 0.7rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .sidebar-title {
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #f8fafc;
+        letter-spacing: 0.02em;
+      }
+      .sidebar-subtitle {
+        margin-top: 0.2rem;
+        color: #94a3b8;
+        font-size: 0.75rem;
+      }
       .sidebar a {
         display: block;
         color: #cbd5e1;
@@ -41,6 +57,11 @@
         margin-bottom: 0.25rem;
       }
       .sidebar a:hover { background: rgba(148, 163, 184, 0.16); }
+      .sidebar a.active {
+        background: rgba(20, 184, 166, 0.18);
+        color: #ecfeff;
+        border: 1px solid rgba(45, 212, 191, 0.2);
+      }
       .toggle-btn {
         width: 100%;
         margin-bottom: 0.8rem;
@@ -124,10 +145,14 @@
   </head>
   <body>
     <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-title">Callback Site</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops</div>
+      </div>
       <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
-      <a href="/"><span>Home</span> <span class="label">Dashboard</span></a>
-      <a href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
-      <a href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span>Home</span> <span class="label">Dashboard</span></a>
+      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
+      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
     </aside>
 
     <main class="content">

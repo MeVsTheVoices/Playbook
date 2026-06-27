@@ -82,7 +82,7 @@
       }
       body.sidebar-collapsed .content { margin-left: 88px; }
       .wrap {
-        max-width: 1200px;
+        max-width: 1240px;
         margin: 2rem auto;
         padding: 0 1rem;
       }
@@ -93,6 +93,11 @@
         padding: 1rem;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
         margin-bottom: 1rem;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr;
+        gap: 0.9rem;
       }
       .grid {
         display: grid;
@@ -105,7 +110,7 @@
         color: var(--muted);
         margin-bottom: 0.2rem;
       }
-      input, button {
+      input, select, button {
         width: 100%;
         border: 1px solid var(--line);
         border-radius: 10px;
@@ -120,6 +125,9 @@
         border: none;
         cursor: pointer;
       }
+      button.secondary {
+        background: #475569;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -128,12 +136,105 @@
         border-bottom: 1px solid var(--line);
         padding: 0.55rem;
         text-align: left;
+        vertical-align: top;
       }
       .ok { color: #166534; font-weight: 700; }
       .bad { color: #991b1b; font-weight: 700; }
       .note { color: var(--muted); font-size: 0.85rem; }
+      .pill {
+        display: inline-block;
+        background: #e2e8f0;
+        color: #334155;
+        border-radius: 999px;
+        padding: 0.14rem 0.5rem;
+        font-size: 0.74rem;
+        margin-right: 0.3rem;
+        margin-bottom: 0.25rem;
+      }
+      .profile-list {
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 0.7rem;
+        max-height: 240px;
+        overflow: auto;
+      }
+      .profile-inputs {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.7rem;
+        margin-top: 0.7rem;
+        max-height: 280px;
+        overflow: auto;
+        background: #f8fafc;
+      }
+      .input-group {
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        padding: 0.6rem;
+        margin-bottom: 0.55rem;
+        background: #ffffff;
+      }
+      .input-group h4 {
+        margin: 0 0 0.45rem;
+        font-size: 0.86rem;
+      }
+      .required {
+        color: #991b1b;
+      }
+      .profile-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        margin-bottom: 0.45rem;
+      }
+      .profile-row input {
+        width: auto;
+        margin-top: 0.2rem;
+      }
+      .profile-meta {
+        line-height: 1.35;
+      }
+      .profile-name {
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+      .profile-desc {
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(170px, 1fr));
+        gap: 0.55rem;
+        margin-top: 0.8rem;
+      }
+      .inline-actions {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+      }
+      .inline-actions button {
+        width: auto;
+        min-width: 96px;
+        padding: 0.42rem 0.58rem;
+      }
+      .log {
+        background: #0b1020;
+        color: #d6deeb;
+        border-radius: 10px;
+        padding: 0.8rem;
+        max-height: 300px;
+        overflow: auto;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+        white-space: pre-wrap;
+      }
+      @media (max-width: 1050px) {
+        .split { grid-template-columns: 1fr; }
+      }
       @media (max-width: 900px) {
-        th:nth-child(6), td:nth-child(6) { display: none; }
+        th:nth-child(3), td:nth-child(3), th:nth-child(5), td:nth-child(5) { display: none; }
+        .actions { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -153,37 +254,60 @@
       <div class="wrap">
         <div class="panel">
           <h1>Node Ops</h1>
-          <p class="note">Credentials and webhook settings are stored locally for this service instance.</p>
+          <p class="note">This stage picks up after callback registration. Choose per-node configuration sets, run closer checks, and optionally apply provisioning through Ansible.</p>
+        </div>
+
+        <div class="split">
+          <div class="panel">
+            <h2>Credentials + Webhook</h2>
+            <div class="grid">
+              <div>
+                <label for="username">Username</label>
+                <input id="username" placeholder="ops">
+              </div>
+              <div>
+                <label for="password">Password / Token</label>
+                <input id="password" type="password" placeholder="optional">
+              </div>
+              <div>
+                <label for="webhook_url">Webhook URL</label>
+                <input id="webhook_url" placeholder="https://example/webhook">
+              </div>
+              <div>
+                <label for="verify_tls">Verify TLS (true/false)</label>
+                <input id="verify_tls" value="true">
+              </div>
+            </div>
+            <div style="margin-top: 0.8rem;">
+              <button id="save-config">Save Config</button>
+            </div>
+            <p id="config-status" class="note"></p>
+          </div>
+
+          <div class="panel">
+            <h2>Provisioning Profiles</h2>
+            <div>
+              <label for="provision-node">Node</label>
+              <select id="provision-node"></select>
+            </div>
+            <div class="profile-list" id="profile-list"></div>
+            <div class="profile-inputs" id="profile-inputs"></div>
+            <div style="margin-top: 0.6rem;">
+              <label><input type="checkbox" id="run-ansible" checked style="width:auto; margin-right:0.4rem;">Run ansible-playbook now</label>
+            </div>
+            <div class="actions">
+              <button id="save-node-profiles">Save Node Config Set</button>
+              <button id="save-node-inputs" class="secondary">Save Profile Inputs</button>
+              <button id="check-selected" class="secondary">Check Closer (Selected Node)</button>
+              <button id="apply-selected">Apply Selected Node</button>
+              <button id="check-all" class="secondary">Check Closer (All Nodes)</button>
+            </div>
+            <p id="provision-status" class="note"></p>
+          </div>
         </div>
 
         <div class="panel">
-          <h2>Credentials + Webhook</h2>
-          <div class="grid">
-            <div>
-              <label for="username">Username</label>
-              <input id="username" placeholder="ops">
-            </div>
-            <div>
-              <label for="password">Password / Token</label>
-              <input id="password" type="password" placeholder="optional">
-            </div>
-            <div>
-              <label for="webhook_url">Webhook URL</label>
-              <input id="webhook_url" placeholder="https://example/webhook">
-            </div>
-            <div>
-              <label for="verify_tls">Verify TLS (true/false)</label>
-              <input id="verify_tls" value="true">
-            </div>
-          </div>
-          <div style="margin-top: 0.8rem;">
-            <button id="save-config">Save Config</button>
-          </div>
-          <p id="config-status" class="note"></p>
-        </div>
-
-        <div class="panel">
-          <h2>Monitoring</h2>
+          <h2>Monitoring + Provisioning State</h2>
           <div class="grid">
             <div>
               <button id="refresh-monitor">Refresh Node Status</button>
@@ -202,12 +326,21 @@
                 <th>Reachable</th>
                 <th>Latency ms</th>
                 <th>Last Callback</th>
+                <th>Config Sets</th>
+                <th>Last Closer Check</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="node-rows">
-              <tr><td colspan="6">Loading...</td></tr>
+              <tr><td colspan="9">Loading...</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="panel">
+          <h2>Provisioning Output</h2>
+          <p class="note">Latest check/apply output for profile runs.</p>
+          <div id="provision-log" class="log">No provisioning actions yet.</div>
         </div>
       </div>
     </main>
@@ -217,19 +350,209 @@
       const toggleBtn = document.getElementById("sidebar-toggle");
       const configStatus = document.getElementById("config-status");
       const monitorStatus = document.getElementById("monitor-status");
+      const provisionStatus = document.getElementById("provision-status");
+      const provisionLog = document.getElementById("provision-log");
       const rows = document.getElementById("node-rows");
+      const provisionNode = document.getElementById("provision-node");
+      const profileList = document.getElementById("profile-list");
+      const profileInputs = document.getElementById("profile-inputs");
+      const runAnsible = document.getElementById("run-ansible");
+
+      let nodes = [];
+      let profiles = [];
+      let statusByNode = {};
+      let nodeInputs = {};
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
-        if (saved === "1") {
-          body.classList.add("sidebar-collapsed");
-        }
+        if (saved === "1") body.classList.add("sidebar-collapsed");
       }
 
       toggleBtn.addEventListener("click", () => {
         body.classList.toggle("sidebar-collapsed");
         localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
       });
+
+      function profileById(id) {
+        return profiles.find((p) => p.id === id);
+      }
+
+      function selectedProfileIdsForNode(nodeName) {
+        const node = nodes.find((n) => n.name === nodeName);
+        return node && Array.isArray(node.selected_profiles) ? node.selected_profiles : [];
+      }
+
+      function renderNodeSelector() {
+        provisionNode.innerHTML = "";
+        if (!nodes.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No active nodes";
+          provisionNode.appendChild(opt);
+          return;
+        }
+
+        for (const node of nodes) {
+          const opt = document.createElement("option");
+          opt.value = node.name;
+          opt.textContent = `${node.name} (${node.group})`;
+          provisionNode.appendChild(opt);
+        }
+      }
+
+      function renderProfileChecklist() {
+        const nodeName = provisionNode.value;
+        const selected = new Set(selectedProfileIdsForNode(nodeName));
+        profileList.innerHTML = "";
+        for (const profile of profiles) {
+          const row = document.createElement("label");
+          row.className = "profile-row";
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.value = profile.id;
+          checkbox.checked = selected.has(profile.id);
+
+          const meta = document.createElement("div");
+          meta.className = "profile-meta";
+          const name = document.createElement("div");
+          name.className = "profile-name";
+          name.textContent = profile.label;
+          const desc = document.createElement("div");
+          desc.className = "profile-desc";
+          desc.textContent = profile.description;
+          meta.appendChild(name);
+          meta.appendChild(desc);
+
+          row.appendChild(checkbox);
+          row.appendChild(meta);
+          profileList.appendChild(row);
+        }
+        renderProfileInputs();
+      }
+
+      function selectedProfilesForNode(nodeName) {
+        const ids = selectedProfileIdsForNode(nodeName);
+        return profiles.filter((p) => ids.includes(p.id));
+      }
+
+      function renderProfileInputs() {
+        const nodeName = provisionNode.value;
+        const selectedProfiles = selectedProfilesForNode(nodeName);
+        const saved = (nodeInputs[nodeName] && typeof nodeInputs[nodeName] === "object") ? nodeInputs[nodeName] : {};
+
+        profileInputs.innerHTML = "";
+        if (!selectedProfiles.length) {
+          profileInputs.textContent = "No selected profiles for this node.";
+          return;
+        }
+
+        for (const profile of selectedProfiles) {
+          const specs = Array.isArray(profile.input_specs) ? profile.input_specs : [];
+          if (!specs.length) continue;
+
+          const wrapper = document.createElement("div");
+          wrapper.className = "input-group";
+          const title = document.createElement("h4");
+          title.textContent = profile.label;
+          wrapper.appendChild(title);
+
+          const values = (saved[profile.id] && typeof saved[profile.id] === "object") ? saved[profile.id] : {};
+          for (const spec of specs) {
+            const fieldId = String(spec.id || "");
+            if (!fieldId) continue;
+
+            const label = document.createElement("label");
+            const required = spec.required ? " *" : "";
+            label.innerHTML = `${spec.label || fieldId}<span class="required">${required}</span>`;
+
+            const input = document.createElement("input");
+            input.type = spec.sensitive ? "password" : "text";
+            input.placeholder = spec.placeholder || "";
+            input.value = values[fieldId] || "";
+            input.dataset.profile = profile.id;
+            input.dataset.field = fieldId;
+
+            wrapper.appendChild(label);
+            wrapper.appendChild(input);
+          }
+          profileInputs.appendChild(wrapper);
+        }
+
+        if (!profileInputs.children.length) {
+          profileInputs.textContent = "Selected profiles do not require extra inputs.";
+        }
+      }
+
+      function collectProfileInputs() {
+        const out = {};
+        profileInputs.querySelectorAll("input[data-profile][data-field]").forEach((input) => {
+          const profileId = input.dataset.profile;
+          const fieldId = input.dataset.field;
+          if (!profileId || !fieldId) return;
+          if (!out[profileId]) out[profileId] = {};
+          out[profileId][fieldId] = input.value.trim();
+        });
+        return out;
+      }
+
+      function checkedProfileIds() {
+        return Array.from(profileList.querySelectorAll("input[type='checkbox']"))
+          .filter((el) => el.checked)
+          .map((el) => el.value);
+      }
+
+      function statusBadge(node) {
+        const latest = node.latest_check || {};
+        if (!latest.checked_at) return "-";
+        return `${latest.status || "unknown"} (${latest.mode || ""}) ${latest.checked_at}`;
+      }
+
+      function renderRows() {
+        rows.innerHTML = "";
+        if (!nodes.length) {
+          rows.innerHTML = "<tr><td colspan='9'>No active nodes found in inventory groups.</td></tr>";
+          return;
+        }
+
+        for (const node of nodes) {
+          const status = statusByNode[node.name] || {};
+          const selected = Array.isArray(node.selected_profiles) ? node.selected_profiles : [];
+          const selectedHtml = selected.length
+            ? selected.map((id) => {
+                const p = profileById(id);
+                return `<span class='pill'>${p ? p.label : id}</span>`;
+              }).join("")
+            : "-";
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${node.name}</td>
+            <td>${node.group}</td>
+            <td>${node.address}</td>
+            <td class="${status.reachable ? "ok" : status.reachable === false ? "bad" : ""}">${status.reachable === true ? "UP" : status.reachable === false ? "DOWN" : "-"}</td>
+            <td>${status.latency_ms ?? "-"}</td>
+            <td>${status.last_callback || "-"}</td>
+            <td>${selectedHtml}</td>
+            <td>${statusBadge(node)}</td>
+            <td>
+              <div class="inline-actions">
+                <button type="button" data-node="${node.name}" data-action="check">Check Closer</button>
+                <button type="button" data-node="${node.name}" data-action="apply">Apply</button>
+              </div>
+            </td>
+          `;
+          rows.appendChild(tr);
+        }
+
+        rows.querySelectorAll("button[data-node]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const node = btn.getAttribute("data-node") || "";
+            const action = btn.getAttribute("data-action") || "check";
+            runProvision(node, action);
+          });
+        });
+      }
 
       async function loadSummary() {
         const res = await fetch("/api/nodes/summary");
@@ -239,6 +562,10 @@
           return;
         }
 
+        nodes = Array.isArray(data.nodes) ? data.nodes : [];
+        profiles = Array.isArray(data.profiles) ? data.profiles : [];
+        nodeInputs = (data.node_inputs && typeof data.node_inputs === "object") ? data.node_inputs : {};
+
         document.getElementById("username").value = data.config.username || "";
         document.getElementById("webhook_url").value = data.config.webhook_url || "";
         document.getElementById("verify_tls").value = data.config.verify_tls ? "true" : "false";
@@ -246,23 +573,61 @@
           document.getElementById("password").placeholder = "already configured";
         }
 
-        rows.innerHTML = "";
-        if (!data.nodes.length) {
-          rows.innerHTML = "<tr><td colspan='6'>No active nodes found in inventory groups.</td></tr>";
+        const oldNode = provisionNode.value;
+        renderNodeSelector();
+        if (oldNode && nodes.some((n) => n.name === oldNode)) {
+          provisionNode.value = oldNode;
+        }
+        renderProfileChecklist();
+        renderRows();
+      }
+
+      async function saveNodeInputs() {
+        const node = provisionNode.value;
+        if (!node) {
+          provisionStatus.textContent = "Select a node first.";
+          return;
+        }
+        provisionStatus.textContent = "Saving profile inputs...";
+        const res = await fetch("/api/nodes/node-inputs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node, profile_inputs: collectProfileInputs() }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          provisionStatus.textContent = data.error || "Failed to save profile inputs.";
+          return;
+        }
+        provisionStatus.textContent = `Saved profile inputs for ${node}.`;
+        await loadSummary();
+      }
+
+      async function refreshMonitor(sendWebhook) {
+        monitorStatus.textContent = sendWebhook ? "Refreshing and sending webhook..." : "Refreshing monitoring...";
+        const res = await fetch("/api/nodes/monitor", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ send_webhook: sendWebhook }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          monitorStatus.textContent = "Failed to refresh monitor.";
           return;
         }
 
-        for (const node of data.nodes) {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${node.name}</td>
-            <td>${node.group}</td>
-            <td>${node.address}</td>
-            <td>-</td>
-            <td>-</td>
-            <td>-</td>
-          `;
-          rows.appendChild(tr);
+        statusByNode = {};
+        for (const node of data.statuses || []) {
+          statusByNode[node.name] = node;
+        }
+        renderRows();
+
+        if (sendWebhook) {
+          monitorStatus.textContent = data.webhook.sent
+            ? (data.webhook.ok ? `Webhook sent (HTTP ${data.webhook.status}).` : `Webhook failed: ${data.webhook.error}`)
+            : "No webhook configured; monitor refreshed.";
+        } else {
+          monitorStatus.textContent = "Monitoring refreshed.";
         }
       }
 
@@ -287,48 +652,93 @@
         configStatus.textContent = `Saved. Password configured: ${data.config.password_set ? "yes" : "no"}`;
       }
 
-      async function refreshMonitor(sendWebhook) {
-        monitorStatus.textContent = sendWebhook ? "Refreshing and sending webhook..." : "Refreshing monitoring...";
-        const res = await fetch("/api/nodes/monitor", {
+      async function saveNodeProfiles() {
+        const node = provisionNode.value;
+        if (!node) {
+          provisionStatus.textContent = "Select a node first.";
+          return;
+        }
+        provisionStatus.textContent = "Saving node config set...";
+        const res = await fetch("/api/nodes/node-configs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ send_webhook: sendWebhook }),
+          body: JSON.stringify({ node, profile_ids: checkedProfileIds() }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          monitorStatus.textContent = "Failed to refresh monitor.";
+          provisionStatus.textContent = data.error || "Failed to save node config set.";
+          return;
+        }
+        provisionStatus.textContent = `Saved config set for ${node}.`;
+        await loadSummary();
+      }
+
+      function formatProvisionResult(result) {
+        const lines = [];
+        for (const nodeResult of result.results || []) {
+          lines.push(`Node: ${nodeResult.node} | mode=${nodeResult.mode} | ansible=${nodeResult.run_ansible}`);
+          for (const item of nodeResult.results || []) {
+            lines.push(`  - ${item.profile_id}: ${item.status} (exit=${item.exit_code ?? "-"}) @ ${item.checked_at}`);
+            if (item.command && item.command.length) {
+              lines.push(`    command: ${item.command.join(" ")}`);
+            }
+            if (item.output) {
+              lines.push(`    output: ${String(item.output).slice(0, 700)}`);
+            }
+          }
+          lines.push("");
+        }
+        return lines.join("\n").trim() || "No provisioning output.";
+      }
+
+      async function runProvision(node, mode) {
+        if (node) {
+          const selectedNode = provisionNode.value;
+          if (selectedNode && selectedNode === node) {
+            await saveNodeInputs();
+          }
+        }
+
+        provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning...`;
+        const res = await fetch("/api/nodes/provision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node, mode, run_ansible: runAnsible.checked }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          if (data.missing_inputs) {
+            const messages = [];
+            for (const missingNode of data.missing_inputs) {
+              for (const profile of missingNode.profiles || []) {
+                const fields = (profile.fields || []).map((f) => f.label || f.id).join(", ");
+                messages.push(`${missingNode.node} / ${profile.profile_label}: ${fields}`);
+              }
+            }
+            provisionStatus.textContent = `Missing required inputs: ${messages.join(" | ")}`;
+          } else {
+            provisionStatus.textContent = data.error || "Provisioning request failed.";
+          }
           return;
         }
 
-        rows.innerHTML = "";
-        for (const node of data.statuses) {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${node.name}</td>
-            <td>${node.group}</td>
-            <td>${node.address}</td>
-            <td class="${node.reachable ? "ok" : "bad"}">${node.reachable ? "UP" : "DOWN"}</td>
-            <td>${node.latency_ms ?? "-"}</td>
-            <td>${node.last_callback || "-"}</td>
-          `;
-          rows.appendChild(tr);
-        }
-
-        if (sendWebhook) {
-          monitorStatus.textContent = data.webhook.sent
-            ? (data.webhook.ok ? `Webhook sent (HTTP ${data.webhook.status}).` : `Webhook failed: ${data.webhook.error}`)
-            : "No webhook configured; monitor refreshed.";
-        } else {
-          monitorStatus.textContent = "Monitoring refreshed.";
-        }
+        provisionStatus.textContent = `${mode === "check" ? "Check" : "Apply"} completed.`;
+        provisionLog.textContent = formatProvisionResult(data);
+        await loadSummary();
       }
 
+      provisionNode.addEventListener("change", renderProfileChecklist);
       document.getElementById("save-config").addEventListener("click", saveConfig);
       document.getElementById("refresh-monitor").addEventListener("click", () => refreshMonitor(false));
       document.getElementById("refresh-monitor-webhook").addEventListener("click", () => refreshMonitor(true));
+      document.getElementById("save-node-profiles").addEventListener("click", saveNodeProfiles);
+      document.getElementById("save-node-inputs").addEventListener("click", saveNodeInputs);
+      document.getElementById("check-selected").addEventListener("click", () => runProvision(provisionNode.value, "check"));
+      document.getElementById("apply-selected").addEventListener("click", () => runProvision(provisionNode.value, "apply"));
+      document.getElementById("check-all").addEventListener("click", () => runProvision("", "check"));
 
       initSidebar();
-      loadSummary();
+      loadSummary().then(() => refreshMonitor(false));
     </script>
   </body>
 </html>

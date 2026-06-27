@@ -465,6 +465,30 @@
         background: #fee2e2;
         color: #991b1b;
       }
+      .payload-details {
+        max-width: 460px;
+      }
+      .payload-summary {
+        cursor: pointer;
+        color: #0f766e;
+        font-weight: 600;
+      }
+      .payload-json {
+        margin-top: 0.4rem;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.55rem;
+        max-height: 220px;
+        overflow: auto;
+        font-size: 0.8rem;
+        white-space: pre;
+      }
+      .payload-kv {
+        margin-top: 0.25rem;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
       @media (max-width: 900px) {
         th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) {
           display: none;
@@ -786,7 +810,7 @@
               <th>Stage</th>
               <th>Source IP</th>
               <th>Cert</th>
-              <th>Raw Payload</th>
+              <th>Payload</th>
             </tr>
           </thead>
           <tbody id="events-body">
@@ -1223,6 +1247,16 @@
         return subject || fingerprint;
       }
 
+      function payloadSummary(event) {
+        const raw = (event && typeof event.raw === "object" && event.raw) ? event.raw : {};
+        const keys = Object.keys(raw);
+        const stage = raw.stage || event.stage || "-";
+        return {
+          line: `${keys.length} key${keys.length === 1 ? "" : "s"} | stage: ${stage}`,
+          json: JSON.stringify(raw, null, 2),
+        };
+      }
+
       function updateEventStats(all, visible) {
         const now = Date.now();
         const oneDayMs = 24 * 60 * 60 * 1000;
@@ -1281,9 +1315,24 @@
           });
 
           const rawTd = document.createElement("td");
-          const code = document.createElement("code");
-          code.textContent = JSON.stringify(e.raw || {});
-          rawTd.appendChild(code);
+          const summary = payloadSummary(e);
+          const details = document.createElement("details");
+          details.className = "payload-details";
+          const detailSummary = document.createElement("summary");
+          detailSummary.className = "payload-summary";
+          detailSummary.textContent = "View payload";
+          details.appendChild(detailSummary);
+
+          const meta = document.createElement("div");
+          meta.className = "payload-kv";
+          meta.textContent = summary.line;
+          details.appendChild(meta);
+
+          const pre = document.createElement("pre");
+          pre.className = "payload-json";
+          pre.textContent = summary.json;
+          details.appendChild(pre);
+          rawTd.appendChild(details);
           tr.appendChild(rawTd);
 
           const stageTd = tr.children[5];

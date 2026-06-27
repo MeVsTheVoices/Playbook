@@ -28,6 +28,7 @@ KEYS_DIR = DATA_DIR / "ssh_keys"
 KEY_ARCHIVE_DIR = DATA_DIR / "ssh_key_archive"
 KEY_ARCHIVE_INDEX_FILE = DATA_DIR / "ssh_key_archive.jsonl"
 NODE_CONFIG_FILE = DATA_DIR / "node_monitor_config.json"
+NODE_PROVISION_FILE = DATA_DIR / "node_provisioning.json"
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 SCRIPT_PATH = BASE_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh"
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -44,6 +45,147 @@ TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
     "homelab_tag": "tag:homelab",
     "pi5_subnets": ["192.168.174.0/24", "192.168.175.0/24"],
 }
+
+NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
+    {
+        "id": "baseline",
+        "label": "Baseline",
+        "description": "Core system baseline and host-level defaults.",
+        "tags": ["baseline"],
+        "groups": ["rpi5_active", "rpi_bplus_active"],
+        "input_specs": [
+            {
+                "id": "timezone",
+                "label": "Timezone",
+                "placeholder": "UTC",
+                "required": False,
+            },
+            {
+                "id": "ntp_servers",
+                "label": "NTP Servers (comma-separated)",
+                "placeholder": "pool.ntp.org",
+                "required": False,
+            },
+        ],
+    },
+    {
+        "id": "tailscale",
+        "label": "Tailscale",
+        "description": "Tailnet agent and related ACL tag setup.",
+        "tags": ["tailscale"],
+        "groups": ["rpi5_active", "rpi_bplus_active"],
+        "input_specs": [
+            {
+                "id": "auth_key",
+                "label": "Auth Key",
+                "placeholder": "tskey-auth-...",
+                "required": True,
+                "sensitive": True,
+            },
+            {
+                "id": "tailnet",
+                "label": "Tailnet",
+                "placeholder": "tail00c2ce.ts.net",
+                "required": True,
+            },
+            {
+                "id": "advertise_tags",
+                "label": "Advertise Tags (comma-separated)",
+                "placeholder": "tag:rpi5,tag:homelab",
+                "required": False,
+            },
+        ],
+    },
+    {
+        "id": "docker",
+        "label": "Docker",
+        "description": "Container runtime provisioning and Docker defaults.",
+        "tags": ["docker"],
+        "groups": ["rpi5_active"],
+        "input_specs": [
+            {
+                "id": "docker_data_root",
+                "label": "Docker Data Root",
+                "placeholder": "/var/lib/docker",
+                "required": False,
+            },
+            {
+                "id": "registry_mirror",
+                "label": "Registry Mirror",
+                "placeholder": "https://mirror.gcr.io",
+                "required": False,
+            },
+        ],
+    },
+    {
+        "id": "kubernetes",
+        "label": "Kubernetes",
+        "description": "Kubernetes bootstrap defaults for control-plane or worker nodes.",
+        "tags": ["kubernetes"],
+        "groups": ["rpi5_active"],
+        "input_specs": [
+            {
+                "id": "cluster_name",
+                "label": "Cluster Name",
+                "placeholder": "rack-cluster",
+                "required": True,
+            },
+            {
+                "id": "node_role",
+                "label": "Node Role",
+                "placeholder": "control-plane or worker",
+                "required": True,
+            },
+            {
+                "id": "pod_cidr",
+                "label": "Pod CIDR",
+                "placeholder": "10.244.0.0/16",
+                "required": False,
+            },
+        ],
+    },
+    {
+        "id": "telegraf",
+        "label": "Telegraf",
+        "description": "Telegraf provisioning with InfluxDB bucket credentials.",
+        "tags": ["monitoring", "telegraf"],
+        "groups": ["rpi5_active", "rpi_bplus_active"],
+        "input_specs": [
+            {
+                "id": "influx_endpoint",
+                "label": "Influx Endpoint",
+                "placeholder": "https://influx.example:8086",
+                "required": True,
+            },
+            {
+                "id": "influx_bucket",
+                "label": "Influx Bucket",
+                "placeholder": "telegraf",
+                "required": True,
+            },
+            {
+                "id": "influx_org",
+                "label": "Influx Org",
+                "placeholder": "homelab",
+                "required": True,
+            },
+            {
+                "id": "influx_access_key",
+                "label": "Influx Access Key",
+                "placeholder": "token or key",
+                "required": True,
+                "sensitive": True,
+            },
+            {
+                "id": "influx_secret_key",
+                "label": "Influx Secret Key",
+                "placeholder": "secret",
+                "required": True,
+                "sensitive": True,
+            },
+        ],
+    },
+]
 
 IMAGE_CATALOG: List[Dict[str, Any]] = [
     {
@@ -485,6 +627,271 @@ def _save_node_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
+def _default_profiles_for_group(group: str) -> List[str]:
+    defaults = ["baseline", "tailscale", "telegraf"]
+    if group == "rpi5_active":
+        defaults.append("docker")
+    return defaults
+
+
+def _load_node_provisioning() -> Dict[str, Any]:
+    _ensure_data_file()
+    default = {"node_configs": {}, "results": {}, "node_inputs": {}}
+    if not NODE_PROVISION_FILE.exists():
+        return default
+    try:
+        loaded = json.loads(NODE_PROVISION_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return default
+
+    if not isinstance(loaded, dict):
+        return default
+    node_configs = loaded.get("node_configs", {})
+    results = loaded.get("results", {})
+    node_inputs = loaded.get("node_inputs", {})
+    if not isinstance(node_configs, dict):
+        node_configs = {}
+    if not isinstance(results, dict):
+        results = {}
+    if not isinstance(node_inputs, dict):
+        node_inputs = {}
+    return {"node_configs": node_configs, "results": results, "node_inputs": node_inputs}
+
+
+def _save_node_provisioning(state: Dict[str, Any]) -> None:
+    _ensure_data_file()
+    NODE_PROVISION_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _profile_map() -> Dict[str, Dict[str, Any]]:
+    return {p["id"]: p for p in NODE_PROVISION_PROFILES}
+
+
+def _profile_input_specs(profile_id: str) -> List[Dict[str, Any]]:
+    profile = _profile_map().get(profile_id, {})
+    specs = profile.get("input_specs")
+    if isinstance(specs, list):
+        return [s for s in specs if isinstance(s, dict)]
+    return []
+
+
+def _sanitize_node_profile_inputs(payload: Dict[str, Any], profile_ids: List[str]) -> Dict[str, Dict[str, str]]:
+    out: Dict[str, Dict[str, str]] = {}
+    for profile_id in profile_ids:
+        raw_inputs = payload.get(profile_id, {})
+        if not isinstance(raw_inputs, dict):
+            continue
+        specs = _profile_input_specs(profile_id)
+        allowed = {str(spec.get("id", "")) for spec in specs}
+        cleaned: Dict[str, str] = {}
+        for key, value in raw_inputs.items():
+            k = str(key)
+            if k not in allowed:
+                continue
+            cleaned[k] = str(value).strip()
+        out[profile_id] = cleaned
+    return out
+
+
+def _node_profile_inputs(node_name: str, state: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    node_inputs = state.get("node_inputs", {})
+    raw = node_inputs.get(node_name, {}) if isinstance(node_inputs, dict) else {}
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, Dict[str, str]] = {}
+    for profile_id, values in raw.items():
+        if isinstance(values, dict):
+            out[str(profile_id)] = {str(k): str(v) for k, v in values.items()}
+    return out
+
+
+def _missing_required_inputs(node_name: str, profile_ids: List[str], state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    saved_inputs = _node_profile_inputs(node_name, state)
+    profile_by_id = _profile_map()
+    missing: List[Dict[str, Any]] = []
+
+    for profile_id in profile_ids:
+        specs = _profile_input_specs(profile_id)
+        required_specs = [s for s in specs if bool(s.get("required", False))]
+        if not required_specs:
+            continue
+
+        profile_inputs = saved_inputs.get(profile_id, {})
+        missing_fields = []
+        for spec in required_specs:
+            field_id = str(spec.get("id", ""))
+            value = str(profile_inputs.get(field_id, "")).strip()
+            if not value:
+                missing_fields.append(
+                    {
+                        "id": field_id,
+                        "label": str(spec.get("label", field_id)),
+                        "placeholder": str(spec.get("placeholder", "")),
+                        "sensitive": bool(spec.get("sensitive", False)),
+                    }
+                )
+
+        if missing_fields:
+            missing.append(
+                {
+                    "profile_id": profile_id,
+                    "profile_label": str(profile_by_id.get(profile_id, {}).get("label", profile_id)),
+                    "fields": missing_fields,
+                }
+            )
+    return missing
+
+
+def _redact_profile_inputs(profile_id: str, inputs: Dict[str, str]) -> Dict[str, str]:
+    specs = {str(s.get("id", "")): s for s in _profile_input_specs(profile_id)}
+    out: Dict[str, str] = {}
+    for key, value in inputs.items():
+        spec = specs.get(key, {})
+        if bool(spec.get("sensitive", False)):
+            out[key] = "***"
+        else:
+            out[key] = value
+    return out
+
+
+def _effective_node_profiles(node: Dict[str, Any], state: Dict[str, Any]) -> List[str]:
+    node_configs = state.get("node_configs", {})
+    selected = node_configs.get(node["name"])
+    if isinstance(selected, list) and selected:
+        return [str(v) for v in selected]
+    return _default_profiles_for_group(node.get("group", ""))
+
+
+def _latest_node_check(node_name: str, state: Dict[str, Any]) -> Dict[str, Any]:
+    node_results = state.get("results", {}).get(node_name, {})
+    if not isinstance(node_results, dict):
+        return {"status": "not-run", "checked_at": "", "mode": ""}
+
+    latest: Dict[str, Any] = {"status": "not-run", "checked_at": "", "mode": ""}
+    for result in node_results.values():
+        if not isinstance(result, dict):
+            continue
+        checked_at = str(result.get("checked_at", ""))
+        if checked_at and checked_at >= str(latest.get("checked_at", "")):
+            latest = {
+                "status": str(result.get("status", "not-run")),
+                "checked_at": checked_at,
+                "mode": str(result.get("mode", "")),
+            }
+    return latest
+
+
+def _run_node_profile(node_name: str, profile: Dict[str, Any], mode: str, run_ansible: bool, profile_inputs: Dict[str, str]) -> Dict[str, Any]:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    profile_id = str(profile.get("id", ""))
+    tags = profile.get("tags") or []
+
+    if not run_ansible:
+        return {
+            "profile_id": profile_id,
+            "status": "planned",
+            "mode": mode,
+            "checked_at": checked_at,
+            "command": [],
+            "exit_code": None,
+            "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+            "output": "Ansible execution disabled for this run (plan-only).",
+        }
+
+    cmd = [
+        "ansible-playbook",
+        "-i",
+        str(INVENTORY_FILE),
+        "site.yml",
+        "--limit",
+        node_name,
+    ]
+    if tags:
+        cmd.extend(["--tags", ",".join(str(t) for t in tags)])
+    if mode == "check":
+        cmd.append("--check")
+
+    extra_vars_payload = {
+        "provision_profile": profile_id,
+        "provision_inputs": profile_inputs,
+        "node_name": node_name,
+    }
+    cmd.extend(["--extra-vars", json.dumps(extra_vars_payload)])
+    cmd_for_log = cmd[:-1] + ["<redacted-provision-inputs>"]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=420,
+            cwd=str(BASE_DIR.parent),
+        )
+        output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        return {
+            "profile_id": profile_id,
+            "status": "ok" if proc.returncode == 0 else "failed",
+            "mode": mode,
+            "checked_at": checked_at,
+            "command": cmd_for_log,
+            "exit_code": proc.returncode,
+            "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+            "output": output[-12000:],
+        }
+    except FileNotFoundError:
+        return {
+            "profile_id": profile_id,
+            "status": "unavailable",
+            "mode": mode,
+            "checked_at": checked_at,
+            "command": cmd_for_log,
+            "exit_code": None,
+            "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+            "output": "ansible-playbook command not found on host.",
+        }
+    except subprocess.TimeoutExpired as exc:
+        stdout = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+        stderr = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+        return {
+            "profile_id": profile_id,
+            "status": "timeout",
+            "mode": mode,
+            "checked_at": checked_at,
+            "command": cmd_for_log,
+            "exit_code": None,
+            "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+            "output": ((stdout + "\n" + stderr).strip() or "Provisioning run timed out.")[-12000:],
+        }
+
+
+def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, run_ansible: bool) -> Dict[str, Any]:
+    profile_by_id = _profile_map()
+    state = _load_node_provisioning()
+    valid_profile_ids = [pid for pid in profile_ids if pid in profile_by_id]
+    inputs_by_profile = _node_profile_inputs(node_name, state)
+    node_results: Dict[str, Any] = {}
+    for pid in valid_profile_ids:
+        profile_inputs = inputs_by_profile.get(pid, {})
+        result = _run_node_profile(node_name, profile_by_id[pid], mode=mode, run_ansible=run_ansible, profile_inputs=profile_inputs)
+        node_results[pid] = result
+
+    state_results = state.setdefault("results", {})
+    existing = state_results.get(node_name)
+    if not isinstance(existing, dict):
+        existing = {}
+    existing.update(node_results)
+    state_results[node_name] = existing
+    _save_node_provisioning(state)
+
+    return {
+        "node": node_name,
+        "mode": mode,
+        "run_ansible": run_ansible,
+        "results": [node_results[pid] for pid in valid_profile_ids],
+    }
+
+
 def _inventory_nodes() -> List[Dict[str, Any]]:
     try:
         result = subprocess.run(
@@ -799,6 +1206,26 @@ def _first_forwarded_ip(value: str) -> str:
     return parts[0] if parts else ""
 
 
+def _resolve_source_ip(payload: Dict[str, Any]) -> tuple[str, str]:
+    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+    if forwarded_for:
+        ip = _first_forwarded_ip(forwarded_for)
+        if ip:
+            return ip, "x-forwarded-for"
+
+    for header in ("X-Real-IP", "CF-Connecting-IP", "True-Client-IP"):
+        value = request.headers.get(header, "").strip()
+        if value:
+            return value, header.lower()
+
+    for key in ("source_ip", "client_ip", "ip", "remote_addr"):
+        value = str(payload.get(key, "")).strip()
+        if value:
+            return value, f"payload:{key}"
+
+    return request.remote_addr or "", "remote_addr"
+
+
 def _header_or_payload(payload: Dict[str, Any], *keys: str) -> str:
     for key in keys:
         header_val = request.headers.get(key)
@@ -919,7 +1346,27 @@ def index() -> str:
 
 @app.get("/tailscale-acl")
 def tailscale_acl() -> str:
-    return render_template("tailscale_acl.html", defaults=TAILSCALE_POLICY_DEFAULTS)
+    return render_template("tailscale_acl.html")
+
+
+@app.get("/fragments/tailscale-acl/overview")
+def tailscale_acl_overview_fragment() -> str:
+    return render_template("fragments/tailscale_acl_overview.html")
+
+
+@app.get("/fragments/tailscale-acl/inputs")
+def tailscale_acl_inputs_fragment() -> str:
+    return render_template("fragments/tailscale_acl_inputs.html", defaults=TAILSCALE_POLICY_DEFAULTS)
+
+
+@app.get("/fragments/tailscale-acl/output")
+def tailscale_acl_output_fragment() -> str:
+    return render_template("fragments/tailscale_acl_output.html")
+
+
+@app.get("/fragments/tailscale-acl/apply-guide")
+def tailscale_acl_apply_guide_fragment() -> str:
+    return render_template("fragments/tailscale_acl_apply_guide.html")
 
 
 @app.get("/nodes")
@@ -949,7 +1396,7 @@ def callback() -> Any:
     payload: Dict[str, Any] = payload_json if isinstance(payload_json, dict) and payload_json else payload_form
 
     forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
-    source_ip = _first_forwarded_ip(forwarded_for) or (request.remote_addr or "")
+    source_ip, source_ip_source = _resolve_source_ip(payload)
     cert_subject = _header_or_payload(
         payload,
         "X-SSL-Client-Subject",
@@ -975,6 +1422,7 @@ def callback() -> Any:
     event = {
         "received_at": datetime.now(timezone.utc).isoformat(),
         "source_ip": source_ip,
+        "source_ip_source": source_ip_source,
         "forwarded_for": forwarded_for,
         "remote_addr": request.remote_addr,
         "user_agent": request.headers.get("User-Agent", ""),
@@ -1112,13 +1560,31 @@ def ssh_download(key_name: str, kind: str) -> Any:
 def nodes_summary() -> Any:
     config = _load_node_config()
     nodes = _inventory_nodes()
+    provision = _load_node_provisioning()
+
+    enriched_nodes: List[Dict[str, Any]] = []
+    for node in nodes:
+        enriched = dict(node)
+        selected = _effective_node_profiles(node, provision)
+        enriched["selected_profiles"] = selected
+        enriched["latest_check"] = _latest_node_check(node["name"], provision)
+        enriched_nodes.append(enriched)
+
     masked = {
         "username": config.get("username", ""),
         "password_set": bool(config.get("password")),
         "webhook_url": config.get("webhook_url", ""),
         "verify_tls": bool(config.get("verify_tls", True)),
     }
-    return jsonify({"ok": True, "nodes": nodes, "config": masked})
+    return jsonify(
+        {
+            "ok": True,
+            "nodes": enriched_nodes,
+            "config": masked,
+            "profiles": NODE_PROVISION_PROFILES,
+            "node_inputs": provision.get("node_inputs", {}),
+        }
+    )
 
 
 @app.post("/api/nodes/config")
@@ -1181,6 +1647,116 @@ def nodes_monitor() -> Any:
         webhook_result = {"sent": True, **result}
 
     return jsonify({"ok": True, "statuses": statuses, "webhook": webhook_result})
+
+
+@app.get("/api/nodes/profiles")
+def nodes_profiles() -> Any:
+    state = _load_node_provisioning()
+    return jsonify(
+        {
+            "ok": True,
+            "profiles": NODE_PROVISION_PROFILES,
+            "node_configs": state.get("node_configs", {}),
+            "node_inputs": state.get("node_inputs", {}),
+        }
+    )
+
+
+@app.post("/api/nodes/node-configs")
+def nodes_node_configs() -> Any:
+    payload = request.get_json(silent=True) or {}
+    node_name = str(payload.get("node", "")).strip()
+    profile_ids = payload.get("profile_ids") or []
+
+    if not node_name:
+        return jsonify({"ok": False, "error": "node is required"}), 400
+    if not isinstance(profile_ids, list):
+        return jsonify({"ok": False, "error": "profile_ids must be an array"}), 400
+
+    known_nodes = {n["name"] for n in _inventory_nodes()}
+    if node_name not in known_nodes:
+        return jsonify({"ok": False, "error": "node not found in active inventory"}), 404
+
+    valid_profile_ids = [str(pid) for pid in profile_ids if str(pid) in _profile_map()]
+    state = _load_node_provisioning()
+    node_configs = state.setdefault("node_configs", {})
+    node_configs[node_name] = valid_profile_ids
+    _save_node_provisioning(state)
+    return jsonify({"ok": True, "node": node_name, "profile_ids": valid_profile_ids})
+
+
+@app.post("/api/nodes/node-inputs")
+def nodes_node_inputs() -> Any:
+    payload = request.get_json(silent=True) or {}
+    node_name = str(payload.get("node", "")).strip()
+    raw_inputs = payload.get("profile_inputs") or {}
+
+    if not node_name:
+        return jsonify({"ok": False, "error": "node is required"}), 400
+    if not isinstance(raw_inputs, dict):
+        return jsonify({"ok": False, "error": "profile_inputs must be an object"}), 400
+
+    known_nodes = {n["name"] for n in _inventory_nodes()}
+    if node_name not in known_nodes:
+        return jsonify({"ok": False, "error": "node not found in active inventory"}), 404
+
+    state = _load_node_provisioning()
+    profile_ids = _effective_node_profiles({"name": node_name, "group": ""}, state)
+    sanitized = _sanitize_node_profile_inputs(raw_inputs, profile_ids=list(_profile_map().keys()))
+
+    node_inputs = state.setdefault("node_inputs", {})
+    node_inputs[node_name] = sanitized
+    _save_node_provisioning(state)
+    return jsonify({"ok": True, "node": node_name})
+
+
+@app.post("/api/nodes/provision")
+def nodes_provision() -> Any:
+    payload = request.get_json(silent=True) or {}
+    node_name = str(payload.get("node", "")).strip()
+    mode = str(payload.get("mode", "check")).strip().lower()
+    run_ansible = bool(payload.get("run_ansible", True))
+
+    if mode not in {"check", "apply"}:
+        return jsonify({"ok": False, "error": "mode must be check or apply"}), 400
+
+    nodes = _inventory_nodes()
+    if node_name:
+        target_nodes = [n for n in nodes if n["name"] == node_name]
+        if not target_nodes:
+            return jsonify({"ok": False, "error": "node not found in active inventory"}), 404
+    else:
+        target_nodes = nodes
+
+    state = _load_node_provisioning()
+    results: List[Dict[str, Any]] = []
+    missing_by_node: List[Dict[str, Any]] = []
+
+    for node in target_nodes:
+        profile_ids = _effective_node_profiles(node, state)
+        missing = _missing_required_inputs(node["name"], profile_ids, state)
+        if missing:
+            missing_by_node.append(
+                {
+                    "node": node["name"],
+                    "profiles": missing,
+                }
+            )
+
+    if missing_by_node:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "missing required provisioning inputs",
+                "missing_inputs": missing_by_node,
+            }
+        ), 400
+
+    for node in target_nodes:
+        profile_ids = _effective_node_profiles(node, state)
+        results.append(_apply_node_provisioning(node["name"], profile_ids, mode=mode, run_ansible=run_ansible))
+
+    return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "results": results})
 
 
 @app.get("/api/sd/jobs/<job_id>")

@@ -6,7 +6,12 @@
   <td>{{ e.fqdn or '-' }}</td>
   <td><span class="tag">{{ e.profile or 'unknown' }}</span></td>
   <td>{{ e.stage or 'phone_home' }}</td>
-  <td>{{ e.source_ip or e.remote_addr or '-' }}</td>
+  <td>
+    {{ e.source_ip or e.remote_addr or '-' }}
+    {% if e.source_ip_source %}
+    <div class="payload-kv">via {{ e.source_ip_source }}</div>
+    {% endif %}
+  </td>
   <td>
     <code>
       {% if e.cert_subject and e.cert_fingerprint %}
@@ -20,7 +25,15 @@
       {% endif %}
     </code>
   </td>
-  <td><code>{{ e.raw }}</code></td>
+  <td>
+    <details class="payload-details">
+      <summary class="payload-summary">View payload</summary>
+      <div class="payload-kv">
+        {{ (e.raw or {}) | length }} key{% if (e.raw or {}) | length != 1 %}s{% endif %} | stage: {{ e.stage or 'phone_home' }}
+      </div>
+      <pre class="payload-json">{{ (e.raw or {}) | tojson(indent=2) }}</pre>
+    </details>
+  </td>
 </tr>
 {% else %}
 <tr>

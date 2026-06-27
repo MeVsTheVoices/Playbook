@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tailscale ACL Planner</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <style>
       :root {
         --bg: #f3f5f7;
@@ -92,8 +93,13 @@
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
         margin-bottom: 1rem;
       }
-      h1 { margin: 0 0 0.4rem; }
-      p { color: var(--muted); }
+      .lazy {
+        min-height: 80px;
+      }
+      .skeleton {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
       .top-nav a {
         color: var(--accent);
         text-decoration: none;
@@ -156,68 +162,56 @@
     </aside>
 
     <main class="content">
-    <div class="wrap">
-      <div class="panel top-nav">
-        <a href="/">Back To Callback Dashboard</a>
-      </div>
-
-      <div class="panel">
-        <h1>Tailscale ACL Planner</h1>
-        <p>Use this page to generate policy blocks for tags, tag owners, ACL rules, and auto-approvers. Paste output into the Tailscale admin policy file.</p>
-        <div class="warn">Generated policy is a baseline. Review before applying in production.</div>
-      </div>
-
-      <div class="panel">
-        <h2>Inputs</h2>
-        <div class="grid">
-          <div>
-            <label for="tailnet">Tailnet (for display)</label>
-            <input id="tailnet" value="{{ defaults.tailnet }}">
-          </div>
-          <div>
-            <label for="admin_group">Admin Group/User</label>
-            <input id="admin_group" value="{{ defaults.admin_group }}">
-          </div>
-          <div>
-            <label for="rpi5_tag">Pi 5 Tag</label>
-            <input id="rpi5_tag" value="{{ defaults.rpi5_tag }}">
-          </div>
-          <div>
-            <label for="rpi_bplus_tag">Pi B+ Tag</label>
-            <input id="rpi_bplus_tag" value="{{ defaults.rpi_bplus_tag }}">
-          </div>
-          <div>
-            <label for="homelab_tag">Homelab Tag</label>
-            <input id="homelab_tag" value="{{ defaults.homelab_tag }}">
-          </div>
+      <div class="wrap">
+        <div class="panel top-nav">
+          <a href="/">Back To Callback Dashboard</a>
         </div>
-        <div style="margin-top: 0.8rem;">
-          <label for="pi5_subnets">Pi 5 Advertised Subnets (one CIDR per line)</label>
-          <textarea id="pi5_subnets">{{ defaults.pi5_subnets | join('\n') }}</textarea>
-        </div>
-        <div style="margin-top: 0.8rem;">
-          <button id="generate">Generate ACL Snippets</button>
-        </div>
-      </div>
 
-      <div class="panel">
-        <h2>Suggested Policy JSON</h2>
-        <pre id="policy_output"></pre>
-      </div>
+        <section
+          id="acl-overview-section"
+          class="panel lazy"
+          hx-get="/fragments/tailscale-acl/overview"
+          hx-trigger="load delay:80ms"
+          hx-swap="innerHTML"
+        >
+          <p class="skeleton">Loading overview...</p>
+        </section>
 
-      <div class="panel">
-        <h2>Where To Apply</h2>
-        <p>1. Open Tailscale Admin Console -> Access Controls.</p>
-        <p>2. Merge the generated blocks into your existing policy file.</p>
-        <p>3. Validate and save policy changes.</p>
+        <section
+          id="acl-inputs-section"
+          class="panel lazy"
+          hx-get="/fragments/tailscale-acl/inputs"
+          hx-trigger="load delay:220ms"
+          hx-swap="innerHTML"
+        >
+          <p class="skeleton">Loading input controls...</p>
+        </section>
+
+        <section
+          id="acl-output-section"
+          class="panel lazy"
+          hx-get="/fragments/tailscale-acl/output"
+          hx-trigger="load delay:420ms"
+          hx-swap="innerHTML"
+        >
+          <p class="skeleton">Loading policy output panel...</p>
+        </section>
+
+        <section
+          id="acl-apply-guide-section"
+          class="panel lazy"
+          hx-get="/fragments/tailscale-acl/apply-guide"
+          hx-trigger="load delay:620ms"
+          hx-swap="innerHTML"
+        >
+          <p class="skeleton">Loading apply guide...</p>
+        </section>
       </div>
-    </div>
     </main>
 
     <script>
       const body = document.body;
       const toggleBtn = document.getElementById("sidebar-toggle");
-      const out = document.getElementById("policy_output");
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -234,46 +228,57 @@
       function parseSubnets(text) {
         return text
           .split("\n")
-          .map(s => s.trim())
+          .map((s) => s.trim())
           .filter(Boolean);
       }
 
       function generatePolicy() {
-        const admin = document.getElementById("admin_group").value.trim();
-        const rpi5Tag = document.getElementById("rpi5_tag").value.trim();
-        const bplusTag = document.getElementById("rpi_bplus_tag").value.trim();
-        const homelabTag = document.getElementById("homelab_tag").value.trim();
-        const subnets = parseSubnets(document.getElementById("pi5_subnets").value);
+        const out = document.getElementById("policy_output");
+        const adminEl = document.getElementById("admin_group");
+        const rpi5El = document.getElementById("rpi5_tag");
+        const bplusEl = document.getElementById("rpi_bplus_tag");
+        const homelabEl = document.getElementById("homelab_tag");
+        const subnetEl = document.getElementById("pi5_subnets");
+
+        if (!out || !adminEl || !rpi5El || !bplusEl || !homelabEl || !subnetEl) {
+          return;
+        }
+
+        const admin = adminEl.value.trim();
+        const rpi5Tag = rpi5El.value.trim();
+        const bplusTag = bplusEl.value.trim();
+        const homelabTag = homelabEl.value.trim();
+        const subnets = parseSubnets(subnetEl.value);
 
         const policy = {
           tagOwners: {
             [rpi5Tag]: [admin],
             [bplusTag]: [admin],
-            [homelabTag]: [admin]
+            [homelabTag]: [admin],
           },
           autoApprovers: {
-            routes: {}
+            routes: {},
           },
           acls: [
             {
               action: "accept",
               src: [admin],
-              dst: [`${rpi5Tag}:*`, `${bplusTag}:*`, `${homelabTag}:*`]
+              dst: [`${rpi5Tag}:*`, `${bplusTag}:*`, `${homelabTag}:*`],
             },
             {
               action: "accept",
               src: [rpi5Tag, bplusTag],
-              dst: [`${homelabTag}:*`]
-            }
+              dst: [`${homelabTag}:*`],
+            },
           ],
           ssh: [
             {
               action: "accept",
               src: [admin],
               dst: [rpi5Tag, bplusTag],
-              users: ["autogroup:nonroot", "root"]
-            }
-          ]
+              users: ["autogroup:nonroot", "root"],
+            },
+          ],
         };
 
         subnets.forEach((cidr) => {
@@ -283,8 +288,35 @@
         out.textContent = JSON.stringify(policy, null, 2);
       }
 
-      document.getElementById("generate").addEventListener("click", generatePolicy);
-      generatePolicy();
+      function bindAclInputEvents() {
+        const generateBtn = document.getElementById("generate");
+        const inputsSection = document.getElementById("acl-inputs-section");
+
+        if (generateBtn && !generateBtn.dataset.bound) {
+          generateBtn.addEventListener("click", generatePolicy);
+          generateBtn.dataset.bound = "1";
+        }
+
+        if (inputsSection && !inputsSection.dataset.bound) {
+          inputsSection.addEventListener("input", (event) => {
+            const target = event.target;
+            if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+              generatePolicy();
+            }
+          });
+          inputsSection.dataset.bound = "1";
+        }
+
+        generatePolicy();
+      }
+
+      document.body.addEventListener("htmx:afterSwap", (event) => {
+        const targetId = event.target && event.target.id ? event.target.id : "";
+        if (targetId === "acl-inputs-section" || targetId === "acl-output-section") {
+          bindAclInputEvents();
+        }
+      });
+
       initSidebar();
     </script>
   </body>

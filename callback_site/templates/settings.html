@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings</title>
+    <style>
+      :root {
+        --bg: #f3f5f7;
+        --card: #ffffff;
+        --ink: #1d2939;
+        --muted: #52606d;
+        --accent: #0f766e;
+        --line: #d0d7de;
+        --danger: #b91c1c;
+      }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 12% 12%, #e6fffa 0, transparent 35%), var(--bg);
+        color: var(--ink);
+      }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 220px;
+        background: #0f172a;
+        color: #cbd5e1;
+        transition: width 0.2s ease;
+        overflow: hidden;
+        padding: 0.8rem;
+        box-sizing: border-box;
+      }
+      .sidebar-brand {
+        padding: 0.25rem 0.45rem 0.8rem;
+        margin-bottom: 0.7rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .sidebar-title {
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #f8fafc;
+        letter-spacing: 0.02em;
+      }
+      .sidebar-subtitle {
+        margin-top: 0.2rem;
+        color: #94a3b8;
+        font-size: 0.75rem;
+      }
+      .sidebar a {
+        display: block;
+        color: #cbd5e1;
+        text-decoration: none;
+        padding: 0.55rem;
+        border-radius: 8px;
+        margin-bottom: 0.25rem;
+      }
+      .sidebar a:hover { background: rgba(148, 163, 184, 0.16); }
+      .sidebar a.active {
+        background: rgba(20, 184, 166, 0.18);
+        color: #ecfeff;
+        border: 1px solid rgba(45, 212, 191, 0.2);
+      }
+      .toggle-btn {
+        width: 100%;
+        margin-bottom: 0.8rem;
+        border: 1px solid #334155;
+        background: #111827;
+        color: #cbd5e1;
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+      }
+      body.sidebar-collapsed .sidebar { width: 72px; }
+      body.sidebar-collapsed .sidebar .label { display: none; }
+      .content {
+        margin-left: 236px;
+        transition: margin-left 0.2s ease;
+      }
+      body.sidebar-collapsed .content { margin-left: 88px; }
+      .wrap {
+        max-width: 980px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        margin-bottom: 1rem;
+      }
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 0.65rem 0.9rem;
+        font-family: inherit;
+        font-size: 0.92rem;
+        cursor: pointer;
+      }
+      .danger {
+        background: var(--danger);
+        color: white;
+      }
+      .note {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .status {
+        margin-top: 0.8rem;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.82rem;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.6rem;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-title">Callback Site</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops</div>
+      </div>
+      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
+      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span>Home</span> <span class="label">Dashboard</span></a>
+      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
+      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span>Set</span> <span class="label">Settings</span></a>
+    </aside>
+
+    <main class="content">
+      <div class="wrap">
+        <div class="panel">
+          <h1>Settings</h1>
+          <p class="note">Quick maintenance actions for resetting saved state.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Clean Slate: Node Ops Configuration</h2>
+          <p class="note">
+            Clears saved Node Ops credentials, per-node profile assignments, stored profile inputs, and recorded provisioning results.
+          </p>
+          <button id="reset-node-ops" class="danger">Reset Node Ops State</button>
+          <div id="settings-status" class="status">Idle.</div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const body = document.body;
+      const toggleBtn = document.getElementById("sidebar-toggle");
+      const statusBox = document.getElementById("settings-status");
+      const resetNodeOpsBtn = document.getElementById("reset-node-ops");
+
+      function initSidebar() {
+        const saved = localStorage.getItem("sidebar-collapsed");
+        if (saved === "1") {
+          body.classList.add("sidebar-collapsed");
+        }
+      }
+
+      toggleBtn.addEventListener("click", () => {
+        body.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
+      });
+
+      async function resetNodeOps() {
+        const confirmed = window.confirm("Reset saved Node Ops config, node profile selections, and inputs?");
+        if (!confirmed) {
+          return;
+        }
+
+        statusBox.textContent = "Resetting node ops settings...";
+        const res = await fetch("/api/settings/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "node_ops" }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          statusBox.textContent = data.error || "Reset failed.";
+          return;
+        }
+        statusBox.textContent = `Reset complete: ${JSON.stringify(data.reset, null, 2)}`;
+      }
+
+      resetNodeOpsBtn.addEventListener("click", resetNodeOps);
+      initSidebar();
+    </script>
+  </body>
+</html>

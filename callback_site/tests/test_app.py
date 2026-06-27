@@ -32,9 +32,53 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"ok": True})
 
     def test_dashboard_and_pages_render(self) -> None:
-        for path in ("/", "/nodes", "/tailscale-acl"):
+        for path in ("/", "/nodes", "/tailscale-acl", "/settings"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
+
+    def test_settings_reset_node_ops(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        nodes = summary.get_json().get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes in inventory for settings reset test")
+
+        node_name = nodes[0]["name"]
+
+        set_profiles = self.client.post(
+            "/api/nodes/node-configs",
+            json={"node": node_name, "profile_ids": ["telegraf"]},
+        )
+        self.assertEqual(set_profiles.status_code, 200)
+
+        set_inputs = self.client.post(
+            "/api/nodes/node-inputs",
+            json={
+                "node": node_name,
+                "profile_inputs": {
+                    "telegraf": {
+                        "influx_endpoint": "https://influx.example:8086",
+                        "influx_bucket": "telegraf",
+                        "influx_org": "homelab",
+                        "influx_access_key": "access",
+                        "influx_secret_key": "secret",
+                    }
+                },
+            },
+        )
+        self.assertEqual(set_inputs.status_code, 200)
+
+        reset = self.client.post("/api/settings/reset", json={"scope": "node_ops"})
+        self.assertEqual(reset.status_code, 200)
+        reset_payload = reset.get_json()
+        self.assertTrue(reset_payload["ok"])
+        self.assertEqual(reset_payload["scope"], "node_ops")
+
+        after_profiles = self.client.get("/api/nodes/profiles")
+        self.assertEqual(after_profiles.status_code, 200)
+        after_payload = after_profiles.get_json()
+        self.assertEqual(after_payload.get("node_configs"), {})
+        self.assertEqual(after_payload.get("node_inputs"), {})
 
     def test_fragment_endpoints_render(self) -> None:
         for path in (

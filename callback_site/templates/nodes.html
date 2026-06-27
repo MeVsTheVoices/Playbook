@@ -248,6 +248,7 @@
       <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span>Home</span> <span class="label">Dashboard</span></a>
       <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
       <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span>Set</span> <span class="label">Settings</span></a>
     </aside>
 
     <main class="content">

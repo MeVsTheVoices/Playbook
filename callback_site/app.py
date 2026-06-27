@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 import queue
 import re
 import socket
@@ -305,18 +306,98 @@ def _append_image_history(entry: Dict[str, Any]) -> None:
         f.write(json.dumps(entry, separators=(",", ":")) + "\n")
 
 
-def _read_image_history(limit: int = 200) -> List[Dict[str, Any]]:
+def _image_record_id(entry: Dict[str, Any], raw_line: str = "") -> str:
+    seed = raw_line.strip() or json.dumps(entry, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
+
+
+def _normalize_image_record(entry: Dict[str, Any], raw_line: str = "") -> Dict[str, Any]:
+    record = dict(entry)
+    record.setdefault("id", _image_record_id(record, raw_line=raw_line))
+    record.setdefault("label", record.get("source_value") or record.get("download_path") or record.get("hostname") or "Retrieved image")
+    record.setdefault("notes", "")
+    record.setdefault("updated_at", record.get("recorded_at", ""))
+    return record
+
+
+def _write_image_history(entries: List[Dict[str, Any]]) -> None:
+    _ensure_image_history_file()
+    with IMAGE_HISTORY_FILE.open("w", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+
+
+def _list_image_records(limit: int = 200) -> List[Dict[str, Any]]:
     _ensure_image_history_file()
     lines = IMAGE_HISTORY_FILE.read_text(encoding="utf-8").splitlines()
     selected = lines[-limit:]
     entries: List[Dict[str, Any]] = []
     for line in selected:
         try:
-            entries.append(json.loads(line))
+            entries.append(_normalize_image_record(json.loads(line), raw_line=line))
         except json.JSONDecodeError:
             continue
     entries.reverse()
     return entries
+
+
+def _find_image_record(record_id: str) -> Dict[str, Any] | None:
+    for record in _list_image_records(limit=1000):
+        if record.get("id") == record_id:
+                        return record
+    return None
+
+
+def _upsert_image_record(payload: Dict[str, Any], record_id: str | None = None) -> Dict[str, Any]:
+    entries = _list_image_records(limit=5000)
+    now = datetime.now(timezone.utc).isoformat()
+    normalized = {
+        "id": record_id or payload.get("id") or uuid.uuid4().hex[:12],
+        "recorded_at": str(payload.get("recorded_at", "")).strip() or now,
+        "updated_at": now,
+        "profile": str(payload.get("profile", "")).strip(),
+        "hostname": str(payload.get("hostname", "")).strip(),
+        "source": str(payload.get("source", "")).strip(),
+        "source_value": str(payload.get("source_value", "")).strip(),
+        "downloaded": bool(payload.get("downloaded", False)),
+        "download_path": str(payload.get("download_path", "")).strip(),
+        "hash_status": str(payload.get("hash_status", "")).strip(),
+        "expected_sha256": str(payload.get("expected_sha256", "")).strip().lower(),
+        "observed_sha256": str(payload.get("observed_sha256", "")).strip().lower(),
+        "job_status": str(payload.get("job_status", "")).strip(),
+        "exit_code": payload.get("exit_code"),
+        "label": str(payload.get("label", "")).strip() or "Retrieved image",
+        "notes": str(payload.get("notes", "")).strip(),
+    }
+
+    replaced = False
+    for idx, entry in enumerate(entries):
+        if entry.get("id") == normalized["id"]:
+            existing = dict(entry)
+            existing.update(normalized)
+            entries[idx] = existing
+            replaced = True
+            normalized = existing
+            break
+
+    if not replaced:
+        entries.append(normalized)
+
+    _write_image_history(entries)
+    return normalized
+
+
+def _delete_image_record(record_id: str) -> bool:
+    entries = _list_image_records(limit=5000)
+    kept = [entry for entry in entries if entry.get("id") != record_id]
+    if len(kept) == len(entries):
+        return False
+    _write_image_history(kept)
+    return True
+
+
+def _read_image_history(limit: int = 200) -> List[Dict[str, Any]]:
+    return _list_image_records(limit=limit)
 
 
 def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> None:
@@ -343,7 +424,9 @@ def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> 
     source = "image_url" if image_url else "image_file" if image_file else "default"
     source_value = image_url or image_file
     record = {
+        "id": uuid.uuid4().hex[:12],
         "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
         "profile": str(form.get("profile", "")).strip(),
         "hostname": str(form.get("hostname", "")).strip(),
         "source": source,
@@ -711,6 +794,22 @@ def _default_callback_url() -> str:
     return f"http://{host}:{port}/api/cloud-init/callback"
 
 
+def _first_forwarded_ip(value: str) -> str:
+    parts = [p.strip() for p in value.split(",") if p.strip()]
+    return parts[0] if parts else ""
+
+
+def _header_or_payload(payload: Dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        header_val = request.headers.get(key)
+        if header_val:
+            return str(header_val).strip()
+        payload_val = payload.get(key)
+        if payload_val:
+            return str(payload_val).strip()
+    return ""
+
+
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
     with tempfile.TemporaryDirectory(prefix="sdprep-key-") as tdir:
         pubkey_file = Path(tdir) / "id.pub"
@@ -838,18 +937,56 @@ def events() -> Any:
     return jsonify({"events": _read_events(limit=500)})
 
 
+@app.get("/fragments/cloud-init/event-rows")
+def cloud_init_event_rows() -> str:
+    return render_template("fragments/callback_rows.html", events=_read_events(limit=200))
+
+
 @app.post("/api/cloud-init/callback")
 def callback() -> Any:
-    payload = request.get_json(silent=True) or {}
+    payload_json = request.get_json(silent=True)
+    payload_form = request.form.to_dict(flat=True)
+    payload: Dict[str, Any] = payload_json if isinstance(payload_json, dict) and payload_json else payload_form
+
+    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+    source_ip = _first_forwarded_ip(forwarded_for) or (request.remote_addr or "")
+    cert_subject = _header_or_payload(
+        payload,
+        "X-SSL-Client-Subject",
+        "X-Client-Cert-Subject",
+        "TLS-Client-Subject",
+        "cert_subject",
+    )
+    cert_issuer = _header_or_payload(
+        payload,
+        "X-SSL-Client-Issuer",
+        "X-Client-Cert-Issuer",
+        "TLS-Client-Issuer",
+        "cert_issuer",
+    )
+    cert_fingerprint = _header_or_payload(
+        payload,
+        "X-SSL-Client-Fingerprint",
+        "X-Client-Cert-Fingerprint",
+        "TLS-Client-Fingerprint",
+        "cert_fingerprint",
+    )
+
     event = {
         "received_at": datetime.now(timezone.utc).isoformat(),
-        "remote_addr": request.headers.get("X-Forwarded-For", request.remote_addr),
+        "source_ip": source_ip,
+        "forwarded_for": forwarded_for,
+        "remote_addr": request.remote_addr,
         "user_agent": request.headers.get("User-Agent", ""),
         "instance_id": payload.get("instance_id") or request.form.get("instance_id"),
         "hostname": payload.get("hostname") or request.form.get("hostname"),
         "fqdn": payload.get("fqdn") or request.form.get("fqdn"),
         "profile": payload.get("profile"),
         "stage": payload.get("stage"),
+        "cert_subject": cert_subject,
+        "cert_issuer": cert_issuer,
+        "cert_fingerprint": cert_fingerprint,
+        "cert_present": bool(cert_subject or cert_fingerprint),
         "raw": payload,
     }
     _append_event(event)
@@ -1058,6 +1195,46 @@ def sd_job(job_id: str) -> Any:
 @app.get("/api/sd/image-catalog")
 def sd_image_catalog() -> Any:
     return jsonify({"ok": True, "entries": _read_image_history(limit=300)})
+
+
+@app.get("/fragments/sd/image-catalog-rows")
+def sd_image_catalog_rows() -> str:
+    return render_template("fragments/image_catalog_rows.html", image_history=_read_image_history(limit=150))
+
+
+@app.get("/api/sd/images")
+def sd_images() -> Any:
+    return jsonify({"ok": True, "entries": _read_image_history(limit=500)})
+
+
+@app.get("/fragments/sd/images-rows")
+def sd_images_rows() -> str:
+    return render_template("fragments/managed_image_rows.html", image_records=_read_image_history(limit=500))
+
+
+@app.post("/api/sd/images")
+def sd_images_create() -> Any:
+    payload = request.get_json(silent=True) or {}
+    record = _upsert_image_record(payload)
+    return jsonify({"ok": True, "record": record}), 201
+
+
+@app.put("/api/sd/images/<record_id>")
+def sd_images_update(record_id: str) -> Any:
+    if not _find_image_record(record_id):
+        return jsonify({"ok": False, "error": "image record not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    payload["id"] = record_id
+    record = _upsert_image_record(payload, record_id=record_id)
+    return jsonify({"ok": True, "record": record})
+
+
+@app.delete("/api/sd/images/<record_id>")
+def sd_images_delete(record_id: str) -> Any:
+    deleted = _delete_image_record(record_id)
+    if not deleted:
+        return jsonify({"ok": False, "error": "image record not found"}), 404
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

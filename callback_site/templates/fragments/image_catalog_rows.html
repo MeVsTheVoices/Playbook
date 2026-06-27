@@ -1,0 +1,14 @@
+{% for row in image_history %}
+<tr>
+  <td>{{ row.recorded_at or '-' }}</td>
+  <td>{{ row.profile or '-' }}</td>
+  <td><code>{{ row.source_value or row.source or '-' }}</code></td>
+  <td>{{ row.hash_status or '-' }}</td>
+  <td><code>{{ row.observed_sha256 or row.expected_sha256 or '-' }}</code></td>
+  <td>{{ row.job_status or '-' }} ({{ row.exit_code if row.exit_code is not none else '-' }})</td>
+</tr>
+{% else %}
+<tr>
+  <td colspan="6">No image catalog entries yet.</td>
+</tr>
+{% endfor %}

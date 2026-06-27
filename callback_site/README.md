@@ -76,14 +76,71 @@ Node Ops:
 - `GET /api/nodes/summary`
 - `POST /api/nodes/config`
 - `POST /api/nodes/monitor`
+- `GET /api/nodes/profiles`
+- `POST /api/nodes/node-configs`
+- `POST /api/nodes/node-inputs`
+- `POST /api/nodes/provision`
+
+### Node Ops Workflow (Post-Callback)
+
+The Node Ops tab is designed as the next stage after callback visibility:
+- Pull active nodes and their latest callback + reachability state.
+- Assign a per-node set of provisioning profiles (baseline, tailscale, telegraf, docker, kubernetes).
+- Save profile-specific values (for example, Telegraf endpoint/bucket/org/access key/secret key and Tailscale auth key/tailnet).
+- Run a closer check (`mode=check`) for one node or all active nodes.
+- Optionally apply provisioning (`mode=apply`) to a selected node.
+
+Required profile inputs are validated before check/apply runs:
+- Missing required fields return `400` from `POST /api/nodes/provision` with a `missing_inputs` payload.
+- Save/update node values first with `POST /api/nodes/node-inputs`.
+- `GET /api/nodes/summary` and `GET /api/nodes/profiles` return `node_inputs` to hydrate the UI.
+
+Provisioning execution modes:
+- `run_ansible=true`: runs `ansible-playbook` with `--limit <node>` and profile tags.
+- `run_ansible=false`: stores planned checks without execution (safe planning mode).
+
+Node profile and check state is persisted in:
+- `callback_site/data/node_provisioning.json`
 
 Fragment endpoints:
 - `GET /fragments/sd/image-catalog-rows`
 - `GET /fragments/sd/images-rows`
 - `GET /fragments/cloud-init/event-rows`
+- `GET /fragments/tailscale-acl/overview`
+- `GET /fragments/tailscale-acl/inputs`
+- `GET /fragments/tailscale-acl/output`
+- `GET /fragments/tailscale-acl/apply-guide`
+
+Tailscale ACL planner loading model:
+- `/tailscale-acl` now serves a lightweight shell first.
+- Section panels are fetched progressively using htmx, so first paint is fast and deeper sections hydrate in short staged delays.
 
 Tests:
 - `python -m unittest discover -s tests`
+
+### Basic Testing
+
+Automated:
+- `cd callback_site`
+- `.venv/bin/python -m unittest discover -s tests -v`
+
+Manual smoke checks:
+- Start app: `.venv/bin/python3 app.py`
+- Dashboard: `curl -i http://127.0.0.1:8088/`
+- Health: `curl -s http://127.0.0.1:8088/health`
+- Events API: `curl -s http://127.0.0.1:8088/api/cloud-init/events`
+- Fragment rows:
+	- `curl -i http://127.0.0.1:8088/fragments/cloud-init/event-rows`
+	- `curl -i http://127.0.0.1:8088/fragments/sd/image-catalog-rows`
+	- `curl -i http://127.0.0.1:8088/fragments/sd/images-rows`
+
+Callback source IP sanity check:
+- `curl -s -X POST http://127.0.0.1:8088/api/cloud-init/callback -H 'Content-Type: application/json' -H 'X-Forwarded-For: 203.0.113.10, 10.0.0.2' -d '{"hostname":"test-host","instance_id":"iid-test","profile":"pi5","stage":"phone_home"}'`
+- Confirm `source_ip` is `203.0.113.10` in `GET /api/cloud-init/events`.
+
+Environment note:
+- Run the callback app with `callback_site/.venv` binaries (for example `.venv/bin/python3 app.py` from `callback_site/`).
+- The repository-root venv (`/home/jdizzle/Playbook/.venv`) may not include callback-site Flask dependencies.
 
 ## Data Files
 

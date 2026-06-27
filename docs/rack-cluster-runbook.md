@@ -25,18 +25,31 @@
 1. Start the callback site:
    - `./scripts/bootstrap_project.sh --start-callback`
 2. Open the modular dashboard fragments and refresh individual tables when you do not want a full page reload.
-2. Prepare an SD card with cloud-init and callback baked in:
+3. Prepare an SD card with cloud-init and callback baked in:
    - `cd ..`
    - `chmod +x scripts/prepare_sd_cloud_init.sh`
    - `sudo scripts/prepare_sd_cloud_init.sh --profile pi5 --hostname rpi5-03 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback`
-3. For Pi B+, provide a cloud-init compatible image explicitly:
+4. For Pi B+, provide a cloud-init compatible image explicitly:
    - `sudo scripts/prepare_sd_cloud_init.sh --profile pibplus --hostname rpi-bplus-02 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback --image-url <your-cloud-init-image-url>`
-4. Insert SD card, boot node, then watch callback events:
+5. Insert SD card, boot node, then watch callback events:
    - Open `http://<callback-host>:8088/`
 
 ## Callback Site Testing
 - Run the local regression suite from `callback_site/` with `python -m unittest discover -s tests`.
-- The tests cover image CRUD, callback event fragments, and the health endpoint.
+- The tests cover page/fragment rendering, image CRUD, callback event fragments, source IP precedence, and the health endpoint.
+- Quick smoke checks:
+   - `curl -i http://127.0.0.1:8088/`
+   - `curl -s http://127.0.0.1:8088/health`
+   - `curl -s http://127.0.0.1:8088/api/cloud-init/events`
+
+## Node Ops Progression
+1. After callback events appear for a node, open `/nodes`.
+2. Assign per-node configuration profiles (baseline/tailscale/telegraf/docker/kubernetes).
+3. Save profile-specific inputs (for example, Telegraf endpoint/bucket/org/access key/secret key, Tailscale auth key/tailnet).
+4. Run "Check Closer" to validate node profile sets (`mode=check`).
+5. If required values are missing, fill them in and save inputs, then re-run check.
+6. Run "Apply" for optional provisioning once checks look correct.
+7. Use plan-only checks by disabling Ansible execution in the Node Ops UI.
 
 ## MAAS Notes
 - MAAS defaults are in `group_vars/all/maas.yml` and disabled by default.

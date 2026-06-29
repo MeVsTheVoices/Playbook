@@ -238,6 +238,69 @@
         color: #86efac;
         font-weight: 700;
       }
+      .job-log .term-info {
+        color: #a5f3fc;
+        font-weight: 600;
+      }
+      .job-log .term-highlight {
+        color: #fbbf24;
+        font-weight: 700;
+      }
+      .job-log .term-path {
+        color: #bfdbfe;
+        font-weight: 500;
+      }
+      #job-status {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        margin-bottom: 0.6rem;
+      }
+      .job-status-header {
+        display: flex;
+        gap: 1.2rem;
+        flex-wrap: wrap;
+      }
+      .job-status-badge {
+        display: inline-block;
+        padding: 0.32rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+      .job-status-badge.running {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+      .job-status-badge.completed {
+        background: #dcfce7;
+        color: #15803d;
+      }
+      .job-status-badge.failed {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .job-timing {
+        font-size: 0.82rem;
+        color: #8b9ab2;
+      }
+      .job-timing strong {
+        color: #a5f3fc;
+      }
+      .job-actions {
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+      }
+      .job-actions a {
+        font-size: 0.82rem;
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .job-actions a:hover {
+        text-decoration: underline;
+      }
       .inline-row {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -488,6 +551,8 @@
         margin-top: 0.25rem;
         color: var(--muted);
         font-size: 0.78rem;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
       @media (max-width: 900px) {
         th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) {
@@ -509,6 +574,8 @@
       <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
       <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span>Home</span> <span class="label">Dashboard</span></a>
       <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
+      <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span>Mon</span> <span class="label">Monitor</span></a>
+      <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span>Img</span> <span class="label">Image Library</span></a>
       <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
       <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span>Set</span> <span class="label">Settings</span></a>
     </aside>
@@ -525,14 +592,27 @@
           </div>
           <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init plus callback metadata.</p>
         </div>
-        <div class="panel" id="image-download-catalog">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="k">Latest pull</div>
+            <div class="v">{{ image_summary.latest_label }}</div>
+            <div class="payload-kv">{{ image_summary.latest_status }}{% if image_summary.latest_recorded_at %} · {{ image_summary.latest_recorded_at }}{% endif %}</div>
+          </div>
+          <div class="stat-card">
+            <div class="k">Catalog cache</div>
+            <div class="v">{{ image_summary.available_catalog_entries }} / {{ image_summary.catalog_entries }}</div>
+            <div class="payload-kv">entries already available locally</div>
+          </div>
+          <div class="stat-card">
+            <div class="k">Latest state</div>
+            <div class="v">{{ "available" if image_summary.latest_available else "missing" }}</div>
+            <div class="payload-kv">{{ image_summary.latest_cache_path or "No cached path recorded yet." }}</div>
+          </div>
+        </div>
+        <div class="panel">
           This operation erases the target device. Verify the selected disk and checksum before starting.
         </div>
-          <div class="split-head" style="margin-bottom: 0.6rem;">
-            <span class="pill">Read-only catalog</span>
-            <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
-          </div>
-          <div class="table-wrap">
+        <form id="sd-form">
           <div class="fieldset">
             <h2>Target Settings</h2>
             <div class="form-grid">
@@ -609,9 +689,10 @@
               <label for="ssh_key_name">First-Time SSH Key Generation (optional)</label>
               <div class="inline-row">
                 <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
-                <button type="button" id="generate-ssh-key">Generate Or Load Key</button>
+                <button type="button" id="generate-ssh-key">Generate Key</button>
+                <button type="button" id="kload-ssh-key">Kload Key</button>
               </div>
-              <div class="hint" id="ssh-key-status">Creates or loads local key files and fills the public key field.</div>
+              <div class="hint" id="ssh-key-status">Use Generate for a new key, or Kload to load an existing key by name.</div>
               <div class="key-links" id="key-links"></div>
             </div>
             <div style="margin-top: 0.8rem;">
@@ -629,128 +710,11 @@
             <span class="hint">Checksum state appears in the log. Missing expected hash defaults to skip.</span>
           </div>
         </form>
-        <p id="job-status"></p>
+        <div id="job-status"></div>
         <div class="job-log" id="job-log"></div>
       </div>
 
-      <div class="panel" id="image-download-catalog">
-        <h1>Image Download Catalog</h1>
-        <p>Recent image runs, including source, verification state, and outcome.</p>
-        <div class="split-head" style="margin-bottom: 0.6rem;">
-          <span class="pill">Read-only catalog</span>
-          <div class="actions-row" style="margin-top: 0;">
-            <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
-            <a class="mini-link" href="#retrieved-image-manager">Manage retrieved images</a>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Recorded (UTC)</th>
-                <th>Profile</th>
-                <th>Source</th>
-                <th>Hash Status</th>
-                <th>Observed SHA256</th>
-                <th>Job</th>
-              </tr>
-            </thead>
-            <tbody id="image-catalog-body">
-              {% include "fragments/image_catalog_rows.html" %}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      <div class="panel" id="retrieved-image-manager">
-        <div class="split-head">
-          <h1>Retrieved Image Manager</h1>
-          <div class="actions-row" style="margin-top: 0;">
-            <a class="mini-link" href="/fragments/sd/images-rows" hx-get="/fragments/sd/images-rows" hx-target="#managed-images-body" hx-swap="innerHTML">Refresh rows</a>
-            <a class="mini-link" href="#image-download-catalog">Back to download catalog</a>
-          </div>
-        </div>
-        <p>Edit metadata for retrieved images, create curated records, or delete entries you no longer want to keep.</p>
-
-        <form id="image-record-form">
-          <input type="hidden" id="image_record_id">
-          <div class="crud-form">
-            <div>
-              <label for="image_label">Label</label>
-              <input id="image_label" placeholder="Ubuntu 24.04 LTS image">
-            </div>
-            <div>
-              <label for="image_profile">Profile</label>
-              <select id="image_profile">
-                <option value="">Unassigned</option>
-                <option value="pi5">pi5</option>
-                <option value="pibplus">pibplus</option>
-              </select>
-            </div>
-            <div>
-              <label for="image_source">Source</label>
-              <input id="image_source" placeholder="image_url, image_file, default">
-            </div>
-            <div>
-              <label for="image_source_value">Source Value</label>
-              <input id="image_source_value" placeholder="https://... or /path/to/image.img.xz">
-            </div>
-            <div>
-              <label for="image_download_path">Download Path</label>
-              <input id="image_download_path" placeholder="/tmp/downloaded.img.xz">
-            </div>
-            <div>
-              <label for="image_hash_status">Hash Status</label>
-              <input id="image_hash_status" placeholder="verified, skipped, failed">
-            </div>
-            <div>
-              <label for="image_expected_sha">Expected SHA256</label>
-              <input id="image_expected_sha" placeholder="64 hex chars">
-            </div>
-            <div>
-              <label for="image_observed_sha">Observed SHA256</label>
-              <input id="image_observed_sha" placeholder="64 hex chars">
-            </div>
-            <div>
-              <label for="image_job_status">Job Status</label>
-              <input id="image_job_status" placeholder="completed, failed">
-            </div>
-            <div>
-              <label for="image_exit_code">Exit Code</label>
-              <input id="image_exit_code" type="number" min="0" step="1" placeholder="0">
-            </div>
-            <div class="grid-span-full">
-              <label for="image_notes">Notes</label>
-              <textarea id="image_notes" placeholder="Optional operator notes about this retrieved image."></textarea>
-            </div>
-          </div>
-          <div class="crud-actions">
-            <button type="button" id="save-image-record">Save Image Record</button>
-            <button type="button" id="clear-image-record" style="background:#475569;">Clear Form</button>
-            <span class="hint" id="image-record-status">Select a row to edit it, or add a new record manually.</span>
-          </div>
-        </form>
-
-        <div class="table-wrap" style="margin-top: 0.9rem;">
-          <table>
-            <thead>
-              <tr>
-                <th>Recorded</th>
-                <th>Label</th>
-                <th>Profile</th>
-                <th>Source</th>
-                <th>Hash</th>
-                <th>Job</th>
-                <th>Notes</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="managed-images-body">
-              {% include "fragments/managed_image_rows.html" %}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       <div class="panel" id="callback-dashboard">
         <div class="section-head">
@@ -827,7 +791,6 @@
       const form = document.getElementById("sd-form");
       const statusEl = document.getElementById("job-status");
       const logEl = document.getElementById("job-log");
-      const imageCatalogBodyEl = document.getElementById("image-catalog-body");
       const eventsBodyEl = document.getElementById("events-body");
       const sshKeyStatusEl = document.getElementById("ssh-key-status");
       const keyLinksEl = document.getElementById("key-links");
@@ -842,25 +805,10 @@
       const statTotalEl = document.getElementById("stat-total");
       const stat24hEl = document.getElementById("stat-24h");
       const statHostsEl = document.getElementById("stat-hosts");
-      const managedImagesBodyEl = document.getElementById("managed-images-body");
-      const imageRecordStatusEl = document.getElementById("image-record-status");
-      const imageRecordIdEl = document.getElementById("image_record_id");
-      const imageLabelEl = document.getElementById("image_label");
-      const imageProfileEl = document.getElementById("image_profile");
-      const imageSourceEl = document.getElementById("image_source");
-      const imageSourceValueEl = document.getElementById("image_source_value");
-      const imageDownloadPathEl = document.getElementById("image_download_path");
-      const imageHashStatusEl = document.getElementById("image_hash_status");
-      const imageExpectedShaEl = document.getElementById("image_expected_sha");
-      const imageObservedShaEl = document.getElementById("image_observed_sha");
-      const imageJobStatusEl = document.getElementById("image_job_status");
-      const imageExitCodeEl = document.getElementById("image_exit_code");
-      const imageNotesEl = document.getElementById("image_notes");
       const imageCatalog = {{ image_catalog | tojson }};
       let currentJob = null;
       let deviceWebhookRetry = null;
       let allEvents = [];
-      let managedImageRecords = [];
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -875,7 +823,22 @@
       });
 
       function renderJob(job) {
-        statusEl.textContent = `Job ${job.id}: ${job.status}`;
+        const statusBadgeClass = job.status === "running" ? "running" : (job.exit_code === 0 ? "completed" : "failed");
+        const timingInfo = formatJobTiming(job);
+        statusEl.innerHTML = `
+          <div class="job-status-header">
+            <div>
+              <span class="job-status-badge ${statusBadgeClass}">${job.status.toUpperCase()}</span>
+              <span style="color: #8b9ab2; font-size: 0.82rem; margin-left: 0.4rem;">ID: <code style="color: #a5f3fc; font-size: 0.78rem;">${job.id.substring(0, 12)}...</code></span>
+            </div>
+            ${timingInfo ? `<div class="job-timing">${timingInfo}</div>` : ""}
+          </div>
+          <div class="job-actions">
+            <a href="/images" target="_self">📦 Image Library</a>
+            <a href="/images#image-download-catalog" target="_self">⬇️ Download Catalog</a>
+            <a href="/images#retrieved-image-manager" target="_self">💾 Managed Images</a>
+          </div>
+        `;
         const out = (job.stdout || "").trim();
         const err = (job.stderr || "").trim();
         const compactOutLines = compactLogLines(out ? out.split("\n") : []);
@@ -899,6 +862,17 @@
         logEl.innerHTML = highlightLogText(body);
       }
 
+      function formatJobTiming(job) {
+        if (!job.created_at) return "";
+        const createdMs = new Date(job.created_at).getTime();
+        const finishedMs = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();
+        const durationSec = Math.round((finishedMs - createdMs) / 1000);
+        const duration = durationSec > 60
+          ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`
+          : `${durationSec}s`;
+        return `<strong>Duration:</strong> ${duration}${job.status === "running" ? " (ongoing)" : ""}`;
+      }
+
       function escapeHtml(text) {
         return String(text)
           .replaceAll("&", "&amp;")
@@ -907,9 +881,12 @@
       }
 
       function highlightLogText(text) {
-        const tokenRegex = /\b(progress|download|copied|records|mounting|injecting|hash|verified|skipped|failed|error|done|uname|linux|kernel|cloud-init|ubuntu|flashing|decompressing)\b/gi;
-        const warnRegex = /\b(failed|error|aborted|invalid|missing)\b/gi;
+        const tokenRegex = /\b(progress|download|copying|copied|records|mounting|injecting|hash|verified|skipped|failed|error|done|uname|linux|kernel|cloud-init|ubuntu|flashing|decompressing|device|target|partition|formatted|written|starting|running|stopped|status)\b/gi;
+        const pathRegex = /(\/[\w\/.\-]+|[\w\-]+\.\w+)/g;
+        const warnRegex = /\b(failed|error|aborted|invalid|missing|skipped)\b/gi;
         const okRegex = /\b(done|verified|completed|ready|ok|success)\b/gi;
+        const infoRegex = /\b(starting|running|processing|preparing|mounted|unmounted|detected)\b/gi;
+        const highlightRegex = /\b(bytes|copied|written|verified|checksum)\b/gi;
         const headingRegex = /^(exit_code:|STDOUT:|STDERR:)$/;
 
         const escaped = escapeHtml(text);
@@ -937,6 +914,14 @@
           });
           out = out.replaceAll(warnRegex, (m) => `<span class="term-warn">${m}</span>`);
           out = out.replaceAll(okRegex, (m) => `<span class="term-ok">${m}</span>`);
+          out = out.replaceAll(infoRegex, (m) => `<span class="term-info">${m}</span>`);
+          out = out.replaceAll(highlightRegex, (m) => `<span class="term-highlight">${m}</span>`);
+          out = out.replaceAll(pathRegex, (m) => {
+            if (m.startsWith("/") || m.includes(".")) {
+              return `<span class="term-path">${m}</span>`;
+            }
+            return m;
+          });
           return out;
         }).join("\n");
       }
@@ -1572,6 +1557,110 @@
         }
       }
 
+      function rebuildCatalogPullOptions() {
+        catalogPullSelectEl.innerHTML = "";
+        const entries = imageCatalog
+          .filter((entry) => String(entry.image_url || "").trim())
+          .sort((a, b) => String(a.label || "").localeCompare(String(b.label || "")));
+
+        if (!entries.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "No downloadable catalog entries available";
+          catalogPullSelectEl.appendChild(option);
+          catalogPullSelectEl.disabled = true;
+          return;
+        }
+
+        catalogPullSelectEl.disabled = false;
+        for (const entry of entries) {
+          const option = document.createElement("option");
+          option.value = entry.id;
+          option.textContent = `${entry.label} (${entry.id})`;
+          catalogPullSelectEl.appendChild(option);
+        }
+      }
+
+      function renderCatalogPullJob(job) {
+        const summary = job.summary || {};
+        catalogPullStatusEl.textContent = `Catalog pull ${job.id}: ${job.status}`;
+        const lines = [
+          `storage_dir: ${job.storage_dir || "n/a"}`,
+          `accepted: ${(job.accepted_ids || []).join(", ") || "(none)"}`,
+          `summary: ok=${summary.ok || 0} failed=${summary.failed || 0} skipped=${summary.skipped || 0} total=${summary.total || 0}`,
+          "",
+          "results:",
+        ];
+
+        const results = Array.isArray(job.results) ? job.results : [];
+        if (!results.length) {
+          lines.push("(pending)");
+        } else {
+          for (const item of results) {
+            lines.push(
+              `- ${item.id || "?"}: ${item.status || "unknown"} | ${item.message || ""} | ${item.download_path || ""}`
+            );
+          }
+        }
+        catalogPullLogEl.innerHTML = highlightLogText(lines.join("\n"));
+      }
+
+      async function pollCatalogPullJob() {
+        if (!currentCatalogPullJob) return;
+        const res = await fetch(`/api/sd/catalog-pull/jobs/${currentCatalogPullJob}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          catalogPullStatusEl.textContent = data.error || "Failed to load catalog pull status.";
+          return;
+        }
+
+        renderCatalogPullJob(data.job);
+        if (data.job.status === "queued" || data.job.status === "running") {
+          setTimeout(pollCatalogPullJob, 1300);
+        } else {
+          loadImageCatalog();
+          loadManagedImages();
+        }
+      }
+
+      async function startCatalogPull() {
+        const selectedIds = Array.from(catalogPullSelectEl.selectedOptions)
+          .map((option) => String(option.value || "").trim())
+          .filter(Boolean);
+
+        if (!selectedIds.length) {
+          catalogPullStatusEl.textContent = "Select at least one catalog entry to pull.";
+          return;
+        }
+
+        catalogPullStatusEl.textContent = "Submitting bulk pull job...";
+        catalogPullLogEl.textContent = "";
+        const res = await fetch("/api/sd/catalog-pull", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            catalog_ids: selectedIds,
+            skip_existing: catalogPullSkipExistingEl.checked,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          const messages = [data.error || "Failed to start catalog pull job."];
+          if (Array.isArray(data.missing_ids) && data.missing_ids.length) {
+            messages.push(`missing_ids: ${data.missing_ids.join(", ")}`);
+          }
+          if (Array.isArray(data.missing_url_ids) && data.missing_url_ids.length) {
+            messages.push(`missing_url_ids: ${data.missing_url_ids.join(", ")}`);
+          }
+          catalogPullStatusEl.textContent = messages.join(" | ");
+          return;
+        }
+
+        currentCatalogPullJob = data.job_id;
+        catalogPullStatusEl.textContent = `Bulk pull job started: ${data.job_id}`;
+        pollCatalogPullJob();
+      }
+
       function refreshKeyLinks(forcedKeyName) {
         const keyNameInput = (forcedKeyName || document.getElementById("ssh_key_name").value).trim();
         if (!keyNameInput) {
@@ -1661,8 +1750,6 @@
         renderJob(data.job);
         if (data.job.status === "queued" || data.job.status === "running") {
           setTimeout(pollJob, 1200);
-        } else {
-          loadImageCatalog();
         }
       }
 
@@ -1697,27 +1784,29 @@
         pollJob();
       });
 
-      document.getElementById("generate-ssh-key").addEventListener("click", async () => {
+      async function runSshKeyAction(mode) {
         const keyNameInput = document.getElementById("ssh_key_name").value.trim();
-        sshKeyStatusEl.textContent = "Generating/loading key...";
+        const verb = mode === "generate" ? "Generating" : "Kloading";
+        sshKeyStatusEl.textContent = `${verb} key...`;
         const res = await fetch("/api/ssh/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key_name: keyNameInput, comment: "rack-bootstrap" }),
+          body: JSON.stringify({ key_name: keyNameInput, comment: "rack-bootstrap", mode }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          sshKeyStatusEl.textContent = (data.errors || ["Failed to generate key"]).join("; ");
+          sshKeyStatusEl.textContent = (data.errors || ["SSH key action failed"]).join("; ");
           return;
         }
         form.ssh_public_key.value = data.public_key;
         refreshKeyLinks(data.key_name);
-        sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}'. Public key inserted. Private key: ${data.private_key_path}`;
-      });
+        sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}' via mode '${data.mode || mode}'. Public key inserted. Private key: ${data.private_key_path}`;
+      }
+
+      document.getElementById("generate-ssh-key").addEventListener("click", () => runSshKeyAction("generate"));
+      document.getElementById("kload-ssh-key").addEventListener("click", () => runSshKeyAction("kload"));
 
       document.getElementById("ssh_key_name").addEventListener("input", refreshKeyLinks);
-      document.getElementById("save-image-record").addEventListener("click", saveImageRecord);
-      document.getElementById("clear-image-record").addEventListener("click", clearImageRecordForm);
 
       form.profile.addEventListener("change", () => {
         rebuildCatalogFilters();
@@ -1751,8 +1840,6 @@
       rebuildCatalogFilters();
       refreshKeyLinks();
       startDeviceWebhook();
-      loadImageCatalog();
-      loadManagedImages();
       loadEvents();
       setInterval(loadEvents, 5000);
     </script>

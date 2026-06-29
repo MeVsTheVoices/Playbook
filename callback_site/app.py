@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import uuid
+from urllib import parse as urlparse
 from urllib import error as urlerror
 from urllib import request as urlrequest
 from datetime import datetime, timezone
@@ -24,15 +25,20 @@ APPDATA_DIR = Path(os.getenv("CALLBACK_APPDATA_DIR", str(BASE_DIR / "data"))).ex
 DATA_DIR = APPDATA_DIR
 DATA_FILE = DATA_DIR / "callbacks.jsonl"
 IMAGE_HISTORY_FILE = DATA_DIR / "image_download_catalog.jsonl"
+IMAGE_CACHE_DIR = DATA_DIR / "image_cache"
 KEYS_DIR = DATA_DIR / "ssh_keys"
 KEY_ARCHIVE_DIR = DATA_DIR / "ssh_key_archive"
 KEY_ARCHIVE_INDEX_FILE = DATA_DIR / "ssh_key_archive.jsonl"
 NODE_CONFIG_FILE = DATA_DIR / "node_monitor_config.json"
 NODE_PROVISION_FILE = DATA_DIR / "node_provisioning.json"
+MONITOR_STATE_FILE = DATA_DIR / "node_monitor_state.json"
+APP_SETTINGS_FILE = DATA_DIR / "app_settings.json"
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 SCRIPT_PATH = BASE_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh"
 JOBS: Dict[str, Dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
+CATALOG_PULL_JOBS: Dict[str, Dict[str, Any]] = {}
+CATALOG_PULL_JOBS_LOCK = threading.Lock()
 DEVICE_SUBSCRIBERS: List[queue.Queue[str]] = []
 DEVICE_SUBSCRIBERS_LOCK = threading.Lock()
 DEVICE_MONITOR_STARTED = False
@@ -196,10 +202,10 @@ IMAGE_CATALOG: List[Dict[str, Any]] = [
         "arch": "arm64",
         "profiles": ["pi5"],
         "recommended": True,
-        "image_url": "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-arm64+raspi.img.xz",
-        "image_sha256": "790652faeb4f61ce7bb12f5cb61734595c61d3cd882915b8b5f9918106c80d37",
+        "image_url": "https://old-releases.ubuntu.com/releases/24.04/ubuntu-24.04.2-preinstalled-server-arm64+raspi.img.xz",
+        "image_sha256": "07fe39e530381cee7095c16f54d05fd99db2fe8233e05ebf8948437e40b5feaa",
         "docs_url": "https://ubuntu.com/download/raspberry-pi",
-        "notes": "Best tested default for Raspberry Pi 5 rack nodes.",
+        "notes": "Pinned to old-releases for reliable direct download with curl.",
     },
     {
         "id": "ubuntu-22.04-pi-arm64",
@@ -209,8 +215,8 @@ IMAGE_CATALOG: List[Dict[str, Any]] = [
         "arch": "arm64",
         "profiles": ["pi5"],
         "recommended": False,
-        "image_url": "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-preinstalled-server-arm64+raspi.img.xz",
-        "image_sha256": "fd7687c5c9422a6c7ba4717c227bf6473fe4e0c954d5a9f664201dcecc63e822",
+        "image_url": "https://old-releases.ubuntu.com/releases/22.04/ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz",
+        "image_sha256": "8985915e3840d1e3971780aa160791e0665f64a2ee7e52ef8285c0701a8f6d6b",
         "docs_url": "https://ubuntu.com/download/raspberry-pi",
         "notes": "Useful for older automation or package compatibility.",
     },
@@ -278,6 +284,71 @@ IMAGE_CATALOG: List[Dict[str, Any]] = [
         "image_sha256": "",
         "docs_url": "https://fedoraproject.org/iot/download",
         "notes": "Provide image URL manually from Fedora IoT download page.",
+    },
+    {
+        "id": "fedora-server-arm64",
+        "label": "Fedora Server (ARM64)",
+        "distro": "Fedora",
+        "release": "Server Stable",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://fedoraproject.org/server/download",
+        "notes": "General-purpose Fedora Server option for rack nodes.",
+    },
+    {
+        "id": "opensuse-microos-arm64",
+        "label": "openSUSE MicroOS (AArch64)",
+        "distro": "openSUSE",
+        "release": "MicroOS Stable",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://get.opensuse.org/microos/",
+        "notes": "Immutable distro option for appliance-like cluster nodes.",
+    },
+    {
+        "id": "ubuntu-core-arm64",
+        "label": "Ubuntu Core (ARM64)",
+        "distro": "Ubuntu",
+        "release": "Core Stable",
+        "arch": "arm64",
+        "profiles": ["pi5"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://ubuntu.com/core/docs",
+        "notes": "Snap-based immutable Ubuntu Core image for constrained use cases.",
+    },
+    {
+        "id": "dietpi-armhf",
+        "label": "DietPi (ARMHF)",
+        "distro": "DietPi",
+        "release": "Stable",
+        "arch": "armhf",
+        "profiles": ["pibplus"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://dietpi.com/#download",
+        "notes": "Lightweight OS option for Raspberry Pi B+ class hardware.",
+    },
+    {
+        "id": "raspios-legacy-bullseye-armhf-lite",
+        "label": "Raspberry Pi OS Lite (Bullseye, 32-bit)",
+        "distro": "Raspberry Pi OS",
+        "release": "Bullseye Legacy",
+        "arch": "armhf",
+        "profiles": ["pibplus"],
+        "recommended": False,
+        "image_url": "",
+        "image_sha256": "",
+        "docs_url": "https://www.raspberrypi.com/software/operating-systems/",
+        "notes": "Legacy fallback image for older Pi B+ compatibility paths.",
     },
     {
         "id": "alpine-aarch64",
@@ -361,6 +432,83 @@ def _ensure_image_history_file() -> None:
         IMAGE_HISTORY_FILE.touch()
 
 
+def _ensure_image_cache_dir() -> None:
+    IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _default_app_settings() -> Dict[str, Any]:
+    return {
+        "rack_name": "homelab",
+    }
+
+
+def _sanitize_rack_name(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    cleaned = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-")
+    return cleaned[:40] or "homelab"
+
+
+def _load_app_settings() -> Dict[str, Any]:
+    _ensure_data_file()
+    defaults = _default_app_settings()
+    if not APP_SETTINGS_FILE.exists():
+        return defaults
+
+    try:
+        loaded = json.loads(APP_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return defaults
+
+    if not isinstance(loaded, dict):
+        return defaults
+
+    rack_name = _sanitize_rack_name(str(loaded.get("rack_name", defaults["rack_name"])))
+    return {"rack_name": rack_name}
+
+
+def _save_app_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+    settings = _load_app_settings()
+    if "rack_name" in payload:
+        settings["rack_name"] = _sanitize_rack_name(str(payload.get("rack_name", "")))
+    _ensure_data_file()
+    APP_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    return settings
+
+
+def _tailscale_policy_defaults() -> Dict[str, Any]:
+    settings = _load_app_settings()
+    rack_name = _sanitize_rack_name(str(settings.get("rack_name", "homelab")))
+    defaults = dict(TAILSCALE_POLICY_DEFAULTS)
+    defaults["rack_name"] = rack_name
+    defaults["homelab_tag"] = f"tag:{rack_name}"
+    return defaults
+
+
+def _resolve_download_path(download_path: str) -> Path | None:
+    path_raw = str(download_path or "").strip()
+    if not path_raw:
+        return None
+
+    candidate = Path(path_raw)
+    candidates: List[Path] = []
+    if candidate.is_absolute():
+        candidates.append(candidate)
+    else:
+        candidates.extend(
+            [
+                (BASE_DIR.parent / candidate),
+                (DATA_DIR / candidate),
+                (BASE_DIR / candidate),
+                candidate,
+            ]
+        )
+
+    for resolved in candidates:
+        if resolved.exists():
+            return resolved
+    return None
+
+
 def _ensure_keys_dir() -> None:
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -428,6 +576,13 @@ def _append_event(event: Dict[str, Any]) -> None:
         f.write(json.dumps(event, separators=(",", ":")) + "\n")
 
 
+def _clear_events() -> int:
+    _ensure_data_file()
+    lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
+    DATA_FILE.write_text("", encoding="utf-8")
+    return len(lines)
+
+
 def _read_events(limit: int = 200) -> List[Dict[str, Any]]:
     _ensure_data_file()
     lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
@@ -459,6 +614,12 @@ def _normalize_image_record(entry: Dict[str, Any], raw_line: str = "") -> Dict[s
     record.setdefault("label", record.get("source_value") or record.get("download_path") or record.get("hostname") or "Retrieved image")
     record.setdefault("notes", "")
     record.setdefault("updated_at", record.get("recorded_at", ""))
+    resolved_path = _resolve_download_path(str(record.get("download_path", "")))
+    is_available = bool(resolved_path)
+    if resolved_path:
+        record["download_path"] = str(resolved_path)
+    record["local_available"] = is_available
+    record["availability"] = "available" if is_available else "missing"
     return record
 
 
@@ -542,6 +703,32 @@ def _read_image_history(limit: int = 200) -> List[Dict[str, Any]]:
     return _list_image_records(limit=limit)
 
 
+def _image_state_summary() -> Dict[str, Any]:
+    history = _read_image_history(limit=500)
+    available_urls = _available_image_urls_from_history(limit=5000)
+    catalog_available = sum(
+        1
+        for entry in IMAGE_CATALOG
+        if _catalog_entry_with_availability(entry, available_urls=available_urls).get("local_available")
+    )
+    latest = history[0] if history else {}
+    latest_label = str(latest.get("label") or latest.get("source_value") or latest.get("download_path") or "-")
+    latest_status = str(latest.get("job_status") or latest.get("hash_status") or "-")
+    latest_recorded_at = str(latest.get("recorded_at") or "")
+    latest_available = bool(latest.get("local_available", False))
+    cache_path = str(latest.get("download_path") or latest.get("cache_path") or "")
+    return {
+        "total_records": len(history),
+        "latest_label": latest_label,
+        "latest_status": latest_status,
+        "latest_recorded_at": latest_recorded_at,
+        "latest_available": latest_available,
+        "latest_cache_path": cache_path,
+        "available_catalog_entries": catalog_available,
+        "catalog_entries": len(IMAGE_CATALOG),
+    }
+
+
 def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> None:
     image_url = str(form.get("image_url", "")).strip()
     image_file = str(form.get("image_file", "")).strip()
@@ -590,6 +777,162 @@ def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> 
     _append_image_history(record)
 
 
+def _safe_catalog_filename(url: str, entry_id: str) -> str:
+    parsed = urlparse.urlparse(url)
+    name = Path(parsed.path).name or f"{entry_id}.img"
+    safe = re.sub(r"[^A-Za-z0-9._+-]+", "-", name).strip(".-")
+    if not safe:
+        safe = f"{entry_id}.img"
+    return f"{entry_id}-{safe}"
+
+
+def _download_catalog_image(url: str, target: Path) -> str:
+    req = urlrequest.Request(url, headers={"User-Agent": "callback-site-catalog-pull/1.0"})
+    digest = hashlib.sha256()
+    with urlrequest.urlopen(req, timeout=60) as resp, target.open("wb") as dst:  # nosec B310
+        while True:
+            chunk = resp.read(1024 * 1024)
+            if not chunk:
+                break
+            dst.write(chunk)
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _catalog_entry_with_availability(entry: Dict[str, Any], available_urls: set[str] | None = None) -> Dict[str, Any]:
+    enriched = dict(entry)
+    image_url = str(entry.get("image_url", "")).strip()
+    if not image_url:
+        enriched["local_available"] = False
+        enriched["cache_path"] = ""
+        return enriched
+
+    _ensure_image_cache_dir()
+    entry_id = str(entry.get("id", "entry"))
+    cache_path = IMAGE_CACHE_DIR / _safe_catalog_filename(image_url, entry_id)
+    has_cache_file = cache_path.exists()
+    has_history_file = bool(available_urls and image_url in available_urls)
+    
+    # Also check managed images for any record with this URL that has local_available=True
+    has_managed_file = False
+    if not has_cache_file and not has_history_file:
+        for record in _list_image_records(limit=500):
+            if record.get("source_value") == image_url and record.get("local_available"):
+                has_managed_file = True
+                break
+    
+    enriched["local_available"] = has_cache_file or has_history_file or has_managed_file
+    enriched["cache_path"] = str(cache_path)
+    return enriched
+
+
+def _available_image_urls_from_history(limit: int = 5000) -> set[str]:
+    available: set[str] = set()
+    for record in _list_image_records(limit=limit):
+        if not bool(record.get("local_available", False)):
+            continue
+        source_value = str(record.get("source_value", "")).strip()
+        if source_value.startswith("http://") or source_value.startswith("https://"):
+            available.add(source_value)
+    return available
+
+
+def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_existing: bool) -> None:
+    _ensure_image_cache_dir()
+    with CATALOG_PULL_JOBS_LOCK:
+        job = CATALOG_PULL_JOBS.get(job_id)
+        if not job:
+            return
+        job["status"] = "running"
+        job["started_at"] = datetime.now(timezone.utc).isoformat()
+
+    for entry in entries:
+        entry_id = str(entry.get("id", ""))
+        label = str(entry.get("label", entry_id))
+        image_url = str(entry.get("image_url", "")).strip()
+        expected_sha = str(entry.get("image_sha256", "")).strip().lower()
+        profile_value = ",".join(entry.get("profiles", [])) if isinstance(entry.get("profiles"), list) else ""
+
+        item_result: Dict[str, Any] = {
+            "id": entry_id,
+            "label": label,
+            "url": image_url,
+            "status": "pending",
+            "download_path": "",
+            "observed_sha256": "",
+            "expected_sha256": expected_sha,
+            "message": "",
+        }
+
+        filename = _safe_catalog_filename(image_url, entry_id)
+        target = IMAGE_CACHE_DIR / filename
+
+        try:
+            if target.exists() and skip_existing:
+                item_result["status"] = "skipped"
+                item_result["download_path"] = str(target)
+                item_result["message"] = "already exists"
+                with CATALOG_PULL_JOBS_LOCK:
+                    job = CATALOG_PULL_JOBS.get(job_id)
+                    if job:
+                        job.setdefault("results", []).append(item_result)
+                continue
+
+            tmp = target.with_suffix(target.suffix + ".part")
+            observed_sha = _download_catalog_image(image_url, tmp)
+            tmp.replace(target)
+
+            hash_status = "verified" if expected_sha and observed_sha == expected_sha else "downloaded"
+            if expected_sha and observed_sha != expected_sha:
+                hash_status = "failed"
+
+            item_result["status"] = "ok" if hash_status != "failed" else "failed"
+            item_result["download_path"] = str(target)
+            item_result["observed_sha256"] = observed_sha
+            item_result["message"] = hash_status
+
+            _append_image_history(
+                {
+                    "id": uuid.uuid4().hex[:12],
+                    "recorded_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "profile": profile_value,
+                    "hostname": "catalog-pull",
+                    "source": "catalog_pull",
+                    "source_value": image_url,
+                    "downloaded": True,
+                    "download_path": str(target),
+                    "hash_status": hash_status,
+                    "expected_sha256": expected_sha,
+                    "observed_sha256": observed_sha,
+                    "job_status": "completed" if hash_status != "failed" else "failed",
+                    "exit_code": 0 if hash_status != "failed" else 1,
+                    "label": label,
+                    "notes": "Manual catalog pull",
+                }
+            )
+        except Exception as exc:
+            item_result["status"] = "failed"
+            item_result["message"] = str(exc)
+        finally:
+            with CATALOG_PULL_JOBS_LOCK:
+                job = CATALOG_PULL_JOBS.get(job_id)
+                if job:
+                    job.setdefault("results", []).append(item_result)
+
+    with CATALOG_PULL_JOBS_LOCK:
+        job = CATALOG_PULL_JOBS.get(job_id)
+        if not job:
+            return
+        results = job.get("results", [])
+        failed = sum(1 for r in results if r.get("status") == "failed")
+        skipped = sum(1 for r in results if r.get("status") == "skipped")
+        ok = sum(1 for r in results if r.get("status") == "ok")
+        job["summary"] = {"ok": ok, "failed": failed, "skipped": skipped, "total": len(results)}
+        job["status"] = "completed_with_errors" if failed else "completed"
+        job["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+
 def _ensure_prereqs() -> List[str]:
     errors: List[str] = []
     if not SCRIPT_PATH.exists():
@@ -610,6 +953,216 @@ def _default_node_config() -> Dict[str, Any]:
 
 def _default_node_provisioning() -> Dict[str, Any]:
     return {"node_configs": {}, "results": {}, "node_inputs": {}}
+
+
+def _default_monitor_state() -> Dict[str, Any]:
+    return {
+        "managed_nodes": {},
+        "cloud_init_options": {},
+        "node_cloud_init": {},
+    }
+
+
+def _load_monitor_state() -> Dict[str, Any]:
+    _ensure_data_file()
+    default = _default_monitor_state()
+    if not MONITOR_STATE_FILE.exists():
+        return default
+
+    try:
+        loaded = json.loads(MONITOR_STATE_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return default
+
+    if not isinstance(loaded, dict):
+        return default
+
+    managed_nodes = loaded.get("managed_nodes", {})
+    cloud_init_options = loaded.get("cloud_init_options", {})
+    node_cloud_init = loaded.get("node_cloud_init", {})
+    if not isinstance(managed_nodes, dict):
+        managed_nodes = {}
+    if not isinstance(cloud_init_options, dict):
+        cloud_init_options = {}
+    if not isinstance(node_cloud_init, dict):
+        node_cloud_init = {}
+
+    return {
+        "managed_nodes": managed_nodes,
+        "cloud_init_options": cloud_init_options,
+        "node_cloud_init": node_cloud_init,
+    }
+
+
+def _save_monitor_state(state: Dict[str, Any]) -> None:
+    _ensure_data_file()
+    MONITOR_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _sanitize_managed_node(payload: Dict[str, Any]) -> Dict[str, Any]:
+    raw_name = str(payload.get("name", "")).strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", raw_name):
+        raise ValueError("node name must use only letters, numbers, dot, dash, or underscore")
+
+    raw_group = str(payload.get("group", "")).strip()
+    group = raw_group or "custom"
+    address = str(payload.get("address", "")).strip() or raw_name
+    notes = str(payload.get("notes", "")).strip()
+    return {
+        "name": raw_name,
+        "group": group,
+        "address": address,
+        "notes": notes,
+        "enabled": bool(payload.get("enabled", True)),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _sanitize_cloud_init_option(payload: Dict[str, Any]) -> Dict[str, Any]:
+    option_id = str(payload.get("id", "")).strip().lower()
+    if not re.fullmatch(r"[a-z0-9_-]+", option_id):
+        raise ValueError("option id must use only lowercase letters, numbers, dash, or underscore")
+
+    label = str(payload.get("label", "")).strip() or option_id
+    description = str(payload.get("description", "")).strip()
+    raw_fields = payload.get("fields") if isinstance(payload.get("fields"), list) else []
+    allowed_types = {"text", "number", "bool", "select", "secret"}
+    fields: List[Dict[str, Any]] = []
+
+    for raw in raw_fields:
+        if not isinstance(raw, dict):
+            continue
+        field_id = str(raw.get("id", "")).strip().lower()
+        if not re.fullmatch(r"[a-z0-9_-]+", field_id):
+            continue
+        field_type = str(raw.get("type", "text")).strip().lower()
+        if field_type not in allowed_types:
+            field_type = "text"
+        field = {
+            "id": field_id,
+            "label": str(raw.get("label", "")).strip() or field_id,
+            "type": field_type,
+            "placeholder": str(raw.get("placeholder", "")).strip(),
+            "default": str(raw.get("default", "")).strip(),
+            "required": bool(raw.get("required", False)),
+        }
+        fields.append(field)
+
+    return {
+        "id": option_id,
+        "label": label,
+        "description": description,
+        "fields": fields,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _node_aliases(name: str) -> set[str]:
+    raw = str(name or "").strip().lower()
+    if not raw:
+        return set()
+    aliases = {raw}
+    if "." in raw:
+        aliases.add(raw.split(".", 1)[0])
+    return aliases
+
+
+def _latest_node_cert(node_name: str, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    aliases = _node_aliases(node_name)
+    for event in events:
+        host_aliases = _node_aliases(str(event.get("hostname", "")))
+        fqdn_aliases = _node_aliases(str(event.get("fqdn", "")))
+        if not aliases.intersection(host_aliases.union(fqdn_aliases)):
+            continue
+        return {
+            "received_at": str(event.get("received_at", "")),
+            "cert_present": bool(event.get("cert_present", False)),
+            "cert_subject": str(event.get("cert_subject", "")),
+            "cert_issuer": str(event.get("cert_issuer", "")),
+            "cert_fingerprint": str(event.get("cert_fingerprint", "")),
+            "source_ip": str(event.get("source_ip", "")),
+        }
+
+    return {
+        "received_at": "",
+        "cert_present": False,
+        "cert_subject": "",
+        "cert_issuer": "",
+        "cert_fingerprint": "",
+        "source_ip": "",
+    }
+
+
+def _monitor_nodes_summary() -> Dict[str, Any]:
+    state = _load_monitor_state()
+    provision = _load_node_provisioning()
+    inventory_nodes = _inventory_nodes()
+    managed_nodes = state.get("managed_nodes", {}) if isinstance(state.get("managed_nodes", {}), dict) else {}
+    node_cloud_init = state.get("node_cloud_init", {}) if isinstance(state.get("node_cloud_init", {}), dict) else {}
+    events = _read_events(limit=2000)
+    callbacks = _last_callback_by_host()
+
+    combined: Dict[str, Dict[str, Any]] = {}
+    for node in inventory_nodes:
+        node_name = str(node.get("name", "")).strip()
+        if not node_name:
+            continue
+        combined[node_name] = {
+            "name": node_name,
+            "group": str(node.get("group", "")).strip() or "custom",
+            "address": str(node.get("address", "")).strip() or node_name,
+            "notes": "",
+            "enabled": True,
+            "source": "inventory",
+        }
+
+    for node_name, raw in managed_nodes.items():
+        if not isinstance(raw, dict):
+            continue
+        name = str(node_name).strip()
+        if not name:
+            continue
+        managed = {
+            "name": name,
+            "group": str(raw.get("group", "custom")).strip() or "custom",
+            "address": str(raw.get("address", name)).strip() or name,
+            "notes": str(raw.get("notes", "")).strip(),
+            "enabled": bool(raw.get("enabled", True)),
+            "source": "managed",
+        }
+        if name in combined:
+            combined[name].update({
+                "group": managed["group"],
+                "address": managed["address"],
+                "notes": managed["notes"],
+                "enabled": managed["enabled"],
+                "source": "inventory+managed",
+            })
+        else:
+            combined[name] = managed
+
+    nodes: List[Dict[str, Any]] = []
+    for node in sorted(combined.values(), key=lambda n: str(n.get("name", "")).lower()):
+        node_name = str(node.get("name", ""))
+        cert = _latest_node_cert(node_name, events)
+        cloud_ids_raw = node_cloud_init.get(node_name, []) if isinstance(node_cloud_init, dict) else []
+        cloud_ids = [str(v) for v in cloud_ids_raw] if isinstance(cloud_ids_raw, list) else []
+        enriched = dict(node)
+        enriched["last_callback"] = callbacks.get(node_name, "")
+        enriched["cert"] = cert
+        enriched["cloud_init_option_ids"] = cloud_ids
+        enriched["selected_profiles"] = _effective_node_profiles(enriched, provision)
+        nodes.append(enriched)
+
+    raw_options = state.get("cloud_init_options", {}) if isinstance(state.get("cloud_init_options", {}), dict) else {}
+    cloud_init_options = [v for v in raw_options.values() if isinstance(v, dict)]
+    cloud_init_options.sort(key=lambda item: str(item.get("label", "")).lower())
+
+    return {
+        "nodes": nodes,
+        "cloud_init_options": cloud_init_options,
+        "node_cloud_init": node_cloud_init,
+    }
 
 
 def _load_node_config() -> Dict[str, Any]:
@@ -1060,13 +1613,22 @@ def _is_safe_key_name(name: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9._-]+", name))
 
 
-def _generate_or_load_ssh_key(key_name: str, comment: str = "rack-bootstrap") -> Dict[str, Any]:
+def _generate_or_load_ssh_key(key_name: str, comment: str = "rack-bootstrap", mode: str = "kload") -> Dict[str, Any]:
     _ensure_keys_dir()
     private_key = KEYS_DIR / key_name
     public_key = KEYS_DIR / f"{key_name}.pub"
+    mode = str(mode or "kload").strip().lower()
+    if mode not in {"generate", "kload"}:
+        raise ValueError("mode must be generate or kload")
 
     created = False
-    if not private_key.exists() or not public_key.exists():
+    private_exists = private_key.exists()
+    public_exists = public_key.exists()
+
+    if mode == "generate" and (private_exists or public_exists):
+        raise FileExistsError("key already exists; use mode 'kload' to load existing key")
+
+    if mode == "generate" or not private_exists or not public_exists:
         subprocess.run(
             [
                 "ssh-keygen",
@@ -1090,6 +1652,7 @@ def _generate_or_load_ssh_key(key_name: str, comment: str = "rack-bootstrap") ->
     pub = public_key.read_text(encoding="utf-8").strip()
     return {
         "created": created,
+        "mode": mode,
         "key_name": key_name,
         "public_key": pub,
         "private_key_path": str(private_key),
@@ -1257,6 +1820,39 @@ def _header_or_payload(payload: Dict[str, Any], *keys: str) -> str:
     return ""
 
 
+def _strip_dataset_fields(payload: Any) -> Any:
+    # Drop bulky/sensitive dataset blobs from inbound payloads before persistence.
+    if isinstance(payload, dict):
+        cleaned: Dict[str, Any] = {}
+        for key, value in payload.items():
+            if str(key).strip().lower() == "dataset":
+                continue
+            cleaned[str(key)] = _strip_dataset_fields(value)
+        return cleaned
+    if isinstance(payload, list):
+        return [_strip_dataset_fields(item) for item in payload]
+    return payload
+
+
+def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    allowed_keys = {
+        "profile",
+        "hostname",
+        "device",
+        "ssh_public_key",
+        "callback_url",
+        "image_url",
+        "image_file",
+        "image_sha256",
+        "workspace",
+    }
+    cleaned: Dict[str, Any] = {}
+    for key in allowed_keys:
+        if key in payload:
+            cleaned[key] = payload.get(key)
+    return cleaned
+
+
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
     with tempfile.TemporaryDirectory(prefix="sdprep-key-") as tdir:
         pubkey_file = Path(tdir) / "id.pub"
@@ -1358,6 +1954,7 @@ def index() -> str:
         "index.html",
         events=events,
         image_history=_read_image_history(limit=150),
+        image_summary=_image_state_summary(),
         devices=_list_sd_devices(),
         callback_url_default=_default_callback_url(),
         image_catalog=IMAGE_CATALOG,
@@ -1376,7 +1973,7 @@ def tailscale_acl_overview_fragment() -> str:
 
 @app.get("/fragments/tailscale-acl/inputs")
 def tailscale_acl_inputs_fragment() -> str:
-    return render_template("fragments/tailscale_acl_inputs.html", defaults=TAILSCALE_POLICY_DEFAULTS)
+    return render_template("fragments/tailscale_acl_inputs.html", defaults=_tailscale_policy_defaults())
 
 
 @app.get("/fragments/tailscale-acl/output")
@@ -1394,9 +1991,34 @@ def nodes_page() -> str:
     return render_template("nodes.html")
 
 
+@app.get("/monitor")
+def monitor_page() -> str:
+    return render_template("monitor.html")
+
+
+@app.get("/images")
+def images_page() -> str:
+    image_history = _read_image_history(limit=500)
+    return render_template("images.html", image_catalog=IMAGE_CATALOG, image_history=image_history, image_records=image_history)
+
+
 @app.get("/settings")
 def settings_page() -> str:
     return render_template("settings.html")
+
+
+@app.get("/api/settings")
+def settings_get() -> Any:
+    return jsonify({"ok": True, "settings": _load_app_settings()})
+
+
+@app.post("/api/settings")
+def settings_update() -> Any:
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+    settings = _save_app_settings(payload)
+    return jsonify({"ok": True, "settings": settings})
 
 
 @app.get("/health")
@@ -1409,6 +2031,12 @@ def events() -> Any:
     return jsonify({"events": _read_events(limit=500)})
 
 
+@app.post("/api/cloud-init/events/clear")
+def clear_events() -> Any:
+    cleared = _clear_events()
+    return jsonify({"ok": True, "cleared": cleared})
+
+
 @app.get("/fragments/cloud-init/event-rows")
 def cloud_init_event_rows() -> str:
     return render_template("fragments/callback_rows.html", events=_read_events(limit=200))
@@ -1419,6 +2047,7 @@ def callback() -> Any:
     payload_json = request.get_json(silent=True)
     payload_form = request.form.to_dict(flat=True)
     payload: Dict[str, Any] = payload_json if isinstance(payload_json, dict) and payload_json else payload_form
+    payload = _strip_dataset_fields(payload)
 
     forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
     source_ip, source_ip_source = _resolve_source_ip(payload)
@@ -1512,7 +2141,8 @@ def sd_prepare() -> Any:
     if prereq_errors:
         return jsonify({"ok": False, "errors": prereq_errors}), 400
 
-    payload = request.get_json(silent=True) or {}
+    payload_raw = request.get_json(silent=True) or {}
+    payload = _sanitize_sd_prepare_payload(payload_raw if isinstance(payload_raw, dict) else {})
     required = ["profile", "hostname", "device", "ssh_public_key", "callback_url"]
     missing = [k for k in required if not str(payload.get(k, "")).strip()]
     if missing:
@@ -1549,16 +2179,23 @@ def ssh_generate() -> Any:
     payload = request.get_json(silent=True) or {}
     key_name = str(payload.get("key_name", "rack-bootstrap-ed25519")).strip()
     comment = str(payload.get("comment", "rack-bootstrap")).strip()
+    mode = str(payload.get("mode", "kload")).strip().lower()
 
     if not key_name:
         return jsonify({"ok": False, "errors": ["key_name is required"]}), 400
     if not _is_safe_key_name(key_name):
         return jsonify({"ok": False, "errors": ["key_name may contain only letters, numbers, dot, dash, and underscore"]}), 400
+    if mode not in {"generate", "kload"}:
+        return jsonify({"ok": False, "errors": ["mode must be generate or kload"]}), 400
 
     try:
-        result = _generate_or_load_ssh_key(key_name, comment=comment)
+        result = _generate_or_load_ssh_key(key_name, comment=comment, mode=mode)
     except FileNotFoundError:
         return jsonify({"ok": False, "errors": ["ssh-keygen command not found on host"]}), 500
+    except FileExistsError as exc:
+        return jsonify({"ok": False, "errors": [str(exc)]}), 409
+    except ValueError as exc:
+        return jsonify({"ok": False, "errors": [str(exc)]}), 400
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()
         return jsonify({"ok": False, "errors": [f"ssh-keygen failed: {stderr}"]}), 500
@@ -1608,8 +2245,117 @@ def nodes_summary() -> Any:
             "config": masked,
             "profiles": NODE_PROVISION_PROFILES,
             "node_inputs": provision.get("node_inputs", {}),
+            "image_summary": _image_state_summary(),
         }
     )
+
+
+@app.get("/api/monitor/summary")
+def monitor_summary() -> Any:
+    summary = _monitor_nodes_summary()
+    return jsonify(
+        {
+            "ok": True,
+            "nodes": summary["nodes"],
+            "profiles": NODE_PROVISION_PROFILES,
+            "cloud_init_options": summary["cloud_init_options"],
+            "node_cloud_init": summary["node_cloud_init"],
+        }
+    )
+
+
+@app.post("/api/monitor/nodes")
+def monitor_node_upsert() -> Any:
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+
+    try:
+        node = _sanitize_managed_node(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    state = _load_monitor_state()
+    managed_nodes = state.setdefault("managed_nodes", {})
+    managed_nodes[node["name"]] = node
+    _save_monitor_state(state)
+    return jsonify({"ok": True, "node": node})
+
+
+@app.delete("/api/monitor/nodes/<node_name>")
+def monitor_node_delete(node_name: str) -> Any:
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", node_name):
+        return jsonify({"ok": False, "error": "invalid node name"}), 400
+
+    state = _load_monitor_state()
+    managed_nodes = state.setdefault("managed_nodes", {})
+    if node_name not in managed_nodes:
+        return jsonify({"ok": False, "error": "managed node not found"}), 404
+    managed_nodes.pop(node_name, None)
+
+    node_cloud_init = state.setdefault("node_cloud_init", {})
+    node_cloud_init.pop(node_name, None)
+    _save_monitor_state(state)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/monitor/nodes/<node_name>/certificate")
+def monitor_node_certificate(node_name: str) -> Any:
+    cert = _latest_node_cert(node_name, _read_events(limit=2000))
+    return jsonify({"ok": True, "node": node_name, "certificate": cert})
+
+
+@app.post("/api/monitor/cloud-init/options")
+def monitor_cloud_init_option_upsert() -> Any:
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+
+    try:
+        option = _sanitize_cloud_init_option(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    state = _load_monitor_state()
+    cloud_options = state.setdefault("cloud_init_options", {})
+    cloud_options[option["id"]] = option
+    _save_monitor_state(state)
+    return jsonify({"ok": True, "option": option})
+
+
+@app.delete("/api/monitor/cloud-init/options/<option_id>")
+def monitor_cloud_init_option_delete(option_id: str) -> Any:
+    option_key = str(option_id).strip().lower()
+    state = _load_monitor_state()
+    cloud_options = state.setdefault("cloud_init_options", {})
+    if option_key not in cloud_options:
+        return jsonify({"ok": False, "error": "option not found"}), 404
+
+    cloud_options.pop(option_key, None)
+    node_cloud_init = state.setdefault("node_cloud_init", {})
+    for node_name, selected in list(node_cloud_init.items()):
+        if not isinstance(selected, list):
+            continue
+        node_cloud_init[node_name] = [v for v in selected if str(v) != option_key]
+
+    _save_monitor_state(state)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/monitor/nodes/<node_name>/cloud-init")
+def monitor_node_cloud_init_assign(node_name: str) -> Any:
+    payload = request.get_json(silent=True) or {}
+    option_ids = payload.get("option_ids") or []
+    if not isinstance(option_ids, list):
+        return jsonify({"ok": False, "error": "option_ids must be an array"}), 400
+
+    state = _load_monitor_state()
+    cloud_options = state.setdefault("cloud_init_options", {})
+    valid_ids = [str(v).strip().lower() for v in option_ids if str(v).strip().lower() in cloud_options]
+    node_cloud_init = state.setdefault("node_cloud_init", {})
+    node_cloud_init[node_name] = valid_ids
+    _save_monitor_state(state)
+    return jsonify({"ok": True, "node": node_name, "option_ids": valid_ids})
 
 
 @app.post("/api/nodes/config")
@@ -1721,13 +2467,14 @@ def nodes_node_inputs() -> Any:
     if not isinstance(raw_inputs, dict):
         return jsonify({"ok": False, "error": "profile_inputs must be an object"}), 400
 
-    known_nodes = {n["name"] for n in _inventory_nodes()}
-    if node_name not in known_nodes:
+    nodes = _inventory_nodes()
+    node = next((n for n in nodes if n.get("name") == node_name), None)
+    if not node:
         return jsonify({"ok": False, "error": "node not found in active inventory"}), 404
 
     state = _load_node_provisioning()
-    profile_ids = _effective_node_profiles({"name": node_name, "group": ""}, state)
-    sanitized = _sanitize_node_profile_inputs(raw_inputs, profile_ids=list(_profile_map().keys()))
+    profile_ids = _effective_node_profiles(node, state)
+    sanitized = _sanitize_node_profile_inputs(raw_inputs, profile_ids=profile_ids)
 
     node_inputs = state.setdefault("node_inputs", {})
     node_inputs[node_name] = sanitized
@@ -1808,6 +2555,90 @@ def sd_job(job_id: str) -> Any:
 @app.get("/api/sd/image-catalog")
 def sd_image_catalog() -> Any:
     return jsonify({"ok": True, "entries": _read_image_history(limit=300)})
+
+
+@app.get("/api/sd/catalog")
+def sd_catalog() -> Any:
+    available_urls = _available_image_urls_from_history(limit=5000)
+    entries = [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
+    return jsonify({"ok": True, "entries": entries})
+
+
+@app.post("/api/sd/catalog-pull")
+def sd_catalog_pull() -> Any:
+    payload = request.get_json(silent=True) or {}
+    raw_ids = payload.get("catalog_ids") or []
+    skip_existing = bool(payload.get("skip_existing", True))
+
+    if not isinstance(raw_ids, list):
+        return jsonify({"ok": False, "error": "catalog_ids must be an array"}), 400
+
+    requested_ids = [str(v).strip() for v in raw_ids if str(v).strip()]
+    if not requested_ids:
+        return jsonify({"ok": False, "error": "at least one catalog id is required"}), 400
+
+    by_id = {str(e.get("id", "")): e for e in IMAGE_CATALOG}
+    selected: List[Dict[str, Any]] = []
+    missing: List[str] = []
+    no_url: List[str] = []
+    for catalog_id in requested_ids:
+        entry = by_id.get(catalog_id)
+        if not entry:
+            missing.append(catalog_id)
+            continue
+        if not str(entry.get("image_url", "")).strip():
+            no_url.append(catalog_id)
+            continue
+        selected.append(entry)
+
+    if not selected:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "no downloadable catalog entries selected",
+                "missing_ids": missing,
+                "missing_url_ids": no_url,
+            }
+        ), 400
+
+    _ensure_image_cache_dir()
+    job_id = uuid.uuid4().hex
+    with CATALOG_PULL_JOBS_LOCK:
+        CATALOG_PULL_JOBS[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "storage_dir": str(IMAGE_CACHE_DIR),
+            "requested_ids": requested_ids,
+            "accepted_ids": [str(e.get("id", "")) for e in selected],
+            "missing_ids": missing,
+            "missing_url_ids": no_url,
+            "skip_existing": skip_existing,
+            "results": [],
+            "summary": {"ok": 0, "failed": 0, "skipped": 0, "total": 0},
+        }
+
+    thread = threading.Thread(target=_run_catalog_pull_job, args=(job_id, selected, skip_existing), daemon=True)
+    thread.start()
+    return jsonify(
+        {
+            "ok": True,
+            "job_id": job_id,
+            "accepted_ids": [str(e.get("id", "")) for e in selected],
+            "missing_ids": missing,
+            "missing_url_ids": no_url,
+            "storage_dir": str(IMAGE_CACHE_DIR),
+        }
+    )
+
+
+@app.get("/api/sd/catalog-pull/jobs/<job_id>")
+def sd_catalog_pull_job(job_id: str) -> Any:
+    with CATALOG_PULL_JOBS_LOCK:
+        job = CATALOG_PULL_JOBS.get(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "job not found"}), 404
+    return jsonify({"ok": True, "job": job})
 
 
 @app.get("/fragments/sd/image-catalog-rows")

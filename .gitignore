@@ -12,7 +12,9 @@ cloud-init/*-seed.iso
 *.retry
 callback_site/data/callbacks.jsonl
 callback_site/data/node_monitor_config.json
+callback_site/data/node_monitor_state.json
 callback_site/data/image_download_catalog.jsonl
+callback_site/data/image_cache/
 callback_site/data/ssh_key_archive.jsonl
 callback_site/data/ssh_key_archive/
 callback_site/data/ssh_keys/*

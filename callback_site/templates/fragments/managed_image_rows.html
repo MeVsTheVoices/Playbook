@@ -5,6 +5,13 @@
   <td><code>{{ row.label or row.source_value or row.download_path or 'Retrieved image' }}</code></td>
   <td>{{ row.profile or '-' }}</td>
   <td><code>{{ row.source_value or row.download_path or '-' }}</code></td>
+  <td>
+    {% if row.local_available %}
+      <span class="tag">available</span>
+    {% else %}
+      <span>missing</span>
+    {% endif %}
+  </td>
   <td>{{ row.hash_status or '-' }}</td>
   <td>{{ row.job_status or '-' }} ({{ row.exit_code if row.exit_code is not none else '-' }})</td>
   <td><code>{{ row.notes or '-' }}</code></td>
@@ -17,6 +24,6 @@
 </tr>
 {% else %}
 <tr>
-  <td colspan="8">No managed image records yet.</td>
+  <td colspan="9">No managed image records yet.</td>
 </tr>
 {% endfor %}

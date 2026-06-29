@@ -1,5 +1,28 @@
 {
   "node_configs": {},
   "results": {},
-  "node_inputs": {}
+  "node_inputs": {
+    "rpi5-01": {
+      "baseline": {
+        "timezone": "",
+        "ntp_servers": ""
+      },
+      "tailscale": {
+        "auth_key": "",
+        "tailnet": "",
+        "advertise_tags": ""
+      },
+      "telegraf": {
+        "influx_endpoint": "",
+        "influx_bucket": "",
+        "influx_org": "",
+        "influx_access_key": "",
+        "influx_secret_key": ""
+      },
+      "docker": {
+        "docker_data_root": "",
+        "registry_mirror": ""
+      }
+    }
+  }
 }

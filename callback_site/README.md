@@ -35,6 +35,11 @@ The UI supports end-to-end preparation of cloud-init capable images:
 - Live job output with compacted progress lines.
 - The dashboard is split into smaller template fragments, with htmx-backed row refreshes for the image catalog, retrieved image manager, and callback event table.
 - Retrieved image records support create, update, and delete actions from the UI.
+- Manual catalog pulls can download selected catalog images in the background (bulk mode) without flashing.
+- Image management is hosted on the dedicated `/images` page; the callback dashboard keeps links/references.
+- The `/images` page visually indicates whether catalog and managed images are locally available.
+- The `/images` page treats catalog availability as file-backed state and also considers previously recorded successful downloads, so availability reflects the current cache plus persisted history.
+- Ubuntu Raspberry Pi presets are pinned to `old-releases.ubuntu.com` because several `cdimage.ubuntu.com` release URLs now return HTTP `403` during automated pulls.
 
 The underlying script is:
 - `scripts/prepare_sd_cloud_init.sh`
@@ -60,6 +65,9 @@ The underlying script is:
 Core:
 - `GET /health`
 - `GET /settings`
+- `GET /images`
+- `GET /api/settings`
+- `POST /api/settings`
 - `POST /api/cloud-init/callback`
 - `GET /api/cloud-init/events`
 
@@ -67,11 +75,17 @@ SD workflow:
 - `GET /api/sd/devices`
 - `POST /api/sd/prepare`
 - `GET /api/sd/jobs/<job_id>`
+- `GET /api/sd/catalog`
+- `POST /api/sd/catalog-pull`
+- `GET /api/sd/catalog-pull/jobs/<job_id>`
 
 SSH key workflow:
 - `POST /api/ssh/generate`
 - `GET /api/ssh/download/<key_name>/private`
 - `GET /api/ssh/download/<key_name>/public`
+- `POST /api/ssh/generate` supports `mode: generate|kload`.
+- `generate` creates a new key and returns `409` if the key name already exists.
+- `kload` loads an existing key by name (or creates one if missing).
 
 Node Ops:
 - `GET /api/nodes/summary`
@@ -84,6 +98,7 @@ Node Ops:
 
 Settings:
 - `POST /api/settings/reset` (`scope: node_ops`) to clean-slate Node Ops credentials, node profile selections, saved per-profile inputs, and provisioning results.
+- `POST /api/cloud-init/events/clear` to clear stored callback backlog events from the dashboard feed.
 
 ### Node Ops Workflow (Post-Callback)
 
@@ -118,6 +133,7 @@ Fragment endpoints:
 Tailscale ACL planner loading model:
 - `/tailscale-acl` now serves a lightweight shell first.
 - Section panels are fetched progressively using htmx, so first paint is fast and deeper sections hydrate in short staged delays.
+- ACL defaults are rack-aware and use the saved rack name from Settings as the default homelab tag basis.
 
 Tests:
 - `python -m unittest discover -s tests`
@@ -149,6 +165,7 @@ Environment note:
 ## Data Files
 
 - Callback event log: `callback_site/data/callbacks.jsonl`
+- Catalog pull image cache: `callback_site/data/image_cache/`
 - Node monitor config: `callback_site/data/node_monitor_config.json`
 - Generated SSH keys: `callback_site/data/ssh_keys/`
 - Per-run archived SSH public keys: `callback_site/data/ssh_key_archive/`
@@ -168,3 +185,5 @@ CALLBACK_APPDATA_DIR=/home/jdizzle/appdata/callback_site sudo PORT=9821 .venv/bi
 ```
 
 This mirrors a simple Docker volume pattern (host path mounted as appdata) without requiring any other changes.
+
+For containerized deployments, map your host Docker volume to `CALLBACK_APPDATA_DIR` so background catalog pulls persist downloaded images across restarts.

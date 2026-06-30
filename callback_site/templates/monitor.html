@@ -176,13 +176,6 @@
         font-size: 0.79rem;
         overflow-wrap: anywhere;
       }
-      .field-list {
-        border: 1px dashed var(--line);
-        border-radius: 10px;
-        padding: 0.55rem;
-        max-height: 180px;
-        overflow: auto;
-      }
       .cert-box {
         border: 1px solid var(--line);
         border-radius: 10px;
@@ -221,7 +214,7 @@
       <div class="wrap">
         <div class="panel">
           <h1>Node Monitor</h1>
-          <p>Focused node inventory and cloud-init planning workspace. Add/edit nodes, inspect certificate callbacks, review provisioning profiles, and define cloud-init option templates.</p>
+          <p>Focused node inventory and monitoring workspace. Add/edit nodes, inspect certificate callbacks, and review provisioning profiles.</p>
           <div class="actions-row">
             <button id="refresh-summary" type="button">Refresh</button>
             <span class="note" id="monitor-status">Idle.</span>
@@ -300,99 +293,10 @@
           <div class="cards" id="profiles-cards"></div>
         </div>
 
-        <div class="split">
-          <div class="panel">
-            <h2>Cloud-init Option Templates</h2>
-            <div class="grid">
-              <div>
-                <label for="opt-id">Option ID</label>
-                <input id="opt-id" placeholder="networking">
-              </div>
-              <div>
-                <label for="opt-label">Label</label>
-                <input id="opt-label" placeholder="Networking">
-              </div>
-              <div style="grid-column: 1 / -1;">
-                <label for="opt-description">Description</label>
-                <textarea id="opt-description" placeholder="What this option configures."></textarea>
-              </div>
-            </div>
-
-            <h3>Fields</h3>
-            <div class="grid">
-              <div>
-                <label for="field-id">Field ID</label>
-                <input id="field-id" placeholder="dns_servers">
-              </div>
-              <div>
-                <label for="field-label">Field Label</label>
-                <input id="field-label" placeholder="DNS Servers">
-              </div>
-              <div>
-                <label for="field-type">Type</label>
-                <select id="field-type">
-                  <option value="text">text</option>
-                  <option value="number">number</option>
-                  <option value="bool">bool</option>
-                  <option value="select">select</option>
-                  <option value="secret">secret</option>
-                </select>
-              </div>
-              <div>
-                <label for="field-default">Default</label>
-                <input id="field-default" placeholder="8.8.8.8,1.1.1.1">
-              </div>
-              <div>
-                <label for="field-placeholder">Placeholder</label>
-                <input id="field-placeholder" placeholder="comma-separated values">
-              </div>
-              <div>
-                <label for="field-required">Required</label>
-                <select id="field-required">
-                  <option value="false">false</option>
-                  <option value="true">true</option>
-                </select>
-              </div>
-            </div>
-            <div class="actions-row" style="margin-top:0.6rem;">
-              <button id="add-field" type="button" class="secondary">Add Field</button>
-              <button id="clear-fields" type="button" class="secondary">Clear Fields</button>
-              <button id="save-option" type="button">Save Option Template</button>
-            </div>
-            <div class="field-list" id="field-list">No fields staged.</div>
-            <p class="note" id="option-status"></p>
-          </div>
-
-          <div class="panel">
-            <h2>Cloud-init Option Selection</h2>
-            <div>
-              <label for="assign-node">Node</label>
-              <select id="assign-node"></select>
-            </div>
-            <div style="margin-top: 0.6rem;">
-              <label for="assign-options">Available Options</label>
-              <select id="assign-options" multiple size="8"></select>
-            </div>
-            <div class="actions-row" style="margin-top:0.6rem;">
-              <button id="save-assignment" type="button">Save Selection</button>
-            </div>
-            <p class="note" id="assign-status"></p>
-
-            <h3 style="margin-top: 1rem;">Existing Templates</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Label</th>
-                  <th>Fields</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="options-body">
-                <tr><td colspan="4">No templates yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
+        <div class="panel">
+          <h2>Cloud-Init Template Workflow</h2>
+          <p>Cloud-init optional templates were moved to the Home page SD Card Imager section.</p>
+          <p class="note">Use Home to define reusable cloud-init options now, then apply those values later during Ansible-driven node configuration.</p>
         </div>
       </div>
     </main>
@@ -407,18 +311,9 @@
       const certStatusEl = document.getElementById("cert-status");
       const certOutputEl = document.getElementById("cert-output");
       const profilesCardsEl = document.getElementById("profiles-cards");
-      const assignNodeEl = document.getElementById("assign-node");
-      const assignOptionsEl = document.getElementById("assign-options");
-      const optionsBodyEl = document.getElementById("options-body");
-      const optionStatusEl = document.getElementById("option-status");
-      const assignStatusEl = document.getElementById("assign-status");
-      const fieldListEl = document.getElementById("field-list");
 
       let nodes = [];
       let profiles = [];
-      let cloudInitOptions = [];
-      let nodeCloudInit = {};
-      let stagedFields = [];
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -446,24 +341,16 @@
 
       function renderNodeSelectors() {
         const currentCertNode = certNodeEl.value;
-        const currentAssignNode = assignNodeEl.value;
 
         certNodeEl.innerHTML = "";
-        assignNodeEl.innerHTML = "";
         for (const node of nodes) {
           const opt1 = document.createElement("option");
           opt1.value = node.name;
           opt1.textContent = node.name;
           certNodeEl.appendChild(opt1);
-
-          const opt2 = document.createElement("option");
-          opt2.value = node.name;
-          opt2.textContent = `${node.name} (${node.group})`;
-          assignNodeEl.appendChild(opt2);
         }
 
         if (currentCertNode && nodes.some((n) => n.name === currentCertNode)) certNodeEl.value = currentCertNode;
-        if (currentAssignNode && nodes.some((n) => n.name === currentAssignNode)) assignNodeEl.value = currentAssignNode;
       }
 
       function renderNodesTable() {
@@ -540,59 +427,6 @@
         }
       }
 
-      function renderFieldStaging() {
-        if (!stagedFields.length) {
-          fieldListEl.textContent = "No fields staged.";
-          return;
-        }
-        fieldListEl.innerHTML = stagedFields.map((field, idx) => (
-          `<div>${idx + 1}. <strong>${escapeHtml(field.id)}</strong> (${escapeHtml(field.type)}) - ${escapeHtml(field.label)}${field.required ? " [required]" : ""}</div>`
-        )).join("");
-      }
-
-      function renderOptionsTable() {
-        optionsBodyEl.innerHTML = "";
-        if (!cloudInitOptions.length) {
-          optionsBodyEl.innerHTML = "<tr><td colspan='4'>No templates yet.</td></tr>";
-          return;
-        }
-
-        for (const option of cloudInitOptions) {
-          const fieldsCount = Array.isArray(option.fields) ? option.fields.length : 0;
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td class="mono">${escapeHtml(option.id)}</td>
-            <td>${escapeHtml(option.label || option.id)}</td>
-            <td>${fieldsCount}</td>
-            <td><button type="button" data-opt-delete="${escapeHtml(option.id)}" class="danger">Delete</button></td>
-          `;
-          optionsBodyEl.appendChild(tr);
-        }
-
-        optionsBodyEl.querySelectorAll("button[data-opt-delete]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const optionId = btn.dataset.optDelete || "";
-            await deleteOption(optionId);
-          });
-        });
-      }
-
-      function renderAssignOptions() {
-        assignOptionsEl.innerHTML = "";
-        for (const option of cloudInitOptions) {
-          const opt = document.createElement("option");
-          opt.value = option.id;
-          opt.textContent = `${option.label || option.id} (${option.id})`;
-          assignOptionsEl.appendChild(opt);
-        }
-
-        const nodeName = assignNodeEl.value;
-        const selected = Array.isArray(nodeCloudInit[nodeName]) ? new Set(nodeCloudInit[nodeName]) : new Set();
-        Array.from(assignOptionsEl.options).forEach((opt) => {
-          opt.selected = selected.has(opt.value);
-        });
-      }
-
       function fillNodeForm(nodeName) {
         const node = nodes.find((n) => n.name === nodeName);
         if (!node) return;
@@ -624,15 +458,10 @@
 
         nodes = Array.isArray(data.nodes) ? data.nodes : [];
         profiles = Array.isArray(data.profiles) ? data.profiles : [];
-        cloudInitOptions = Array.isArray(data.cloud_init_options) ? data.cloud_init_options : [];
-        nodeCloudInit = (data.node_cloud_init && typeof data.node_cloud_init === "object") ? data.node_cloud_init : {};
-
         renderNodesTable();
         renderProfiles();
         renderNodeSelectors();
-        renderOptionsTable();
-        renderAssignOptions();
-        monitorStatus.textContent = `Loaded ${nodes.length} nodes, ${cloudInitOptions.length} cloud-init templates.`;
+        monitorStatus.textContent = `Loaded ${nodes.length} nodes.`;
       }
 
       async function saveNode() {
@@ -707,110 +536,12 @@
         certStatusEl.textContent = `Certificate info loaded for ${nodeName}.`;
       }
 
-      function addStagedField() {
-        const field = {
-          id: document.getElementById("field-id").value.trim().toLowerCase(),
-          label: document.getElementById("field-label").value.trim(),
-          type: document.getElementById("field-type").value,
-          placeholder: document.getElementById("field-placeholder").value.trim(),
-          default: document.getElementById("field-default").value.trim(),
-          required: document.getElementById("field-required").value === "true",
-        };
-        if (!field.id) {
-          optionStatusEl.textContent = "Field ID is required.";
-          return;
-        }
-
-        stagedFields.push(field);
-        document.getElementById("field-id").value = "";
-        document.getElementById("field-label").value = "";
-        document.getElementById("field-placeholder").value = "";
-        document.getElementById("field-default").value = "";
-        renderFieldStaging();
-        optionStatusEl.textContent = `Added field ${field.id}.`;
-      }
-
-      function clearStagedFields() {
-        stagedFields = [];
-        renderFieldStaging();
-        optionStatusEl.textContent = "Cleared staged fields.";
-      }
-
-      async function saveOptionTemplate() {
-        const payload = {
-          id: document.getElementById("opt-id").value.trim().toLowerCase(),
-          label: document.getElementById("opt-label").value.trim(),
-          description: document.getElementById("opt-description").value.trim(),
-          fields: stagedFields,
-        };
-        optionStatusEl.textContent = "Saving cloud-init option template...";
-
-        const res = await fetch("/api/monitor/cloud-init/options", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          optionStatusEl.textContent = data.error || "Failed to save option template.";
-          return;
-        }
-
-        optionStatusEl.textContent = `Saved option template ${data.option.id}.`;
-        stagedFields = [];
-        renderFieldStaging();
-        await loadSummary();
-      }
-
-      async function deleteOption(optionId) {
-        if (!confirm(`Delete cloud-init option ${optionId}?`)) return;
-        optionStatusEl.textContent = "Deleting option template...";
-        const res = await fetch(`/api/monitor/cloud-init/options/${encodeURIComponent(optionId)}`, { method: "DELETE" });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          optionStatusEl.textContent = data.error || "Failed to delete option template.";
-          return;
-        }
-        optionStatusEl.textContent = `Deleted option ${optionId}.`;
-        await loadSummary();
-      }
-
-      async function saveNodeAssignment() {
-        const nodeName = assignNodeEl.value;
-        if (!nodeName) {
-          assignStatusEl.textContent = "Select a node first.";
-          return;
-        }
-
-        const selected = Array.from(assignOptionsEl.selectedOptions).map((opt) => String(opt.value || "").trim()).filter(Boolean);
-        assignStatusEl.textContent = `Saving cloud-init options for ${nodeName}...`;
-        const res = await fetch(`/api/monitor/nodes/${encodeURIComponent(nodeName)}/cloud-init`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ option_ids: selected }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          assignStatusEl.textContent = data.error || "Failed to save node cloud-init selection.";
-          return;
-        }
-
-        assignStatusEl.textContent = `Saved ${selected.length} cloud-init options for ${nodeName}.`;
-        await loadSummary();
-      }
-
-      assignNodeEl.addEventListener("change", renderAssignOptions);
       document.getElementById("refresh-summary").addEventListener("click", loadSummary);
       document.getElementById("save-node").addEventListener("click", saveNode);
       document.getElementById("clear-node-form").addEventListener("click", clearNodeForm);
       document.getElementById("pull-cert").addEventListener("click", pullCertificate);
-      document.getElementById("add-field").addEventListener("click", addStagedField);
-      document.getElementById("clear-fields").addEventListener("click", clearStagedFields);
-      document.getElementById("save-option").addEventListener("click", saveOptionTemplate);
-      document.getElementById("save-assignment").addEventListener("click", saveNodeAssignment);
 
       initSidebar();
-      renderFieldStaging();
       loadSummary();
     </script>
   </body>

@@ -18,6 +18,7 @@ if str(APP_DIR) not in sys.path:
 
 import app as callback_app  # noqa: E402
 from app import app  # noqa: E402
+import core as callback_core  # noqa: E402
 
 
 class CallbackSiteTests(unittest.TestCase):
@@ -533,6 +534,34 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('hx-get="/fragments/tailscale-acl/output"', text)
         self.assertIn('hx-get="/fragments/tailscale-acl/apply-guide"', text)
 
+    def test_image_catalog_is_yaml_backed_and_has_intended_urls(self) -> None:
+        entries = {entry.get("id"): entry for entry in callback_core.IMAGE_CATALOG}
+        expected_files = {
+            "raspios-trixie-arm64": "2026-06-18-raspios-trixie-arm64.img.xz",
+            "raspios-trixie-armhf": "2026-06-18-raspios-trixie-armhf.img.xz",
+            "raspios-bookworm-arm64-lite": "2026-06-18-raspios-bookworm-arm64-lite.img.xz",
+            "raspios-bookworm-armhf-lite": "2026-06-18-raspios-bookworm-armhf-lite.img.xz",
+            "ubuntu-24.04-pi-arm64": "ubuntu-24.04.2-preinstalled-server-arm64+raspi.img.xz",
+            "ubuntu-22.04-pi-arm64": "ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz",
+        }
+
+        for entry_id, expected_suffix in expected_files.items():
+            self.assertIn(entry_id, entries)
+            entry = entries[entry_id]
+            self.assertTrue(entry.get("image_url"), msg=f"missing image_url for {entry_id}")
+            self.assertTrue(entry["image_url"].endswith(expected_suffix))
+            self.assertEqual(
+                callback_core._safe_catalog_filename(entry["image_url"], entry_id),
+                f"{entry_id}-{expected_suffix}",
+            )
+
+    def test_images_page_has_cache_path_color_hooks(self) -> None:
+        response = self.client.get("/images")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("cache-path-ok", text)
+        self.assertIn("cache-path-missing", text)
+
     def test_image_crud_and_fragment_rows(self) -> None:
         created = self.client.post(
             "/api/sd/images",
@@ -621,6 +650,51 @@ class CallbackSiteTests(unittest.TestCase):
         not_found = self.client.get("/api/sd/catalog-pull/jobs/does-not-exist")
         self.assertEqual(not_found.status_code, 404)
         self.assertFalse(not_found.get_json()["ok"])
+
+    def test_catalog_pull_worker_completes_and_records_progress(self) -> None:
+        job_id = "job-test-catalog"
+        entry = {
+            "id": "ubuntu-22.04-pi-arm64",
+            "label": "Ubuntu Server 22.04 LTS",
+            "image_url": "https://example.invalid/ubuntu-22.04.img.xz",
+            "image_sha256": "",
+            "profiles": ["pi5"],
+        }
+
+        def fake_download(url: str, target: Path) -> str:
+            target.write_text("payload", encoding="utf-8")
+            return "abc123"
+
+        with callback_core.CATALOG_PULL_JOBS_LOCK:
+            callback_core.CATALOG_PULL_JOBS[job_id] = {
+                "id": job_id,
+                "status": "queued",
+                "created_at": "2026-06-29T00:00:00+00:00",
+                "storage_dir": str(TEST_DATA_DIR / "image_cache"),
+                "requested_ids": [entry["id"]],
+                "accepted_ids": [entry["id"]],
+                "missing_ids": [],
+                "missing_url_ids": [],
+                "skip_existing": False,
+                "results": [],
+                "summary": {"ok": 0, "failed": 0, "skipped": 0, "running": 0, "total": 0},
+            }
+
+        with patch.object(callback_core, "_download_catalog_image", side_effect=fake_download), patch.object(
+            callback_core,
+            "_append_image_history",
+            return_value=None,
+        ):
+            callback_core._run_catalog_pull_job(job_id, [entry], skip_existing=False)
+
+        with callback_core.CATALOG_PULL_JOBS_LOCK:
+            job = callback_core.CATALOG_PULL_JOBS[job_id]
+
+        self.assertEqual(job["status"], "completed")
+        self.assertEqual(job["summary"]["ok"], 1)
+        self.assertEqual(job["summary"]["running"], 0)
+        self.assertEqual(job["summary"]["total"], 1)
+        self.assertEqual(job["results"][0]["status"], "ok")
 
     def test_callback_event_fragment(self) -> None:
         response = self.client.post(

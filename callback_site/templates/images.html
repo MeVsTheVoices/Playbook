@@ -103,6 +103,8 @@
       }
       th { color: var(--muted); font-weight: 600; }
       code { font-size: 0.82rem; word-break: break-word; }
+      .cache-path-ok { color: #166534; font-weight: 700; }
+      .cache-path-missing { color: #9f1239; opacity: 0.9; }
       input, select, textarea, button {
         width: 100%;
         border: 1px solid var(--line);
@@ -659,6 +661,9 @@
               const td = document.createElement("td");
               if (idx === 2 || idx === 4) {
                 const code = document.createElement("code");
+                if (idx === 4) {
+                  code.className = entry.local_available ? "cache-path-ok" : "cache-path-missing";
+                }
                 code.textContent = value;
                 td.appendChild(code);
               } else if (idx === 3) {
@@ -693,7 +698,7 @@
 
         const results = Array.isArray(job.results) ? job.results : [];
         if (!results.length) {
-          lines.push("(pending)");
+          lines.push(job.status === "completed" || job.status === "completed_with_errors" ? "(no results returned)" : "(waiting for worker progress)");
         } else {
           for (const item of results) {
             lines.push(`- ${item.id || "?"}: ${item.status || "unknown"} | ${item.message || ""} | ${item.download_path || ""}`);

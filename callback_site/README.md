@@ -41,6 +41,25 @@ The UI supports end-to-end preparation of cloud-init capable images:
 - The `/images` page treats catalog availability as file-backed state and also considers previously recorded successful downloads, so availability reflects the current cache plus persisted history.
 - Ubuntu Raspberry Pi presets are pinned to `old-releases.ubuntu.com` because several `cdimage.ubuntu.com` release URLs now return HTTP `403` during automated pulls.
 
+Cloud-init optional settings on Home:
+- The Home page (`/`) is the source of truth for cloud-init optional setting templates used during SD prep.
+- Operators can save, load, and delete reusable templates and include template data in `POST /api/sd/prepare` requests.
+- This keeps first-boot cloud-init authoring close to the imaging workflow and avoids context switching.
+
+### Cloud-Init Template Workflow (Home)
+
+Recommended operator flow:
+1. Fill optional settings segments needed for this image run.
+2. Verify the configured field count badge reflects expected values.
+3. Save as a reusable template with a stable name (for example `pi5-baseline-lab`).
+4. For future runs, select and load a template, then make run-specific edits.
+5. Use `Reset Optional Fields` before switching between materially different node roles.
+
+Template naming best practices:
+- Prefer `<profile>-<role>-<site>` naming for easy scanning.
+- Keep template descriptions concise and operationally meaningful.
+- Use one baseline template per node class and layer overrides at run time.
+
 The underlying script is:
 - `scripts/prepare_sd_cloud_init.sh`
 
@@ -60,6 +79,18 @@ The underlying script is:
 - Run this service only on trusted networks.
 - Prefer running the app as root instead of granting broad sudoers exceptions.
 
+## UI Ownership Best Practices
+
+Keep each page focused on one operational concern:
+- Home (`/`): imaging + first-boot cloud-init authoring (including optional template selection/reuse).
+- Monitor (`/monitor`): runtime node inventory, callback/certificate visibility, and operational monitoring.
+- Nodes (`/nodes`): post-boot provisioning actions and checks.
+
+Implementation guidance:
+- Avoid duplicating major workflows across pages.
+- If a feature appears on multiple pages, define one page as authoritative and link from others.
+- Add render-level tests for page ownership to prevent accidental UI drift.
+
 ## API Endpoints
 
 Core:
@@ -78,6 +109,9 @@ SD workflow:
 - `GET /api/sd/catalog`
 - `POST /api/sd/catalog-pull`
 - `GET /api/sd/catalog-pull/jobs/<job_id>`
+- `GET /api/sd/options-profiles`
+- `POST /api/sd/options-profiles`
+- `DELETE /api/sd/options-profiles/<profile_name>`
 
 SSH key workflow:
 - `POST /api/ssh/generate`
@@ -162,6 +196,18 @@ Environment note:
 - Run the callback app with `callback_site/.venv` binaries (for example `.venv/bin/python3 app.py` from `callback_site/`).
 - The repository-root venv (`/home/jdizzle/Playbook/.venv`) may not include callback-site Flask dependencies.
 
+### Regression Testing Focus
+
+When changing Home/Monitor boundaries or cloud-init template behavior, verify:
+- Home page renders cloud-init template controls (save/load/reset/delete).
+- Monitor page does not render template-builder controls.
+- `POST /api/sd/prepare` queues `sd_options_profile` and `cloud_init_options` metadata.
+- Profile CRUD APIs continue to pass (`GET/POST/DELETE /api/sd/options-profiles`).
+
+Quick run:
+- `cd /home/jdizzle/Playbook`
+- `/home/jdizzle/Playbook/.venv/bin/python -m unittest callback_site/tests/test_app.py`
+
 ## Data Files
 
 - Callback event log: `callback_site/data/callbacks.jsonl`
@@ -170,6 +216,7 @@ Environment note:
 - Generated SSH keys: `callback_site/data/ssh_keys/`
 - Per-run archived SSH public keys: `callback_site/data/ssh_key_archive/`
 - Per-run key archive index: `callback_site/data/ssh_key_archive.jsonl`
+- SD optional settings templates: `callback_site/data/sd_option_profiles.json`
 
 ## Local Persistence (AppData Style)
 

@@ -516,12 +516,17 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
             "id": entry_id,
             "label": label,
             "url": image_url,
-            "status": "pending",
+            "status": "downloading",
             "download_path": "",
             "observed_sha256": "",
             "expected_sha256": expected_sha,
             "message": "",
         }
+
+        with CATALOG_PULL_JOBS_LOCK:
+            job = CATALOG_PULL_JOBS.get(job_id)
+            if job:
+                job.setdefault("results", []).append(item_result)
 
         filename = _safe_catalog_filename(image_url, entry_id)
         target = IMAGE_CACHE_DIR / filename
@@ -531,10 +536,6 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
                 item_result["status"] = "skipped"
                 item_result["download_path"] = str(target)
                 item_result["message"] = "already exists"
-                with CATALOG_PULL_JOBS_LOCK:
-                    job = CATALOG_PULL_JOBS.get(job_id)
-                    if job:
-                        job.setdefault("results", []).append(item_result)
                 continue
 
             tmp = target.with_suffix(target.suffix + ".part")
@@ -573,11 +574,22 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
         except Exception as exc:
             item_result["status"] = "failed"
             item_result["message"] = str(exc)
-        finally:
-            with CATALOG_PULL_JOBS_LOCK:
-                job = CATALOG_PULL_JOBS.get(job_id)
-                if job:
-                    job.setdefault("results", []).append(item_result)
+
+        with CATALOG_PULL_JOBS_LOCK:
+            job = CATALOG_PULL_JOBS.get(job_id)
+            if job:
+                results = job.get("results", [])
+                failed = sum(1 for r in results if r.get("status") == "failed")
+                skipped = sum(1 for r in results if r.get("status") == "skipped")
+                ok = sum(1 for r in results if r.get("status") == "ok")
+                running = sum(1 for r in results if r.get("status") == "downloading")
+                job["summary"] = {
+                    "ok": ok,
+                    "failed": failed,
+                    "skipped": skipped,
+                    "running": running,
+                    "total": len(entries),
+                }
 
     with CATALOG_PULL_JOBS_LOCK:
         job = CATALOG_PULL_JOBS.get(job_id)
@@ -587,7 +599,7 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
         failed = sum(1 for r in results if r.get("status") == "failed")
         skipped = sum(1 for r in results if r.get("status") == "skipped")
         ok = sum(1 for r in results if r.get("status") == "ok")
-        job["summary"] = {"ok": ok, "failed": failed, "skipped": skipped, "total": len(results)}
+        job["summary"] = {"ok": ok, "failed": failed, "skipped": skipped, "running": 0, "total": len(entries)}
         job["status"] = "completed_with_errors" if failed else "completed"
         job["finished_at"] = datetime.now(timezone.utc).isoformat()
 

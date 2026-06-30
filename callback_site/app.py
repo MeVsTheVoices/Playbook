@@ -328,6 +328,11 @@ def ssh_download(key_name: str, kind: str) -> Any:
     return send_file(path, as_attachment=True, download_name=file_name)
 
 
+@app.get("/api/ssh/keys")
+def ssh_keys_list() -> Any:
+    return jsonify({"ok": True, "keys": _list_ssh_keys()})
+
+
 @app.get("/api/nodes/summary")
 def nodes_summary() -> Any:
     config = _load_node_config()

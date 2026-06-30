@@ -1153,11 +1153,14 @@ def _inventory_nodes() -> List[Dict[str, Any]]:
     for group in groups:
         for host in inv.get(group, {}).get("hosts", []):
             hv = hostvars.get(host, {})
+            address = str(hv.get("ansible_host", "")).strip()
+            if _is_placeholder_inventory_address(address):
+                address = ""
             nodes.append(
                 {
                     "name": host,
                     "group": group,
-                    "address": hv.get("ansible_host", host),
+                    "address": address,
                 }
             )
     return nodes
@@ -1222,14 +1225,15 @@ def _inventory_nodes_from_yaml_fallback() -> List[Dict[str, Any]]:
             current_host = {
                 "name": key,
                 "group": current_group,
-                "address": key,
+                "address": "",
             }
             host_indent = indent
             nodes.append(current_host)
             continue
 
         if current_host and indent > host_indent and key == "ansible_host":
-            current_host["address"] = value.strip('"\'')
+            address = value.strip('\"\'')
+            current_host["address"] = "" if _is_placeholder_inventory_address(address) else address
 
     return nodes
 
@@ -1257,10 +1261,15 @@ def _ping_status(address: str) -> Dict[str, Any]:
 def _last_callback_by_host() -> Dict[str, str]:
     seen: Dict[str, str] = {}
     for event in _read_events(limit=1000):
-        host = event.get("hostname")
-        ts = event.get("received_at")
-        if host and ts and host not in seen:
-            seen[host] = ts
+        ts = str(event.get("received_at", "")).strip()
+        if not ts:
+            continue
+        candidates = set()
+        for raw in (event.get("hostname"), event.get("fqdn")):
+            candidates.update(_node_aliases(str(raw or "")))
+        for host in candidates:
+            if host and host not in seen:
+                seen[host] = ts
     return seen
 
 
@@ -1275,14 +1284,19 @@ def _is_placeholder_inventory_address(address: str) -> bool:
 def _latest_callback_details_by_host(limit: int = 2000) -> Dict[str, Dict[str, str]]:
     seen: Dict[str, Dict[str, str]] = {}
     for event in _read_events(limit=limit):
-        host = str(event.get("hostname", "")).strip()
-        if not host or host in seen:
+        candidates = set()
+        for raw in (event.get("hostname"), event.get("fqdn")):
+            candidates.update(_node_aliases(str(raw or "")))
+        if not candidates:
             continue
-        seen[host] = {
+        payload = {
             "last_callback": str(event.get("received_at", "")).strip(),
             "source_ip": str(event.get("source_ip", "")).strip(),
             "profile": str(event.get("profile", "")).strip(),
         }
+        for host in candidates:
+            if host and host not in seen:
+                seen[host] = payload
     return seen
 
 
@@ -1293,7 +1307,11 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
     enriched: List[Dict[str, Any]] = []
     for node in nodes:
         item = dict(node)
-        callback = callback_details.get(str(node.get("name", "")), {})
+        callback = {}
+        for alias in _node_aliases(str(node.get("name", ""))):
+            callback = callback_details.get(alias, {})
+            if callback:
+                break
         callback_ip = str(callback.get("source_ip", "")).strip()
         inventory_addr = str(node.get("address", "")).strip()
 
@@ -1301,7 +1319,7 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
             item["address"] = callback_ip
             item["address_source"] = "callback"
         else:
-            item["address"] = inventory_addr or str(node.get("name", "")).strip()
+            item["address"] = inventory_addr
             item["address_source"] = "inventory"
 
         item["last_callback"] = str(callback.get("last_callback", "")).strip()

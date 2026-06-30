@@ -492,7 +492,8 @@
       }
 
       function selectedProfilesForNode(nodeName) {
-        const ids = selectedProfileIdsForNode(nodeName);
+        const liveIds = checkedProfileIds();
+        const ids = liveIds.length ? liveIds : selectedProfileIdsForNode(nodeName);
         return profiles.filter((p) => ids.includes(p.id));
       }
 
@@ -543,6 +544,10 @@
           profileInputs.textContent = "Selected profiles do not require extra inputs.";
         }
       }
+
+      profileList.addEventListener("change", () => {
+        renderProfileInputs();
+      });
 
       function collectProfileInputs() {
         const out = {};
@@ -608,7 +613,7 @@
           tr.innerHTML = `
             <td>${node.name}</td>
             <td>${node.group}</td>
-            <td class="mono">${node.address || "-"}</td>
+            <td class="mono">${node.address || ""}</td>
             <td>${node.address_source || "inventory"}</td>
             <td class="${status.reachable ? "ok" : status.reachable === false ? "bad" : ""}">${status.reachable === true ? "UP" : status.reachable === false ? "DOWN" : "-"}</td>
             <td>${status.latency_ms ?? "-"}</td>
@@ -834,6 +839,9 @@
 
       initSidebar();
       loadSummary().then(() => refreshMonitor(false));
+      setInterval(() => {
+        refreshMonitor(false);
+      }, 15000);
     </script>
   </body>
 </html>

@@ -344,6 +344,54 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(statuses[0].get("address_source"), "callback")
         self.assertEqual(statuses[0].get("last_callback"), "2026-06-29T00:00:00+00:00")
 
+    def test_nodes_summary_matches_callback_aliases(self) -> None:
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-02.lab.local",
+                "fqdn": "rpi5-02.lab.local",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={
+                "X-Forwarded-For": "198.51.100.52",
+            },
+        )
+
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.get_json()
+        self.assertTrue(payload["ok"])
+        nodes = payload.get("nodes", [])
+        match = [n for n in nodes if n.get("name") == "rpi5-02"]
+        self.assertTrue(match)
+        self.assertEqual(match[0].get("address"), "198.51.100.52")
+        self.assertEqual(match[0].get("address_source"), "callback")
+
+    def test_nodes_monitor_surfaces_callback_last_seen(self) -> None:
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-02.lab.local",
+                "fqdn": "rpi5-02.lab.local",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={
+                "X-Forwarded-For": "198.51.100.52",
+            },
+        )
+
+        monitor = self.client.post("/api/nodes/monitor", json={"send_webhook": False})
+        self.assertEqual(monitor.status_code, 200)
+        payload = monitor.get_json()
+        self.assertTrue(payload["ok"])
+        statuses = payload.get("statuses", [])
+        match = [n for n in statuses if n.get("name") == "rpi5-02"]
+        self.assertTrue(match)
+        self.assertEqual(match[0].get("address_source"), "callback")
+        self.assertTrue(match[0].get("last_callback"))
+
     def test_sd_prepare_queues_cloud_init_options_metadata(self) -> None:
         with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch("app.threading.Thread") as thread_cls:
             response = self.client.post(

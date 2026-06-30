@@ -33,6 +33,7 @@ NODE_CONFIG_FILE = DATA_DIR / "node_monitor_config.json"
 NODE_PROVISION_FILE = DATA_DIR / "node_provisioning.json"
 MONITOR_STATE_FILE = DATA_DIR / "node_monitor_state.json"
 APP_SETTINGS_FILE = DATA_DIR / "app_settings.json"
+SD_OPTION_PROFILES_FILE = DATA_DIR / "sd_option_profiles.json"
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 SCRIPT_PATH = BASE_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh"
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -482,6 +483,37 @@ def _tailscale_policy_defaults() -> Dict[str, Any]:
     defaults["rack_name"] = rack_name
     defaults["homelab_tag"] = f"tag:{rack_name}"
     return defaults
+
+
+def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
+    _ensure_data_file()
+    if not SD_OPTION_PROFILES_FILE.exists():
+        return {}
+    try:
+        loaded = json.loads(SD_OPTION_PROFILES_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, profile in loaded.items():
+        profile_name = str(name).strip()
+        if not profile_name or not isinstance(profile, dict):
+            continue
+        options = profile.get("options") if isinstance(profile.get("options"), dict) else {}
+        out[profile_name] = {
+            "name": profile_name,
+            "description": str(profile.get("description", "")).strip(),
+            "options": options,
+            "updated_at": str(profile.get("updated_at", "")).strip(),
+        }
+    return out
+
+
+def _save_sd_option_profiles(profiles: Dict[str, Dict[str, Any]]) -> None:
+    _ensure_data_file()
+    SD_OPTION_PROFILES_FILE.write_text(json.dumps(profiles, indent=2), encoding="utf-8")
 
 
 def _resolve_download_path(download_path: str) -> Path | None:
@@ -1096,24 +1128,35 @@ def _latest_node_cert(node_name: str, events: List[Dict[str, Any]]) -> Dict[str,
 def _monitor_nodes_summary() -> Dict[str, Any]:
     state = _load_monitor_state()
     provision = _load_node_provisioning()
-    inventory_nodes = _inventory_nodes()
     managed_nodes = state.get("managed_nodes", {}) if isinstance(state.get("managed_nodes", {}), dict) else {}
     node_cloud_init = state.get("node_cloud_init", {}) if isinstance(state.get("node_cloud_init", {}), dict) else {}
     events = _read_events(limit=2000)
     callbacks = _last_callback_by_host()
 
     combined: Dict[str, Dict[str, Any]] = {}
-    for node in inventory_nodes:
-        node_name = str(node.get("name", "")).strip()
-        if not node_name:
+
+    # Auto-discover nodes from callback events so fresh nodes appear without manual add.
+    # This keeps the monitor empty on a brand-new state until the first callback lands.
+    for event in events:
+        node_name = str(event.get("hostname", "")).strip()
+        if not node_name or node_name in combined:
             continue
+        event_profile = str(event.get("profile", "")).strip().lower()
+        if event_profile == "pi5":
+            group = "rpi5_active"
+        elif event_profile == "pibplus":
+            group = "rpi_bplus_active"
+        else:
+            group = "discovered"
+
+        address = str(event.get("source_ip", "")).strip() or node_name
         combined[node_name] = {
             "name": node_name,
-            "group": str(node.get("group", "")).strip() or "custom",
-            "address": str(node.get("address", "")).strip() or node_name,
+            "group": group,
+            "address": address,
             "notes": "",
             "enabled": True,
-            "source": "inventory",
+            "source": "callback",
         }
 
     for node_name, raw in managed_nodes.items():
@@ -1136,7 +1179,7 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
                 "address": managed["address"],
                 "notes": managed["notes"],
                 "enabled": managed["enabled"],
-                "source": "inventory+managed",
+                "source": "callback+managed",
             })
         else:
             combined[name] = managed
@@ -1845,11 +1888,16 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "image_file",
         "image_sha256",
         "workspace",
+        "sd_options_profile",
+        "cloud_init_options",
     }
     cleaned: Dict[str, Any] = {}
     for key in allowed_keys:
         if key in payload:
             cleaned[key] = payload.get(key)
+    if not isinstance(cleaned.get("cloud_init_options"), dict):
+        cleaned["cloud_init_options"] = {}
+    cleaned["sd_options_profile"] = str(cleaned.get("sd_options_profile", "")).strip()
     return cleaned
 
 
@@ -1913,6 +1961,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             JOBS[job_id]["stdout"] = (
                 "Starting SD preparation.\n"
                 f"Target device: {form.get('device', '')}\n"
+                f"Cloud-init options profile: {form.get('sd_options_profile', '') or 'none'}\n"
                 f"Archived SSH key: {archive_info.get('archive_path', '')}\n"
                 "The selected device will be overwritten.\n"
             )
@@ -1950,11 +1999,15 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
 def index() -> str:
     _ensure_device_monitor_started()
     events = _read_events(limit=200)
+    rack_name = _load_app_settings().get("rack_name", "homelab")
+    option_profiles = _load_sd_option_profiles()
     return render_template(
         "index.html",
         events=events,
         image_history=_read_image_history(limit=150),
         image_summary=_image_state_summary(),
+        hostname_prefix=f"{rack_name}-",
+        sd_option_profiles=option_profiles,
         devices=_list_sd_devices(),
         callback_url_default=_default_callback_url(),
         image_catalog=IMAGE_CATALOG,
@@ -2010,6 +2063,47 @@ def settings_page() -> str:
 @app.get("/api/settings")
 def settings_get() -> Any:
     return jsonify({"ok": True, "settings": _load_app_settings()})
+
+
+@app.get("/api/sd/options-profiles")
+def sd_options_profiles_get() -> Any:
+    profiles = _load_sd_option_profiles()
+    ordered = [profiles[name] for name in sorted(profiles)]
+    return jsonify({"ok": True, "profiles": ordered})
+
+
+@app.post("/api/sd/options-profiles")
+def sd_options_profiles_save() -> Any:
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+    if not re.fullmatch(r"[A-Za-z0-9 _.-]{1,64}", name):
+        return jsonify({"ok": False, "error": "invalid profile name"}), 400
+
+    options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
+    description = str(payload.get("description", "")).strip()
+
+    profiles = _load_sd_option_profiles()
+    profiles[name] = {
+        "name": name,
+        "description": description,
+        "options": options,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_sd_option_profiles(profiles)
+    return jsonify({"ok": True, "profile": profiles[name]})
+
+
+@app.delete("/api/sd/options-profiles/<profile_name>")
+def sd_options_profiles_delete(profile_name: str) -> Any:
+    profiles = _load_sd_option_profiles()
+    target = str(profile_name).strip()
+    if target not in profiles:
+        return jsonify({"ok": False, "error": "profile not found"}), 404
+    profiles.pop(target, None)
+    _save_sd_option_profiles(profiles)
+    return jsonify({"ok": True})
 
 
 @app.post("/api/settings")
@@ -2163,6 +2257,8 @@ def sd_prepare() -> Any:
                 "device": payload["device"],
                 "callback_url": payload["callback_url"],
                 "image_sha256": str(payload.get("image_sha256", "")).strip(),
+                "sd_options_profile": str(payload.get("sd_options_profile", "")).strip(),
+                "cloud_init_options": payload.get("cloud_init_options", {}),
             },
             "stdout": "",
             "stderr": "",

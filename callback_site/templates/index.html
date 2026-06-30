@@ -178,6 +178,56 @@
         margin: 0 0 0.7rem;
         font-size: 1rem;
       }
+      .segment-list {
+        display: grid;
+        gap: 0.7rem;
+      }
+      .segment {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 0.25rem 0.6rem 0.65rem;
+      }
+      .segment summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0.35rem 0 0.45rem;
+      }
+      .segment summary::marker {
+        color: #0f766e;
+      }
+      .segment-hint {
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin: 0 0 0.6rem;
+      }
+      .option-actions {
+        display: flex;
+        gap: 0.55rem;
+        flex-wrap: wrap;
+        margin-top: 0.65rem;
+      }
+      .option-actions button {
+        width: auto;
+        min-width: 150px;
+      }
+      .option-profile-status {
+        margin-top: 0.5rem;
+        font-size: 0.84rem;
+        color: var(--muted);
+      }
+      .option-count {
+        display: inline-block;
+        margin-left: 0.45rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid #bae6fd;
+        background: #ecfeff;
+        color: #0c4a6e;
+        font-weight: 700;
+        font-size: 0.74rem;
+      }
       label {
         display: block;
         font-size: 0.82rem;
@@ -258,6 +308,7 @@
       }
       .job-status-header {
         display: flex;
+        align-items: center;
         gap: 1.2rem;
         flex-wrap: wrap;
       }
@@ -281,8 +332,11 @@
         color: #991b1b;
       }
       .job-timing {
+        display: inline-flex;
+        align-items: center;
         font-size: 0.82rem;
         color: #8b9ab2;
+        line-height: 1;
       }
       .job-timing strong {
         color: #a5f3fc;
@@ -625,7 +679,8 @@
               </div>
               <div>
                 <label for="hostname">Hostname</label>
-                <input id="hostname" name="hostname" placeholder="rpi5-03" required>
+                <input id="hostname" name="hostname" placeholder="{{ hostname_prefix }}node01" required>
+                <div class="hint">Suggested prefix: <strong>{{ hostname_prefix }}</strong></div>
               </div>
               <div>
                 <label for="device">Target SD Device</label>
@@ -690,14 +745,119 @@
               <div class="inline-row">
                 <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
                 <button type="button" id="generate-ssh-key">Generate Key</button>
-                <button type="button" id="kload-ssh-key">Kload Key</button>
+                <button type="button" id="kload-ssh-key">Load Key</button>
               </div>
-              <div class="hint" id="ssh-key-status">Use Generate for a new key, or Kload to load an existing key by name.</div>
+              <div class="hint" id="ssh-key-status">Use Generate for a new key, or Load to use an existing key by name.</div>
               <div class="key-links" id="key-links"></div>
             </div>
             <div style="margin-top: 0.8rem;">
               <label for="ssh_public_key">SSH Public Key</label>
               <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
+            </div>
+          </div>
+
+          <div class="fieldset">
+            <h2>Cloud-Init Optional Settings</h2>
+            <div class="form-grid">
+              <div>
+                <label for="sd_options_profile_select">Profile Selection</label>
+                <select id="sd_options_profile_select" name="sd_options_profile_select">
+                  <option value="">No saved template selected</option>
+                </select>
+              </div>
+              <div>
+                <label for="sd_options_profile_name">Save As Template Name</label>
+                <input id="sd_options_profile_name" name="sd_options_profile_name" placeholder="base-pi5-lab">
+              </div>
+              <div class="grid-span-full">
+                <label for="sd_options_profile_description">Template Description (optional)</label>
+                <input id="sd_options_profile_description" name="sd_options_profile_description" placeholder="baseline with wifi and package list">
+              </div>
+            </div>
+            <div class="option-actions">
+              <button type="button" id="sd-options-load">Load Selected Template</button>
+              <button type="button" id="sd-options-save">Save Current As Template</button>
+              <button type="button" id="sd-options-reset" class="secondary">Reset Optional Fields</button>
+              <button type="button" id="sd-options-delete" class="danger-btn">Delete Selected Template</button>
+            </div>
+            <div class="option-profile-status" id="sd-options-profile-status">Templates let you reuse optional cloud-init settings across nodes. <span class="option-count" id="sd-options-config-count">0 fields set</span></div>
+
+            <div class="segment-list" style="margin-top: 0.8rem;">
+              <details class="segment" open>
+                <summary>Identity and Locale</summary>
+                <p class="segment-hint">Set identity details for first boot user defaults.</p>
+                <div class="form-grid">
+                  <div>
+                    <label for="opt_full_name">Full Name (optional)</label>
+                    <input id="opt_full_name" data-option-key="full_name" placeholder="Rack Operator">
+                  </div>
+                  <div>
+                    <label for="opt_timezone">Timezone (optional)</label>
+                    <input id="opt_timezone" data-option-key="timezone" placeholder="America/New_York">
+                  </div>
+                  <div>
+                    <label for="opt_locale">Locale (optional)</label>
+                    <input id="opt_locale" data-option-key="locale" placeholder="en_US.UTF-8">
+                  </div>
+                </div>
+              </details>
+
+              <details class="segment">
+                <summary>Network Bootstrap</summary>
+                <p class="segment-hint">Optional wireless and resolver values to embed in cloud-init metadata.</p>
+                <div class="form-grid">
+                  <div>
+                    <label for="opt_wifi_ssid">WiFi SSID (optional)</label>
+                    <input id="opt_wifi_ssid" data-option-key="wifi_ssid" placeholder="LabWiFi">
+                  </div>
+                  <div>
+                    <label for="opt_wifi_psk">WiFi PSK (optional)</label>
+                    <input id="opt_wifi_psk" data-option-key="wifi_psk" placeholder="passphrase">
+                  </div>
+                  <div>
+                    <label for="opt_dns_servers">DNS Servers (comma separated)</label>
+                    <input id="opt_dns_servers" data-option-key="dns_servers" data-option-type="csv" placeholder="1.1.1.1, 8.8.8.8">
+                  </div>
+                  <div>
+                    <label for="opt_ntp_servers">NTP Servers (comma separated)</label>
+                    <input id="opt_ntp_servers" data-option-key="ntp_servers" data-option-type="csv" placeholder="time.cloudflare.com, pool.ntp.org">
+                  </div>
+                </div>
+              </details>
+
+              <details class="segment">
+                <summary>Packages and First-Boot Commands</summary>
+                <p class="segment-hint">Define package bootstrap and simple cloud-init command lists.</p>
+                <div class="form-grid">
+                  <div>
+                    <label for="opt_package_list">Package List (comma separated)</label>
+                    <input id="opt_package_list" data-option-key="packages" data-option-type="csv" placeholder="git, curl, htop">
+                  </div>
+                  <div>
+                    <label for="opt_apt_mirror">Apt Mirror (optional)</label>
+                    <input id="opt_apt_mirror" data-option-key="apt_mirror" placeholder="http://archive.ubuntu.com/ubuntu">
+                  </div>
+                  <div class="grid-span-full">
+                    <label for="opt_runcmd">Run Commands (one command per line)</label>
+                    <textarea id="opt_runcmd" data-option-key="runcmd" data-option-type="lines" placeholder="apt-get update\napt-get -y upgrade"></textarea>
+                  </div>
+                </div>
+              </details>
+
+              <details class="segment">
+                <summary>Hardening Flags</summary>
+                <p class="segment-hint">Optional safety toggles for SSH and reboot behavior.</p>
+                <div class="form-grid">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_disable_ssh_password" data-option-key="disable_ssh_password_auth" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_disable_ssh_password" style="margin: 0;">Disable SSH password auth</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_reboot_after_bootstrap" data-option-key="reboot_after_bootstrap" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_reboot_after_bootstrap" style="margin: 0;">Reboot after bootstrap commands</label>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -797,6 +957,16 @@
       const osPresetNoteEl = document.getElementById("os-preset-note");
       const catalogMetaEl = document.getElementById("catalog-meta");
       const deviceWebhookStatusEl = document.getElementById("device-webhook-status");
+      const sdOptionsProfileSelectEl = document.getElementById("sd_options_profile_select");
+      const sdOptionsProfileNameEl = document.getElementById("sd_options_profile_name");
+      const sdOptionsProfileDescriptionEl = document.getElementById("sd_options_profile_description");
+      const sdOptionsProfileStatusEl = document.getElementById("sd-options-profile-status");
+      const sdOptionsConfigCountEl = document.getElementById("sd-options-config-count");
+      const sdOptionsLoadBtn = document.getElementById("sd-options-load");
+      const sdOptionsSaveBtn = document.getElementById("sd-options-save");
+      const sdOptionsResetBtn = document.getElementById("sd-options-reset");
+      const sdOptionsDeleteBtn = document.getElementById("sd-options-delete");
+      const sdOptionsInputEls = Array.from(document.querySelectorAll("[data-option-key]"));
       const eventSearchEl = document.getElementById("event-search");
       const eventProfileEl = document.getElementById("event-profile");
       const eventStageEl = document.getElementById("event-stage");
@@ -806,9 +976,11 @@
       const stat24hEl = document.getElementById("stat-24h");
       const statHostsEl = document.getElementById("stat-hosts");
       const imageCatalog = {{ image_catalog | tojson }};
+      const initialSdOptionProfiles = {{ sd_option_profiles | tojson }};
       let currentJob = null;
       let deviceWebhookRetry = null;
       let allEvents = [];
+      let sdOptionProfiles = initialSdOptionProfiles || {};
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -870,7 +1042,7 @@
         const duration = durationSec > 60
           ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`
           : `${durationSec}s`;
-        return `<strong>Duration:</strong> ${duration}${job.status === "running" ? " (ongoing)" : ""}`;
+        return `Duration: ${duration}${job.status === "running" ? " (ongoing)" : ""}`;
       }
 
       function escapeHtml(text) {
@@ -1739,6 +1911,196 @@
         };
       }
 
+      function gatherCloudInitOptions() {
+        const options = {};
+        for (const el of sdOptionsInputEls) {
+          const key = String(el.dataset.optionKey || "").trim();
+          if (!key) continue;
+          const kind = String(el.dataset.optionType || "").trim();
+          if (kind === "checkbox") {
+            if (el.checked) options[key] = true;
+            continue;
+          }
+
+          const raw = String(el.value || "").trim();
+          if (!raw) continue;
+          if (kind === "csv") {
+            const values = raw.split(",").map((v) => v.trim()).filter(Boolean);
+            if (values.length) options[key] = values;
+            continue;
+          }
+          if (kind === "lines") {
+            const values = raw.split("\n").map((v) => v.trim()).filter(Boolean);
+            if (values.length) options[key] = values;
+            continue;
+          }
+          options[key] = raw;
+        }
+        return options;
+      }
+
+      function updateSdOptionsConfiguredCount() {
+        const count = Object.keys(gatherCloudInitOptions()).length;
+        sdOptionsConfigCountEl.textContent = `${count} field${count === 1 ? "" : "s"} set`;
+      }
+
+      function updateSdOptionActions() {
+        const hasSelected = Boolean(String(sdOptionsProfileSelectEl.value || "").trim());
+        sdOptionsLoadBtn.disabled = !hasSelected;
+        sdOptionsDeleteBtn.disabled = !hasSelected;
+        sdOptionsSaveBtn.disabled = false;
+      }
+
+      function applyCloudInitOptions(options) {
+        const data = options && typeof options === "object" ? options : {};
+        for (const el of sdOptionsInputEls) {
+          const key = String(el.dataset.optionKey || "").trim();
+          const kind = String(el.dataset.optionType || "").trim();
+          const value = data[key];
+          if (kind === "checkbox") {
+            el.checked = Boolean(value);
+            continue;
+          }
+          if (kind === "csv") {
+            el.value = Array.isArray(value) ? value.join(", ") : "";
+            continue;
+          }
+          if (kind === "lines") {
+            el.value = Array.isArray(value) ? value.join("\n") : "";
+            continue;
+          }
+          el.value = value === undefined || value === null ? "" : String(value);
+        }
+        updateSdOptionsConfiguredCount();
+      }
+
+      function resetCloudInitOptions() {
+        applyCloudInitOptions({});
+        sdOptionsProfileSelectEl.value = "";
+        updateSdOptionActions();
+        sdOptionsProfileStatusEl.textContent = "Optional cloud-init fields reset. Fill manually or load a template.";
+      }
+
+      function renderSdOptionProfiles() {
+        const selected = sdOptionsProfileSelectEl.value;
+        const names = Object.keys(sdOptionProfiles).sort((a, b) => a.localeCompare(b));
+        sdOptionsProfileSelectEl.innerHTML = "";
+
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "No saved template selected";
+        sdOptionsProfileSelectEl.appendChild(empty);
+
+        for (const name of names) {
+          const profile = sdOptionProfiles[name] || {};
+          const option = document.createElement("option");
+          option.value = name;
+          const desc = String(profile.description || "").trim();
+          option.textContent = desc ? `${name} - ${desc}` : name;
+          sdOptionsProfileSelectEl.appendChild(option);
+        }
+
+        if (selected && names.includes(selected)) {
+          sdOptionsProfileSelectEl.value = selected;
+        }
+        updateSdOptionActions();
+      }
+
+      async function loadSdOptionProfiles() {
+        const res = await fetch("/api/sd/options-profiles");
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          sdOptionsProfileStatusEl.textContent = data.error || "Could not load cloud-init templates.";
+          return;
+        }
+
+        const next = {};
+        for (const profile of Array.isArray(data.profiles) ? data.profiles : []) {
+          const name = String(profile.name || "").trim();
+          if (!name) continue;
+          next[name] = profile;
+        }
+        sdOptionProfiles = next;
+        renderSdOptionProfiles();
+      }
+
+      function loadSelectedSdOptionProfile() {
+        const name = String(sdOptionsProfileSelectEl.value || "").trim();
+        if (!name) {
+          sdOptionsProfileStatusEl.textContent = "Select a template to load.";
+          return;
+        }
+        const profile = sdOptionProfiles[name];
+        if (!profile) {
+          sdOptionsProfileStatusEl.textContent = "Selected template not found.";
+          return;
+        }
+        applyCloudInitOptions(profile.options || {});
+        sdOptionsProfileNameEl.value = name;
+        sdOptionsProfileDescriptionEl.value = String(profile.description || "");
+        sdOptionsProfileStatusEl.textContent = `Loaded template '${name}'.`;
+        updateSdOptionActions();
+      }
+
+      async function saveCurrentSdOptionProfile() {
+        const name = String(sdOptionsProfileNameEl.value || "").trim();
+        if (!name) {
+          sdOptionsProfileStatusEl.textContent = "Enter a template name before saving.";
+          return;
+        }
+        const payload = {
+          name,
+          description: String(sdOptionsProfileDescriptionEl.value || "").trim(),
+          options: gatherCloudInitOptions(),
+        };
+        const res = await fetch("/api/sd/options-profiles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          sdOptionsProfileStatusEl.textContent = data.error || "Could not save template.";
+          return;
+        }
+
+        const savedName = String((data.profile || {}).name || name).trim();
+        if (savedName) {
+          sdOptionProfiles[savedName] = data.profile;
+          renderSdOptionProfiles();
+          sdOptionsProfileSelectEl.value = savedName;
+          sdOptionsProfileNameEl.value = savedName;
+        }
+        sdOptionsProfileStatusEl.textContent = `Saved template '${savedName || name}'.`;
+        updateSdOptionsConfiguredCount();
+        updateSdOptionActions();
+      }
+
+      async function deleteSelectedSdOptionProfile() {
+        const name = String(sdOptionsProfileSelectEl.value || "").trim();
+        if (!name) {
+          sdOptionsProfileStatusEl.textContent = "Select a template to delete.";
+          return;
+        }
+        if (!confirm(`Delete template '${name}'?`)) {
+          return;
+        }
+
+        const res = await fetch(`/api/sd/options-profiles/${encodeURIComponent(name)}`, { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          sdOptionsProfileStatusEl.textContent = data.error || "Could not delete template.";
+          return;
+        }
+
+        delete sdOptionProfiles[name];
+        renderSdOptionProfiles();
+        sdOptionsProfileNameEl.value = "";
+        sdOptionsProfileDescriptionEl.value = "";
+        sdOptionsProfileStatusEl.textContent = `Deleted template '${name}'.`;
+        updateSdOptionActions();
+      }
+
       async function pollJob() {
         if (!currentJob) return;
         const res = await fetch(`/api/sd/jobs/${currentJob}`);
@@ -1767,6 +2129,8 @@
           image_sha256: form.image_sha256.value,
           workspace: form.workspace.value,
           ssh_public_key: form.ssh_public_key.value,
+          sd_options_profile: sdOptionsProfileSelectEl.value,
+          cloud_init_options: gatherCloudInitOptions(),
         };
 
         const res = await fetch("/api/sd/prepare", {
@@ -1786,7 +2150,7 @@
 
       async function runSshKeyAction(mode) {
         const keyNameInput = document.getElementById("ssh_key_name").value.trim();
-        const verb = mode === "generate" ? "Generating" : "Kloading";
+        const verb = mode === "generate" ? "Generating" : "Loading";
         sshKeyStatusEl.textContent = `${verb} key...`;
         const res = await fetch("/api/ssh/generate", {
           method: "POST",
@@ -1800,11 +2164,31 @@
         }
         form.ssh_public_key.value = data.public_key;
         refreshKeyLinks(data.key_name);
-        sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}' via mode '${data.mode || mode}'. Public key inserted. Private key: ${data.private_key_path}`;
+        const modeLabel = (data.mode || mode) === "generate" ? "Generate" : "Load";
+        sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}' using ${modeLabel} mode. Public key inserted. Private key: ${data.private_key_path}`;
       }
 
       document.getElementById("generate-ssh-key").addEventListener("click", () => runSshKeyAction("generate"));
       document.getElementById("kload-ssh-key").addEventListener("click", () => runSshKeyAction("kload"));
+      sdOptionsLoadBtn.addEventListener("click", loadSelectedSdOptionProfile);
+      sdOptionsSaveBtn.addEventListener("click", saveCurrentSdOptionProfile);
+      sdOptionsResetBtn.addEventListener("click", resetCloudInitOptions);
+      sdOptionsDeleteBtn.addEventListener("click", deleteSelectedSdOptionProfile);
+
+      sdOptionsProfileSelectEl.addEventListener("change", () => {
+        const name = String(sdOptionsProfileSelectEl.value || "").trim();
+        const profile = name ? sdOptionProfiles[name] : null;
+        if (profile) {
+          sdOptionsProfileNameEl.value = name;
+          sdOptionsProfileDescriptionEl.value = String(profile.description || "");
+        }
+        updateSdOptionActions();
+      });
+
+      for (const el of sdOptionsInputEls) {
+        const eventName = String(el.dataset.optionType || "") === "checkbox" ? "change" : "input";
+        el.addEventListener(eventName, updateSdOptionsConfiguredCount);
+      }
 
       document.getElementById("ssh_key_name").addEventListener("input", refreshKeyLinks);
 
@@ -1839,6 +2223,9 @@
       initSidebar();
       rebuildCatalogFilters();
       refreshKeyLinks();
+      renderSdOptionProfiles();
+      updateSdOptionsConfiguredCount();
+      loadSdOptionProfiles();
       startDeviceWebhook();
       loadEvents();
       setInterval(loadEvents, 5000);

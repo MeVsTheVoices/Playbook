@@ -1394,6 +1394,23 @@ def _generate_or_load_ssh_key(key_name: str, comment: str = "rack-bootstrap", mo
     }
 
 
+def _list_ssh_keys() -> List[Dict[str, Any]]:
+    _ensure_keys_dir()
+    records: List[Dict[str, Any]] = []
+    for private_key in sorted(KEYS_DIR.iterdir(), key=lambda p: p.name.lower()):
+        if not private_key.is_file() or private_key.name.endswith(".pub"):
+            continue
+        public_key = KEYS_DIR / f"{private_key.name}.pub"
+        records.append(
+            {
+                "key_name": private_key.name,
+                "private_key_exists": True,
+                "public_key_exists": public_key.exists(),
+            }
+        )
+    return records
+
+
 def _list_sd_devices() -> List[Dict[str, Any]]:
     try:
         result = subprocess.run(

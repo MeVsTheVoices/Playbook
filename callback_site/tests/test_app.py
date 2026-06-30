@@ -222,6 +222,21 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertFalse(loaded_payload["created"])
         self.assertEqual(loaded_payload["mode"], "kload")
 
+    def test_ssh_key_list_endpoint(self) -> None:
+        key_name = "test-list-key"
+        created = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": key_name, "comment": "test", "mode": "generate"},
+        )
+        self.assertEqual(created.status_code, 200)
+
+        response = self.client.get("/api/ssh/keys")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        names = [item.get("key_name") for item in payload.get("keys", [])]
+        self.assertIn(key_name, names)
+
     def test_ssh_key_mode_validation(self) -> None:
         response = self.client.post(
             "/api/ssh/generate",

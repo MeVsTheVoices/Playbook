@@ -291,6 +291,59 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(cleaned["sd_options_profile"], "base-template")
         self.assertEqual(cleaned["cloud_init_options"]["timezone"], "UTC")
 
+    def test_nodes_summary_prefers_callback_ip_over_placeholder_inventory_address(self) -> None:
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={
+                "X-Forwarded-For": "198.51.100.45",
+            },
+        )
+
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.get_json()
+        self.assertTrue(payload["ok"])
+        nodes = payload.get("nodes", [])
+        match = [n for n in nodes if n.get("name") == "rpi5-01"]
+        self.assertTrue(match)
+        self.assertEqual(match[0].get("address"), "198.51.100.45")
+        self.assertEqual(match[0].get("address_source"), "callback")
+        self.assertTrue(match[0].get("last_callback"))
+
+    def test_nodes_monitor_uses_enriched_address_source(self) -> None:
+        with patch.object(
+            callback_app,
+            "_node_ops_inventory_view",
+            return_value=[
+                {
+                    "name": "node-live-01",
+                    "group": "rpi5_active",
+                    "address": "203.0.113.21",
+                    "address_source": "callback",
+                    "last_callback": "2026-06-29T00:00:00+00:00",
+                }
+            ],
+        ), patch.object(
+            callback_app,
+            "_ping_status",
+            return_value={"reachable": True, "latency_ms": 1.25, "error": ""},
+        ):
+            monitor = self.client.post("/api/nodes/monitor", json={"send_webhook": False})
+
+        self.assertEqual(monitor.status_code, 200)
+        payload = monitor.get_json()
+        self.assertTrue(payload["ok"])
+        statuses = payload.get("statuses", [])
+        self.assertEqual(len(statuses), 1)
+        self.assertEqual(statuses[0].get("address"), "203.0.113.21")
+        self.assertEqual(statuses[0].get("address_source"), "callback")
+        self.assertEqual(statuses[0].get("last_callback"), "2026-06-29T00:00:00+00:00")
+
     def test_sd_prepare_queues_cloud_init_options_metadata(self) -> None:
         with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch("app.threading.Thread") as thread_cls:
             response = self.client.post(

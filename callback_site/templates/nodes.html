@@ -229,6 +229,44 @@
         font-size: 0.8rem;
         white-space: pre-wrap;
       }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 0.7rem;
+        margin-bottom: 0.8rem;
+      }
+      .stat-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        padding: 0.7rem;
+      }
+      .stat-card .k {
+        color: var(--muted);
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .stat-card .v {
+        margin-top: 0.25rem;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .monitor-actions {
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.7rem;
+      }
+      .monitor-actions button {
+        width: auto;
+        min-width: 190px;
+      }
+      .mono {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.81rem;
+      }
       @media (max-width: 1050px) {
         .split { grid-template-columns: 1fr; }
       }
@@ -311,21 +349,36 @@
 
         <div class="panel">
           <h2>Monitoring + Provisioning State</h2>
-          <div class="grid">
-            <div>
-              <button id="refresh-monitor">Refresh Node Status</button>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="k">Nodes In View</div>
+              <div class="v" id="stat-node-count">0</div>
             </div>
-            <div>
-              <button id="refresh-monitor-webhook">Refresh + Send Webhook</button>
+            <div class="stat-card">
+              <div class="k">Reachable</div>
+              <div class="v" id="stat-reachable-count">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="k">Using Callback IP</div>
+              <div class="v" id="stat-callback-address-count">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="k">Recent Callbacks</div>
+              <div class="v" id="stat-callback-count">0</div>
             </div>
           </div>
-          <p id="monitor-status" class="note"></p>
+          <div class="monitor-actions">
+            <button id="refresh-monitor">Refresh Node Status</button>
+            <button id="refresh-monitor-webhook" class="secondary">Refresh + Send Webhook</button>
+          </div>
+          <p id="monitor-status" class="note">Status combines active inventory membership with latest callback data when available.</p>
           <table>
             <thead>
               <tr>
                 <th>Node</th>
                 <th>Group</th>
                 <th>Address</th>
+                <th>Address Source</th>
                 <th>Reachable</th>
                 <th>Latency ms</th>
                 <th>Last Callback</th>
@@ -335,7 +388,7 @@
               </tr>
             </thead>
             <tbody id="node-rows">
-              <tr><td colspan="9">Loading...</td></tr>
+              <tr><td colspan="10">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -360,6 +413,10 @@
       const profileList = document.getElementById("profile-list");
       const profileInputs = document.getElementById("profile-inputs");
       const runAnsible = document.getElementById("run-ansible");
+      const statNodeCountEl = document.getElementById("stat-node-count");
+      const statReachableCountEl = document.getElementById("stat-reachable-count");
+      const statCallbackAddressCountEl = document.getElementById("stat-callback-address-count");
+      const statCallbackCountEl = document.getElementById("stat-callback-count");
 
       let nodes = [];
       let profiles = [];
@@ -511,10 +568,29 @@
         return `${latest.status || "unknown"} (${latest.mode || ""}) ${latest.checked_at}`;
       }
 
+      function callbackLabel(raw) {
+        const value = String(raw || "").trim();
+        if (!value) return "-";
+        return value.replace("T", " ").replace("+00:00", " UTC");
+      }
+
+      function renderMonitorStats() {
+        const total = nodes.length;
+        const callbackAddr = nodes.filter((node) => String(node.address_source || "") === "callback").length;
+        const recentCallbacks = nodes.filter((node) => String(node.last_callback || "").trim()).length;
+        const reachable = Object.values(statusByNode).filter((status) => status && status.reachable === true).length;
+
+        statNodeCountEl.textContent = String(total);
+        statReachableCountEl.textContent = String(reachable);
+        statCallbackAddressCountEl.textContent = String(callbackAddr);
+        statCallbackCountEl.textContent = String(recentCallbacks);
+      }
+
       function renderRows() {
         rows.innerHTML = "";
         if (!nodes.length) {
-          rows.innerHTML = "<tr><td colspan='9'>No active nodes found in inventory groups.</td></tr>";
+          rows.innerHTML = "<tr><td colspan='10'>No active nodes found in inventory groups.</td></tr>";
+          renderMonitorStats();
           return;
         }
 
@@ -532,10 +608,11 @@
           tr.innerHTML = `
             <td>${node.name}</td>
             <td>${node.group}</td>
-            <td>${node.address}</td>
+            <td class="mono">${node.address || "-"}</td>
+            <td>${node.address_source || "inventory"}</td>
             <td class="${status.reachable ? "ok" : status.reachable === false ? "bad" : ""}">${status.reachable === true ? "UP" : status.reachable === false ? "DOWN" : "-"}</td>
             <td>${status.latency_ms ?? "-"}</td>
-            <td>${status.last_callback || "-"}</td>
+            <td>${callbackLabel(status.last_callback || node.last_callback)}</td>
             <td>${selectedHtml}</td>
             <td>${statusBadge(node)}</td>
             <td>
@@ -547,6 +624,8 @@
           `;
           rows.appendChild(tr);
         }
+
+        renderMonitorStats();
 
         rows.querySelectorAll("button[data-node]").forEach((btn) => {
           btn.addEventListener("click", () => {
@@ -568,6 +647,19 @@
         nodes = Array.isArray(data.nodes) ? data.nodes : [];
         profiles = Array.isArray(data.profiles) ? data.profiles : [];
         nodeInputs = (data.node_inputs && typeof data.node_inputs === "object") ? data.node_inputs : {};
+
+        statusByNode = {};
+        for (const node of nodes) {
+          statusByNode[node.name] = {
+            name: node.name,
+            address: node.address,
+            address_source: node.address_source || "inventory",
+            reachable: null,
+            latency_ms: null,
+            last_callback: node.last_callback || "",
+            error: "",
+          };
+        }
 
         document.getElementById("username").value = data.config.username || "";
         document.getElementById("webhook_url").value = data.config.webhook_url || "";

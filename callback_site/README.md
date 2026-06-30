@@ -138,6 +138,8 @@ Settings:
 
 The Node Ops tab is designed as the next stage after callback visibility:
 - Pull active nodes and their latest callback + reachability state.
+- Node addressing in Node Ops is inventory-backed but callback-enriched.
+: If inventory contains placeholder values (for example `CHANGE_ME_*`) and a node has checked in, Node Ops prefers callback `source_ip` for live checks.
 - Assign a per-node set of provisioning profiles (baseline, tailscale, telegraf, docker, kubernetes).
 - Save profile-specific values (for example, Telegraf endpoint/bucket/org/access key/secret key and Tailscale auth key/tailnet).
 - Run a closer check (`mode=check`) for one node or all active nodes.
@@ -203,6 +205,7 @@ When changing Home/Monitor boundaries or cloud-init template behavior, verify:
 - Monitor page does not render template-builder controls.
 - `POST /api/sd/prepare` queues `sd_options_profile` and `cloud_init_options` metadata.
 - Profile CRUD APIs continue to pass (`GET/POST/DELETE /api/sd/options-profiles`).
+- Node Ops summary and monitor status prefer callback IP for inventory placeholder addresses.
 
 Quick run:
 - `cd /home/jdizzle/Playbook`

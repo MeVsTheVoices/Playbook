@@ -178,6 +178,21 @@
         </div>
 
         <div class="panel">
+          <h2>Image Catalog Health</h2>
+          <p class="note">Quick validation for YAML-backed catalog entries and local cache availability.</p>
+          <button id="check-catalog-health" class="primary">Check Catalog State</button>
+          <div id="catalog-health-status" class="status">Idle.</div>
+        </div>
+
+        <div class="panel">
+          <h2>Catalog Source Of Truth</h2>
+          <p class="note">Catalog entries are maintained in a YAML file for easier human edits and separation from code.</p>
+          <div class="status">File: callback_site/catalogs/image_catalog.yml
+Loaded at runtime by: callback_site/domain_defaults.py
+Parser mode: PyYAML if installed, fallback parser otherwise.</div>
+        </div>
+
+        <div class="panel">
           <h2>Clean Slate: Node Ops Configuration</h2>
           <p class="note">
             Clears saved Node Ops credentials, per-node profile assignments, stored profile inputs, and recorded provisioning results.
@@ -207,6 +222,8 @@
       const rackNameInput = document.getElementById("rack-name");
       const saveRackNameBtn = document.getElementById("save-rack-name");
       const rackStatus = document.getElementById("rack-status");
+      const checkCatalogHealthBtn = document.getElementById("check-catalog-health");
+      const catalogHealthStatus = document.getElementById("catalog-health-status");
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -295,9 +312,34 @@
         rackStatus.textContent = `Saved rack name: ${rackNameInput.value}`;
       }
 
+      async function checkCatalogHealth() {
+        catalogHealthStatus.textContent = "Checking catalog...";
+        const res = await fetch("/api/sd/catalog");
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          catalogHealthStatus.textContent = data.error || "Failed to check catalog state.";
+          return;
+        }
+
+        const entries = Array.isArray(data.entries) ? data.entries : [];
+        const downloadable = entries.filter((entry) => String(entry.image_url || "").trim());
+        const available = entries.filter((entry) => Boolean(entry.local_available));
+        const missingUrl = entries.filter((entry) => !String(entry.image_url || "").trim());
+        const sampleDownloadable = downloadable.slice(0, 5).map((entry) => entry.id).join(", ") || "(none)";
+
+        catalogHealthStatus.textContent = [
+          `Total entries: ${entries.length}`,
+          `Downloadable entries: ${downloadable.length}`,
+          `Available in cache/history: ${available.length}`,
+          `Manual URL required: ${missingUrl.length}`,
+          `Sample downloadable IDs: ${sampleDownloadable}`,
+        ].join("\n");
+      }
+
       resetNodeOpsBtn.addEventListener("click", resetNodeOps);
       clearCallbackBtn.addEventListener("click", clearCallbackBacklog);
       saveRackNameBtn.addEventListener("click", saveRackSettings);
+      checkCatalogHealthBtn.addEventListener("click", checkCatalogHealth);
       initSidebar();
       loadRackSettings();
     </script>

@@ -1808,7 +1808,7 @@
 
         const results = Array.isArray(job.results) ? job.results : [];
         if (!results.length) {
-          lines.push("(pending)");
+          lines.push(job.status === "completed" || job.status === "completed_with_errors" ? "(no results returned)" : "(waiting for worker progress)");
         } else {
           for (const item of results) {
             lines.push(

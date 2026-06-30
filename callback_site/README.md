@@ -216,6 +216,7 @@ Quick run:
 
 - Callback event log: `callback_site/data/callbacks.jsonl`
 - Catalog pull image cache: `callback_site/data/image_cache/`
+- Image download catalog source: `callback_site/catalogs/image_catalog.yml`
 - Node monitor config: `callback_site/data/node_monitor_config.json`
 - Generated SSH keys: `callback_site/data/ssh_keys/`
 - Per-run archived SSH public keys: `callback_site/data/ssh_key_archive/`

@@ -393,6 +393,29 @@
         text-decoration: none;
         margin-right: 0.9rem;
       }
+      .key-picker-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto auto;
+        gap: 0.5rem;
+        align-items: end;
+      }
+      .key-preset-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto auto;
+        gap: 0.5rem;
+        align-items: end;
+        margin-top: 0.65rem;
+      }
+      .key-upload-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto;
+        gap: 0.5rem;
+        align-items: end;
+        margin-top: 0.65rem;
+      }
+      .key-upload-row input[type="file"] {
+        padding: 0.5rem;
+      }
       .actions-row {
         margin-top: 0.8rem;
         display: flex;
@@ -742,10 +765,27 @@
             <h2>SSH Access</h2>
             <div>
               <label for="ssh_key_name">First-Time SSH Key Generation (optional)</label>
-              <div class="inline-row">
+              <div class="key-picker-row">
                 <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
                 <button type="button" id="generate-ssh-key">Generate Key</button>
                 <button type="button" id="kload-ssh-key">Load Key</button>
+              </div>
+              <div class="key-preset-row">
+                <div>
+                  <label for="ssh_key_select" style="margin-top: 0.55rem;">Saved Generated Keys</label>
+                  <select id="ssh_key_select" name="ssh_key_select">
+                    <option value="">No saved key selected</option>
+                  </select>
+                </div>
+                <button type="button" id="load-selected-ssh-key">Use Selected</button>
+                <button type="button" id="refresh-ssh-key-list" class="secondary">Refresh List</button>
+              </div>
+              <div class="key-upload-row">
+                <div>
+                  <label for="ssh_key_upload">Upload Public Key File</label>
+                  <input id="ssh_key_upload" type="file" accept=".pub,.txt,text/plain,application/octet-stream">
+                </div>
+                <button type="button" id="clear-ssh-key-file" class="secondary">Clear Upload</button>
               </div>
               <div class="hint" id="ssh-key-status">Use Generate for a new key, or Load to use an existing key by name.</div>
               <div class="key-links" id="key-links"></div>
@@ -967,6 +1007,8 @@
       const sdOptionsResetBtn = document.getElementById("sd-options-reset");
       const sdOptionsDeleteBtn = document.getElementById("sd-options-delete");
       const sdOptionsInputEls = Array.from(document.querySelectorAll("[data-option-key]"));
+      const sshKeySelectEl = document.getElementById("ssh_key_select");
+      const sshKeyUploadEl = document.getElementById("ssh_key_upload");
       const eventSearchEl = document.getElementById("event-search");
       const eventProfileEl = document.getElementById("event-profile");
       const eventStageEl = document.getElementById("event-stage");
@@ -1845,6 +1887,76 @@
           `<a href="/api/ssh/download/${keyName}/public">Download public key</a>`;
       }
 
+      async function refreshSshKeyChoices(selectedKeyName = "") {
+        const res = await fetch("/api/ssh/keys");
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          sshKeyStatusEl.textContent = data.error || "Could not load saved SSH keys.";
+          return;
+        }
+
+        const previous = selectedKeyName || sshKeySelectEl.value || "";
+        sshKeySelectEl.innerHTML = "";
+
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "No saved key selected";
+        sshKeySelectEl.appendChild(empty);
+
+        for (const key of Array.isArray(data.keys) ? data.keys : []) {
+          const option = document.createElement("option");
+          option.value = key.key_name;
+          option.textContent = key.public_key_exists ? key.key_name : `${key.key_name} (missing public key)`;
+          sshKeySelectEl.appendChild(option);
+        }
+
+        if (previous) {
+          sshKeySelectEl.value = previous;
+        }
+      }
+
+      async function loadSelectedSshKey() {
+        const keyName = String(sshKeySelectEl.value || "").trim();
+        if (!keyName) {
+          sshKeyStatusEl.textContent = "Select a saved key first.";
+          return;
+        }
+
+        const res = await fetch(`/api/ssh/download/${encodeURIComponent(keyName)}/public`);
+        if (!res.ok) {
+          sshKeyStatusEl.textContent = "Could not load the selected key.";
+          return;
+        }
+
+        form.ssh_public_key.value = (await res.text()).trim();
+        document.getElementById("ssh_key_name").value = keyName;
+        refreshKeyLinks(keyName);
+        sshKeyStatusEl.textContent = `Loaded saved key '${keyName}' into SSH public key.`;
+      }
+
+      function handleSshKeyUpload() {
+        const file = sshKeyUploadEl.files && sshKeyUploadEl.files[0];
+        if (!file) {
+          sshKeyStatusEl.textContent = "Choose a .pub file to upload.";
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const value = String(reader.result || "").trim();
+          if (!value) {
+            sshKeyStatusEl.textContent = "Uploaded file was empty.";
+            return;
+          }
+          form.ssh_public_key.value = value;
+          sshKeyStatusEl.textContent = `Loaded uploaded key file '${file.name}' into SSH public key.`;
+        };
+        reader.onerror = () => {
+          sshKeyStatusEl.textContent = "Could not read the uploaded file.";
+        };
+        reader.readAsText(file);
+      }
+
       function formatDeviceOption(device) {
         const model = device.model || "";
         const size = device.size || "";
@@ -2170,6 +2282,16 @@
 
       document.getElementById("generate-ssh-key").addEventListener("click", () => runSshKeyAction("generate"));
       document.getElementById("kload-ssh-key").addEventListener("click", () => runSshKeyAction("kload"));
+      document.getElementById("load-selected-ssh-key").addEventListener("click", loadSelectedSshKey);
+      document.getElementById("refresh-ssh-key-list").addEventListener("click", () => refreshSshKeyChoices());
+      document.getElementById("clear-ssh-key-file").addEventListener("click", () => {
+        sshKeyUploadEl.value = "";
+        sshKeyStatusEl.textContent = "Cleared uploaded key file.";
+      });
+      sshKeySelectEl.addEventListener("change", () => {
+        refreshKeyLinks(String(sshKeySelectEl.value || ""));
+      });
+      sshKeyUploadEl.addEventListener("change", handleSshKeyUpload);
       sdOptionsLoadBtn.addEventListener("click", loadSelectedSdOptionProfile);
       sdOptionsSaveBtn.addEventListener("click", saveCurrentSdOptionProfile);
       sdOptionsResetBtn.addEventListener("click", resetCloudInitOptions);
@@ -2225,6 +2347,7 @@
       refreshKeyLinks();
       renderSdOptionProfiles();
       updateSdOptionsConfiguredCount();
+      refreshSshKeyChoices();
       loadSdOptionProfiles();
       startDeviceWebhook();
       loadEvents();

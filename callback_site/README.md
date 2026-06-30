@@ -115,6 +115,7 @@ SD workflow:
 
 SSH key workflow:
 - `POST /api/ssh/generate`
+- `GET /api/ssh/keys`
 - `GET /api/ssh/download/<key_name>/private`
 - `GET /api/ssh/download/<key_name>/public`
 - `POST /api/ssh/generate` supports `mode: generate|kload`.

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List
-
-import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_CATALOG_FILE = BASE_DIR / "catalogs" / "image_catalog.yml"
@@ -23,9 +22,20 @@ def _load_image_catalog() -> List[Dict[str, Any]]:
         return []
 
     try:
-        loaded = yaml.safe_load(IMAGE_CATALOG_FILE.read_text(encoding="utf-8"))
-    except Exception:
+        text = IMAGE_CATALOG_FILE.read_text(encoding="utf-8")
+    except OSError:
         return []
+
+    loaded: Any = None
+    try:
+        import yaml  # type: ignore
+
+        loaded = yaml.safe_load(text)
+    except Exception:
+        try:
+            loaded = json.loads(text)
+        except Exception:
+            loaded = _parse_image_catalog_yaml(text)
 
     if not isinstance(loaded, dict):
         return []
@@ -56,6 +66,87 @@ def _load_image_catalog() -> List[Dict[str, Any]]:
         normalized.append(entry)
 
     return normalized
+
+
+def _parse_image_catalog_yaml(text: str) -> Dict[str, Any]:
+    def parse_scalar(raw: str) -> Any:
+        value = raw.strip()
+        if value in {"true", "True"}:
+            return True
+        if value in {"false", "False"}:
+            return False
+        if value in {"null", "None", "~"}:
+            return None
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            return value[1:-1]
+        if len(value) >= 2 and value[0] == value[-1] == "'":
+            return value[1:-1]
+        if value.isdigit():
+            return int(value)
+        return value
+
+    data: Dict[str, Any] = {"version": 1, "image_catalog": []}
+    current_item: Dict[str, Any] | None = None
+    current_list_key: str | None = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            current_item = None
+            current_list_key = None
+            if ":" not in stripped:
+                continue
+            key, value = stripped.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            if key == "version":
+                data["version"] = parse_scalar(value)
+            elif key == "image_catalog":
+                data["image_catalog"] = []
+            continue
+
+        if stripped.startswith("- ") and current_list_key:
+            if current_item is None:
+                continue
+            bucket = current_item.get(current_list_key)
+            if not isinstance(bucket, list):
+                bucket = []
+                current_item[current_list_key] = bucket
+            bucket.append(parse_scalar(stripped[2:]))
+            continue
+
+        if indent == 2 and stripped.startswith("- "):
+            if current_item:
+                data["image_catalog"].append(current_item)
+            current_item = {}
+            current_list_key = None
+            remainder = stripped[2:].strip()
+            if remainder and ":" in remainder:
+                key, value = remainder.split(":", 1)
+                current_item[key.strip()] = parse_scalar(value)
+            continue
+
+        if current_item is None or ":" not in stripped:
+            continue
+
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if value == "":
+            current_item[key] = []
+            current_list_key = key
+        else:
+            current_item[key] = parse_scalar(value)
+            current_list_key = None
+
+    if current_item:
+        data["image_catalog"].append(current_item)
+    return data
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {

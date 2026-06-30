@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="callback-site-tests-"))
@@ -15,6 +16,7 @@ APP_DIR = Path(__file__).resolve().parents[1]
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
+import app as callback_app  # noqa: E402
 from app import app  # noqa: E402
 
 
@@ -35,6 +37,27 @@ class CallbackSiteTests(unittest.TestCase):
         for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
+
+    def test_home_page_contains_cloud_init_template_controls(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Cloud-Init Optional Settings", text)
+        self.assertIn("Profile Selection", text)
+        self.assertIn("Save Current As Template", text)
+        self.assertIn("Delete Selected Template", text)
+        self.assertIn("Reset Optional Fields", text)
+        self.assertIn("fields set", text)
+
+    def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
+        response = self.client.get("/monitor")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertNotIn("Cloud-init Option Templates", text)
+        self.assertNotIn("Cloud-init Option Selection", text)
+        self.assertNotIn("Option ID", text)
+        self.assertNotIn("No fields staged.", text)
+        self.assertIn("Cloud-init optional templates were moved to the Home page SD Card Imager section.", text)
 
     def test_monitor_node_and_cloud_init_options(self) -> None:
         summary = self.client.get("/api/monitor/summary")
@@ -116,6 +139,48 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(delete_node.status_code, 200)
         self.assertTrue(delete_node.get_json()["ok"])
 
+    def test_monitor_empty_by_default_then_callback_discovery(self) -> None:
+        clear_resp = self.client.post("/api/cloud-init/events/clear", json={})
+        self.assertEqual(clear_resp.status_code, 200)
+
+        initial = self.client.get("/api/monitor/summary")
+        self.assertEqual(initial.status_code, 200)
+        initial_payload = initial.get_json()
+        self.assertTrue(initial_payload["ok"])
+        self.assertEqual(initial_payload.get("nodes"), [])
+
+        callback = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "fresh-node-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={
+                "X-Forwarded-For": "203.0.113.55",
+                "X-SSL-Client-Subject": "CN=fresh-node-01",
+                "X-SSL-Client-Issuer": "CN=Rack-CA",
+                "X-SSL-Client-Fingerprint": "AA:11:BB:22",
+            },
+        )
+        self.assertEqual(callback.status_code, 200)
+
+        after = self.client.get("/api/monitor/summary")
+        self.assertEqual(after.status_code, 200)
+        after_payload = after.get_json()
+        nodes = after_payload.get("nodes", [])
+        match = [n for n in nodes if n.get("name") == "fresh-node-01"]
+        self.assertTrue(match)
+        self.assertEqual(match[0].get("source"), "callback")
+        self.assertTrue(match[0].get("last_callback"))
+        self.assertTrue(match[0].get("cert", {}).get("cert_present"))
+
+        cert = self.client.get("/api/monitor/nodes/fresh-node-01/certificate")
+        self.assertEqual(cert.status_code, 200)
+        cert_payload = cert.get_json()
+        self.assertTrue(cert_payload["ok"])
+        self.assertEqual(cert_payload["certificate"]["cert_subject"], "CN=fresh-node-01")
+
     def test_catalog_availability_endpoint(self) -> None:
         response = self.client.get("/api/sd/catalog")
         self.assertEqual(response.status_code, 200)
@@ -165,6 +230,109 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.get_json()
         self.assertFalse(payload["ok"])
+
+    def test_sd_option_profiles_crud(self) -> None:
+        initial = self.client.get("/api/sd/options-profiles")
+        self.assertEqual(initial.status_code, 200)
+        self.assertTrue(initial.get_json()["ok"])
+
+        bad = self.client.post(
+            "/api/sd/options-profiles",
+            json={"name": "", "options": {}},
+        )
+        self.assertEqual(bad.status_code, 400)
+        self.assertFalse(bad.get_json()["ok"])
+
+        create = self.client.post(
+            "/api/sd/options-profiles",
+            json={
+                "name": "pi5-baseline",
+                "description": "base bootstrap",
+                "options": {
+                    "timezone": "UTC",
+                    "packages": ["git", "curl"],
+                    "disable_ssh_password_auth": True,
+                },
+            },
+        )
+        self.assertEqual(create.status_code, 200)
+        create_payload = create.get_json()
+        self.assertTrue(create_payload["ok"])
+        self.assertEqual(create_payload["profile"]["name"], "pi5-baseline")
+
+        listed = self.client.get("/api/sd/options-profiles")
+        self.assertEqual(listed.status_code, 200)
+        listed_payload = listed.get_json()
+        names = [p.get("name") for p in listed_payload.get("profiles", [])]
+        self.assertIn("pi5-baseline", names)
+
+        deleted = self.client.delete("/api/sd/options-profiles/pi5-baseline")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertTrue(deleted.get_json()["ok"])
+
+        missing_delete = self.client.delete("/api/sd/options-profiles/pi5-baseline")
+        self.assertEqual(missing_delete.status_code, 404)
+        self.assertFalse(missing_delete.get_json()["ok"])
+
+    def test_sanitize_sd_prepare_payload_includes_cloud_init_options(self) -> None:
+        cleaned = callback_app._sanitize_sd_prepare_payload(
+            {
+                "profile": "pi5",
+                "hostname": "rack-node-01",
+                "device": "/dev/sdb",
+                "ssh_public_key": "ssh-ed25519 AAAA",
+                "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                "cloud_init_options": {"timezone": "UTC", "packages": ["git"]},
+                "sd_options_profile": "base-template",
+                "ignored": "value",
+            }
+        )
+        self.assertNotIn("ignored", cleaned)
+        self.assertEqual(cleaned["sd_options_profile"], "base-template")
+        self.assertEqual(cleaned["cloud_init_options"]["timezone"], "UTC")
+
+    def test_sd_prepare_queues_cloud_init_options_metadata(self) -> None:
+        with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch("app.threading.Thread") as thread_cls:
+            response = self.client.post(
+                "/api/sd/prepare",
+                json={
+                    "profile": "pi5",
+                    "hostname": "rack-node-02",
+                    "device": "/dev/sdb",
+                    "ssh_public_key": "ssh-ed25519 AAAA test",
+                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "sd_options_profile": "base-profile",
+                    "cloud_init_options": {
+                        "timezone": "UTC",
+                        "packages": ["git", "curl"],
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.JOBS_LOCK:
+            job = callback_app.JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            request_payload = dict(job.get("request", {})) if job else {}
+
+        self.assertEqual(request_payload.get("sd_options_profile"), "base-profile")
+        self.assertEqual(request_payload.get("cloud_init_options", {}).get("timezone"), "UTC")
+        self.assertEqual(request_payload.get("cloud_init_options", {}).get("packages"), ["git", "curl"])
+
+        thread_cls.assert_called_once()
+        _, kwargs = thread_cls.call_args
+        self.assertTrue(kwargs.get("daemon"))
+        args_tuple = kwargs.get("args") or ()
+        self.assertTrue(len(args_tuple) >= 2)
+        self.assertEqual(args_tuple[0], job_id)
+
+        with callback_app.JOBS_LOCK:
+            callback_app.JOBS.pop(job_id, None)
 
     def test_settings_reset_node_ops(self) -> None:
         summary = self.client.get("/api/nodes/summary")

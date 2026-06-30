@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List
+
+import yaml
+
+BASE_DIR = Path(__file__).resolve().parent
+IMAGE_CATALOG_FILE = BASE_DIR / "catalogs" / "image_catalog.yml"
 
 TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
     "tailnet": "tail00c2ce.ts.net",
@@ -10,6 +16,46 @@ TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
     "homelab_tag": "tag:homelab",
     "pi5_subnets": ["192.168.174.0/24", "192.168.175.0/24"],
 }
+
+
+def _load_image_catalog() -> List[Dict[str, Any]]:
+    if not IMAGE_CATALOG_FILE.exists():
+        return []
+
+    try:
+        loaded = yaml.safe_load(IMAGE_CATALOG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    if not isinstance(loaded, dict):
+        return []
+
+    catalog = loaded.get("image_catalog", [])
+    if not isinstance(catalog, list):
+        return []
+
+    normalized: List[Dict[str, Any]] = []
+    for item in catalog:
+        if not isinstance(item, dict):
+            continue
+        entry = dict(item)
+        entry["id"] = str(entry.get("id", "")).strip()
+        if not entry["id"]:
+            continue
+        entry["label"] = str(entry.get("label", "")).strip()
+        entry["distro"] = str(entry.get("distro", "")).strip()
+        entry["release"] = str(entry.get("release", "")).strip()
+        entry["arch"] = str(entry.get("arch", "")).strip()
+        profiles = entry.get("profiles", [])
+        entry["profiles"] = [str(v).strip() for v in profiles if str(v).strip()] if isinstance(profiles, list) else []
+        entry["recommended"] = bool(entry.get("recommended", False))
+        entry["image_url"] = str(entry.get("image_url", "")).strip()
+        entry["image_sha256"] = str(entry.get("image_sha256", "")).strip()
+        entry["docs_url"] = str(entry.get("docs_url", "")).strip()
+        entry["notes"] = str(entry.get("notes", "")).strip()
+        normalized.append(entry)
+
+    return normalized
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
@@ -152,226 +198,4 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     },
 ]
 
-IMAGE_CATALOG: List[Dict[str, Any]] = [
-    {
-        "id": "ubuntu-24.04-pi-arm64",
-        "label": "Ubuntu Server 24.04 LTS (Raspberry Pi ARM64)",
-        "distro": "Ubuntu",
-        "release": "24.04 LTS",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": True,
-        "image_url": "https://old-releases.ubuntu.com/releases/24.04/ubuntu-24.04.2-preinstalled-server-arm64+raspi.img.xz",
-        "image_sha256": "07fe39e530381cee7095c16f54d05fd99db2fe8233e05ebf8948437e40b5feaa",
-        "docs_url": "https://ubuntu.com/download/raspberry-pi",
-        "notes": "Pinned to old-releases for reliable direct download with curl.",
-    },
-    {
-        "id": "ubuntu-22.04-pi-arm64",
-        "label": "Ubuntu Server 22.04 LTS (Raspberry Pi ARM64)",
-        "distro": "Ubuntu",
-        "release": "22.04 LTS",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "https://old-releases.ubuntu.com/releases/22.04/ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz",
-        "image_sha256": "8985915e3840d1e3971780aa160791e0665f64a2ee7e52ef8285c0701a8f6d6b",
-        "docs_url": "https://ubuntu.com/download/raspberry-pi",
-        "notes": "Useful for older automation or package compatibility.",
-    },
-    {
-        "id": "debian-bookworm-arm64",
-        "label": "Debian 12 Bookworm (ARM64)",
-        "distro": "Debian",
-        "release": "12 Bookworm",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://raspi.debian.net/tested-images/",
-        "notes": "Provide image URL manually from Debian Raspberry Pi tested images.",
-    },
-    {
-        "id": "debian-bookworm-armhf",
-        "label": "Debian 12 Bookworm (ARMHF)",
-        "distro": "Debian",
-        "release": "12 Bookworm",
-        "arch": "armhf",
-        "profiles": ["pibplus"],
-        "recommended": True,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://raspi.debian.net/tested-images/",
-        "notes": "Good baseline for Pi B+ 32-bit class hardware.",
-    },
-    {
-        "id": "raspios-bookworm-arm64-lite",
-        "label": "Raspberry Pi OS Lite (Bookworm, ARM64)",
-        "distro": "Raspberry Pi OS",
-        "release": "Bookworm",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://www.raspberrypi.com/software/operating-systems/",
-        "notes": "Provide a direct Lite image URL from official Raspberry Pi downloads.",
-    },
-    {
-        "id": "raspios-bookworm-armhf-lite",
-        "label": "Raspberry Pi OS Lite (Bookworm, 32-bit)",
-        "distro": "Raspberry Pi OS",
-        "release": "Bookworm",
-        "arch": "armhf",
-        "profiles": ["pibplus"],
-        "recommended": True,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://www.raspberrypi.com/software/operating-systems/",
-        "notes": "Recommended family for Pi B+ when Ubuntu ARM64 is not suitable.",
-    },
-    {
-        "id": "fedora-iot-arm64",
-        "label": "Fedora IoT (ARM64)",
-        "distro": "Fedora",
-        "release": "IoT Stable",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://fedoraproject.org/iot/download",
-        "notes": "Provide image URL manually from Fedora IoT download page.",
-    },
-    {
-        "id": "fedora-server-arm64",
-        "label": "Fedora Server (ARM64)",
-        "distro": "Fedora",
-        "release": "Server Stable",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://fedoraproject.org/server/download",
-        "notes": "General-purpose Fedora Server option for rack nodes.",
-    },
-    {
-        "id": "opensuse-microos-arm64",
-        "label": "openSUSE MicroOS (AArch64)",
-        "distro": "openSUSE",
-        "release": "MicroOS Stable",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://get.opensuse.org/microos/",
-        "notes": "Immutable distro option for appliance-like cluster nodes.",
-    },
-    {
-        "id": "ubuntu-core-arm64",
-        "label": "Ubuntu Core (ARM64)",
-        "distro": "Ubuntu",
-        "release": "Core Stable",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://ubuntu.com/core/docs",
-        "notes": "Snap-based immutable Ubuntu Core image for constrained use cases.",
-    },
-    {
-        "id": "dietpi-armhf",
-        "label": "DietPi (ARMHF)",
-        "distro": "DietPi",
-        "release": "Stable",
-        "arch": "armhf",
-        "profiles": ["pibplus"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://dietpi.com/#download",
-        "notes": "Lightweight OS option for Raspberry Pi B+ class hardware.",
-    },
-    {
-        "id": "raspios-legacy-bullseye-armhf-lite",
-        "label": "Raspberry Pi OS Lite (Bullseye, 32-bit)",
-        "distro": "Raspberry Pi OS",
-        "release": "Bullseye Legacy",
-        "arch": "armhf",
-        "profiles": ["pibplus"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://www.raspberrypi.com/software/operating-systems/",
-        "notes": "Legacy fallback image for older Pi B+ compatibility paths.",
-    },
-    {
-        "id": "alpine-aarch64",
-        "label": "Alpine Linux (AArch64)",
-        "distro": "Alpine",
-        "release": "Stable",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://www.alpinelinux.org/downloads/",
-        "notes": "Great for lightweight containers and appliance-style nodes.",
-    },
-    {
-        "id": "kali-arm64-rpi",
-        "label": "Kali Linux Raspberry Pi (ARM64)",
-        "distro": "Kali",
-        "release": "Rolling",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://www.kali.org/get-kali/#kali-arm",
-        "notes": "Security testing distro option for lab nodes.",
-    },
-    {
-        "id": "archlinuxarm-rpi",
-        "label": "Arch Linux ARM (Raspberry Pi)",
-        "distro": "Arch Linux ARM",
-        "release": "Rolling",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "https://archlinuxarm.org/platforms/armv8/broadcom/raspberry-pi-4",
-        "notes": "Use with care in production due to rolling updates.",
-    },
-    {
-        "id": "custom-arm64",
-        "label": "Custom URL Or Local Image (ARM64)",
-        "distro": "Custom",
-        "release": "Manual",
-        "arch": "arm64",
-        "profiles": ["pi5"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "",
-        "notes": "Bring your own trusted image URL or local file path.",
-    },
-    {
-        "id": "custom-armhf",
-        "label": "Custom URL Or Local Image (ARMHF)",
-        "distro": "Custom",
-        "release": "Manual",
-        "arch": "armhf",
-        "profiles": ["pibplus"],
-        "recommended": False,
-        "image_url": "",
-        "image_sha256": "",
-        "docs_url": "",
-        "notes": "Bring your own trusted image URL or local file path.",
-    },
-]
+IMAGE_CATALOG = _load_image_catalog()

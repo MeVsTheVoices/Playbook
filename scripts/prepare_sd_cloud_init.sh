@@ -329,6 +329,13 @@ if [[ "${CLOUD_INIT_FANCY_MOTD:-false}" == "true" ]]; then
 FANCY_MOTD_PKGS
 fi
 
+# Add Telegraf package if enabled
+if [[ "${CLOUD_INIT_INSTALL_TELEGRAF:-false}" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'TELEGRAF_PKGS'
+  - telegraf
+TELEGRAF_PKGS
+fi
+
 cat >> "$USER_DATA_OUT" <<EOF
 
 write_files:
@@ -353,7 +360,7 @@ write_files:
       POE_ENABLED="false"
       [[ -f /sys/class/pwm/pwmchip0/device/dtoverlay ]] && POE_ENABLED="true"
       curl -fsS -X POST -H 'Content-Type: application/json' \\
-        -d "{\\"instance_id\\":\\"$(hostname)-hw\\",\\"hostname\\":\\"$(hostname)\\",\\"stage\\":\\"hardware-check\\",\\"hardware\\":{\\"model\\":\\"$PI_MODEL\\",\\"ram_mb\\":$RAM_MB,\\"sd_capacity_gb\\":$SD_CAPACITY,\\"nvme\\":$NVME_PRESENT,\\"hat\\":$HAT_PRESENT,\\"poe\\":$POE_ENABLED}}" \\
+        -d "{\\"instance_id\\":\\"\$(hostname)-hw\\",\\"hostname\\":\\"\$(hostname)\\",\\"profile\\":\\"${PROFILE}\\",\\"stage\\":\\"hardware-check\\",\\"hardware\\":{\\"model\\":\\"\$PI_MODEL\\",\\"ram_mb\\":\$RAM_MB,\\"sd_capacity_gb\\":\$SD_CAPACITY,\\"nvme\\":\$NVME_PRESENT,\\"hat\\":\$HAT_PRESENT,\\"poe\\":\$POE_ENABLED}}" \\
         '${CALLBACK_URL}' || true
   - path: /etc/update-motd.d/10-fancy
     permissions: "0755"
@@ -366,6 +373,60 @@ write_files:
           fortune | cowsay
         fi
       fi
+  - path: /usr/local/bin/rack-telegraf-bootstrap
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      INFLUX_URL="\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"
+      INFLUX_TOKEN="\${CLOUD_INIT_TELEGRAF_INFLUX_TOKEN:-}"
+      INFLUX_ORG="\${CLOUD_INIT_TELEGRAF_INFLUX_ORG:-}"
+      INFLUX_BUCKET="\${CLOUD_INIT_TELEGRAF_INFLUX_BUCKET:-}"
+      CONFIG_URL="\${CLOUD_INIT_TELEGRAF_CONFIG_URL:-}"
+
+      mkdir -p /etc/telegraf
+
+      if [[ -n "\$CONFIG_URL" ]]; then
+        if [[ -n "\$INFLUX_TOKEN" ]]; then
+          curl -fsSL -H "Authorization: Token \$INFLUX_TOKEN" "\$CONFIG_URL" -o /etc/telegraf/telegraf.conf
+        else
+          curl -fsSL "\$CONFIG_URL" -o /etc/telegraf/telegraf.conf
+        fi
+      elif [[ -n "\$INFLUX_URL" && -n "\$INFLUX_TOKEN" && -n "\$INFLUX_ORG" && -n "\$INFLUX_BUCKET" ]]; then
+        cat > /etc/telegraf/telegraf.conf <<TELEGRAF_CONF
+        [agent]
+          interval = "10s"
+          round_interval = true
+          metric_batch_size = 1000
+          metric_buffer_limit = 10000
+          flush_interval = "10s"
+          hostname = "\$(hostname)"
+
+        [[outputs.influxdb_v2]]
+          urls = ["\$INFLUX_URL"]
+          token = "\$INFLUX_TOKEN"
+          organization = "\$INFLUX_ORG"
+          bucket = "\$INFLUX_BUCKET"
+
+        [[inputs.cpu]]
+          percpu = true
+          totalcpu = true
+
+        [[inputs.mem]]
+        [[inputs.disk]]
+          ignore_fs = ["tmpfs", "devtmpfs", "overlay", "squashfs"]
+        [[inputs.diskio]]
+        [[inputs.net]]
+        [[inputs.system]]
+        TELEGRAF_CONF
+      else
+        echo "Telegraf enabled but no config_url or complete Influx credentials provided; skipping config"
+        exit 0
+      fi
+
+      systemctl enable telegraf || true
+      systemctl restart telegraf || true
 
 phone_home:
   url: "${CALLBACK_URL}"
@@ -381,6 +442,12 @@ EOF
 if [[ "${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
   - [ /usr/local/bin/rack-hardware-check ]
+RUNCMD_EOF
+fi
+
+if [[ "${CLOUD_INIT_INSTALL_TELEGRAF:-false}" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ /usr/local/bin/rack-telegraf-bootstrap ]
 RUNCMD_EOF
 fi
 

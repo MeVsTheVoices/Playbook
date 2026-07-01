@@ -17,10 +17,7 @@
         margin: 0;
         font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
         color: var(--ink);
-        background:
-          radial-gradient(circle at 10% 10%, #dbeafe 0%, transparent 40%),
-          radial-gradient(circle at 90% 0%, #ccfbf1 0%, transparent 42%),
-          var(--bg);
+        background: linear-gradient(180deg, #eef6fb 0%, #f5f7fb 52%, #edf8f5 100%);
       }
       .sidebar {
         position: fixed;
@@ -100,7 +97,7 @@
         border: 1px solid var(--line);
         border-radius: 14px;
         box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-        padding: 1rem;
+        padding: 1.15rem;
         margin-bottom: 1rem;
       }
       h1 {
@@ -112,16 +109,24 @@
         font-size: 0.92rem;
       }
       .grid {
-        margin-top: 0.8rem;
+        margin-top: 0.95rem;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 0.7rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.9rem;
+      }
+      .field {
+        background: #fbfdff;
+        border: 1px solid #e3eaf2;
+        border-radius: 12px;
+        padding: 0.72rem;
+        min-width: 0;
       }
       label {
         display: block;
         font-size: 0.82rem;
         color: var(--muted);
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.35rem;
+        font-weight: 600;
       }
       input,
       select {
@@ -129,7 +134,7 @@
         box-sizing: border-box;
         border: 1px solid var(--line);
         border-radius: 10px;
-        padding: 0.55rem;
+        padding: 0.62rem;
         font-family: inherit;
         font-size: 0.92rem;
       }
@@ -152,14 +157,25 @@
         background: #334155;
       }
       .status {
-        margin-top: 0.7rem;
+        margin-top: 0.9rem;
         font-family: "IBM Plex Mono", monospace;
-        font-size: 0.84rem;
+        font-size: 0.86rem;
         background: #f8fafc;
         border: 1px solid var(--line);
         border-radius: 10px;
-        padding: 0.6rem;
+        padding: 0.85rem;
         white-space: pre-wrap;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+      }
+      .dns-hint {
+        margin-top: 0.65rem;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        color: #9a3412;
+        border-radius: 10px;
+        padding: 0.68rem;
+        display: none;
       }
       .terminal {
         margin-top: 0.8rem;
@@ -168,12 +184,13 @@
         background: #020617;
         color: #d1fae5;
         font-family: "IBM Plex Mono", monospace;
-        font-size: 0.84rem;
-        line-height: 1.4;
-        padding: 0.85rem;
+        font-size: 0.86rem;
+        line-height: 1.52;
+        padding: 1rem;
         max-height: 420px;
         overflow: auto;
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
       .chip {
         display: inline-block;
@@ -196,49 +213,77 @@
         background: #fee2e2;
         color: #991b1b;
       }
+      .inline-actions {
+        margin-top: 0.45rem;
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+      }
+      .mini-btn {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fafc;
+        color: #334155;
+        padding: 0.38rem 0.55rem;
+        font-size: 0.78rem;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
     <aside class="sidebar">
       <div class="sidebar-brand">
         <div class="sidebar-title">Callback Site</div>
-        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops 😎</div>
       </div>
       <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
-      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span>Home</span> <span class="label">Dashboard</span></a>
-      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span>Nodes</span> <span class="label">Node Ops</span></a>
-      <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span>Mon</span> <span class="label">Monitor</span></a>
-      <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span>Img</span> <span class="label">Image Library</span></a>
-      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
-      <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span>Vrf</span> <span class="label">Verifier</span></a>
-      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span>Set</span> <span class="label">Settings</span></a>
+      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span class="label">Dashboard</span></a>
+      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span class="label">Node Ops</span></a>
+      <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span class="label">Monitor</span></a>
+      <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span class="label">Image Library</span></a>
+      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span class="label">Verifier</span></a>
+      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span class="label">Settings</span></a>
     </aside>
 
     <main class="content">
       <div class="wrap">
       <section class="panel">
-        <h1>Verifier Terminal</h1>
+        <h1>Verifier Terminal 😬</h1>
         <p class="muted">Run quick SSH verification checks in the normal dashboard flow to confirm provisioning took effect.</p>
         <div class="grid">
-          <div>
+          <div class="field">
             <label for="host">Host/IP</label>
             <input id="host" placeholder="10.0.0.42 or rpi5-01.local">
+            <div class="inline-actions">
+              <button class="mini-btn" id="save-manual-host" type="button">Save manual host</button>
+            </div>
           </div>
-          <div>
+          <div class="field">
+            <label for="host-select">Callback-discovered hosts</label>
+            <select id="host-select">
+              <option value="">Select discovered host...</option>
+            </select>
+            <div class="inline-actions">
+              <button class="mini-btn" id="use-selected-host" type="button">Use selected host</button>
+              <button class="mini-btn" id="refresh-targets" type="button">Refresh hosts</button>
+            </div>
+          </div>
+          <div class="field">
             <label for="username">Username</label>
             <input id="username" value="ops">
           </div>
-          <div>
+          <div class="field">
             <label for="port">SSH Port</label>
             <input id="port" type="number" min="1" max="65535" value="22">
           </div>
-          <div>
+          <div class="field">
             <label for="key-name">SSH Key</label>
             <select id="key-name">
               <option value="rack-bootstrap-ed25519">rack-bootstrap-ed25519</option>
             </select>
           </div>
-          <div style="grid-column: 1 / -1;">
+          <div class="field" style="grid-column: 1 / -1;">
             <label for="check-id">Verification Check</label>
             <select id="check-id"></select>
             <p class="muted" id="check-description" style="margin-top: 0.35rem;">Choose a predefined check.</p>
@@ -249,6 +294,7 @@
           <button id="refresh-keys" class="secondary">Refresh Keys</button>
         </div>
         <div id="job-status" class="status">Idle.</div>
+        <div id="dns-hint" class="dns-hint"></div>
         <div id="job-output" class="terminal">No output yet.</div>
       </section>
       </div>
@@ -258,6 +304,10 @@
       const body = document.body;
       const toggleBtn = document.getElementById("sidebar-toggle");
       const hostEl = document.getElementById("host");
+      const hostSelectEl = document.getElementById("host-select");
+      const useSelectedHostBtn = document.getElementById("use-selected-host");
+      const refreshTargetsBtn = document.getElementById("refresh-targets");
+      const saveManualHostBtn = document.getElementById("save-manual-host");
       const usernameEl = document.getElementById("username");
       const portEl = document.getElementById("port");
       const keyNameEl = document.getElementById("key-name");
@@ -266,11 +316,14 @@
       const startBtn = document.getElementById("start-check");
       const refreshKeysBtn = document.getElementById("refresh-keys");
       const jobStatusEl = document.getElementById("job-status");
+      const dnsHintEl = document.getElementById("dns-hint");
       const jobOutputEl = document.getElementById("job-output");
 
       let activeJobId = null;
       let pollTimer = null;
       let checksCatalog = [];
+      let callbackTargets = [];
+      const MANUAL_HOSTS_KEY = "verifier-manual-hosts";
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -288,6 +341,10 @@
         return `<span class="${cls}">${s}</span>`;
       }
 
+      function resolveVerificationHost() {
+        return hostSelectEl.value.trim() || hostEl.value.trim();
+      }
+
       function renderJob(job) {
         const started = job?.started_at || "-";
         const finished = job?.finished_at || "-";
@@ -302,6 +359,38 @@
         ].join("\n");
         const out = `${job?.stdout || ""}${job?.stderr ? "\n[stderr]\n" + job.stderr : ""}`.trim();
         jobOutputEl.textContent = out || "No output yet.";
+
+        const dnsError = String(job?.stderr || "").includes("Could not resolve hostname");
+        if (dnsError) {
+          const hostValue = hostEl.value.trim() || hostSelectEl.value.trim();
+          const ipTarget = callbackTargets.find((t) => {
+            if (String(t.source || "") !== "source_ip") {
+              return false;
+            }
+            const hostname = String(t.hostname || "").trim();
+            const fqdn = String(t.fqdn || "").trim();
+            return hostname === hostValue || fqdn === hostValue;
+          });
+
+          if (ipTarget && ipTarget.host) {
+            dnsHintEl.innerHTML = `DNS lookup failed for ${hostValue}. Try callback source IP ${ipTarget.host} instead. <button class="mini-btn" id="use-ip-fallback" type="button">Use ${ipTarget.host}</button>`;
+            dnsHintEl.style.display = "block";
+            const useIpBtn = document.getElementById("use-ip-fallback");
+            if (useIpBtn) {
+              useIpBtn.addEventListener("click", () => {
+                hostEl.value = String(ipTarget.host || "");
+                hostSelectEl.value = String(ipTarget.host || "");
+                jobStatusEl.textContent = `Switched host to callback IP fallback '${ipTarget.host}'.`;
+              });
+            }
+          } else {
+            dnsHintEl.textContent = `DNS lookup failed for ${hostValue}. Consider using the callback source IP from discovered hosts.`;
+            dnsHintEl.style.display = "block";
+          }
+        } else {
+          dnsHintEl.style.display = "none";
+          dnsHintEl.textContent = "";
+        }
       }
 
       function stopPolling() {
@@ -333,7 +422,7 @@
       }
 
       async function startCheck() {
-        const host = hostEl.value.trim();
+        const host = resolveVerificationHost();
         if (!host) {
           jobStatusEl.textContent = "Host is required.";
           hostEl.focus();
@@ -392,18 +481,120 @@
             return;
           }
           for (const key of keys) {
+            const keyName = String(key.key_name || key.name || "").trim();
+            if (!keyName) {
+              continue;
+            }
             const opt = document.createElement("option");
-            opt.value = key.name;
-            opt.textContent = `${key.name} (${key.type})`;
+            opt.value = keyName;
+            const pubState = key.public_key_exists ? "pub" : "no-pub";
+            opt.textContent = `${keyName} (${pubState})`;
             keyNameEl.appendChild(opt);
           }
-          const preferred = keys.find((k) => k.name === "rack-bootstrap-ed25519");
+          const preferred = keys.find((k) => String(k.key_name || k.name || "") === "rack-bootstrap-ed25519");
           if (preferred) {
-            keyNameEl.value = preferred.name;
+            keyNameEl.value = "rack-bootstrap-ed25519";
+          } else if (keyNameEl.options.length) {
+            keyNameEl.value = keyNameEl.options[0].value;
           }
+          jobStatusEl.textContent = `Loaded ${keys.length} SSH key(s) from callback key store.`;
         } catch (err) {
           jobStatusEl.textContent = `Key refresh error: ${String(err.message || err)}`;
         }
+      }
+
+      function readManualHosts() {
+        try {
+          const raw = JSON.parse(localStorage.getItem(MANUAL_HOSTS_KEY) || "[]");
+          if (!Array.isArray(raw)) {
+            return [];
+          }
+          return raw
+            .map((v) => String(v || "").trim())
+            .filter((v) => Boolean(v));
+        } catch (err) {
+          return [];
+        }
+      }
+
+      function writeManualHosts(values) {
+        const normalized = values
+          .map((v) => String(v || "").trim())
+          .filter((v) => Boolean(v));
+        localStorage.setItem(MANUAL_HOSTS_KEY, JSON.stringify(Array.from(new Set(normalized)).slice(0, 40)));
+      }
+
+      function renderTargets() {
+        const current = hostSelectEl.value;
+        const manual = readManualHosts();
+        hostSelectEl.innerHTML = "";
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select discovered host...";
+        hostSelectEl.appendChild(placeholder);
+
+        for (const target of callbackTargets) {
+          const opt = document.createElement("option");
+          opt.value = target.host;
+          const profile = target.profile ? ` | ${target.profile}` : "";
+          opt.textContent = `${target.host} (${target.source}${profile})`;
+          hostSelectEl.appendChild(opt);
+        }
+
+        const discovered = new Set(callbackTargets.map((t) => String(t.host || "").toLowerCase()));
+        for (const host of manual) {
+          if (discovered.has(host.toLowerCase())) {
+            continue;
+          }
+          const opt = document.createElement("option");
+          opt.value = host;
+          opt.textContent = `${host} (manual)`;
+          hostSelectEl.appendChild(opt);
+        }
+
+        if (current && Array.from(hostSelectEl.options).some((o) => o.value === current)) {
+          hostSelectEl.value = current;
+        }
+      }
+
+      async function refreshTargets() {
+        try {
+          const res = await fetch("/api/test-terminal/targets");
+          const payload = await res.json();
+          if (!res.ok || !payload.ok) {
+            throw new Error(payload.error || "failed to load targets");
+          }
+          callbackTargets = Array.isArray(payload.targets) ? payload.targets : [];
+          renderTargets();
+        } catch (err) {
+          jobStatusEl.textContent = `Host refresh error: ${String(err.message || err)}`;
+          renderTargets();
+        }
+      }
+
+      function saveManualHost() {
+        const value = hostEl.value.trim();
+        if (!value) {
+          jobStatusEl.textContent = "Enter a host first, then save it.";
+          return;
+        }
+        const existing = readManualHosts();
+        existing.push(value);
+        writeManualHosts(existing);
+        renderTargets();
+        hostSelectEl.value = value;
+        jobStatusEl.textContent = `Saved manual host '${value}'.`;
+      }
+
+      function useSelectedHost() {
+        const selected = hostSelectEl.value.trim();
+        if (!selected) {
+          jobStatusEl.textContent = "Select a discovered host first.";
+          return;
+        }
+        hostEl.value = selected;
+        jobStatusEl.textContent = `Using host '${selected}'.`;
       }
 
       function renderChecks() {
@@ -447,9 +638,15 @@
       startBtn.addEventListener("click", startCheck);
       refreshKeysBtn.addEventListener("click", refreshKeys);
       checkIdEl.addEventListener("change", updateCheckDescription);
+      useSelectedHostBtn.addEventListener("click", useSelectedHost);
+      refreshTargetsBtn.addEventListener("click", refreshTargets);
+      saveManualHostBtn.addEventListener("click", saveManualHost);
+      hostSelectEl.addEventListener("change", useSelectedHost);
       initSidebar();
       refreshKeys();
       refreshChecks();
+      renderTargets();
+      refreshTargets();
     </script>
   </body>
 </html>

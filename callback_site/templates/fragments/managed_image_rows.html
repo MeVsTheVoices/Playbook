@@ -7,9 +7,9 @@
   <td><code>{{ row.source_value or row.download_path or '-' }}</code></td>
   <td>
     {% if row.local_available %}
-      <span class="tag">available</span>
+      <span class="download-state available"><span class="mark">✅</span> <span>downloaded</span></span>
     {% else %}
-      <span>missing</span>
+      <span class="download-state missing"><span class="mark">❌</span> <span>missing</span></span>
     {% endif %}
   </td>
   <td>{{ row.hash_status or '-' }}</td>

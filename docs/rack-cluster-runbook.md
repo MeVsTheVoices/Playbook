@@ -33,6 +33,9 @@
    - `sudo scripts/prepare_sd_cloud_init.sh --profile pibplus --hostname rpi-bplus-02 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback --image-url <your-cloud-init-image-url>`
 5. Insert SD card, boot node, then watch callback events:
    - Open `http://<callback-host>:8088/`
+6. If the callback host is reached through the router WAN or another NAT hop, the dashboard will show that upstream address in `source_ip`.
+   - For example, Pi LAN leases on `192.168.174.x` can still appear as `10.255.x` in callback logs when the router NATs the request.
+   - Use the router client list for the Pi's LAN lease and the callback dashboard for the observed request path.
 
 ## Callback Site Testing
 - Run the local regression suite from `callback_site/` with `python -m unittest discover -s tests`.

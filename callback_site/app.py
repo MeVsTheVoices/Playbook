@@ -43,6 +43,23 @@ logger = logging.getLogger(__name__)
 
 TEST_TERMINAL_JOBS: Dict[str, Dict[str, Any]] = {}
 TEST_TERMINAL_LOCK = threading.Lock()
+TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
+    "identity": {
+        "label": "Identity + Kernel",
+        "description": "Validate hostname/user/kernel baseline",
+        "command": "hostname && whoami && uname -a",
+    },
+    "cloud_init": {
+        "label": "Cloud-Init State",
+        "description": "Check cloud-init completion and status",
+        "command": "cloud-init status --long || cloud-init status",
+    },
+    "service_baseline": {
+        "label": "Service Baseline",
+        "description": "Quick system health and networking status",
+        "command": "systemctl is-system-running || true; systemctl --failed --no-legend || true; ip -brief address",
+    },
+}
 
 
 def _run_test_terminal_job(job_id: str, cmd: list[str]) -> None:
@@ -128,6 +145,11 @@ def nodes_page() -> str:
 @app.get("/monitor")
 def monitor_page() -> str:
     return render_template("monitor.html")
+
+
+@app.get("/test-terminal")
+def test_terminal_page() -> str:
+    return render_template("test_terminal.html")
 
 
 @app.get("/images")
@@ -246,6 +268,79 @@ def cloud_init_event_rows() -> str:
     return render_template("fragments/callback_rows.html", events=_read_events(limit=200))
 
 
+def _normalize_stage(payload: Dict[str, Any]) -> str:
+    for key in ("stage", "cloud_init_stage", "status", "phase", "event"):
+        value = str(payload.get(key, "")).strip()
+        if value:
+            return value
+    return "phone_home"
+
+
+def _infer_profile_from_text(*values: str) -> str:
+    for value in values:
+        text = str(value or "").strip().lower()
+        if not text:
+            continue
+        if "pibplus" in text or "pi-bplus" in text or "bplus" in text:
+            return "pibplus"
+        if "pi5" in text or "pi-5" in text:
+            return "pi5"
+    return ""
+
+
+def _normalize_profile(payload: Dict[str, Any], hostname: str, instance_id: str) -> str:
+    for key in ("profile", "profile_name", "image_profile", "rack_profile", "role"):
+        value = str(payload.get(key, "")).strip().lower()
+        if value in {"pi5", "pibplus"}:
+            return value
+
+    inferred = _infer_profile_from_text(hostname, instance_id, payload.get("fqdn", ""))
+    if inferred:
+        return inferred
+    return "unknown"
+
+
+def _normalize_hostname(payload: Dict[str, Any]) -> str:
+    for key in ("hostname", "host", "node", "nodename"):
+        value = str(payload.get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
+def _normalize_instance_id(payload: Dict[str, Any]) -> str:
+    for key in ("instance_id", "instance", "instanceid"):
+        value = str(payload.get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
+def _recent_event_defaults(hostname: str, instance_id: str, fqdn: str) -> Dict[str, str]:
+    for event in _read_events(limit=500):
+        if not isinstance(event, dict):
+            continue
+
+        matches = False
+        if hostname and str(event.get("hostname", "")).strip() == hostname:
+            matches = True
+        if instance_id and str(event.get("instance_id", "")).strip() == instance_id:
+            matches = True
+        if fqdn and str(event.get("fqdn", "")).strip() == fqdn:
+            matches = True
+        if not matches:
+            continue
+
+        profile = str(event.get("profile", "")).strip().lower()
+        stage = str(event.get("stage", "")).strip()
+        return {
+            "profile": profile if profile else "",
+            "stage": stage if stage else "",
+        }
+
+    return {"profile": "", "stage": ""}
+
+
 @app.post("/api/cloud-init/callback")
 def callback() -> Any:
     payload_json = request.get_json(silent=True)
@@ -259,24 +354,54 @@ def callback() -> Any:
     cert_subject = _header_or_payload(
         payload,
         "X-SSL-Client-Subject",
+        "X-SSL-Client-Cert-Subject",
         "X-Client-Cert-Subject",
         "TLS-Client-Subject",
+        "SSL-Client-Subject",
         "cert_subject",
     )
     cert_issuer = _header_or_payload(
         payload,
         "X-SSL-Client-Issuer",
+        "X-SSL-Client-Cert-Issuer",
         "X-Client-Cert-Issuer",
         "TLS-Client-Issuer",
+        "SSL-Client-Issuer",
         "cert_issuer",
     )
     cert_fingerprint = _header_or_payload(
         payload,
         "X-SSL-Client-Fingerprint",
+        "X-SSL-Client-Cert-Fingerprint",
         "X-Client-Cert-Fingerprint",
         "TLS-Client-Fingerprint",
+        "SSL-Client-Fingerprint",
         "cert_fingerprint",
     )
+    cert_blob = _header_or_payload(
+        payload,
+        "X-SSL-Client-Cert",
+        "X-Client-Cert",
+        "SSL-Client-Cert",
+        "client_cert",
+    )
+
+    instance_id = _normalize_instance_id(payload)
+    hostname = _normalize_hostname(payload)
+    fqdn = str(payload.get("fqdn") or payload.get("host_fqdn") or "").strip()
+    profile = _normalize_profile(payload, hostname, instance_id)
+    stage = _normalize_stage(payload)
+    recent_defaults = _recent_event_defaults(hostname, instance_id, fqdn)
+
+    if profile == "unknown" and recent_defaults.get("profile") not in {"", "unknown"}:
+        profile = str(recent_defaults.get("profile", "")).strip().lower()
+    if stage == "phone_home" and recent_defaults.get("stage"):
+        stage = str(recent_defaults.get("stage", "")).strip()
+
+    # Some cloud-init phone-home calls can be empty; ignore these noise callbacks.
+    if not payload and not hostname and not instance_id and not cert_subject and not cert_fingerprint:
+        logger.info("Callback ignored: empty payload with no identifying fields")
+        return jsonify({"ok": True, "ignored": True})
 
     event = {
         "received_at": datetime.now(timezone.utc).isoformat(),
@@ -285,15 +410,16 @@ def callback() -> Any:
         "forwarded_for": forwarded_for,
         "remote_addr": request.remote_addr,
         "user_agent": request.headers.get("User-Agent", ""),
-        "instance_id": payload.get("instance_id") or request.form.get("instance_id"),
-        "hostname": payload.get("hostname") or request.form.get("hostname"),
-        "fqdn": payload.get("fqdn") or request.form.get("fqdn"),
-        "profile": payload.get("profile"),
-        "stage": payload.get("stage"),
+        "instance_id": instance_id,
+        "hostname": hostname,
+        "fqdn": fqdn,
+        "profile": profile,
+        "stage": stage,
         "cert_subject": cert_subject,
         "cert_issuer": cert_issuer,
         "cert_fingerprint": cert_fingerprint,
-        "cert_present": bool(cert_subject or cert_fingerprint),
+        "cert_present": bool(cert_subject or cert_fingerprint or cert_blob),
+        "cert_header_present": bool(cert_blob),
         "raw": payload,
     }
     
@@ -436,13 +562,27 @@ def ssh_keys_list() -> Any:
     return jsonify({"ok": True, "keys": _list_ssh_keys()})
 
 
+@app.get("/api/test-terminal/checks")
+def test_terminal_checks() -> Any:
+    checks = []
+    for check_id, item in TERMINAL_CHECKS.items():
+        checks.append(
+            {
+                "id": check_id,
+                "label": item["label"],
+                "description": item["description"],
+            }
+        )
+    return jsonify({"ok": True, "checks": checks})
+
+
 @app.post("/api/test-terminal/start")
 def test_terminal_start() -> Any:
     payload = request.get_json(silent=True) or {}
     host = str(payload.get("host", payload.get("hostname", ""))).strip()
     username = str(payload.get("username", "ops")).strip() or "ops"
     key_name = str(payload.get("key_name", "rack-bootstrap-ed25519")).strip() or "rack-bootstrap-ed25519"
-    remote_command = str(payload.get("command", "hostname && whoami && uname -a")).strip()
+    check_id = str(payload.get("check_id", "identity")).strip() or "identity"
     port = int(payload.get("port", 22) or 22)
 
     if not host:
@@ -451,10 +591,15 @@ def test_terminal_start() -> Any:
         return jsonify({"ok": False, "error": "invalid key_name"}), 400
     if port < 1 or port > 65535:
         return jsonify({"ok": False, "error": "invalid port"}), 400
+    if check_id not in TERMINAL_CHECKS:
+        return jsonify({"ok": False, "error": "invalid check_id"}), 400
 
     key_path = KEYS_DIR / key_name
     if not key_path.exists():
         return jsonify({"ok": False, "error": f"key not found: {key_name}"}), 404
+
+    selected_check = TERMINAL_CHECKS[check_id]
+    remote_command = selected_check["command"]
 
     cmd = [
         "ssh",
@@ -480,6 +625,8 @@ def test_terminal_start() -> Any:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "started_at": datetime.now(timezone.utc).isoformat(),
             "command": cmd,
+            "check_id": check_id,
+            "check_label": selected_check["label"],
             "stdout": "",
             "stderr": "",
             "exit_code": None,
@@ -487,7 +634,7 @@ def test_terminal_start() -> Any:
 
     thread = threading.Thread(target=_run_test_terminal_job, args=(job_id, cmd), daemon=True)
     thread.start()
-    logger.info(f"Started hidden test-terminal job: id={job_id}, host={host}, user={username}")
+    logger.info(f"Started verifier terminal job: id={job_id}, host={host}, user={username}, check_id={check_id}")
     return jsonify({"ok": True, "job_id": job_id})
 
 

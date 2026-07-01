@@ -99,6 +99,8 @@ def index() -> str:
     events = _read_events(limit=200)
     rack_name = _load_app_settings().get("rack_name", "homelab")
     option_profiles = _load_sd_option_profiles()
+    available_urls = _available_image_urls_from_history(limit=5000)
+    image_catalog = [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
     return render_template(
         "index.html",
         events=events,
@@ -108,7 +110,7 @@ def index() -> str:
         sd_option_profiles=option_profiles,
         devices=_list_sd_devices(),
         callback_url_default=_default_callback_url(),
-        image_catalog=IMAGE_CATALOG,
+        image_catalog=image_catalog,
     )
 
 
@@ -155,7 +157,9 @@ def test_terminal_page() -> str:
 @app.get("/images")
 def images_page() -> str:
     image_history = _read_image_history(limit=500)
-    return render_template("images.html", image_catalog=IMAGE_CATALOG, image_history=image_history, image_records=image_history)
+    available_urls = _available_image_urls_from_history(limit=5000)
+    image_catalog = [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
+    return render_template("images.html", image_catalog=image_catalog, image_history=image_history, image_records=image_history)
 
 
 @app.get("/settings")
@@ -574,6 +578,48 @@ def test_terminal_checks() -> Any:
             }
         )
     return jsonify({"ok": True, "checks": checks})
+
+
+def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
+    events = _read_events(limit=limit)
+    targets: list[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add_target(host: str, source: str, event: Dict[str, Any]) -> None:
+        value = str(host or "").strip()
+        if not value:
+            return
+        lowered = value.lower()
+        if lowered in {"unknown", "none", "-"}:
+            return
+        if lowered in seen:
+            return
+        seen.add(lowered)
+        targets.append(
+            {
+                "host": value,
+                "source": source,
+                "hostname": str(event.get("hostname", "") or "").strip(),
+                "fqdn": str(event.get("fqdn", "") or "").strip(),
+                "instance_id": str(event.get("instance_id", "") or "").strip(),
+                "profile": str(event.get("profile", "") or "").strip(),
+                "last_seen": str(event.get("received_at", "") or "").strip(),
+            }
+        )
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        add_target(event.get("hostname", ""), "hostname", event)
+        add_target(event.get("fqdn", ""), "fqdn", event)
+        add_target(event.get("source_ip", ""), "source_ip", event)
+
+    return targets
+
+
+@app.get("/api/test-terminal/targets")
+def test_terminal_targets() -> Any:
+    return jsonify({"ok": True, "targets": _test_terminal_targets(limit=2000)})
 
 
 @app.post("/api/test-terminal/start")

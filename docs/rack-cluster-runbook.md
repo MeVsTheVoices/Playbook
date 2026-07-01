@@ -37,10 +37,20 @@
 ## Callback Site Testing
 - Run the local regression suite from `callback_site/` with `python -m unittest discover -s tests`.
 - The tests cover page/fragment rendering, image CRUD, callback event fragments, source IP precedence, and the health endpoint.
+- The verifier terminal now accepts only named checks (no freeform remote command input). Use `GET /api/test-terminal/checks` to review allowed checks.
 - Quick smoke checks:
    - `curl -i http://127.0.0.1:8088/`
    - `curl -s http://127.0.0.1:8088/health`
    - `curl -s http://127.0.0.1:8088/api/cloud-init/events`
+
+## Preflight Before Flashing
+1. Run the full callback-site validation script from the repo root:
+   - `./scripts/validate_callback_site.sh`
+2. Confirm hot-plug update on the Home page target device selector:
+   - remove SD card and verify the selector updates to no-device state
+   - reinsert SD card and verify the expected `/dev/*` target reappears
+3. Use the dashboard link to open verifier terminal in a separate window and run a named check against a known host.
+4. Confirm callback dashboard cards render long "Latest pull" values without clipping or overflow.
 
 ## Node Ops Progression
 1. After callback events appear for a node, open `/nodes`.
@@ -50,6 +60,14 @@
 5. If required values are missing, fill them in and save inputs, then re-run check.
 6. Run "Apply" for optional provisioning once checks look correct.
 7. Use plan-only checks by disabling Ansible execution in the Node Ops UI.
+
+## Kubernetes (K8s) Primer
+- What it is: Kubernetes is a scheduler and control plane for running containerized workloads across multiple machines.
+- What it does for you: keeps services running, restarts failed containers, handles rollouts, and can spread workloads across nodes.
+- Why people use it: useful when you run many services across several nodes and want standardized deployment/operations.
+- Why it might be overkill: if you mainly run a few homelab services, Docker Compose is often simpler and easier to debug.
+- Practical recommendation for this rack: start with Docker/Ansible first; move to K8s only when you need multi-node scheduling, self-healing workloads, and declarative app lifecycle at scale.
+- Safe next step if you want to explore: stand up a small single-purpose cluster slice (for example one non-critical service) before migrating core infrastructure.
 
 ## MAAS Notes
 - MAAS defaults are in `group_vars/all/maas.yml` and disabled by default.

@@ -898,6 +898,99 @@
                   </div>
                 </div>
               </details>
+
+              <details class="segment">
+                <summary>Identity Extras and Access</summary>
+                <p class="segment-hint">Common first-boot identity and SSH access controls.</p>
+                <div class="form-grid">
+                  <div>
+                    <label for="opt_username">Primary Username (optional)</label>
+                    <input id="opt_username" data-option-key="username" placeholder="ops">
+                  </div>
+                  <div>
+                    <label for="opt_shell">Default Shell (optional)</label>
+                    <input id="opt_shell" data-option-key="shell" placeholder="/bin/bash">
+                  </div>
+                  <div>
+                    <label for="opt_ssh_port">SSH Port (optional)</label>
+                    <input id="opt_ssh_port" data-option-key="ssh_port" placeholder="22">
+                  </div>
+                  <div>
+                    <label for="opt_ssh_allow_groups">SSH AllowGroups (comma separated)</label>
+                    <input id="opt_ssh_allow_groups" data-option-key="ssh_allow_groups" data-option-type="csv" placeholder="sudo,admins">
+                  </div>
+                  <div class="grid-span-full">
+                    <label for="opt_extra_ssh_keys">Additional SSH Public Keys (one per line)</label>
+                    <textarea id="opt_extra_ssh_keys" data-option-key="extra_ssh_keys" data-option-type="lines" placeholder="ssh-ed25519 AAAA... user1\nssh-ed25519 AAAA... user2"></textarea>
+                  </div>
+                </div>
+              </details>
+
+              <details class="segment">
+                <summary>Tailscale Bootstrap</summary>
+                <p class="segment-hint">Optional fields for first-boot Tailscale join and tags.</p>
+                <div class="form-grid">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_tailscale_enable" data-option-key="tailscale_enable" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_tailscale_enable" style="margin: 0;">Install and enable Tailscale</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_tailscale_ssh" data-option-key="tailscale_ssh" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_tailscale_ssh" style="margin: 0;">Enable Tailscale SSH</label>
+                  </div>
+                  <div>
+                    <label for="opt_tailscale_auth_key">Tailscale Auth Key (optional)</label>
+                    <input id="opt_tailscale_auth_key" data-option-key="tailscale_auth_key" type="password" placeholder="tskey-auth-...">
+                  </div>
+                  <div>
+                    <label for="opt_tailscale_hostname">Tailscale Hostname (optional)</label>
+                    <input id="opt_tailscale_hostname" data-option-key="tailscale_hostname" placeholder="rack-pi5-01">
+                  </div>
+                  <div>
+                    <label for="opt_tailscale_advertise_tags">Advertise Tags (comma separated)</label>
+                    <input id="opt_tailscale_advertise_tags" data-option-key="tailscale_advertise_tags" data-option-type="csv" placeholder="tag:rpi5,tag:homelab">
+                  </div>
+                  <div>
+                    <label for="opt_tailscale_advertise_routes">Advertise Routes (comma separated)</label>
+                    <input id="opt_tailscale_advertise_routes" data-option-key="tailscale_advertise_routes" data-option-type="csv" placeholder="192.168.174.0/24,192.168.175.0/24">
+                  </div>
+                  <div>
+                    <label for="opt_tailscale_exit_node">Exit Node IP/Name (optional)</label>
+                    <input id="opt_tailscale_exit_node" data-option-key="tailscale_exit_node" placeholder="100.x.y.z">
+                  </div>
+                  <div>
+                    <label for="opt_tailscale_tailnet">Tailnet (optional)</label>
+                    <input id="opt_tailscale_tailnet" data-option-key="tailscale_tailnet" placeholder="tail00c2ce.ts.net">
+                  </div>
+                </div>
+              </details>
+
+              <details class="segment">
+                <summary>Services and Telemetry</summary>
+                <p class="segment-hint">Common service toggles you may want at first boot.</p>
+                <div class="form-grid">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_enable_fail2ban" data-option-key="enable_fail2ban" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_enable_fail2ban" style="margin: 0;">Install and enable fail2ban</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_enable_unattended_upgrades" data-option-key="enable_unattended_upgrades" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_enable_unattended_upgrades" style="margin: 0;">Enable unattended upgrades</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_install_telegraf" data-option-key="install_telegraf" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_install_telegraf" style="margin: 0;">Install Telegraf agent</label>
+                  </div>
+                  <div>
+                    <label for="opt_telegraf_influx_url">Telegraf Influx URL (optional)</label>
+                    <input id="opt_telegraf_influx_url" data-option-key="telegraf_influx_url" placeholder="https://influx.example:8086">
+                  </div>
+                  <div class="grid-span-full">
+                    <label for="opt_motd_banner">MOTD Banner (optional)</label>
+                    <textarea id="opt_motd_banner" data-option-key="motd_banner" placeholder="Welcome to rack node ${HOSTNAME}"></textarea>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
 

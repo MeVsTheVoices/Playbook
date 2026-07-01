@@ -158,6 +158,119 @@
         font-weight: 700;
       }
       .split-head { display: flex; justify-content: space-between; gap: 0.65rem; align-items: center; flex-wrap: wrap; }
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #334155;
+        padding: 0.22rem 0.62rem;
+        font-size: 0.76rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #14b8a6;
+        box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45);
+      }
+      .status-chip.running .status-dot { animation: status-pulse 1.3s ease-in-out infinite; }
+      .status-chip.running {
+        background: #fef3c7;
+        border-color: #fcd34d;
+        color: #92400e;
+      }
+      .status-chip.completed {
+        background: #dcfce7;
+        border-color: #86efac;
+        color: #166534;
+      }
+      .status-chip.failed {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        color: #991b1b;
+      }
+      @keyframes status-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.35); }
+        50% { box-shadow: 0 0 0 8px rgba(20, 184, 166, 0); }
+      }
+      .source-panel { padding: 0; }
+      .source-panel > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 1.05rem 1.05rem 0.95rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 0.8rem;
+        align-items: center;
+      }
+      .source-panel > summary::-webkit-details-marker { display: none; }
+      .source-panel-title { margin: 0; font-size: 1.05rem; }
+      .source-panel-summary { margin: 0.22rem 0 0; color: var(--muted); font-size: 0.83rem; }
+      .source-panel-pill { margin-left: auto; }
+      .source-panel-body { padding: 0 1.05rem 1.05rem; }
+      .download-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-weight: 700;
+      }
+      .download-state.available { color: #166534; }
+      .download-state.missing { color: #9f1239; }
+      .download-state .mark { font-size: 1rem; line-height: 1; }
+      .download-status-card {
+        margin-top: 0.7rem;
+        border: 1px solid #dbe4ee;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
+        padding: 0.85rem;
+      }
+      .download-status-card .job-status-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .download-status-card .job-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border-radius: 999px;
+        padding: 0.22rem 0.62rem;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        background: #e2e8f0;
+        color: #334155;
+      }
+      .download-status-card .job-status-badge.running { background: #fef3c7; color: #92400e; }
+      .download-status-card .job-status-badge.completed { background: #dcfce7; color: #166534; }
+      .download-status-card .job-status-badge.failed { background: #fee2e2; color: #991b1b; }
+      .download-status-card .job-status-meta { color: #64748b; font-size: 0.82rem; }
+      .download-status-card .job-substatus {
+        margin-top: 0.45rem;
+        color: #334155;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+      .download-status-card .job-actions {
+        margin-top: 0.7rem;
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+      .download-status-card .job-actions a {
+        color: #0f766e;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.82rem;
+      }
+      .download-status-card .job-actions a:hover { text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -184,42 +297,64 @@
           <a class="mini-link" href="/">Back to callback dashboard</a>
         </div>
 
-        <div class="panel">
-          <h2>Catalog Availability + Background Bulk Pull</h2>
-          <p class="hint">Rows show whether each downloadable catalog image is already present in local cache.</p>
-          <div class="actions-row" style="margin-bottom: 0.55rem;">
-            <button type="button" id="refresh-catalog-availability" style="width:auto;">Refresh availability</button>
-            <span class="hint" id="catalog-availability-status">Idle.</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Catalog ID</th>
-                <th>Label</th>
-                <th>URL</th>
-                <th>Availability</th>
-                <th>Cache Path</th>
-              </tr>
-            </thead>
-            <tbody id="catalog-availability-body">
-              <tr><td colspan="5">Loading catalog availability...</td></tr>
-            </tbody>
-          </table>
+        <details class="panel source-panel" id="catalog-source-panel" open>
+          <summary>
+            <div>
+              <h2 class="source-panel-title">Image Source Panel 🧭</h2>
+              <p class="source-panel-summary" id="catalog-source-summary">Distro image presets and bulk pulls. Collapse this to keep the page compact.</p>
+            </div>
+            <span class="status-chip source-panel-pill" id="catalog-source-count"><span class="status-dot"></span><span>Loading presets...</span></span>
+          </summary>
+          <div class="source-panel-body">
+            <p class="hint">Rows show whether each distro image preset is already downloaded locally.</p>
+            <div class="actions-row" style="margin-bottom: 0.55rem;">
+              <button type="button" id="refresh-catalog-availability" style="width:auto;">Refresh availability</button>
+              <span class="hint" id="catalog-availability-status">Idle.</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Catalog ID</th>
+                  <th>Label</th>
+                  <th>URL</th>
+                  <th>Availability</th>
+                  <th>Cache Path</th>
+                </tr>
+              </thead>
+              <tbody id="catalog-availability-body">
+                <tr><td colspan="5">Loading catalog availability...</td></tr>
+              </tbody>
+            </table>
 
-          <div style="margin-top: 0.9rem; border-top: 1px dashed var(--line); padding-top: 0.9rem;">
-            <label for="catalog_pull_ids">Downloadable Catalog Entries</label>
-            <select id="catalog_pull_ids" multiple size="6"></select>
-            <div class="checkbox-row">
-              <input id="catalog_pull_skip_existing" type="checkbox" checked>
-              <label for="catalog_pull_skip_existing" style="margin: 0;">Skip files already in cache</label>
+            <div style="margin-top: 0.9rem; border-top: 1px dashed var(--line); padding-top: 0.9rem;">
+              <label for="catalog_pull_ids">Downloadable Distro Presets</label>
+              <select id="catalog_pull_ids" multiple size="6"></select>
+              <div class="checkbox-row">
+                <input id="catalog_pull_skip_existing" type="checkbox" checked>
+                <label for="catalog_pull_skip_existing" style="margin: 0;">Skip files already in cache</label>
+              </div>
+              <div class="actions-row" style="margin-top: 0.5rem;">
+                <button type="button" id="start-catalog-pull" style="width:auto;">Start Bulk Pull</button>
+                <span class="hint" id="catalog-pull-status">Idle.</span>
+              </div>
+              <div class="download-status-card" id="catalog-pull-card">
+                <div class="job-status-header">
+                  <div>
+                    <span class="job-status-badge" id="catalog-pull-badge"><span class="status-dot"></span> IDLE</span>
+                    <span class="job-status-meta" id="catalog-pull-meta">No download job running.</span>
+                  </div>
+                  <div class="job-status-meta" id="catalog-pull-timing"></div>
+                </div>
+                <div class="job-substatus" id="catalog-pull-substatus">Pick one or more presets above, then start a bulk pull. This box updates while the job runs.</div>
+                <div class="job-actions">
+                  <a class="mini-link" href="/images#image-download-catalog" target="_self">Jump to download catalog</a>
+                  <a class="mini-link" href="/images#retrieved-image-manager" target="_self">Jump to managed images</a>
+                </div>
+                <pre class="job-log" id="catalog-pull-log">No bulk pull activity yet.</pre>
+              </div>
             </div>
-            <div class="actions-row" style="margin-top: 0.5rem;">
-              <button type="button" id="start-catalog-pull" style="width:auto;">Start Bulk Pull</button>
-              <span class="hint" id="catalog-pull-status">Idle.</span>
-            </div>
-            <div class="job-log" id="catalog-pull-log"></div>
           </div>
-        </div>
+        </details>
 
         <div class="panel" id="image-download-catalog">
           <div class="split-head" style="margin-bottom: 0.5rem;">
@@ -355,10 +490,69 @@
       const catalogPullSkipExistingEl = document.getElementById("catalog_pull_skip_existing");
       const catalogPullStatusEl = document.getElementById("catalog-pull-status");
       const catalogPullLogEl = document.getElementById("catalog-pull-log");
+      const catalogPullBadgeEl = document.getElementById("catalog-pull-badge");
+      const catalogPullMetaEl = document.getElementById("catalog-pull-meta");
+      const catalogPullTimingEl = document.getElementById("catalog-pull-timing");
+      const catalogPullSubstatusEl = document.getElementById("catalog-pull-substatus");
       const catalogAvailabilityBodyEl = document.getElementById("catalog-availability-body");
       const catalogAvailabilityStatusEl = document.getElementById("catalog-availability-status");
+      const catalogSourceCountEl = document.getElementById("catalog-source-count");
+      const catalogSourceSummaryEl = document.getElementById("catalog-source-summary");
+      const catalogSourcePanelEl = document.getElementById("catalog-source-panel");
       let currentCatalogPullJob = null;
+      let catalogRefreshTimer = null;
       let managedImageRecords = [];
+
+      function availabilityGlyph(available) {
+        return available ? "✅" : "❌";
+      }
+
+      function availabilityLabel(available) {
+        return available ? "downloaded" : "missing";
+      }
+
+      function formatJobTiming(job) {
+        if (!job || !job.created_at) return "";
+        const createdMs = new Date(job.created_at).getTime();
+        const finishedMs = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();
+        const durationSec = Math.max(0, Math.round((finishedMs - createdMs) / 1000));
+        const duration = durationSec > 60
+          ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`
+          : `${durationSec}s`;
+        return `Duration: ${duration}${job.status === "running" ? " (ongoing)" : ""}`;
+      }
+
+      function setPullCardState(job) {
+        const status = String(job?.status || "idle").toLowerCase();
+        const badgeClass = status === "running" ? "running" : (status === "completed" || status === "completed_with_errors" ? "completed" : (status === "failed" ? "failed" : ""));
+        const emoji = status === "running" ? "⏳" : (status === "completed" || status === "completed_with_errors" ? "✅" : (status === "failed" ? "🔥" : "🧊"));
+        const summaryText = status === "running"
+          ? "Downloading selected presets right now."
+          : (status === "completed" || status === "completed_with_errors"
+            ? "Bulk pull finished. Refresh availability if the cache just changed."
+            : (status === "failed"
+              ? "Bulk pull failed. Check the log below for details."
+              : "No download job running."));
+        const metaText = status === "running"
+          ? `Job ${job?.id || "-"} is active.`
+          : (status === "completed" || status === "completed_with_errors" || status === "failed"
+            ? `Job ${job?.id || "-"} ${status.replace(/_/g, " ")}.`
+            : "Pick presets above, then start a bulk pull.");
+
+        if (catalogPullBadgeEl) {
+          catalogPullBadgeEl.className = `job-status-badge ${badgeClass}`.trim();
+          catalogPullBadgeEl.innerHTML = `<span class="status-dot"></span> ${emoji} ${status.toUpperCase()}`;
+        }
+        if (catalogPullMetaEl) {
+          catalogPullMetaEl.textContent = metaText;
+        }
+        if (catalogPullTimingEl) {
+          catalogPullTimingEl.textContent = formatJobTiming(job);
+        }
+        if (catalogPullSubstatusEl) {
+          catalogPullSubstatusEl.textContent = summaryText;
+        }
+      }
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -457,7 +651,7 @@
             normalized.label,
             normalized.profile,
             normalized.source_value,
-            normalized.local_available ? "available" : "missing",
+            availabilityLabel(normalized.local_available),
             normalized.hash_status,
             `${normalized.job_status} (${normalized.exit_code === null || normalized.exit_code === undefined ? "-" : normalized.exit_code})`,
             normalized.notes,
@@ -467,8 +661,8 @@
             const td = document.createElement("td");
             if (idx === 4) {
               const tag = document.createElement("span");
-              tag.className = normalized.local_available ? "tag" : "tag-muted";
-              tag.textContent = value;
+              tag.className = normalized.local_available ? "download-state available" : "download-state missing";
+              tag.innerHTML = `<span class="mark">${availabilityGlyph(normalized.local_available)}</span> <span>${value}</span>`;
               td.appendChild(tag);
             } else if (idx === 1 || idx === 3 || idx === 7) {
               const code = document.createElement("code");
@@ -577,7 +771,7 @@
             row.recorded_at || "-",
             row.profile || "-",
             row.source_value || row.source || "-",
-            row.local_available ? "available" : "-",
+              availabilityLabel(row.local_available),
             row.hash_status || "-",
             row.observed_sha256 || row.expected_sha256 || "-",
             `${row.job_status || "-"} (${row.exit_code === null || row.exit_code === undefined ? "-" : row.exit_code})`,
@@ -585,14 +779,10 @@
           cols.forEach((value, idx) => {
             const td = document.createElement("td");
             if (idx === 3) {
-              if (row.local_available) {
                 const tag = document.createElement("span");
-                tag.className = "tag";
-                tag.textContent = "available";
+                tag.className = row.local_available ? "download-state available" : "download-state missing";
+                tag.innerHTML = `<span class="mark">${availabilityGlyph(row.local_available)}</span> <span>${value}</span>`;
                 td.appendChild(tag);
-              } else {
-                td.textContent = "-";
-              }
             } else if (idx === 2 || idx === 5) {
               const code = document.createElement("code");
               code.textContent = value;
@@ -625,7 +815,7 @@
         for (const entry of entries) {
           const option = document.createElement("option");
           option.value = entry.id;
-          option.textContent = `${entry.label}${entry.local_available ? " [available]" : ""}`;
+          option.textContent = `${entry.label} ${availabilityGlyph(entry.local_available)} ${availabilityLabel(entry.local_available)}`;
           catalogPullSelectEl.appendChild(option);
         }
       }
@@ -683,11 +873,19 @@
 
         rebuildCatalogPullOptions(entries);
         const availableCount = entries.filter((e) => e.local_available).length;
-        catalogAvailabilityStatusEl.textContent = `Loaded ${entries.length} catalog entries (${availableCount} available).`;
+        const missingCount = Math.max(0, entries.length - availableCount);
+        catalogAvailabilityStatusEl.textContent = `Loaded ${entries.length} catalog entries (${availableCount} downloaded, ${missingCount} missing).`;
+        if (catalogSourceCountEl) {
+          catalogSourceCountEl.innerHTML = `<span class="status-dot"></span><span>${availableCount} downloaded / ${missingCount} missing</span>`;
+        }
+        if (catalogSourceSummaryEl) {
+          catalogSourceSummaryEl.textContent = `Distro image presets and bulk pulls. ${availableCount} downloaded, ${missingCount} missing.`;
+        }
       }
 
       function renderCatalogPullJob(job) {
         const summary = job.summary || {};
+        setPullCardState(job);
         catalogPullStatusEl.textContent = `Catalog pull ${job.id}: ${job.status}`;
         const lines = [
           `storage_dir: ${job.storage_dir || "n/a"}`,
@@ -759,7 +957,21 @@
 
         currentCatalogPullJob = data.job_id;
         catalogPullStatusEl.textContent = `Bulk pull job started: ${data.job_id}`;
+        setPullCardState({ id: data.job_id, status: "running", created_at: new Date().toISOString() });
         pollCatalogPullJob();
+      }
+
+      function startCatalogRefreshTimer() {
+        if (catalogRefreshTimer) {
+          clearInterval(catalogRefreshTimer);
+        }
+        catalogRefreshTimer = setInterval(() => {
+          loadCatalogAvailability();
+          loadImageCatalog();
+          if (!currentCatalogPullJob) {
+            setPullCardState(null);
+          }
+        }, 15000);
       }
 
       document.getElementById("save-image-record").addEventListener("click", saveImageRecord);
@@ -767,10 +979,21 @@
       document.getElementById("start-catalog-pull").addEventListener("click", startCatalogPull);
       document.getElementById("refresh-catalog-availability").addEventListener("click", loadCatalogAvailability);
 
+      if (catalogSourcePanelEl) {
+        const saved = localStorage.getItem("image-source-panel-open");
+        if (saved === "0") {
+          catalogSourcePanelEl.open = false;
+        }
+        catalogSourcePanelEl.addEventListener("toggle", () => {
+          localStorage.setItem("image-source-panel-open", catalogSourcePanelEl.open ? "1" : "0");
+        });
+      }
+
       initSidebar();
       loadCatalogAvailability();
       loadImageCatalog();
       loadManagedImages();
+      startCatalogRefreshTimer();
     </script>
   </body>
 </html>

@@ -49,6 +49,30 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("Delete Selected Template", text)
         self.assertIn("Reset Optional Fields", text)
         self.assertIn("fields set", text)
+        self.assertNotIn("This operation erases the target device", text)
+
+    def test_home_page_embeds_cached_catalog_metadata(self) -> None:
+        entry = next(item for item in callback_app.IMAGE_CATALOG if str(item.get("image_url", "")).strip())
+        cache_path = str(callback_app.IMAGE_CACHE_DIR / callback_app._safe_catalog_filename(str(entry.get("image_url", "")), str(entry.get("id", ""))))
+        callback_core._append_image_history(
+            {
+                "recorded_at": "2026-07-01T00:00:00+00:00",
+                "status": "ok",
+                "source": "image_url",
+                "source_value": entry.get("image_url", ""),
+                "image_url": entry.get("image_url", ""),
+                "download_path": cache_path,
+                "expected_sha256": entry.get("image_sha256", ""),
+                "observed_sha256": entry.get("image_sha256", ""),
+            }
+        )
+
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('"cache_path":', text)
+        self.assertIn(str(entry.get("id", "")), text)
+        self.assertIn(cache_path, text)
 
     def test_home_page_contains_flash_mascot_hooks(self) -> None:
         response = self.client.get("/")
@@ -68,6 +92,8 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('class="sidebar"', text)
         self.assertIn('href="/test-terminal"', text)
         self.assertIn('id="sidebar-toggle"', text)
+        self.assertIn("resolveVerificationHost", text)
+        self.assertIn("hostSelectEl.value.trim() || hostEl.value.trim()", text)
 
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
@@ -275,6 +301,34 @@ class CallbackSiteTests(unittest.TestCase):
         check_ids = [c.get("id") for c in checks]
         self.assertIn("identity", check_ids)
         self.assertIn("cloud_init", check_ids)
+
+    def test_test_terminal_targets_include_callback_hosts(self) -> None:
+        self.client.post(
+            "/api/cloud-init/events/clear",
+            json={},
+        )
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-target-01",
+                "fqdn": "rpi5-target-01.lab.local",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={
+                "X-Forwarded-For": "198.51.100.78",
+            },
+        )
+
+        response = self.client.get("/api/test-terminal/targets")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        targets = payload.get("targets") or []
+        hosts = [t.get("host") for t in targets]
+        self.assertIn("rpi5-target-01", hosts)
+        self.assertIn("rpi5-target-01.lab.local", hosts)
+        self.assertIn("198.51.100.78", hosts)
 
     def test_test_terminal_start_rejects_invalid_check_id(self) -> None:
         response = self.client.post(

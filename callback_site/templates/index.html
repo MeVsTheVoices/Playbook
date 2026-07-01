@@ -966,9 +966,17 @@
               </details>
 
               <details class="segment">
-                <summary>Services and Telemetry</summary>
-                <p class="segment-hint">Common service toggles you may want at first boot.</p>
+                <summary>Hardware Detection and Telemetry</summary>
+                <p class="segment-hint">Enable basic hardware checks and reporting, or common service toggles.</p>
                 <div class="form-grid">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_enable_hw_check" data-option-key="enable_hardware_checks" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_enable_hw_check" style="margin: 0;">Enable hardware detection (model, RAM, storage, HAT, PoE)</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_fancy_motd" data-option-key="fancy_motd" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_fancy_motd" style="margin: 0;">Fancy MOTD (fortune → cowsay → lolcat)</label>
+                  </div>
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_enable_fail2ban" data-option-key="enable_fail2ban" data-option-type="checkbox" type="checkbox">
                     <label for="opt_enable_fail2ban" style="margin: 0;">Install and enable fail2ban</label>

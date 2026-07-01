@@ -320,6 +320,15 @@ for pkg in $PROFILE_PACKAGES; do
   echo "  - ${pkg}" >> "$USER_DATA_OUT"
 done
 
+# Add fancy MOTD packages if enabled
+if [[ "${CLOUD_INIT_FANCY_MOTD:-false}" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'FANCY_MOTD_PKGS'
+  - fortune
+  - cowsay
+  - lolcat
+FANCY_MOTD_PKGS
+fi
+
 cat >> "$USER_DATA_OUT" <<EOF
 
 write_files:
@@ -329,6 +338,34 @@ write_files:
       rack_role=${PROFILE_ROLE}
       storage=${PROFILE_STORAGE}
       provisioner=cloud-init
+  - path: /usr/local/bin/rack-hardware-check
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Rack hardware detection and reporting
+      PI_MODEL="\$(cat /proc/device-tree/model 2>/dev/null | tr -d '\\0' || echo 'unknown')"
+      RAM_MB="\$(awk '/MemTotal/ {print int(\$2/1024)}' /proc/meminfo 2>/dev/null || echo '0')"
+      SD_CAPACITY="\$(lsblk -b --output SIZE -n /dev/mmcblk0 2>/dev/null | awk '{print int(\$1/1024/1024/1024)}' || echo '0')"
+      NVME_PRESENT="false"
+      [[ -b /dev/nvme0n1 ]] && NVME_PRESENT="true"
+      HAT_PRESENT="false"
+      i2cdetect -y 1 2>/dev/null | grep -q "50\\|51" && HAT_PRESENT="true"
+      POE_ENABLED="false"
+      [[ -f /sys/class/pwm/pwmchip0/device/dtoverlay ]] && POE_ENABLED="true"
+      curl -fsS -X POST -H 'Content-Type: application/json' \\
+        -d "{\\"instance_id\\":\\"$(hostname)-hw\\",\\"hostname\\":\\"$(hostname)\\",\\"stage\\":\\"hardware-check\\",\\"hardware\\":{\\"model\\":\\"$PI_MODEL\\",\\"ram_mb\\":$RAM_MB,\\"sd_capacity_gb\\":$SD_CAPACITY,\\"nvme\\":$NVME_PRESENT,\\"hat\\":$HAT_PRESENT,\\"poe\\":$POE_ENABLED}}" \\
+        '${CALLBACK_URL}' || true
+  - path: /etc/update-motd.d/10-fancy
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      if command -v fortune &>/dev/null && command -v cowsay &>/dev/null; then
+        if command -v lolcat &>/dev/null; then
+          fortune | cowsay | lolcat 2>/dev/null || fortune | cowsay
+        else
+          fortune | cowsay
+        fi
+      fi
 
 phone_home:
   url: "${CALLBACK_URL}"
@@ -338,10 +375,21 @@ phone_home:
 runcmd:
   - [ systemctl, enable, ssh ]
   - [ systemctl, restart, ssh ]
+EOF
+
+# Conditionally append runcmd items based on cloud-init options
+if [[ "${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ /usr/local/bin/rack-hardware-check ]
+RUNCMD_EOF
+fi
+
+# Append final runcmd callback
+cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
   - [ sh, -c, "curl -fsS -X POST -H 'Content-Type: application/json' -d '{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"stage\":\"runcmd\"}' '${CALLBACK_URL}' || true" ]
 
 final_message: "Cloud-init finished for ${HOSTNAME}"
-EOF
+RUNCMD_EOF
 
 cat > "$META_DATA_OUT" <<EOF
 instance-id: ${INSTANCE_ID}

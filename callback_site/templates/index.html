@@ -1733,9 +1733,28 @@
         const raw = (event && typeof event.raw === "object" && event.raw) ? event.raw : {};
         const keys = Object.keys(raw);
         const stage = raw.stage || event.stage || "-";
+        const envelope = {
+          received_at: event.received_at || "",
+          source_ip: event.source_ip || "",
+          source_ip_source: event.source_ip_source || "",
+          forwarded_for: event.forwarded_for || "",
+          remote_addr: event.remote_addr || "",
+          user_agent: event.user_agent || "",
+          hostname: event.hostname || "",
+          fqdn: event.fqdn || "",
+          instance_id: event.instance_id || "",
+          profile: event.profile || "",
+          stage: event.stage || "",
+          cert_subject: event.cert_subject || "",
+          cert_issuer: event.cert_issuer || "",
+          cert_fingerprint: event.cert_fingerprint || "",
+          cert_present: Boolean(event.cert_present),
+          cert_header_present: Boolean(event.cert_header_present),
+          raw,
+        };
         return {
-          line: `${keys.length} key${keys.length === 1 ? "" : "s"} | stage: ${stage}`,
-          json: JSON.stringify(raw, null, 2),
+          line: `${keys.length} key${keys.length === 1 ? "" : "s"} | stage: ${stage} | source: ${event.source_ip || event.remote_addr || "-"}`,
+          json: JSON.stringify(envelope, null, 2),
         };
       }
 
@@ -1772,6 +1791,10 @@
         for (const e of events.slice(0, 200)) {
           const tr = document.createElement("tr");
           tr.className = "event-row-new";
+          const sourceIp = e.source_ip || e.remote_addr || "-";
+          const sourceIpNote = e.source_ip_source
+            ? `via ${e.source_ip_source}${e.forwarded_for ? ` (${e.forwarded_for})` : ""}`
+            : (e.remote_addr ? `via remote_addr (${e.remote_addr})` : "");
           const values = [
             e.received_at || "-",
             e.hostname || "-",
@@ -1779,7 +1802,7 @@
             e.fqdn || "-",
             e.profile || "unknown",
             e.stage || "phone_home",
-            e.source_ip || e.remote_addr || "-",
+            sourceIp,
             certSummary(e),
           ];
 
@@ -1790,6 +1813,12 @@
               span.className = "tag";
               span.textContent = v;
               td.appendChild(span);
+            } else if (idx === 6 && sourceIpNote) {
+              td.textContent = v;
+              const note = document.createElement("div");
+              note.className = "payload-kv";
+              note.textContent = sourceIpNote;
+              td.appendChild(note);
             } else {
               td.textContent = v;
             }

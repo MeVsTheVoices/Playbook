@@ -4,6 +4,7 @@
 **/.coverage
 **/htmlcov/
 __pycache__/
+**/__pycache__/
 *.py[cod]
 collections/ansible_collections/
 *secrets*
@@ -11,6 +12,7 @@ cloud-init/*.rendered.yml
 cloud-init/*-seed.iso
 *.retry
 callback_site/data/callbacks.jsonl
+callback_site/data/app_settings.json
 callback_site/data/node_monitor_config.json
 callback_site/data/node_monitor_state.json
 callback_site/data/node_provisioning.json

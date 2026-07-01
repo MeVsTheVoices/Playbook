@@ -223,6 +223,90 @@ Quick run:
 - Per-run key archive index: `callback_site/data/ssh_key_archive.jsonl`
 - SD optional settings templates: `callback_site/data/sd_option_profiles.json`
 
+## Logging
+
+Comprehensive logging is built in for multi-node provisioning visibility and troubleshooting.
+
+### Log Output and Location
+
+- **Log file**: `callback_site/data/logs/callback_site.log` (or `$CALLBACK_APPDATA_DIR/logs/callback_site.log` if custom appdata directory is set)
+- **Console output**: All logs are also printed to stdout/stderr in real time
+- **Log level**: INFO by default, DEBUG when verbose mode is enabled
+
+### Log Rotation
+
+Logs are automatically rotated to prevent unbounded disk growth:
+- **Max file size**: 10 MB per log file
+- **Retention**: Keeps 10 rotated backups (`.log.1`, `.log.2`, etc.) = ~100 MB total retention
+- **Automatic rollover**: When current log reaches 10 MB, it's renamed and a new one is created
+
+Example log file sequence after rotation:
+```
+callback_site.log      (current, < 10 MB)
+callback_site.log.1    (10 MB)
+callback_site.log.2    (10 MB)
+...
+callback_site.log.10   (10 MB, oldest)
+```
+
+### What Gets Logged
+
+**Callback events**:
+- Incoming callback hostname, stage (e.g., `phone_home`, `hardware-check`), instance_id, source IP
+- Hardware detection data when reported (Pi model, RAM, storage, HAT, PoE presence)
+
+**SD card preparation**:
+- Job start: hostname, profile, device, enabled cloud-init options
+- Job completion: success/failure, exit code
+- Permission errors if app is not running as root
+
+**Catalog operations**:
+- Catalog pull job start: number of entries, skip_existing flag
+- Catalog pull completion: OK count, failed count, skipped count
+
+**System diagnostics**:
+- App startup/shutdown
+- Configuration loading
+- Error conditions and exceptions
+
+### Enabling Verbose Logging
+
+**Via Web UI** (Settings page):
+- Click "Enable Verbose Logging" button
+- All future logs will include DEBUG-level messages
+- Click "Disable Verbose Logging" to return to INFO level
+
+**Via Environment** (at startup):
+- (Currently INFO by default; future enhancement: support `LOG_LEVEL=DEBUG` env var)
+
+**View Recent Logs**:
+- Settings page: "View Recent Logs (100 lines)" button fetches and displays the last 100 log lines
+- API endpoint: `GET /api/logging/tail?lines=50` (customize line count)
+- Manual inspection: `tail -f callback_site/data/logs/callback_site.log`
+
+### Log Format
+
+```
+2026-07-01 13:02:09,740 - core - INFO - Callback received: hostname=rpi5-01, stage=phone_home, instance_id=iid-clear-01, source_ip=127.0.0.1
+2026-07-01 13:02:09,788 - core - INFO - Catalog pull job started: job_id=job-test, entries=5, skip_existing=False
+2026-07-01 13:02:09,789 - core - INFO - Catalog pull job completed: job_id=job-test, ok=5, failed=0, skipped=0
+```
+
+### Troubleshooting
+
+**Logs not appearing**:
+- Verify app is running as root or has write permission to `CALLBACK_APPDATA_DIR/logs/`
+- Check stderr for startup errors
+
+**Logs fill disk quickly**:
+- Verbose logging (DEBUG) produces ~10x more output
+- Review production deployments for DEBUG mode accidentally left enabled
+- Adjust rotation settings in `app.py` if needed (maxBytes and backupCount)
+
+**Recovering logs after rotation**:
+- All rotated files are retained with `.1`, `.2`, etc. suffixes
+- Search across all logs: `grep "pattern" callback_site/data/logs/callback_site.log*`
+
 ## Local Persistence (AppData Style)
 
 This app persists state to a local appdata directory.

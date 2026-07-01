@@ -193,6 +193,18 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
         </div>
 
         <div class="panel">
+          <h2>Logging and Diagnostics</h2>
+          <p class="note">Configure logging verbosity and view recent logs for troubleshooting.</p>
+          <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <button id="enable-verbose-logging" class="primary">Enable Verbose Logging</button>
+            <button id="disable-verbose-logging" class="primary">Disable Verbose Logging</button>
+            <button id="view-recent-logs" class="primary">View Recent Logs (100 lines)</button>
+          </div>
+          <div id="logging-status" class="status">Idle.</div>
+          <div id="logging-output" style="background: #f3f5f7; padding: 0.5rem; border-radius: 6px; border: 1px solid #d0d7de; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; display: none;"></div>
+        </div>
+
+        <div class="panel">
           <h2>Clean Slate: Node Ops Configuration</h2>
           <p class="note">
             Clears saved Node Ops credentials, per-node profile assignments, stored profile inputs, and recorded provisioning results.
@@ -340,6 +352,35 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
       clearCallbackBtn.addEventListener("click", clearCallbackBacklog);
       saveRackNameBtn.addEventListener("click", saveRackSettings);
       checkCatalogHealthBtn.addEventListener("click", checkCatalogHealth);
+
+      // Logging controls
+      async function toggleVerboseLogging(enable) {
+        const res = await fetch("/api/logging/verbose", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enable }),
+        });
+        const data = await res.json();
+        document.getElementById("logging-status").innerText = data.message || (data.ok ? "Updated" : "Error");
+      }
+
+      async function viewRecentLogs() {
+        const res = await fetch("/api/logging/tail?lines=100");
+        const data = await res.json();
+        if (!data.ok) {
+          document.getElementById("logging-status").innerText = "Failed to load logs";
+          return;
+        }
+        const output = document.getElementById("logging-output");
+        output.innerText = data.lines.join("");
+        output.style.display = "block";
+        document.getElementById("logging-status").innerText = `Loaded from: ${data.log_file}`;
+      }
+
+      document.getElementById("enable-verbose-logging").addEventListener("click", () => toggleVerboseLogging(true));
+      document.getElementById("disable-verbose-logging").addEventListener("click", () => toggleVerboseLogging(false));
+      document.getElementById("view-recent-logs").addEventListener("click", viewRecentLogs);
+
       initSidebar();
       loadRackSettings();
     </script>

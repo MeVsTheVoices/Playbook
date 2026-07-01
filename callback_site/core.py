@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import logging
 import hashlib
 import queue
 import re
@@ -19,6 +20,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 APPDATA_DIR = Path(os.getenv("CALLBACK_APPDATA_DIR", str(BASE_DIR / "data"))).expanduser()
@@ -231,6 +235,10 @@ def _archive_ssh_public_key(job_id: str, form: Dict[str, Any], public_key: str) 
 
 def _append_event(event: Dict[str, Any]) -> None:
     _ensure_data_file()
+    hostname = event.get("hostname", "unknown")
+    stage = event.get("stage", "unknown")
+    instance_id = event.get("instance_id", "unknown")
+    logger.info(f"Callback received: hostname={hostname}, stage={stage}, instance_id={instance_id}, source_ip={event.get('source_ip')}")
     with DATA_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, separators=(",", ":")) + "\n")
 
@@ -498,9 +506,12 @@ def _available_image_urls_from_history(limit: int = 5000) -> set[str]:
 
 def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_existing: bool) -> None:
     _ensure_image_cache_dir()
+    logger.info(f"Catalog pull job started: job_id={job_id}, entries={len(entries)}, skip_existing={skip_existing}")
+    
     with CATALOG_PULL_JOBS_LOCK:
         job = CATALOG_PULL_JOBS.get(job_id)
         if not job:
+            logger.warning(f"Catalog pull job {job_id} not found in CATALOG_PULL_JOBS")
             return
         job["status"] = "running"
         job["started_at"] = datetime.now(timezone.utc).isoformat()
@@ -511,6 +522,8 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
         image_url = str(entry.get("image_url", "")).strip()
         expected_sha = str(entry.get("image_sha256", "")).strip().lower()
         profile_value = ",".join(entry.get("profiles", [])) if isinstance(entry.get("profiles"), list) else ""
+        
+        logger.debug(f"Catalog pull: processing entry {entry_id} ({label}) from {image_url[:50]}...")
 
         item_result: Dict[str, Any] = {
             "id": entry_id,
@@ -602,6 +615,7 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
         job["summary"] = {"ok": ok, "failed": failed, "skipped": skipped, "running": 0, "total": len(entries)}
         job["status"] = "completed_with_errors" if failed else "completed"
         job["finished_at"] = datetime.now(timezone.utc).isoformat()
+        logger.info(f"Catalog pull job completed: job_id={job_id}, ok={ok}, failed={failed}, skipped={skipped}")
 
 
 def _ensure_prereqs() -> List[str]:
@@ -1622,6 +1636,11 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
+    hostname = form.get("hostname", "unknown")
+    profile = form.get("profile", "unknown")
+    device = form.get("device", "unknown")
+    logger.info(f"SD preparation job started: job_id={job_id}, hostname={hostname}, profile={profile}, device={device}")
+    
     with tempfile.TemporaryDirectory(prefix="sdprep-key-") as tdir:
         pubkey_file = Path(tdir) / "id.pub"
         ssh_public_key = form["ssh_public_key"].strip()
@@ -1661,6 +1680,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             run_cmd = cmd
         else:
             suggested = " ".join(["sudo"] + cmd)
+            logger.error(f"SD preparation requires root privileges: job_id={job_id}, hostname={hostname}")
             with JOBS_LOCK:
                 JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
                 JOBS[job_id]["stdout"] = ""
@@ -1673,6 +1693,21 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
                 JOBS[job_id]["status"] = "failed"
                 JOBS[job_id]["command"] = cmd
             return
+
+        # Build environment with cloud-init options
+        env = os.environ.copy()
+        cloud_init_options = form.get("cloud_init_options", {})
+        if isinstance(cloud_init_options, dict):
+            # Map cloud-init options to environment variables
+            enabled_options = []
+            if cloud_init_options.get("enable_hardware_checks"):
+                env["CLOUD_INIT_ENABLE_HARDWARE_CHECKS"] = "true"
+                enabled_options.append("hardware_checks")
+            if cloud_init_options.get("fancy_motd"):
+                env["CLOUD_INIT_FANCY_MOTD"] = "true"
+                enabled_options.append("fancy_motd")
+            if enabled_options:
+                logger.info(f"Cloud-init options enabled for {hostname}: {', '.join(enabled_options)}")
 
         with JOBS_LOCK:
             JOBS[job_id]["status"] = "running"
@@ -1692,6 +1727,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=env,
         )
 
         output_chunks: List[str] = []
@@ -1711,6 +1747,11 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             JOBS[job_id]["stderr"] = ""
             JOBS[job_id]["exit_code"] = proc.returncode
             JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+
+        if proc.returncode == 0:
+            logger.info(f"SD preparation completed successfully: job_id={job_id}, hostname={hostname}")
+        else:
+            logger.error(f"SD preparation failed: job_id={job_id}, hostname={hostname}, exit_code={proc.returncode}")
 
         _record_image_history(form, final_stdout, proc.returncode)
 

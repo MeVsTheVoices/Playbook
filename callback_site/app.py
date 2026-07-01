@@ -1,11 +1,43 @@
 from __future__ import annotations
 
 import os
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
 
 from core import *
+
+# Setup logs directory
+LOG_DIR = Path(os.getenv("CALLBACK_APPDATA_DIR", ".")) / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "callback_site.log"
+
+# Configure logging with rotation
+log_handler = RotatingFileHandler(
+    str(LOG_FILE),
+    maxBytes=10 * 1024 * 1024,  # 10MB
+    backupCount=10,  # Keep 10 rotated files
+)
+log_formatter = logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log_handler.setFormatter(log_formatter)
+
+# Get root logger and configure
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(log_handler)
+
+# Also log to console
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+root_logger.addHandler(console_handler)
+
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -76,7 +108,36 @@ def settings_page() -> str:
 
 @app.get("/api/settings")
 def settings_get() -> Any:
-    return jsonify({"ok": True, "settings": _load_app_settings()})
+    settings = _load_app_settings()
+    settings["log_file"] = str(LOG_FILE)
+    settings["verbose_logging"] = root_logger.level == logging.DEBUG
+    return jsonify({"ok": True, "settings": settings})
+
+
+@app.post("/api/logging/verbose")
+def logging_verbose() -> Any:
+    payload = request.get_json(silent=True) or {}
+    enable = payload.get("enable", False)
+    if enable:
+        root_logger.setLevel(logging.DEBUG)
+        logger.info("Verbose logging enabled")
+        msg = "Verbose logging enabled"
+    else:
+        root_logger.setLevel(logging.INFO)
+        logger.info("Verbose logging disabled")
+        msg = "Verbose logging disabled"
+    return jsonify({"ok": True, "message": msg, "verbose_logging": enable})
+
+
+@app.get("/api/logging/tail")
+def logging_tail() -> Any:
+    lines = request.args.get("lines", "50", type=int)
+    try:
+        with open(LOG_FILE, "r") as f:
+            log_lines = f.readlines()[-lines:]
+        return jsonify({"ok": True, "log_file": str(LOG_FILE), "lines": log_lines})
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "log file not found"}), 404
 
 
 @app.get("/api/sd/options-profiles")
@@ -156,6 +217,7 @@ def callback() -> Any:
     payload_form = request.form.to_dict(flat=True)
     payload: Dict[str, Any] = payload_json if isinstance(payload_json, dict) and payload_json else payload_form
     payload = _strip_dataset_fields(payload)
+    logger.debug(f"Callback received with payload keys: {list(payload.keys())}")
 
     forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
     source_ip, source_ip_source = _resolve_source_ip(payload)
@@ -199,6 +261,12 @@ def callback() -> Any:
         "cert_present": bool(cert_subject or cert_fingerprint),
         "raw": payload,
     }
+    
+    # Log hardware check data if present
+    if event.get("stage") == "hardware-check" and payload.get("hardware"):
+        hardware_data = payload.get("hardware")
+        logger.info(f"Hardware check reported: hostname={event.get('hostname')}, hardware={hardware_data}")
+    
     _append_event(event)
     return jsonify({"ok": True})
 

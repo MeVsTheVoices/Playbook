@@ -306,6 +306,53 @@
         gap: 0.8rem;
         margin-bottom: 0.6rem;
       }
+      .flash-mascot {
+        display: none;
+        align-items: center;
+        gap: 0.45rem;
+        margin: 0.2rem 0 0.55rem;
+        color: #155e75;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+      .flash-mascot.active {
+        display: inline-flex;
+      }
+      .flash-mascot-icon {
+        width: 26px;
+        height: 26px;
+        border-radius: 999px;
+        background: linear-gradient(145deg, #fde68a, #fbbf24);
+        border: 1px solid #f59e0b;
+        position: relative;
+        animation: mascot-bounce 0.8s ease-in-out infinite;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+      }
+      .flash-mascot-icon::before,
+      .flash-mascot-icon::after {
+        content: "";
+        position: absolute;
+        width: 3px;
+        height: 3px;
+        background: #1f2937;
+        border-radius: 50%;
+        top: 9px;
+      }
+      .flash-mascot-icon::before { left: 7px; }
+      .flash-mascot-icon::after { right: 7px; }
+      .flash-mascot-smile {
+        position: absolute;
+        left: 7px;
+        top: 13px;
+        width: 10px;
+        height: 5px;
+        border-bottom: 2px solid #1f2937;
+        border-radius: 0 0 10px 10px;
+      }
+      @keyframes mascot-bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-3px); }
+      }
       .job-status-header {
         display: flex;
         align-items: center;
@@ -993,6 +1040,22 @@
                     <label for="opt_telegraf_influx_url">Telegraf Influx URL (optional)</label>
                     <input id="opt_telegraf_influx_url" data-option-key="telegraf_influx_url" placeholder="https://influx.example:8086">
                   </div>
+                  <div>
+                    <label for="opt_telegraf_influx_org">Telegraf Influx Org (optional)</label>
+                    <input id="opt_telegraf_influx_org" data-option-key="telegraf_influx_org" placeholder="homelab-org">
+                  </div>
+                  <div>
+                    <label for="opt_telegraf_influx_bucket">Telegraf Influx Bucket (optional)</label>
+                    <input id="opt_telegraf_influx_bucket" data-option-key="telegraf_influx_bucket" placeholder="telegraf">
+                  </div>
+                  <div>
+                    <label for="opt_telegraf_influx_token">Telegraf Influx Token (optional)</label>
+                    <input id="opt_telegraf_influx_token" data-option-key="telegraf_influx_token" placeholder="influx-token" type="password" autocomplete="off">
+                  </div>
+                  <div class="grid-span-full">
+                    <label for="opt_telegraf_config_url">Telegraf Config URL (optional)</label>
+                    <input id="opt_telegraf_config_url" data-option-key="telegraf_config_url" placeholder="https://influx.example/api/v2/telegrafs/<id>" >
+                  </div>
                   <div class="grid-span-full">
                     <label for="opt_motd_banner">MOTD Banner (optional)</label>
                     <textarea id="opt_motd_banner" data-option-key="motd_banner" placeholder="Welcome to rack node ${HOSTNAME}"></textarea>
@@ -1011,6 +1074,10 @@
             <span class="hint">Checksum state appears in the log. Missing expected hash defaults to skip.</span>
           </div>
         </form>
+        <div id="flash-mascot" class="flash-mascot" aria-live="polite">
+          <span class="flash-mascot-icon"><span class="flash-mascot-smile"></span></span>
+          <span>Happy flasher online. Writing your SD card...</span>
+        </div>
         <div id="job-status"></div>
         <div class="job-log" id="job-log"></div>
       </div>
@@ -1090,6 +1157,7 @@
       const body = document.body;
       const toggleBtn = document.getElementById("sidebar-toggle");
       const form = document.getElementById("sd-form");
+      const flashMascotEl = document.getElementById("flash-mascot");
       const statusEl = document.getElementById("job-status");
       const logEl = document.getElementById("job-log");
       const eventsBodyEl = document.getElementById("events-body");
@@ -1138,6 +1206,11 @@
       });
 
       function renderJob(job) {
+        if (job.status === "queued" || job.status === "running") {
+          flashMascotEl.classList.add("active");
+        } else {
+          flashMascotEl.classList.remove("active");
+        }
         const statusBadgeClass = job.status === "running" ? "running" : (job.exit_code === 0 ? "completed" : "failed");
         const timingInfo = formatJobTiming(job);
         statusEl.innerHTML = `
@@ -2332,6 +2405,7 @@
         e.preventDefault();
         statusEl.textContent = "Submitting...";
         logEl.textContent = "";
+        flashMascotEl.classList.add("active");
         const payload = {
           profile: form.profile.value,
           hostname: form.hostname.value,
@@ -2353,6 +2427,7 @@
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
+          flashMascotEl.classList.remove("active");
           statusEl.textContent = (data.errors || ["Failed to start job"]).join("; ");
           return;
         }

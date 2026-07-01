@@ -1706,6 +1706,21 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             if cloud_init_options.get("fancy_motd"):
                 env["CLOUD_INIT_FANCY_MOTD"] = "true"
                 enabled_options.append("fancy_motd")
+            if cloud_init_options.get("install_telegraf"):
+                env["CLOUD_INIT_INSTALL_TELEGRAF"] = "true"
+                enabled_options.append("install_telegraf")
+            telegraf_fields = {
+                "telegraf_influx_url": "CLOUD_INIT_TELEGRAF_INFLUX_URL",
+                "telegraf_influx_token": "CLOUD_INIT_TELEGRAF_INFLUX_TOKEN",
+                "telegraf_influx_org": "CLOUD_INIT_TELEGRAF_INFLUX_ORG",
+                "telegraf_influx_bucket": "CLOUD_INIT_TELEGRAF_INFLUX_BUCKET",
+                "telegraf_config_url": "CLOUD_INIT_TELEGRAF_CONFIG_URL",
+            }
+            for option_key, env_key in telegraf_fields.items():
+                value = str(cloud_init_options.get(option_key, "")).strip()
+                if value:
+                    env[env_key] = value
+                    enabled_options.append(option_key)
             if enabled_options:
                 logger.info(f"Cloud-init options enabled for {hostname}: {', '.join(enabled_options)}")
 

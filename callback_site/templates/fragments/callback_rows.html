@@ -15,7 +15,9 @@
   <td>
     {{ e.source_ip or e.remote_addr or '-' }}
     {% if e.source_ip_source %}
-    <div class="payload-kv">via {{ e.source_ip_source }}</div>
+    <div class="payload-kv">via {{ e.source_ip_source }}{% if e.forwarded_for %} ({{ e.forwarded_for }}){% endif %}</div>
+    {% elif e.remote_addr %}
+    <div class="payload-kv">via remote_addr ({{ e.remote_addr }})</div>
     {% endif %}
   </td>
   <td>

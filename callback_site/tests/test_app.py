@@ -699,6 +699,10 @@ class CallbackSiteTests(unittest.TestCase):
         text = response.get_data(as_text=True)
         self.assertIn("cache-path-ok", text)
         self.assertIn("cache-path-missing", text)
+        self.assertIn("source-panel", text)
+        self.assertIn("Distro image presets", text)
+        self.assertIn("download-state available", text)
+        self.assertIn("download-state missing", text)
 
     def test_image_crud_and_fragment_rows(self) -> None:
         created = self.client.post(
@@ -880,6 +884,30 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(latest["source_ip_source"], "x-forwarded-for")
         self.assertEqual(latest["cert_subject"], "CN=rpi5-100")
         self.assertEqual(latest["cert_fingerprint"], "AA:BB:CC")
+
+    def test_callback_dashboard_payload_shows_network_envelope(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-audit-01",
+                "instance_id": "iid-audit-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={
+                "X-Forwarded-For": "192.168.147.23, 10.255.45.243",
+                "User-Agent": "Cloud-Init/24.4-0ubuntu1~24.04.2",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 200)
+        text = page.get_data(as_text=True)
+        self.assertIn("source_ip_source", text)
+        self.assertIn("forwarded_for", text)
+        self.assertIn("remote_addr", text)
+        self.assertIn("source: ", text)
 
     def test_callback_source_ip_fallback_to_x_real_ip(self) -> None:
         response = self.client.post(

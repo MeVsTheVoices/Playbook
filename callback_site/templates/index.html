@@ -304,13 +304,17 @@
         display: flex;
         align-items: center;
         gap: 0.8rem;
+        padding: 0.45rem 0.55rem;
+        border: 1px solid #dbe4ee;
+        border-radius: 10px;
+        background: linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
         margin-bottom: 0.6rem;
       }
       .flash-mascot {
         display: none;
         align-items: center;
         gap: 0.45rem;
-        margin: 0.2rem 0 0.55rem;
+        margin: 0.72rem 0 0.55rem;
         color: #155e75;
         font-size: 0.82rem;
         font-weight: 700;
@@ -368,15 +372,29 @@
       }
       .job-status-badge.running {
         background: #dbeafe;
-        color: #1e40af;
+        color: #1d4ed8;
+        border: 1px solid #93c5fd;
       }
       .job-status-badge.completed {
         background: #dcfce7;
-        color: #15803d;
+        color: #166534;
+        border: 1px solid #86efac;
       }
       .job-status-badge.failed {
         background: #fee2e2;
         color: #991b1b;
+        border: 1px solid #fca5a5;
+      }
+      .job-status-badge.running::after {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-left: 0.45rem;
+        border-radius: 999px;
+        background: #1d4ed8;
+        box-shadow: 0 0 0 0 rgba(29, 78, 216, 0.55);
+        animation: status-pulse 1.3s infinite;
       }
       .job-timing {
         display: inline-flex;
@@ -384,6 +402,11 @@
         font-size: 0.82rem;
         color: #8b9ab2;
         line-height: 1;
+      }
+      .job-substatus {
+        margin-top: 0.2rem;
+        color: #334155;
+        font-size: 0.8rem;
       }
       .job-timing strong {
         color: #a5f3fc;
@@ -601,6 +624,7 @@
         border-radius: 12px;
         background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         padding: 0.7rem;
+        min-width: 0;
       }
       .stat-card .k {
         color: var(--muted);
@@ -613,6 +637,9 @@
         font-size: 1.25rem;
         font-weight: 700;
         color: #0f172a;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
       .filters-grid {
         display: grid;
@@ -678,6 +705,55 @@
         overflow-wrap: anywhere;
         word-break: break-word;
       }
+      .callback-toolbar {
+        display: flex;
+        gap: 0.55rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .events-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+      }
+      .events-table thead th {
+        background: #f1f5f9;
+        color: #334155;
+        border-top: 1px solid #dbe4ee;
+        border-bottom: 1px solid #dbe4ee;
+      }
+      .events-table thead th:first-child {
+        border-left: 1px solid #dbe4ee;
+        border-top-left-radius: 10px;
+      }
+      .events-table thead th:last-child {
+        border-right: 1px solid #dbe4ee;
+        border-top-right-radius: 10px;
+      }
+      .events-table tbody td {
+        background: #ffffff;
+      }
+      .events-table tbody tr:nth-child(odd) td {
+        background: #f9fcff;
+      }
+      .cert-pill {
+        display: inline-block;
+        padding: 0.15rem 0.48rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+      }
+      .cert-pill.ok {
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #86efac;
+      }
+      .cert-pill.none {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+      }
       @media (max-width: 900px) {
         th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) {
           display: none;
@@ -692,8 +768,8 @@
   <body>
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="sidebar-title">Callback Site</div>
-        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops</div>
+        <div class="sidebar-title">Callback Site 🚀</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops with vibes</div>
       </div>
       <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
       <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span>Home</span> <span class="label">Dashboard</span></a>
@@ -701,6 +777,7 @@
       <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span>Mon</span> <span class="label">Monitor</span></a>
       <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span>Img</span> <span class="label">Image Library</span></a>
       <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span>ACL</span> <span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span>Vrf</span> <span class="label">Verifier</span></a>
       <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span>Set</span> <span class="label">Settings</span></a>
     </aside>
 
@@ -711,10 +788,10 @@
       <div class="panel">
         <div class="hero">
           <div class="hero-row">
-            <h1>SD Card Imager</h1>
-            <span class="pill">Operator Mode</span>
+            <h1>SD Card Imager 🧰</h1>
+            <span class="pill">Operator Mode 🧪</span>
           </div>
-          <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init plus callback metadata.</p>
+          <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init plus callback metadata. Zero drama, maximum bytes.</p>
         </div>
         <div class="stats-grid">
           <div class="stat-card">
@@ -734,7 +811,7 @@
           </div>
         </div>
         <div class="panel">
-          This operation erases the target device. Verify the selected disk and checksum before starting.
+          ⚠️ This operation erases the target device. Verify the selected disk and checksum before starting.
         </div>
         <form id="sd-form">
           <div class="fieldset">
@@ -759,7 +836,7 @@
                   <option value="{{ d.path }}">{{ d.path }} - {{ d.size }} - {{ d.model }}</option>
                   {% endfor %}
                 </select>
-                <div class="hint" id="device-webhook-status">Live device monitor: connecting...</div>
+                <div class="hint" id="device-webhook-status">Live device monitor: connecting... 🔌</div>
               </div>
               <div>
                 <label for="callback_url">Callback URL</label>
@@ -834,7 +911,7 @@
                 </div>
                 <button type="button" id="clear-ssh-key-file" class="secondary">Clear Upload</button>
               </div>
-              <div class="hint" id="ssh-key-status">Use Generate for a new key, or Load to use an existing key by name.</div>
+              <div class="hint" id="ssh-key-status">Use Generate for a new key, or Load to use an existing key by name. 🗝️</div>
               <div class="key-links" id="key-links"></div>
             </div>
             <div style="margin-top: 0.8rem;">
@@ -1071,12 +1148,12 @@
           </div>
           <div class="actions-row">
             <button type="submit">Format + Write SD Card</button>
-            <span class="hint">Checksum state appears in the log. Missing expected hash defaults to skip.</span>
+            <span class="hint">Checksum state appears in the log. Missing expected hash defaults to skip. Trust, but verify. 🕵️</span>
           </div>
         </form>
         <div id="flash-mascot" class="flash-mascot" aria-live="polite">
           <span class="flash-mascot-icon"><span class="flash-mascot-smile"></span></span>
-          <span>Happy flasher online. Writing your SD card...</span>
+          <span>Happy flasher online. Writing your SD card... please do not jiggle the cable 😅</span>
         </div>
         <div id="job-status"></div>
         <div class="job-log" id="job-log"></div>
@@ -1086,13 +1163,14 @@
 
       <div class="panel" id="callback-dashboard">
         <div class="section-head">
-          <h1>Rack Cloud-Init Callback Dashboard</h1>
-          <div class="actions-row" style="margin-top: 0;">
+          <h1>Rack Cloud-Init Callback Dashboard 📡</h1>
+          <div class="actions-row callback-toolbar" style="margin-top: 0;">
             <a class="mini-link" href="/fragments/cloud-init/event-rows" hx-get="/fragments/cloud-init/event-rows" hx-target="#events-body" hx-swap="innerHTML">Refresh rows</a>
+            <a class="mini-link" href="/test-terminal" target="_blank" rel="noopener noreferrer">Open verifier terminal</a>
             <span class="status-chip"><span class="status-dot"></span> Live Event Feed</span>
           </div>
         </div>
-        <p>Inbound callback events from first boot and cloud-init phone-home.</p>
+        <p>Inbound callback events from first boot and cloud-init phone-home. If this stays empty, your Pis are still being mysterious.</p>
 
         <div class="stats-grid">
           <div class="stat-card">
@@ -1132,7 +1210,7 @@
           </div>
         </div>
         <p class="small-note" id="event-meta">Waiting for callback updates...</p>
-        <table>
+        <table class="events-table">
           <thead>
             <tr>
               <th>Received (UTC)</th>
@@ -1188,8 +1266,10 @@
       const statHostsEl = document.getElementById("stat-hosts");
       const imageCatalog = {{ image_catalog | tojson }};
       const initialSdOptionProfiles = {{ sd_option_profiles | tojson }};
+      const SD_ACTIVE_JOB_KEY = "sd-active-job-id";
       let currentJob = null;
       let deviceWebhookRetry = null;
+      let deviceFallbackPollTimer = null;
       let allEvents = [];
       let sdOptionProfiles = initialSdOptionProfiles || {};
 
@@ -1212,15 +1292,24 @@
           flashMascotEl.classList.remove("active");
         }
         const statusBadgeClass = job.status === "running" ? "running" : (job.exit_code === 0 ? "completed" : "failed");
+        const statusEmoji = job.status === "running" ? "⏳" : (job.exit_code === 0 ? "✅" : "🔥");
+        const statusNudge = job.status === "running"
+          ? deriveRunningHint(job)
+          : (job.exit_code === 0
+            ? "Write complete. This SD card now has main-character energy."
+            : "Something went sideways. Logs below have the tea.");
         const timingInfo = formatJobTiming(job);
+        const heartbeat = job.status === "running" ? "Live check: active and polling every ~1s." : "Job polling complete.";
         statusEl.innerHTML = `
           <div class="job-status-header">
             <div>
-              <span class="job-status-badge ${statusBadgeClass}">${job.status.toUpperCase()}</span>
+              <span class="job-status-badge ${statusBadgeClass}">${statusEmoji} ${job.status.toUpperCase()}</span>
               <span style="color: #8b9ab2; font-size: 0.82rem; margin-left: 0.4rem;">ID: <code style="color: #a5f3fc; font-size: 0.78rem;">${job.id.substring(0, 12)}...</code></span>
             </div>
             ${timingInfo ? `<div class="job-timing">${timingInfo}</div>` : ""}
           </div>
+          <div class="hint" style="margin-bottom: 0.45rem;">${statusNudge}</div>
+          <div class="job-substatus">${heartbeat}</div>
           <div class="job-actions">
             <a href="/images" target="_self">📦 Image Library</a>
             <a href="/images#image-download-catalog" target="_self">⬇️ Download Catalog</a>
@@ -1261,6 +1350,20 @@
         return `Duration: ${duration}${job.status === "running" ? " (ongoing)" : ""}`;
       }
 
+      function deriveRunningHint(job) {
+        const out = String(job.stdout || "");
+        if (/Decompressing image/i.test(out)) {
+          return "Decompressing image bits. CPU is earning snacks.";
+        }
+        if (/Flashing image/i.test(out) || /copied,\s*\d+(?:\.\d+)?\s*[kMGT]?B\/s/i.test(out)) {
+          return "Writing image to disk. Final sync can look quiet for a moment.";
+        }
+        if (/Downloading image/i.test(out) || /Download progress:/i.test(out)) {
+          return "Downloading image payload. Internet and patience in tandem.";
+        }
+        return "Flashing in progress. Tiny bytes, big ambitions.";
+      }
+
       function escapeHtml(text) {
         return String(text)
           .replaceAll("&", "&amp;")
@@ -1270,7 +1373,7 @@
 
       function highlightLogText(text) {
         const tokenRegex = /\b(progress|download|copying|copied|records|mounting|injecting|hash|verified|skipped|failed|error|done|uname|linux|kernel|cloud-init|ubuntu|flashing|decompressing|device|target|partition|formatted|written|starting|running|stopped|status)\b/gi;
-        const pathRegex = /(\/[\w\/.\-]+|[\w\-]+\.\w+)/g;
+        const pathRegex = /(\/[\w\/.\-]+|(?:[\w\-]+\.)+[\w\-]+)/g;
         const warnRegex = /\b(failed|error|aborted|invalid|missing|skipped)\b/gi;
         const okRegex = /\b(done|verified|completed|ready|ok|success)\b/gi;
         const infoRegex = /\b(starting|running|processing|preparing|mounted|unmounted|detected)\b/gi;
@@ -1293,18 +1396,19 @@
           if (headingRegex.test(line)) {
             return `<span class="kv">${line}</span>`;
           }
-          let out = line.replaceAll(tokenRegex, (m) => {
+          let out = line;
+          out = replaceOutsideTags(out, tokenRegex, (m) => {
             const key = m.toLowerCase();
             if ((counts.get(key) || 0) >= 2) {
               return `<span class="term">${m}</span>`;
             }
             return m;
           });
-          out = out.replaceAll(warnRegex, (m) => `<span class="term-warn">${m}</span>`);
-          out = out.replaceAll(okRegex, (m) => `<span class="term-ok">${m}</span>`);
-          out = out.replaceAll(infoRegex, (m) => `<span class="term-info">${m}</span>`);
-          out = out.replaceAll(highlightRegex, (m) => `<span class="term-highlight">${m}</span>`);
-          out = out.replaceAll(pathRegex, (m) => {
+          out = replaceOutsideTags(out, warnRegex, (m) => `<span class="term-warn">${m}</span>`);
+          out = replaceOutsideTags(out, okRegex, (m) => `<span class="term-ok">${m}</span>`);
+          out = replaceOutsideTags(out, infoRegex, (m) => `<span class="term-info">${m}</span>`);
+          out = replaceOutsideTags(out, highlightRegex, (m) => `<span class="term-highlight">${m}</span>`);
+          out = replaceOutsideTags(out, pathRegex, (m) => {
             if (m.startsWith("/") || m.includes(".")) {
               return `<span class="term-path">${m}</span>`;
             }
@@ -1312,6 +1416,13 @@
           });
           return out;
         }).join("\n");
+      }
+
+      function replaceOutsideTags(input, regex, replacer) {
+        return input
+          .split(/(<[^>]+>)/g)
+          .map((segment) => (segment.startsWith("<") ? segment : segment.replace(regex, replacer)))
+          .join("");
       }
 
       function formatCatalogHash(row) {
@@ -2140,6 +2251,8 @@
 
       function replaceDeviceOptions(devices) {
         const previous = form.device.value;
+        const previousOption = form.device.options[form.device.selectedIndex];
+        const previousLabel = previousOption ? previousOption.textContent : previous;
         form.device.innerHTML = "";
         if (!devices.length) {
           const option = document.createElement("option");
@@ -2147,6 +2260,7 @@
           option.textContent = "No removable SD/USB devices detected";
           form.device.appendChild(option);
           form.device.value = "";
+          deviceWebhookStatusEl.textContent = "Live device monitor: no removable device present. Reinsert card and wait for refresh.";
           return;
         }
 
@@ -2159,6 +2273,28 @@
 
         if (previous && devices.some((d) => d.path === previous)) {
           form.device.value = previous;
+          return;
+        }
+
+        form.device.value = devices[0].path;
+        if (previous) {
+          deviceWebhookStatusEl.textContent = `Selected device '${previousLabel || previous}' is no longer present. Switched to '${devices[0].path}'.`;
+        }
+      }
+
+      async function pollDevicesSnapshot() {
+        try {
+          const res = await fetch("/api/sd/devices");
+          const payload = await res.json();
+          if (!res.ok) {
+            throw new Error((payload.errors || ["device refresh failed"])[0]);
+          }
+          const devices = Array.isArray(payload.devices) ? payload.devices : [];
+          replaceDeviceOptions(devices);
+        } catch (err) {
+          if (!String(deviceWebhookStatusEl.textContent || "").startsWith("Live device monitor disconnected")) {
+            deviceWebhookStatusEl.textContent = `Device refresh error: ${String(err.message || err)}`;
+          }
         }
       }
 
@@ -2195,6 +2331,24 @@
           }
           deviceWebhookRetry = setTimeout(startDeviceWebhook, 2500);
         };
+      }
+
+      function startDeviceFallbackPolling() {
+        if (deviceFallbackPollTimer) {
+          clearInterval(deviceFallbackPollTimer);
+        }
+        deviceFallbackPollTimer = setInterval(() => {
+          pollDevicesSnapshot();
+        }, 5000);
+
+        window.addEventListener("focus", () => {
+          pollDevicesSnapshot();
+        });
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) {
+            pollDevicesSnapshot();
+          }
+        });
       }
 
       function gatherCloudInitOptions() {
@@ -2397,12 +2551,31 @@
         }
         renderJob(data.job);
         if (data.job.status === "queued" || data.job.status === "running") {
+          localStorage.setItem(SD_ACTIVE_JOB_KEY, currentJob);
           setTimeout(pollJob, 1200);
+        } else {
+          localStorage.removeItem(SD_ACTIVE_JOB_KEY);
         }
+      }
+
+      async function resumeActiveJobIfAny() {
+        const savedJobId = String(localStorage.getItem(SD_ACTIVE_JOB_KEY) || "").trim();
+        if (!savedJobId) {
+          return;
+        }
+        currentJob = savedJobId;
+        statusEl.textContent = `Resuming active job: ${currentJob}`;
+        await pollJob();
       }
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
+        await pollDevicesSnapshot();
+        if (!String(form.device.value || "").trim()) {
+          statusEl.textContent = "No target SD device selected. Insert a card and try again.";
+          flashMascotEl.classList.remove("active");
+          return;
+        }
         statusEl.textContent = "Submitting...";
         logEl.textContent = "";
         flashMascotEl.classList.add("active");
@@ -2432,6 +2605,7 @@
           return;
         }
         currentJob = data.job_id;
+        localStorage.setItem(SD_ACTIVE_JOB_KEY, currentJob);
         statusEl.textContent = `Job started: ${currentJob}`;
         pollJob();
       });
@@ -2522,10 +2696,13 @@
       rebuildCatalogFilters();
       refreshKeyLinks();
       renderSdOptionProfiles();
+      resumeActiveJobIfAny();
       updateSdOptionsConfiguredCount();
       refreshSshKeyChoices();
       loadSdOptionProfiles();
       startDeviceWebhook();
+      startDeviceFallbackPolling();
+      pollDevicesSnapshot();
       loadEvents();
       setInterval(loadEvents, 5000);
     </script>

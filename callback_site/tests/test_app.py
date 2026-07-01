@@ -35,7 +35,7 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"ok": True})
 
     def test_dashboard_and_pages_render(self) -> None:
-        for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings"):
+        for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/test-terminal"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
 
@@ -57,6 +57,17 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("id=\"flash-mascot\"", text)
         self.assertIn("Happy flasher online", text)
         self.assertIn("flashMascotEl.classList.add(\"active\")", text)
+        self.assertIn('SD_ACTIVE_JOB_KEY = "sd-active-job-id"', text)
+        self.assertIn("resumeActiveJobIfAny", text)
+        self.assertIn('href="/test-terminal"', text)
+
+    def test_verifier_terminal_page_uses_sidebar_navigation(self) -> None:
+        response = self.client.get("/test-terminal")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('class="sidebar"', text)
+        self.assertIn('href="/test-terminal"', text)
+        self.assertIn('id="sidebar-toggle"', text)
 
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
@@ -254,6 +265,71 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.get_json()
         self.assertFalse(payload["ok"])
+
+    def test_test_terminal_checks_catalog(self) -> None:
+        response = self.client.get("/api/test-terminal/checks")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        checks = payload.get("checks") or []
+        check_ids = [c.get("id") for c in checks]
+        self.assertIn("identity", check_ids)
+        self.assertIn("cloud_init", check_ids)
+
+    def test_test_terminal_start_rejects_invalid_check_id(self) -> None:
+        response = self.client.post(
+            "/api/test-terminal/start",
+            json={
+                "host": "10.0.0.10",
+                "username": "ops",
+                "key_name": "rack-bootstrap-ed25519",
+                "check_id": "run-anything",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+        self.assertIn("invalid check_id", payload.get("error", ""))
+
+    def test_test_terminal_start_uses_named_check_command(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertEqual(create_key.status_code, 200)
+
+        with patch("app.threading.Thread") as thread_cls:
+            response = self.client.post(
+                "/api/test-terminal/start",
+                json={
+                    "host": "10.0.0.10",
+                    "username": "ops",
+                    "key_name": "rack-bootstrap-ed25519",
+                    "check_id": "identity",
+                    "port": 22,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            job = callback_app.TEST_TERMINAL_JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            command = list(job.get("command") or []) if job else []
+            self.assertTrue(command)
+            self.assertEqual(job.get("check_id"), "identity")
+            self.assertIn("hostname && whoami && uname -a", command)
+
+        thread_cls.assert_called_once()
+        _, kwargs = thread_cls.call_args
+        self.assertTrue(kwargs.get("daemon"))
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
 
     def test_sd_option_profiles_crud(self) -> None:
         initial = self.client.get("/api/sd/options-profiles")
@@ -800,6 +876,90 @@ class CallbackSiteTests(unittest.TestCase):
         latest = matching[0]
         raw_text = json.dumps(latest.get("raw", {}), sort_keys=True)
         self.assertNotIn("\"dataset\"", raw_text)
+
+    def test_callback_profile_inferred_from_hostname_when_missing(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-42",
+                "instance_id": "iid-42",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [e for e in events if e.get("instance_id") == "iid-42"]
+        self.assertTrue(matching)
+        latest = matching[0]
+        self.assertEqual(latest["profile"], "pi5")
+        self.assertEqual(latest["stage"], "phone_home")
+
+    def test_callback_profile_falls_back_to_recent_event(self) -> None:
+        first = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "edge-node-01",
+                "instance_id": "iid-edge-01",
+                "profile": "pibplus",
+                "stage": "hardware-check",
+            },
+        )
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "edge-node-01",
+                "instance_id": "iid-edge-01",
+            },
+        )
+        self.assertEqual(second.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [e for e in events if e.get("instance_id") == "iid-edge-01"]
+        self.assertGreaterEqual(len(matching), 2)
+        latest = matching[0]
+        self.assertEqual(latest["profile"], "pibplus")
+        self.assertEqual(latest["stage"], "hardware-check")
+
+    def test_callback_cert_presence_from_alt_header(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-cert-01",
+                "instance_id": "iid-cert-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={
+                "SSL-Client-Cert": "-----BEGIN CERTIFICATE-----...",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [e for e in events if e.get("instance_id") == "iid-cert-01"]
+        self.assertTrue(matching)
+        latest = matching[0]
+        self.assertTrue(latest["cert_present"])
+        self.assertTrue(latest["cert_header_present"])
+
+    def test_callback_ignores_empty_payload_noise(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/callback",
+            data="",
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload.get("ok"))
+        self.assertTrue(payload.get("ignored"))
 
     def test_callback_backlog_clear(self) -> None:
         create_resp = self.client.post(

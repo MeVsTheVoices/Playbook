@@ -4,8 +4,14 @@
   <td>{{ e.hostname or '-' }}</td>
   <td>{{ e.instance_id or '-' }}</td>
   <td>{{ e.fqdn or '-' }}</td>
-  <td><span class="tag">{{ e.profile or 'unknown' }}</span></td>
-  <td>{{ e.stage or 'phone_home' }}</td>
+  <td>
+    {% set profile_value = (e.profile or 'unknown') %}
+    <span class="tag">{{ profile_value }}</span>
+    {% if profile_value == 'unknown' %}
+    <div class="payload-kv">inference unavailable</div>
+    {% endif %}
+  </td>
+  <td><span class="stage-pill stage-{{ (e.stage or 'phone_home') | replace('-', '_') }}">{{ e.stage or 'phone_home' }}</span></td>
   <td>
     {{ e.source_ip or e.remote_addr or '-' }}
     {% if e.source_ip_source %}
@@ -13,6 +19,11 @@
     {% endif %}
   </td>
   <td>
+    {% if e.cert_present %}
+    <span class="cert-pill ok">cert present</span>
+    {% else %}
+    <span class="cert-pill none">no cert</span>
+    {% endif %}
     <code>
       {% if e.cert_subject and e.cert_fingerprint %}
       {{ e.cert_subject }} ({{ e.cert_fingerprint }})
@@ -20,6 +31,8 @@
       {{ e.cert_subject }}
       {% elif e.cert_fingerprint %}
       {{ e.cert_fingerprint }}
+      {% elif e.cert_header_present %}
+      cert header captured
       {% else %}
       -
       {% endif %}

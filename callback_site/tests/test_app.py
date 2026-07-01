@@ -50,6 +50,14 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("Reset Optional Fields", text)
         self.assertIn("fields set", text)
 
+    def test_home_page_contains_flash_mascot_hooks(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("id=\"flash-mascot\"", text)
+        self.assertIn("Happy flasher online", text)
+        self.assertIn("flashMascotEl.classList.add(\"active\")", text)
+
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
         self.assertEqual(response.status_code, 200)
@@ -977,6 +985,12 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(check_ok.status_code, 200)
         check_payload = check_ok.get_json()
         self.assertTrue(check_payload["ok"])
+
+    def test_prepare_script_escapes_embedded_runtime_vars(self) -> None:
+        script_text = (APP_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh").read_text(encoding="utf-8")
+        self.assertIn('\\$PI_MODEL', script_text)
+        self.assertIn('\\$RAM_MB', script_text)
+        self.assertIn('INFLUX_URL="\\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"', script_text)
 
 
 if __name__ == "__main__":

@@ -46,6 +46,18 @@ Cloud-init optional settings on Home:
 - Operators can save, load, and delete reusable templates and include template data in `POST /api/sd/prepare` requests.
 - This keeps first-boot cloud-init authoring close to the imaging workflow and avoids context switching.
 
+Telegraf bootstrap options (Home -> Hardware Detection and Telemetry):
+- `install_telegraf`: installs Telegraf and runs a dedicated bootstrap script on first boot.
+- `telegraf_config_url`: if provided, node pulls `telegraf.conf` from this URL.
+- `telegraf_influx_token`: optional bearer token used for authenticated config pull (`Authorization: Token ...`).
+- `telegraf_influx_url`, `telegraf_influx_org`, `telegraf_influx_bucket`: fallback mode if `telegraf_config_url` is empty; node renders a local `telegraf.conf` using these credentials.
+
+Telegraf bootstrap order:
+1. Install package (if enabled).
+2. Pull config from `telegraf_config_url` when present.
+3. Otherwise generate local config from Influx URL/token/org/bucket when all are provided.
+4. Enable and restart `telegraf` service.
+
 ### Cloud-Init Template Workflow (Home)
 
 Recommended operator flow:

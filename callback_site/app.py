@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import os
 import logging
+import subprocess
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
 
 from core import *
 
 # Setup logs directory
-LOG_DIR = Path(os.getenv("CALLBACK_APPDATA_DIR", ".")) / "logs"
+LOG_DIR = APPDATA_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "callback_site.log"
 
@@ -38,6 +40,39 @@ console_handler.setFormatter(log_formatter)
 root_logger.addHandler(console_handler)
 
 logger = logging.getLogger(__name__)
+
+TEST_TERMINAL_JOBS: Dict[str, Dict[str, Any]] = {}
+TEST_TERMINAL_LOCK = threading.Lock()
+
+
+def _run_test_terminal_job(job_id: str, cmd: list[str]) -> None:
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except Exception as exc:
+        with TEST_TERMINAL_LOCK:
+            TEST_TERMINAL_JOBS[job_id]["status"] = "failed"
+            TEST_TERMINAL_JOBS[job_id]["stderr"] = str(exc)
+            TEST_TERMINAL_JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+        return
+
+    output_chunks: list[str] = []
+    if proc.stdout is not None:
+        for line in proc.stdout:
+            output_chunks.append(line)
+            with TEST_TERMINAL_LOCK:
+                TEST_TERMINAL_JOBS[job_id]["stdout"] = "".join(output_chunks)[-20000:]
+
+    proc.wait()
+    with TEST_TERMINAL_LOCK:
+        TEST_TERMINAL_JOBS[job_id]["exit_code"] = proc.returncode
+        TEST_TERMINAL_JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        TEST_TERMINAL_JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
 
 app = Flask(__name__)
 
@@ -399,6 +434,70 @@ def ssh_download(key_name: str, kind: str) -> Any:
 @app.get("/api/ssh/keys")
 def ssh_keys_list() -> Any:
     return jsonify({"ok": True, "keys": _list_ssh_keys()})
+
+
+@app.post("/api/test-terminal/start")
+def test_terminal_start() -> Any:
+    payload = request.get_json(silent=True) or {}
+    host = str(payload.get("host", payload.get("hostname", ""))).strip()
+    username = str(payload.get("username", "ops")).strip() or "ops"
+    key_name = str(payload.get("key_name", "rack-bootstrap-ed25519")).strip() or "rack-bootstrap-ed25519"
+    remote_command = str(payload.get("command", "hostname && whoami && uname -a")).strip()
+    port = int(payload.get("port", 22) or 22)
+
+    if not host:
+        return jsonify({"ok": False, "error": "host is required"}), 400
+    if not _is_safe_key_name(key_name):
+        return jsonify({"ok": False, "error": "invalid key_name"}), 400
+    if port < 1 or port > 65535:
+        return jsonify({"ok": False, "error": "invalid port"}), 400
+
+    key_path = KEYS_DIR / key_name
+    if not key_path.exists():
+        return jsonify({"ok": False, "error": f"key not found: {key_name}"}), 404
+
+    cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=8",
+        "-i",
+        str(key_path),
+        "-p",
+        str(port),
+        f"{username}@{host}",
+        remote_command,
+    ]
+
+    job_id = uuid.uuid4().hex
+    with TEST_TERMINAL_LOCK:
+        TEST_TERMINAL_JOBS[job_id] = {
+            "id": job_id,
+            "status": "running",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "command": cmd,
+            "stdout": "",
+            "stderr": "",
+            "exit_code": None,
+        }
+
+    thread = threading.Thread(target=_run_test_terminal_job, args=(job_id, cmd), daemon=True)
+    thread.start()
+    logger.info(f"Started hidden test-terminal job: id={job_id}, host={host}, user={username}")
+    return jsonify({"ok": True, "job_id": job_id})
+
+
+@app.get("/api/test-terminal/jobs/<job_id>")
+def test_terminal_job_status(job_id: str) -> Any:
+    with TEST_TERMINAL_LOCK:
+        job = TEST_TERMINAL_JOBS.get(job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "job not found"}), 404
+        return jsonify({"ok": True, "job": job})
 
 
 @app.get("/api/nodes/summary")

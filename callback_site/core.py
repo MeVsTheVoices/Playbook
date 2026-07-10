@@ -5,6 +5,7 @@ import os
 import logging
 import hashlib
 import ipaddress
+import shutil
 import queue
 import re
 import socket
@@ -1207,8 +1208,14 @@ def _run_node_profile(node_name: str, profile: Dict[str, Any], mode: str, run_an
             "output": "Ansible execution disabled for this run (plan-only).",
         }
 
+    ansible_cmd = shutil.which("ansible-playbook")
+    if not ansible_cmd:
+        venv_ansible = BASE_DIR.parent / ".venv" / "bin" / "ansible-playbook"
+        if venv_ansible.exists() and venv_ansible.is_file():
+            ansible_cmd = str(venv_ansible)
+
     cmd = [
-        "ansible-playbook",
+        ansible_cmd or "ansible-playbook",
         "-i",
         str(INVENTORY_FILE),
         "site.yml",
@@ -1298,6 +1305,139 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
         "mode": mode,
         "run_ansible": run_ansible,
         "results": [node_results[pid] for pid in valid_profile_ids],
+    }
+
+
+def _telegraf_influx_dummy_check(inputs: Dict[str, str], timeout: int = 8) -> Dict[str, Any]:
+    endpoint = str(inputs.get("influx_endpoint", "")).strip().rstrip("/")
+    bucket = str(inputs.get("influx_bucket", "")).strip()
+    org = str(inputs.get("influx_org", "")).strip()
+    access_key = str(inputs.get("influx_access_key", "")).strip()
+    secret_key = str(inputs.get("influx_secret_key", "")).strip()
+
+    required = {
+        "influx_endpoint": endpoint,
+        "influx_bucket": bucket,
+        "influx_org": org,
+        "influx_access_key": access_key,
+        "influx_secret_key": secret_key,
+    }
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        return {
+            "ok": False,
+            "error": "missing required telegraf inputs",
+            "missing": missing,
+            "checks": [],
+        }
+
+    parsed = urlparse.urlparse(endpoint)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return {
+            "ok": False,
+            "error": "invalid influx endpoint; expected http(s) URL",
+            "checks": [],
+        }
+
+    checks: List[Dict[str, Any]] = []
+
+    def _http_error_message(exc: Exception) -> str:
+        if isinstance(exc, urlerror.HTTPError):
+            body = ""
+            try:
+                body = exc.read(512).decode("utf-8", errors="replace").strip()
+            except Exception:
+                body = ""
+            if body:
+                return f"HTTP {exc.code}: {body}"
+            return f"HTTP {exc.code}"
+        return str(exc)
+
+    health_url = f"{endpoint}/health"
+    try:
+        req = urlrequest.Request(health_url, headers={"Accept": "application/json"}, method="GET")
+        with urlrequest.urlopen(req, timeout=timeout) as resp:  # nosec B310
+            checks.append(
+                {
+                    "name": "health",
+                    "ok": 200 <= int(getattr(resp, "status", 0) or 0) < 300,
+                    "status": int(getattr(resp, "status", 0) or 0),
+                    "url": health_url,
+                }
+            )
+    except Exception as exc:
+        checks.append(
+            {
+                "name": "health",
+                "ok": False,
+                "status": None,
+                "url": health_url,
+                "error": _http_error_message(exc),
+            }
+        )
+
+    write_params = urlparse.urlencode({"org": org, "bucket": bucket, "precision": "s"})
+    write_url = f"{endpoint}/api/v2/write?{write_params}"
+    line = f"callback_site_dummy,source=node_ops,host={socket.gethostname()} value=1i {int(time.time())}"
+
+    token_candidates: List[Dict[str, str]] = [{"label": "access_key", "token": access_key}]
+    combo = f"{access_key}:{secret_key}"
+    if combo != access_key:
+        token_candidates.append({"label": "access_key:secret_key", "token": combo})
+
+    write_ok = False
+    last_write_error = ""
+    last_status: int | None = None
+
+    for candidate in token_candidates:
+        try:
+            req = urlrequest.Request(
+                write_url,
+                data=line.encode("utf-8"),
+                headers={
+                    "Authorization": f"Token {candidate['token']}",
+                    "Content-Type": "text/plain; charset=utf-8",
+                    "Accept": "application/json",
+                },
+                method="POST",
+            )
+            with urlrequest.urlopen(req, timeout=timeout) as resp:  # nosec B310
+                status = int(getattr(resp, "status", 0) or 0)
+                last_status = status
+                if status in {204, 202, 200}:
+                    write_ok = True
+                    checks.append(
+                        {
+                            "name": "dummy_write",
+                            "ok": True,
+                            "status": status,
+                            "url": write_url,
+                            "auth_mode": candidate["label"],
+                        }
+                    )
+                    break
+                last_write_error = f"unexpected status {status}"
+        except Exception as exc:
+            last_write_error = _http_error_message(exc)
+
+    if not write_ok:
+        checks.append(
+            {
+                "name": "dummy_write",
+                "ok": False,
+                "status": last_status,
+                "url": write_url,
+                "error": last_write_error or "write failed",
+            }
+        )
+
+    ok = bool(checks and all(bool(c.get("ok")) for c in checks))
+    return {
+        "ok": ok,
+        "endpoint": endpoint,
+        "bucket": bucket,
+        "org": org,
+        "checks": checks,
     }
 
 
@@ -1458,7 +1598,18 @@ def _latest_callback_details_by_host(limit: int = 2000) -> Dict[str, Dict[str, s
         payload = {
             "last_callback": str(event.get("received_at", "")).strip(),
             "source_ip": str(event.get("source_ip", "")).strip(),
+            "source_ip_source": str(event.get("source_ip_source", "")).strip(),
             "profile": str(event.get("profile", "")).strip(),
+            "raw_profile": str(event.get("raw_profile", "")).strip(),
+            "profile_source": str(event.get("profile_source", "")).strip(),
+            "stage": str(event.get("stage", "")).strip(),
+            "instance_id": str(event.get("instance_id", "")).strip(),
+            "cert_present": bool(event.get("cert_present", False)),
+            "cert_subject": str(event.get("cert_subject", "")).strip(),
+            "cert_issuer": str(event.get("cert_issuer", "")).strip(),
+            "cert_fingerprint": str(event.get("cert_fingerprint", "")).strip(),
+            "node_report_id": str(event.get("node_report_id", "")).strip(),
+            "node_report_present": bool(event.get("node_report_present", False)),
         }
         for host in candidates:
             if host and host not in seen:
@@ -1578,6 +1729,18 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
 
         item["last_callback"] = str(callback.get("last_callback", "")).strip()
         item["callback_profile"] = str(callback.get("profile", "")).strip()
+        item["callback_raw_profile"] = str(callback.get("raw_profile", "")).strip()
+        item["callback_profile_source"] = str(callback.get("profile_source", "")).strip()
+        item["callback_stage"] = str(callback.get("stage", "")).strip()
+        item["callback_instance_id"] = str(callback.get("instance_id", "")).strip()
+        item["callback_source_ip"] = str(callback.get("source_ip", "")).strip()
+        item["callback_source_ip_source"] = str(callback.get("source_ip_source", "")).strip()
+        item["callback_cert_present"] = bool(callback.get("cert_present", False))
+        item["callback_cert_subject"] = str(callback.get("cert_subject", "")).strip()
+        item["callback_cert_issuer"] = str(callback.get("cert_issuer", "")).strip()
+        item["callback_cert_fingerprint"] = str(callback.get("cert_fingerprint", "")).strip()
+        item["callback_node_report_id"] = str(callback.get("node_report_id", "")).strip()
+        item["callback_node_report_present"] = bool(callback.get("node_report_present", False))
         item["manual_node"] = bool(item.get("manual_node", False))
         enriched.append(item)
     return enriched

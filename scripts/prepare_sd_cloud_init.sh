@@ -297,11 +297,11 @@ fi
 
 PROFILE_ROLE="pi5"
 PROFILE_STORAGE="nvme"
-PROFILE_PACKAGES="qemu-guest-agent curl git python3 python3-apt htop nvme-cli"
+PROFILE_PACKAGES="qemu-guest-agent curl git python3 python3-apt htop nvme-cli lshw"
 if [[ "$PROFILE" == "pibplus" ]]; then
   PROFILE_ROLE="pi-bplus"
   PROFILE_STORAGE="sdcard"
-  PROFILE_PACKAGES="curl git python3 python3-apt htop"
+  PROFILE_PACKAGES="curl git python3 python3-apt htop lshw"
 fi
 
 cat > "$USER_DATA_OUT" <<EOF
@@ -396,9 +396,52 @@ write_files:
       POE_ENABLED="false"
       [[ -f /sys/class/pwm/pwmchip0/device/dtoverlay ]] && POE_ENABLED="true"
       SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
+        NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
       curl -fsS -X POST -H 'Content-Type: application/json' \\
-        -d "{\"instance_id\":\"\$(hostname)-hw\",\"hostname\":\"\$(hostname)\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\$SOURCE_IP\",\"stage\":\"hardware-check\",\"hardware\":{\"model\":\"\$PI_MODEL\",\"ram_mb\":\$RAM_MB,\"sd_capacity_gb\":\$SD_CAPACITY,\"nvme\":\$NVME_PRESENT,\"hat\":\$HAT_PRESENT,\"poe\":\$POE_ENABLED}}" \
+        -d "{\"instance_id\":\"\$(hostname)-hw\",\"hostname\":\"\$(hostname)\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\$SOURCE_IP\",\"stage\":\"hardware-check\",\"node_report_b64\":\"\$NODE_REPORT_B64\",\"hardware\":{\"model\":\"\$PI_MODEL\",\"ram_mb\":\$RAM_MB,\"sd_capacity_gb\":\$SD_CAPACITY,\"nvme\":\$NVME_PRESENT,\"hat\":\$HAT_PRESENT,\"poe\":\$POE_ENABLED}}" \
         '${CALLBACK_URL}' || true
+      - path: /usr/local/bin/rack-node-report
+      permissions: "0755"
+      content: |
+        #!/bin/bash
+        set -euo pipefail
+        python3 <<'PY'
+    import json
+    import subprocess
+    from datetime import datetime, timezone
+
+
+    def run_text(cmd):
+      try:
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
+        return out.strip()
+      except Exception:
+        return ""
+
+
+    def run_json(cmd):
+      text = run_text(cmd)
+      if not text:
+        return {}
+      try:
+        return json.loads(text)
+      except json.JSONDecodeError:
+        return {"raw": text[:20000]}
+
+
+    report = {
+      "generated_at": datetime.now(timezone.utc).isoformat(),
+      "hostname": run_text(["hostname"]),
+      "kernel": run_text(["uname", "-a"]),
+      "os_release": run_text(["bash", "-lc", "cat /etc/os-release 2>/dev/null"]),
+      "cpu": run_text(["bash", "-lc", "lscpu 2>/dev/null"]),
+      "memory": run_text(["bash", "-lc", "free -h 2>/dev/null"]),
+      "storage": run_text(["bash", "-lc", "lsblk -e7 -o NAME,SIZE,TYPE,MODEL,MOUNTPOINT 2>/dev/null"]),
+      "network": run_text(["bash", "-lc", "ip -brief address 2>/dev/null"]),
+      "lshw": run_json(["bash", "-lc", "lshw -json 2>/dev/null"]),
+    }
+    print(json.dumps(report, separators=(",", ":")))
+    PY
   - path: /etc/update-motd.d/10-fancy
     permissions: "0755"
     content: |
@@ -490,7 +533,7 @@ fi
 
 # Append final runcmd callback
 cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
-  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; curl -fsS -X POST -H "Content-Type: application/json" -d "{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\${SOURCE_IP}\",\"stage\":\"runcmd\"}" "${CALLBACK_URL}" || true' ]
+  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; curl -fsS -X POST -H "Content-Type: application/json" -d "{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\${SOURCE_IP}\",\"stage\":\"runcmd\",\"node_report_b64\":\"\${NODE_REPORT_B64}\"}" "${CALLBACK_URL}" || true' ]
 
 final_message: "Cloud-init finished for ${HOSTNAME}"
 RUNCMD_EOF

@@ -617,6 +617,59 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(view[0].get("name"), "node-from-state")
         self.assertEqual(view[0].get("group"), "provisioned")
 
+    def test_node_ops_inventory_view_includes_callback_only_nodes(self) -> None:
+        with patch.object(
+            callback_core,
+            "_inventory_nodes",
+            return_value=[],
+        ), patch.object(
+            callback_core,
+            "_latest_callback_details_by_host",
+            return_value={
+                "fresh-callback-01": {
+                    "last_callback": "2026-07-10T00:00:00+00:00",
+                    "source_ip": "192.168.174.88",
+                    "profile": "pi5",
+                }
+            },
+        ), patch.object(
+            callback_core,
+            "_load_node_provisioning",
+            return_value={"node_configs": {}, "node_inputs": {}, "results": {}, "manual_nodes": {}},
+        ):
+            view = callback_app._node_ops_inventory_view()
+
+        self.assertEqual(len(view), 1)
+        self.assertEqual(view[0].get("name"), "fresh-callback-01")
+        self.assertEqual(view[0].get("group"), "rpi5_active")
+        self.assertEqual(view[0].get("address"), "192.168.174.88")
+        self.assertEqual(view[0].get("address_source"), "callback")
+
+    def test_node_ops_inventory_view_preserves_callback_address_source(self) -> None:
+        with patch.object(
+            callback_core,
+            "_inventory_nodes",
+            return_value=[],
+        ), patch.object(
+            callback_core,
+            "_latest_callback_details_by_host",
+            return_value={
+                "seeded-node": {
+                    "last_callback": "2026-07-10T00:00:00+00:00",
+                    "source_ip": "10.255.45.207",
+                    "profile": "pi5",
+                }
+            },
+        ), patch.object(
+            callback_core,
+            "_load_node_provisioning",
+            return_value={"node_configs": {}, "node_inputs": {}, "results": {}, "manual_nodes": {}},
+        ):
+            view = callback_app._node_ops_inventory_view()
+
+        self.assertEqual(len(view), 1)
+        self.assertEqual(view[0].get("address_source"), "callback")
+
     def test_nodes_monitor_uses_enriched_address_source(self) -> None:
         with patch.object(
             callback_app,
@@ -780,6 +833,29 @@ class CallbackSiteTests(unittest.TestCase):
         after_payload = after_profiles.get_json()
         self.assertEqual(after_payload.get("node_configs"), {})
         self.assertEqual(after_payload.get("node_inputs"), {})
+
+    def test_settings_reset_node_ops_deletes_ssh_material(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "reset-me-key", "comment": "test", "mode": "generate"},
+        )
+        self.assertEqual(create_key.status_code, 200)
+
+        before = self.client.get("/api/ssh/keys")
+        self.assertEqual(before.status_code, 200)
+        before_keys = before.get_json().get("keys") or []
+        self.assertTrue(any(k.get("key_name") == "reset-me-key" for k in before_keys))
+
+        reset = self.client.post("/api/settings/reset", json={"scope": "node_ops"})
+        self.assertEqual(reset.status_code, 200)
+        reset_payload = reset.get_json()
+        self.assertTrue(reset_payload["ok"])
+        self.assertGreaterEqual(int(reset_payload.get("reset", {}).get("deleted_ssh_files", 0)), 1)
+
+        after = self.client.get("/api/ssh/keys")
+        self.assertEqual(after.status_code, 200)
+        after_keys = after.get_json().get("keys") or []
+        self.assertFalse(any(k.get("key_name") == "reset-me-key" for k in after_keys))
 
     def test_settings_rack_name_roundtrip(self) -> None:
         current = self.client.get("/api/settings")

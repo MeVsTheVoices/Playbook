@@ -301,7 +301,8 @@
 
         <div class="split">
           <div class="panel">
-            <h2>Credentials + Webhook</h2>
+            <h2>Node Access Defaults + Webhook</h2>
+            <p class="note">These are global defaults for checks/webhooks. Add per-node identity details below when enrolling manual nodes.</p>
             <div class="grid">
               <div>
                 <label for="username">Username</label>
@@ -324,6 +325,46 @@
               <button id="save-config">Save Config</button>
             </div>
             <p id="config-status" class="note"></p>
+
+            <hr style="border: 0; border-top: 1px solid var(--line); margin: 1rem 0;">
+            <h3 style="margin: 0 0 0.5rem; font-size: 1rem;">Add Node Manually</h3>
+            <div class="grid">
+              <div>
+                <label for="manual-node-name">Node Name</label>
+                <input id="manual-node-name" placeholder="node-1-jd">
+              </div>
+              <div>
+                <label for="manual-node-group">Group</label>
+                <input id="manual-node-group" value="manual" placeholder="manual">
+              </div>
+              <div>
+                <label for="manual-node-address">IP / Hostname</label>
+                <input id="manual-node-address" placeholder="192.168.174.238">
+              </div>
+              <div>
+                <label for="manual-node-username">Node Username</label>
+                <input id="manual-node-username" placeholder="jdizzle">
+              </div>
+              <div>
+                <label for="manual-node-password">Node Password (optional)</label>
+                <input id="manual-node-password" type="password" placeholder="optional">
+              </div>
+              <div>
+                <label for="manual-node-shell">Default Shell (optional)</label>
+                <input id="manual-node-shell" placeholder="/bin/bash">
+              </div>
+              <div>
+                <label for="manual-node-certificate">Certificate / SSH Key</label>
+                <select id="manual-node-certificate">
+                  <option value="">None selected</option>
+                </select>
+              </div>
+            </div>
+            <div class="inline-actions" style="margin-top: 0.8rem;">
+              <button id="add-manual-node" type="button">Add / Update Manual Node</button>
+              <button id="refresh-certificates" class="secondary" type="button">Refresh Certificates</button>
+            </div>
+            <p id="manual-node-status" class="note"></p>
           </div>
 
           <div class="panel">
@@ -372,7 +413,7 @@
             <button id="refresh-monitor">Refresh Node Status</button>
             <button id="refresh-monitor-webhook" class="secondary">Refresh + Send Webhook</button>
           </div>
-          <p id="monitor-status" class="note">Status combines active inventory membership with latest callback data when available.</p>
+          <p id="monitor-status" class="note">No state yet. Monitoring data appears after callback or provisioning activity.</p>
           <table>
             <thead>
               <tr>
@@ -389,7 +430,7 @@
               </tr>
             </thead>
             <tbody id="node-rows">
-              <tr><td colspan="10">Loading...</td></tr>
+              <tr><td colspan="10">No state captured yet.</td></tr>
             </tbody>
           </table>
         </div>
@@ -418,11 +459,20 @@
       const statReachableCountEl = document.getElementById("stat-reachable-count");
       const statCallbackAddressCountEl = document.getElementById("stat-callback-address-count");
       const statCallbackCountEl = document.getElementById("stat-callback-count");
+      const manualNodeStatus = document.getElementById("manual-node-status");
+      const manualNodeNameEl = document.getElementById("manual-node-name");
+      const manualNodeGroupEl = document.getElementById("manual-node-group");
+      const manualNodeAddressEl = document.getElementById("manual-node-address");
+      const manualNodeUsernameEl = document.getElementById("manual-node-username");
+      const manualNodePasswordEl = document.getElementById("manual-node-password");
+      const manualNodeShellEl = document.getElementById("manual-node-shell");
+      const manualNodeCertificateEl = document.getElementById("manual-node-certificate");
 
       let nodes = [];
       let profiles = [];
       let statusByNode = {};
       let nodeInputs = {};
+      let manualNodes = {};
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -611,6 +661,9 @@
             : "-";
 
           const tr = document.createElement("tr");
+          const removeBtn = node.manual_node
+            ? `<button type="button" data-node="${node.name}" data-action="remove" class="secondary">Remove</button>`
+            : "";
           tr.innerHTML = `
             <td>${node.name}</td>
             <td>${node.group}</td>
@@ -625,6 +678,7 @@
               <div class="inline-actions">
                 <button type="button" data-node="${node.name}" data-action="check">Check Closer</button>
                 <button type="button" data-node="${node.name}" data-action="apply">Apply</button>
+                ${removeBtn}
               </div>
             </td>
           `;
@@ -637,9 +691,97 @@
           btn.addEventListener("click", () => {
             const node = btn.getAttribute("data-node") || "";
             const action = btn.getAttribute("data-action") || "check";
+            if (action === "remove") {
+              deleteManualNode(node);
+              return;
+            }
             runProvision(node, action);
           });
         });
+      }
+
+      async function refreshCertificates() {
+        try {
+          const res = await fetch("/api/ssh/keys");
+          const data = await res.json();
+          manualNodeCertificateEl.innerHTML = "";
+
+          const noneOption = document.createElement("option");
+          noneOption.value = "";
+          noneOption.textContent = "None selected";
+          manualNodeCertificateEl.appendChild(noneOption);
+
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || "Failed to load certificates");
+          }
+          const keys = Array.isArray(data.keys) ? data.keys : [];
+          for (const key of keys) {
+            const keyName = String(key.key_name || "").trim();
+            if (!keyName) continue;
+            const opt = document.createElement("option");
+            opt.value = keyName;
+            opt.textContent = keyName;
+            manualNodeCertificateEl.appendChild(opt);
+          }
+        } catch (err) {
+          manualNodeStatus.textContent = `Certificate refresh error: ${String(err.message || err)}`;
+        }
+      }
+
+      async function addManualNode() {
+        const payload = {
+          name: manualNodeNameEl.value.trim(),
+          group: manualNodeGroupEl.value.trim() || "manual",
+          address: manualNodeAddressEl.value.trim(),
+          username: manualNodeUsernameEl.value.trim(),
+          password: manualNodePasswordEl.value,
+          default_shell: manualNodeShellEl.value.trim(),
+          certificate: manualNodeCertificateEl.value,
+        };
+        if (!payload.name) {
+          manualNodeStatus.textContent = "Node name is required.";
+          manualNodeNameEl.focus();
+          return;
+        }
+
+        manualNodeStatus.textContent = "Saving manual node...";
+        try {
+          const res = await fetch("/api/nodes/manual-nodes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || "Failed to save manual node");
+          }
+          manualNodeStatus.textContent = `Saved manual node '${payload.name}'.`;
+          manualNodePasswordEl.value = "";
+          await loadSummary();
+        } catch (err) {
+          manualNodeStatus.textContent = `Manual node save error: ${String(err.message || err)}`;
+        }
+      }
+
+      async function deleteManualNode(nodeName) {
+        if (!nodeName) return;
+        if (!confirm(`Remove manual node '${nodeName}'?`)) {
+          return;
+        }
+        manualNodeStatus.textContent = `Removing manual node '${nodeName}'...`;
+        try {
+          const res = await fetch(`/api/nodes/manual-nodes/${encodeURIComponent(nodeName)}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || "Failed to remove manual node");
+          }
+          manualNodeStatus.textContent = `Removed manual node '${nodeName}'.`;
+          await loadSummary();
+        } catch (err) {
+          manualNodeStatus.textContent = `Manual node delete error: ${String(err.message || err)}`;
+        }
       }
 
       async function loadSummary() {
@@ -653,6 +795,7 @@
         nodes = Array.isArray(data.nodes) ? data.nodes : [];
         profiles = Array.isArray(data.profiles) ? data.profiles : [];
         nodeInputs = (data.node_inputs && typeof data.node_inputs === "object") ? data.node_inputs : {};
+        manualNodes = (data.manual_nodes && typeof data.manual_nodes === "object") ? data.manual_nodes : {};
 
         statusByNode = {};
         for (const node of nodes) {
@@ -830,6 +973,8 @@
 
       provisionNode.addEventListener("change", renderProfileChecklist);
       document.getElementById("save-config").addEventListener("click", saveConfig);
+      document.getElementById("add-manual-node").addEventListener("click", addManualNode);
+      document.getElementById("refresh-certificates").addEventListener("click", refreshCertificates);
       document.getElementById("refresh-monitor").addEventListener("click", () => refreshMonitor(false));
       document.getElementById("refresh-monitor-webhook").addEventListener("click", () => refreshMonitor(true));
       document.getElementById("save-node-profiles").addEventListener("click", saveNodeProfiles);
@@ -839,6 +984,7 @@
       document.getElementById("check-all").addEventListener("click", () => runProvision("", "check"));
 
       initSidebar();
+      refreshCertificates();
       loadSummary().then(() => refreshMonitor(false));
       setInterval(() => {
         refreshMonitor(false);

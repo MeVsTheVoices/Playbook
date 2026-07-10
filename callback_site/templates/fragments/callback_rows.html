@@ -1,4 +1,25 @@
 {% for e in events %}
+{% set payload_envelope = {
+  "received_at": e.received_at,
+  "source_ip": e.source_ip,
+  "source_ip_source": e.source_ip_source,
+  "forwarded_for": e.forwarded_for,
+  "remote_addr": e.remote_addr,
+  "user_agent": e.user_agent,
+  "hostname": e.hostname,
+  "fqdn": e.fqdn,
+  "instance_id": e.instance_id,
+  "profile": (e.profile or "unknown"),
+  "raw_profile": (e.raw_profile or ""),
+  "profile_source": (e.profile_source or "unknown"),
+  "stage": (e.stage or "phone_home"),
+  "cert_subject": e.cert_subject,
+  "cert_issuer": e.cert_issuer,
+  "cert_fingerprint": e.cert_fingerprint,
+  "cert_present": e.cert_present,
+  "cert_header_present": e.cert_header_present,
+  "raw": (e.raw or {})
+} %}
 <tr>
   <td>{{ e.received_at }}</td>
   <td>{{ e.hostname or '-' }}</td>
@@ -44,9 +65,9 @@
     <details class="payload-details">
       <summary class="payload-summary">View payload</summary>
       <div class="payload-kv">
-        {{ (e.raw or {}) | length }} key{% if (e.raw or {}) | length != 1 %}s{% endif %} | stage: {{ e.stage or 'phone_home' }}
+        {{ (e.raw or {}) | length }} key{% if (e.raw or {}) | length != 1 %}s{% endif %} | profile: {{ e.profile or 'unknown' }} ({{ e.profile_source or 'unknown' }}) | stage: {{ e.stage or 'phone_home' }}
       </div>
-      <pre class="payload-json">{{ (e.raw or {}) | tojson(indent=2) }}</pre>
+      <pre class="payload-json">{{ payload_envelope | tojson(indent=2) }}</pre>
     </details>
   </td>
 </tr>

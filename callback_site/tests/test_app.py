@@ -723,6 +723,43 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(match[0].get("address"), "198.51.100.52")
         self.assertEqual(match[0].get("address_source"), "callback")
 
+    def test_nodes_summary_includes_latest_callback_metadata(self) -> None:
+        callback = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-01",
+                "instance_id": "iid-meta-01",
+                "profile": "pi5",
+                "stage": "runcmd",
+                "node_report": {"source": "unit-test"},
+            },
+            headers={
+                "X-Forwarded-For": "198.51.100.45",
+                "X-SSL-Client-Subject": "CN=rpi5-01",
+                "X-SSL-Client-Fingerprint": "AA:BB:CC:DD",
+            },
+        )
+        self.assertEqual(callback.status_code, 200)
+
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.get_json()
+        self.assertTrue(payload["ok"])
+        nodes = payload.get("nodes", [])
+        match = [n for n in nodes if n.get("name") == "rpi5-01"]
+        self.assertTrue(match)
+        row = match[0]
+        self.assertEqual(row.get("callback_profile"), "pi5")
+        self.assertEqual(row.get("callback_stage"), "runcmd")
+        self.assertEqual(row.get("callback_instance_id"), "iid-meta-01")
+        self.assertEqual(row.get("callback_source_ip"), "198.51.100.45")
+        self.assertEqual(row.get("callback_source_ip_source"), "x-forwarded-for")
+        self.assertTrue(row.get("callback_cert_present"))
+        self.assertEqual(row.get("callback_cert_subject"), "CN=rpi5-01")
+        self.assertEqual(row.get("callback_cert_fingerprint"), "AA:BB:CC:DD")
+        self.assertTrue(row.get("callback_node_report_present"))
+        self.assertTrue(str(row.get("callback_node_report_id", "")).strip())
+
     def test_nodes_monitor_surfaces_callback_last_seen(self) -> None:
         self.client.post(
             "/api/cloud-init/callback",
@@ -1542,6 +1579,74 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertFalse(missing_payload["ok"])
         self.assertEqual(missing_payload["error"], "missing required provisioning inputs")
         self.assertTrue(missing_payload.get("missing_inputs"))
+
+    def test_nodes_telegraf_test_uses_current_profile_inputs(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        nodes = summary.get_json().get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes in inventory for telegraf test endpoint")
+
+        node_name = nodes[0]["name"]
+
+        with patch.object(
+            callback_app,
+            "_telegraf_influx_dummy_check",
+            return_value={"ok": True, "checks": [{"name": "health", "ok": True}]},
+        ) as check_fn:
+            response = self.client.post(
+                "/api/nodes/telegraf/test",
+                json={
+                    "node": node_name,
+                    "profile_inputs": {
+                        "telegraf": {
+                            "influx_endpoint": "https://influx.example:8086",
+                            "influx_bucket": "telegraf",
+                            "influx_org": "homelab",
+                            "influx_access_key": "access",
+                            "influx_secret_key": "secret",
+                        }
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        check_fn.assert_called_once()
+        called_inputs = check_fn.call_args.args[0]
+        self.assertEqual(called_inputs.get("influx_endpoint"), "https://influx.example:8086")
+        self.assertEqual(called_inputs.get("influx_bucket"), "telegraf")
+
+    def test_nodes_telegraf_test_reports_missing_inputs(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        nodes = summary.get_json().get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes in inventory for telegraf validation test")
+
+        node_name = nodes[0]["name"]
+        response = self.client.post(
+            "/api/nodes/telegraf/test",
+            json={
+                "node": node_name,
+                "profile_inputs": {
+                    "telegraf": {
+                        "influx_endpoint": "",
+                        "influx_bucket": "",
+                        "influx_org": "",
+                        "influx_access_key": "",
+                        "influx_secret_key": "",
+                    }
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+        result = payload.get("result", {})
+        self.assertEqual(result.get("error"), "missing required telegraf inputs")
+        self.assertTrue(result.get("missing"))
 
         save_inputs = self.client.post(
             "/api/nodes/node-inputs",

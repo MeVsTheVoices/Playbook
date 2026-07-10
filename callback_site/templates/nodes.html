@@ -203,11 +203,29 @@
         font-size: 0.8rem;
         color: var(--muted);
       }
+      .action-sections {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.65rem;
+        margin-top: 0.8rem;
+      }
+      .action-group {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.55rem;
+        background: #f8fafc;
+      }
+      .action-group h4 {
+        margin: 0 0 0.45rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
       .actions {
         display: grid;
-        grid-template-columns: repeat(2, minmax(170px, 1fr));
+        grid-template-columns: 1fr;
         gap: 0.55rem;
-        margin-top: 0.8rem;
       }
       .inline-actions {
         display: flex;
@@ -273,7 +291,7 @@
       }
       @media (max-width: 900px) {
         th:nth-child(3), td:nth-child(3), th:nth-child(5), td:nth-child(5) { display: none; }
-        .actions { grid-template-columns: 1fr; }
+        .action-sections { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -379,12 +397,23 @@
             <div style="margin-top: 0.6rem;">
               <label><input type="checkbox" id="run-ansible" checked style="width:auto; margin-right:0.4rem;">Run ansible-playbook now</label>
             </div>
-            <div class="actions">
-              <button id="save-node-profiles">Save Node Config Set</button>
-              <button id="save-node-inputs" class="secondary">Save Profile Inputs</button>
-              <button id="check-selected" class="secondary">Check Closer (Selected Node)</button>
-              <button id="apply-selected">Apply Selected Node</button>
-              <button id="check-all" class="secondary">Check Closer (All Nodes)</button>
+            <div class="action-sections">
+              <div class="action-group">
+                <h4>Config + Validate</h4>
+                <div class="actions">
+                  <button id="save-node-profiles">Save Node Config Set</button>
+                  <button id="save-node-inputs" class="secondary">Save Profile Inputs</button>
+                  <button id="test-telegraf" class="secondary">Test Telegraf Influx Inputs</button>
+                </div>
+              </div>
+              <div class="action-group">
+                <h4>Run</h4>
+                <div class="actions">
+                  <button id="check-selected" class="secondary">Check Closer (Selected Node)</button>
+                  <button id="apply-selected">Apply Selected Node</button>
+                  <button id="check-all" class="secondary">Check Closer (All Nodes)</button>
+                </div>
+              </div>
             </div>
             <p id="provision-status" class="note"></p>
           </div>
@@ -456,6 +485,7 @@
       const profileList = document.getElementById("profile-list");
       const profileInputs = document.getElementById("profile-inputs");
       const runAnsible = document.getElementById("run-ansible");
+      const testTelegrafBtn = document.getElementById("test-telegraf");
       const statNodeCountEl = document.getElementById("stat-node-count");
       const statReachableCountEl = document.getElementById("stat-reachable-count");
       const statCallbackAddressCountEl = document.getElementById("stat-callback-address-count");
@@ -549,6 +579,22 @@
         return profiles.filter((p) => ids.includes(p.id));
       }
 
+      function updateProvisionActionState() {
+        const nodeName = provisionNode.value;
+        if (!nodeName) {
+          testTelegrafBtn.disabled = true;
+          testTelegrafBtn.title = "Select a node first.";
+          return;
+        }
+
+        const selectedProfiles = selectedProfilesForNode(nodeName).map((p) => p.id);
+        const hasTelegraf = selectedProfiles.includes("telegraf");
+        testTelegrafBtn.disabled = !hasTelegraf;
+        testTelegrafBtn.title = hasTelegraf
+          ? "Run dummy Influx connectivity + write checks"
+          : "Select the Telegraf profile to enable this test.";
+      }
+
       function browserTimezone() {
         try {
           const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -566,6 +612,7 @@
         profileInputs.innerHTML = "";
         if (!selectedProfiles.length) {
           profileInputs.textContent = "No selected profiles for this node.";
+          updateProvisionActionState();
           return;
         }
 
@@ -609,6 +656,7 @@
         if (!profileInputs.children.length) {
           profileInputs.textContent = "Selected profiles do not require extra inputs.";
         }
+        updateProvisionActionState();
       }
 
       profileList.addEventListener("change", () => {
@@ -839,6 +887,7 @@
         }
         renderProfileChecklist();
         renderRows();
+        updateProvisionActionState();
       }
 
       async function saveNodeInputs() {
@@ -860,6 +909,36 @@
         }
         provisionStatus.textContent = `Saved profile inputs for ${node}.`;
         await loadSummary();
+      }
+
+      async function testTelegrafInputs() {
+        const node = provisionNode.value;
+        if (!node) {
+          provisionStatus.textContent = "Select a node first.";
+          return;
+        }
+
+        provisionStatus.textContent = "Testing Telegraf Influx inputs...";
+        const res = await fetch("/api/nodes/telegraf/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node, profile_inputs: collectProfileInputs() }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+          const result = data.result || {};
+          const checks = Array.isArray(result.checks) ? result.checks : [];
+          const failing = checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.error || c.status || "failed"}`);
+          provisionStatus.textContent = failing.length
+            ? `Telegraf test failed: ${failing.join(" | ")}`
+            : (data.error || result.error || "Telegraf test failed.");
+          provisionLog.textContent = JSON.stringify(data, null, 2);
+          return;
+        }
+
+        provisionStatus.textContent = "Telegraf Influx test passed.";
+        provisionLog.textContent = JSON.stringify(data, null, 2);
       }
 
       async function refreshMonitor(sendWebhook) {
@@ -994,6 +1073,7 @@
       document.getElementById("refresh-monitor-webhook").addEventListener("click", () => refreshMonitor(true));
       document.getElementById("save-node-profiles").addEventListener("click", saveNodeProfiles);
       document.getElementById("save-node-inputs").addEventListener("click", saveNodeInputs);
+      document.getElementById("test-telegraf").addEventListener("click", testTelegrafInputs);
       document.getElementById("check-selected").addEventListener("click", () => runProvision(provisionNode.value, "check"));
       document.getElementById("apply-selected").addEventListener("click", () => runProvision(provisionNode.value, "apply"));
       document.getElementById("check-all").addEventListener("click", () => runProvision("", "check"));

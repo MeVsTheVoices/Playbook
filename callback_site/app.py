@@ -1162,6 +1162,56 @@ def nodes_node_inputs() -> Any:
     return jsonify({"ok": True, "node": node_name})
 
 
+def _merged_telegraf_inputs(state: Dict[str, Any], node_name: str, raw_inputs: Any) -> Dict[str, str]:
+    merged: Dict[str, str] = {}
+    saved_node_inputs = state.get("node_inputs", {}).get(node_name, {}) if isinstance(state.get("node_inputs", {}), dict) else {}
+
+    if isinstance(saved_node_inputs, dict):
+        saved_telegraf = saved_node_inputs.get("telegraf", {})
+        if isinstance(saved_telegraf, dict):
+            merged.update({str(k): str(v) for k, v in saved_telegraf.items()})
+
+    if isinstance(raw_inputs, dict):
+        candidate = raw_inputs.get("telegraf")
+        if isinstance(candidate, dict):
+            merged.update({str(k): str(v) for k, v in candidate.items()})
+        else:
+            direct_keys = {
+                "influx_endpoint",
+                "influx_bucket",
+                "influx_org",
+                "influx_access_key",
+                "influx_secret_key",
+            }
+            direct_values = {k: str(v) for k, v in raw_inputs.items() if str(k) in direct_keys}
+            if direct_values:
+                merged.update(direct_values)
+
+    return merged
+
+
+@app.post("/api/nodes/telegraf/test")
+def nodes_telegraf_test() -> Any:
+    payload = request.get_json(silent=True) or {}
+    node_name = str(payload.get("node", "")).strip()
+    raw_inputs = payload.get("profile_inputs") or {}
+
+    if not node_name:
+        return jsonify({"ok": False, "error": "node is required"}), 400
+
+    nodes = _node_ops_inventory_view()
+    node = next((n for n in nodes if n.get("name") == node_name), None)
+    if not node:
+        return jsonify({"ok": False, "error": "node not found in active node set"}), 404
+
+    state = _load_node_provisioning()
+    telegraf_inputs = _merged_telegraf_inputs(state, node_name, raw_inputs)
+
+    check = _telegraf_influx_dummy_check(telegraf_inputs)
+    status_code = 200 if check.get("ok") else 400
+    return jsonify({"ok": bool(check.get("ok")), "node": node_name, "result": check}), status_code
+
+
 @app.post("/api/nodes/provision")
 def nodes_provision() -> Any:
     payload = request.get_json(silent=True) or {}

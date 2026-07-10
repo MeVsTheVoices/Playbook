@@ -271,6 +271,23 @@
         font-size: 0.82rem;
       }
       .download-status-card .job-actions a:hover { text-decoration: underline; }
+      .catalog-availability-wrap {
+        max-height: none;
+        overflow: auto;
+        transition: max-height 0.2s ease;
+      }
+      .catalog-availability-wrap.compact {
+        max-height: 230px;
+      }
+      .catalog-availability-wrap.compact table {
+        table-layout: fixed;
+      }
+      .catalog-availability-wrap.compact td,
+      .catalog-availability-wrap.compact th {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     </style>
   </head>
   <body>
@@ -309,22 +326,25 @@
             <p class="hint">Rows show whether each distro image preset is already downloaded locally.</p>
             <div class="actions-row" style="margin-bottom: 0.55rem;">
               <button type="button" id="refresh-catalog-availability" style="width:auto;">Refresh availability</button>
+              <button type="button" id="toggle-catalog-compact" style="width:auto; background:#475569;">Shrink availability</button>
               <span class="hint" id="catalog-availability-status">Idle.</span>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Catalog ID</th>
-                  <th>Label</th>
-                  <th>URL</th>
-                  <th>Availability</th>
-                  <th>Cache Path</th>
-                </tr>
-              </thead>
-              <tbody id="catalog-availability-body">
-                <tr><td colspan="5">Loading catalog availability...</td></tr>
-              </tbody>
-            </table>
+            <div class="catalog-availability-wrap" id="catalog-availability-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Catalog ID</th>
+                    <th>Label</th>
+                    <th>URL</th>
+                    <th>Availability</th>
+                    <th>Cache Path</th>
+                  </tr>
+                </thead>
+                <tbody id="catalog-availability-body">
+                  <tr><td colspan="5">Loading catalog availability...</td></tr>
+                </tbody>
+              </table>
+            </div>
 
             <div style="margin-top: 0.9rem; border-top: 1px dashed var(--line); padding-top: 0.9rem;">
               <label for="catalog_pull_ids">Downloadable Distro Presets</label>
@@ -402,8 +422,15 @@
                 </select>
               </div>
               <div>
-                <label for="image_source">Source</label>
-                <input id="image_source" placeholder="image_url, image_file, default">
+                <label for="image_source">Source (Release Track)</label>
+                <select id="image_source">
+                  <option value="">Select release/track...</option>
+                </select>
+                <p class="hint" style="margin-top:0.3rem;">Shows images available for selected profile</p>
+              </div>
+              <div>
+                <label for="fallback_password">Fallback Password</label>
+                <input id="fallback_password" type="password" placeholder="Optional fallback login password">
               </div>
               <div>
                 <label for="image_source_value">Source Value</label>
@@ -464,6 +491,23 @@
             </tbody>
           </table>
         </div>
+
+        <div class="panel" id="cloud-init-viewer">
+          <div class="split-head" style="margin-bottom: 0.5rem;">
+            <h2>Cloud-Init Options Reference</h2>
+            <a class="mini-link" href="/api/sd/options-profiles" target="_blank" style="font-size: 0.75rem;">API endpoint</a>
+          </div>
+          <p class="hint">Configured cloud-init option profiles available for node provisioning. These templates can be selected during /api/sd/prepare to customize initialization.</p>
+          
+          <div style="margin-bottom: 1rem;">
+            <button type="button" id="refresh-cloud-init-profiles" style="width:auto;">Refresh Profiles</button>
+            <span class="hint" id="cloud-init-load-status">Loading profiles...</span>
+          </div>
+          
+          <div id="cloud-init-profiles-container" style="display: grid; gap: 0.75rem;">
+            <!-- Profiles rendered here -->
+          </div>
+        </div>
       </div>
     </main>
 
@@ -477,6 +521,7 @@
       const imageLabelEl = document.getElementById("image_label");
       const imageProfileEl = document.getElementById("image_profile");
       const imageSourceEl = document.getElementById("image_source");
+      const fallbackPasswordEl = document.getElementById("fallback_password");
       const imageSourceValueEl = document.getElementById("image_source_value");
       const imageDownloadPathEl = document.getElementById("image_download_path");
       const imageHashStatusEl = document.getElementById("image_hash_status");
@@ -496,12 +541,16 @@
       const catalogPullSubstatusEl = document.getElementById("catalog-pull-substatus");
       const catalogAvailabilityBodyEl = document.getElementById("catalog-availability-body");
       const catalogAvailabilityStatusEl = document.getElementById("catalog-availability-status");
+      const catalogAvailabilityWrapEl = document.getElementById("catalog-availability-wrap");
+      const toggleCatalogCompactBtn = document.getElementById("toggle-catalog-compact");
       const catalogSourceCountEl = document.getElementById("catalog-source-count");
       const catalogSourceSummaryEl = document.getElementById("catalog-source-summary");
       const catalogSourcePanelEl = document.getElementById("catalog-source-panel");
       let currentCatalogPullJob = null;
       let catalogRefreshTimer = null;
       let managedImageRecords = [];
+      const cloudInitProfilesContainerEl = document.getElementById("cloud-init-profiles-container");
+      const cloudInitLoadStatusEl = document.getElementById("cloud-init-load-status");
 
       function availabilityGlyph(available) {
         return available ? "✅" : "❌";
@@ -509,6 +558,15 @@
 
       function availabilityLabel(available) {
         return available ? "downloaded" : "missing";
+      }
+
+      function setCatalogAvailabilityCompact(compact, persist = true) {
+        if (!catalogAvailabilityWrapEl || !toggleCatalogCompactBtn) return;
+        catalogAvailabilityWrapEl.classList.toggle("compact", !!compact);
+        toggleCatalogCompactBtn.textContent = compact ? "Expand availability" : "Shrink availability";
+        if (persist) {
+          localStorage.setItem("catalog-availability-compact", compact ? "1" : "0");
+        }
       }
 
       function formatJobTiming(job) {
@@ -564,11 +622,26 @@
         localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
       });
 
+      function updateSourceOptions() {
+        const profile = String(imageProfileEl.value || "").trim();
+        const filtered = profile
+          ? imageCatalog.filter((e) => (e.profiles || []).includes(profile))
+          : [];
+        imageSourceEl.innerHTML = `<option value="">Select release/track...</option>`;
+        filtered.forEach((entry) => {
+          const option = document.createElement("option");
+          option.value = entry.id;
+          option.textContent = `${entry.release} (${entry.distro}, ${entry.arch})`;
+          imageSourceEl.appendChild(option);
+        });
+      }
+
       function clearImageRecordForm() {
         imageRecordIdEl.value = "";
         imageLabelEl.value = "";
         imageProfileEl.value = "";
         imageSourceEl.value = "";
+        fallbackPasswordEl.value = "";
         imageSourceValueEl.value = "";
         imageDownloadPathEl.value = "";
         imageHashStatusEl.value = "";
@@ -619,7 +692,9 @@
         imageRecordIdEl.value = record.id || "";
         imageLabelEl.value = record.label || "";
         imageProfileEl.value = record.profile || "";
+        updateSourceOptions();
         imageSourceEl.value = record.source || "";
+        fallbackPasswordEl.value = record.fallback_password || "";
         imageSourceValueEl.value = record.source_value || "";
         imageDownloadPathEl.value = record.download_path || "";
         imageHashStatusEl.value = record.hash_status || "";
@@ -720,6 +795,7 @@
           observed_sha256: imageObservedShaEl.value.trim(),
           job_status: imageJobStatusEl.value.trim(),
           exit_code: imageExitCodeEl.value.trim() === "" ? null : Number(imageExitCodeEl.value),
+          fallback_password: fallbackPasswordEl.value.trim(),
           notes: imageNotesEl.value.trim(),
         };
 
@@ -961,6 +1037,64 @@
         pollCatalogPullJob();
       }
 
+      async function loadCloudInitProfiles() {
+        cloudInitLoadStatusEl.textContent = "Loading profiles...";
+        const res = await fetch("/api/sd/options-profiles");
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          cloudInitLoadStatusEl.textContent = data.error || "Failed to load cloud-init profiles.";
+          return;
+        }
+        const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+        cloudInitProfilesContainerEl.innerHTML = "";
+        
+        if (!profiles.length) {
+          const emptyDiv = document.createElement("div");
+          emptyDiv.className = "panel";
+          emptyDiv.style.padding = "0.8rem";
+          emptyDiv.innerHTML = "<p class='hint'>No cloud-init option profiles configured yet. Create one via /api/sd/options-profiles POST.</p>";
+          cloudInitProfilesContainerEl.appendChild(emptyDiv);
+          cloudInitLoadStatusEl.textContent = "No profiles found.";
+          return;
+        }
+        
+        for (const profile of profiles) {
+          const profileCard = document.createElement("div");
+          profileCard.className = "panel";
+          profileCard.style.padding = "0.85rem";
+          
+          const nameEl = document.createElement("h3");
+          nameEl.style.margin = "0 0 0.4rem";
+          nameEl.textContent = profile.name || "(unnamed)";
+          profileCard.appendChild(nameEl);
+          
+          if (profile.description) {
+            const descEl = document.createElement("p");
+            descEl.className = "hint";
+            descEl.textContent = profile.description;
+            profileCard.appendChild(descEl);
+          }
+          
+          const updatedEl = document.createElement("p");
+          updatedEl.className = "hint";
+          updatedEl.style.fontSize = "0.75rem";
+          const dateStr = profile.updated_at ? new Date(profile.updated_at).toLocaleString() : "unknown";
+          updatedEl.textContent = `Updated: ${dateStr}`;
+          profileCard.appendChild(updatedEl);
+          
+          const optionsEl = document.createElement("pre");
+          optionsEl.className = "job-log";
+          optionsEl.style.maxHeight = "150px";
+          optionsEl.style.marginTop = "0.5rem";
+          optionsEl.textContent = JSON.stringify(profile.options || {}, null, 2);
+          profileCard.appendChild(optionsEl);
+          
+          cloudInitProfilesContainerEl.appendChild(profileCard);
+        }
+        
+        cloudInitLoadStatusEl.textContent = `Loaded ${profiles.length} profile(s).`;
+      }
+
       function startCatalogRefreshTimer() {
         if (catalogRefreshTimer) {
           clearInterval(catalogRefreshTimer);
@@ -968,6 +1102,7 @@
         catalogRefreshTimer = setInterval(() => {
           loadCatalogAvailability();
           loadImageCatalog();
+          loadCloudInitProfiles();
           if (!currentCatalogPullJob) {
             setPullCardState(null);
           }
@@ -978,6 +1113,14 @@
       document.getElementById("clear-image-record").addEventListener("click", clearImageRecordForm);
       document.getElementById("start-catalog-pull").addEventListener("click", startCatalogPull);
       document.getElementById("refresh-catalog-availability").addEventListener("click", loadCatalogAvailability);
+      document.getElementById("refresh-cloud-init-profiles").addEventListener("click", loadCloudInitProfiles);
+      if (toggleCatalogCompactBtn) {
+        toggleCatalogCompactBtn.addEventListener("click", () => {
+          const compact = !catalogAvailabilityWrapEl.classList.contains("compact");
+          setCatalogAvailabilityCompact(compact);
+        });
+      }
+      imageProfileEl.addEventListener("change", updateSourceOptions);
 
       if (catalogSourcePanelEl) {
         const saved = localStorage.getItem("image-source-panel-open");
@@ -990,9 +1133,11 @@
       }
 
       initSidebar();
+      setCatalogAvailabilityCompact(localStorage.getItem("catalog-availability-compact") === "1", false);
       loadCatalogAvailability();
       loadImageCatalog();
       loadManagedImages();
+      loadCloudInitProfiles();
       startCatalogRefreshTimer();
     </script>
   </body>

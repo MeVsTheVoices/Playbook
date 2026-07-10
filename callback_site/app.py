@@ -17,22 +17,27 @@ LOG_DIR = APPDATA_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "callback_site.log"
 
-# Configure logging with rotation
-log_handler = RotatingFileHandler(
-    str(LOG_FILE),
-    maxBytes=10 * 1024 * 1024,  # 10MB
-    backupCount=10,  # Keep 10 rotated files
-)
+# Configure logging with rotation when the log file path is writable.
 log_formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-log_handler.setFormatter(log_formatter)
+log_handler = None
+try:
+    log_handler = RotatingFileHandler(
+        str(LOG_FILE),
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=10,  # Keep 10 rotated files
+    )
+    log_handler.setFormatter(log_formatter)
+except OSError:
+    log_handler = None
 
 # Get root logger and configure
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
-root_logger.addHandler(log_handler)
+if log_handler is not None:
+    root_logger.addHandler(log_handler)
 
 # Also log to console
 console_handler = logging.StreamHandler()
@@ -292,11 +297,46 @@ def _infer_profile_from_text(*values: str) -> str:
     return ""
 
 
+def _extract_payload_profile(payload: Any, depth: int = 0) -> str:
+    if depth > 4:
+        return ""
+    if isinstance(payload, dict):
+        for key in (
+            "profile",
+            "profile_name",
+            "image_profile",
+            "rack_profile",
+            "role",
+            "group",
+            "ansible_group",
+            "provision_profile",
+        ):
+            value = str(payload.get(key, "")).strip().lower()
+            if value in {"pi5", "pibplus"}:
+                return value
+            inferred = _infer_profile_from_text(value)
+            if inferred:
+                return inferred
+        for value in payload.values():
+            inferred = _extract_payload_profile(value, depth + 1)
+            if inferred:
+                return inferred
+        return ""
+    if isinstance(payload, list):
+        for item in payload:
+            inferred = _extract_payload_profile(item, depth + 1)
+            if inferred:
+                return inferred
+        return ""
+    if isinstance(payload, str):
+        return _infer_profile_from_text(payload)
+    return ""
+
+
 def _normalize_profile(payload: Dict[str, Any], hostname: str, instance_id: str) -> str:
-    for key in ("profile", "profile_name", "image_profile", "rack_profile", "role"):
-        value = str(payload.get(key, "")).strip().lower()
-        if value in {"pi5", "pibplus"}:
-            return value
+    payload_profile = _extract_payload_profile(payload)
+    if payload_profile:
+        return payload_profile
 
     inferred = _infer_profile_from_text(hostname, instance_id, payload.get("fqdn", ""))
     if inferred:
@@ -354,7 +394,10 @@ def callback() -> Any:
     logger.debug(f"Callback received with payload keys: {list(payload.keys())}")
 
     forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
-    source_ip, source_ip_source = _resolve_source_ip(payload)
+    instance_id = _normalize_instance_id(payload)
+    hostname = _normalize_hostname(payload)
+    fqdn = str(payload.get("fqdn") or payload.get("host_fqdn") or "").strip()
+    source_ip, source_ip_source = _resolve_source_ip(payload, hostname=hostname, fqdn=fqdn)
     cert_subject = _header_or_payload(
         payload,
         "X-SSL-Client-Subject",
@@ -390,15 +433,15 @@ def callback() -> Any:
         "client_cert",
     )
 
-    instance_id = _normalize_instance_id(payload)
-    hostname = _normalize_hostname(payload)
-    fqdn = str(payload.get("fqdn") or payload.get("host_fqdn") or "").strip()
+    raw_profile = _extract_payload_profile(payload)
     profile = _normalize_profile(payload, hostname, instance_id)
+    profile_source = "payload" if raw_profile else "inferred"
     stage = _normalize_stage(payload)
     recent_defaults = _recent_event_defaults(hostname, instance_id, fqdn)
 
     if profile == "unknown" and recent_defaults.get("profile") not in {"", "unknown"}:
         profile = str(recent_defaults.get("profile", "")).strip().lower()
+        profile_source = "recent_event"
     if stage == "phone_home" and recent_defaults.get("stage"):
         stage = str(recent_defaults.get("stage", "")).strip()
 
@@ -418,6 +461,8 @@ def callback() -> Any:
         "hostname": hostname,
         "fqdn": fqdn,
         "profile": profile,
+        "raw_profile": raw_profile,
+        "profile_source": profile_source,
         "stage": stage,
         "cert_subject": cert_subject,
         "cert_issuer": cert_issuer,
@@ -433,6 +478,8 @@ def callback() -> Any:
         logger.info(f"Hardware check reported: hostname={event.get('hostname')}, hardware={hardware_data}")
     
     _append_event(event)
+    _backfill_event_profile(hostname, instance_id, fqdn, profile)
+    _backfill_event_source_ip(hostname, instance_id, fqdn, source_ip, source_ip_source)
     return jsonify({"ok": True})
 
 
@@ -595,15 +642,20 @@ def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
         if lowered in seen:
             return
         seen.add(lowered)
+        hostname = str(event.get("hostname", "") or "").strip()
+        fqdn = str(event.get("fqdn", "") or "").strip()
+        profile = str(event.get("profile", "") or "").strip()
         targets.append(
             {
                 "host": value,
                 "source": source,
-                "hostname": str(event.get("hostname", "") or "").strip(),
-                "fqdn": str(event.get("fqdn", "") or "").strip(),
+                "hostname": hostname,
+                "fqdn": fqdn,
                 "instance_id": str(event.get("instance_id", "") or "").strip(),
-                "profile": str(event.get("profile", "") or "").strip(),
+                "profile": profile,
                 "last_seen": str(event.get("received_at", "") or "").strip(),
+                "usable_callback_ip": _is_usable_callback_ip(value) if source == "source_ip" else None,
+                "label_hint": hostname or fqdn or profile,
             }
         )
 
@@ -626,7 +678,7 @@ def test_terminal_targets() -> Any:
 def test_terminal_start() -> Any:
     payload = request.get_json(silent=True) or {}
     host = str(payload.get("host", payload.get("hostname", ""))).strip()
-    username = str(payload.get("username", "ops")).strip() or "ops"
+    username = str(payload.get("username", "jdizzle")).strip() or "jdizzle"
     key_name = str(payload.get("key_name", "rack-bootstrap-ed25519")).strip() or "rack-bootstrap-ed25519"
     check_id = str(payload.get("check_id", "identity")).strip() or "identity"
     port = int(payload.get("port", 22) or 22)
@@ -720,6 +772,7 @@ def nodes_summary() -> Any:
             "config": masked,
             "profiles": NODE_PROVISION_PROFILES,
             "node_inputs": provision.get("node_inputs", {}),
+            "manual_nodes": provision.get("manual_nodes", {}),
             "image_summary": _image_state_summary(),
         }
     )
@@ -904,8 +957,66 @@ def nodes_profiles() -> Any:
             "profiles": NODE_PROVISION_PROFILES,
             "node_configs": state.get("node_configs", {}),
             "node_inputs": state.get("node_inputs", {}),
+            "manual_nodes": state.get("manual_nodes", {}),
         }
     )
+
+
+@app.post("/api/nodes/manual-nodes")
+def nodes_manual_node_upsert() -> Any:
+    payload = request.get_json(silent=True) or {}
+    node_name = str(payload.get("name", "")).strip()
+    if not node_name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", node_name):
+        return jsonify({"ok": False, "error": "invalid node name"}), 400
+
+    group = str(payload.get("group", "manual")).strip() or "manual"
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", group):
+        return jsonify({"ok": False, "error": "invalid group"}), 400
+
+    state = _load_node_provisioning()
+    manual_nodes = state.setdefault("manual_nodes", {})
+    manual_nodes[node_name] = {
+        "name": node_name,
+        "group": group,
+        "address": str(payload.get("address", "")).strip(),
+        "username": str(payload.get("username", "")).strip(),
+        "password": str(payload.get("password", "")),
+        "default_shell": str(payload.get("default_shell", "")).strip(),
+        "certificate": str(payload.get("certificate", "")).strip(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_node_provisioning(state)
+
+    redacted = dict(manual_nodes[node_name])
+    redacted["password_set"] = bool(redacted.get("password"))
+    redacted.pop("password", None)
+    return jsonify({"ok": True, "node": redacted})
+
+
+@app.delete("/api/nodes/manual-nodes/<node_name>")
+def nodes_manual_node_delete(node_name: str) -> Any:
+    name = str(node_name or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "node name is required"}), 400
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        return jsonify({"ok": False, "error": "invalid node name"}), 400
+
+    state = _load_node_provisioning()
+    manual_nodes = state.setdefault("manual_nodes", {})
+    if name not in manual_nodes:
+        return jsonify({"ok": False, "error": "manual node not found"}), 404
+
+    manual_nodes.pop(name, None)
+    node_configs = state.setdefault("node_configs", {})
+    node_inputs = state.setdefault("node_inputs", {})
+    node_results = state.setdefault("results", {})
+    node_configs.pop(name, None)
+    node_inputs.pop(name, None)
+    node_results.pop(name, None)
+    _save_node_provisioning(state)
+    return jsonify({"ok": True, "node": name})
 
 
 @app.post("/api/nodes/node-configs")

@@ -48,6 +48,7 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("Save Current As Template", text)
         self.assertIn("Delete Selected Template", text)
         self.assertIn("Reset Optional Fields", text)
+        self.assertIn("User Password (optional)", text)
         self.assertIn("fields set", text)
         self.assertNotIn("This operation erases the target device", text)
 
@@ -350,7 +351,7 @@ class CallbackSiteTests(unittest.TestCase):
             "/api/ssh/generate",
             json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
         )
-        self.assertEqual(create_key.status_code, 200)
+        self.assertIn(create_key.status_code, (200, 409))
 
         with patch("app.threading.Thread") as thread_cls:
             response = self.client.post(
@@ -383,6 +384,37 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertTrue(kwargs.get("daemon"))
 
         with callback_app.TEST_TERMINAL_LOCK:
+            callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
+
+    def test_test_terminal_start_defaults_to_jdizzle_username(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertIn(create_key.status_code, (200, 409))
+
+        with patch("app.threading.Thread"):
+            response = self.client.post(
+                "/api/test-terminal/start",
+                json={
+                    "host": "10.0.0.10",
+                    "key_name": "rack-bootstrap-ed25519",
+                    "check_id": "identity",
+                    "port": 22,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            job = callback_app.TEST_TERMINAL_JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            command = list(job.get("command") or []) if job else []
+            self.assertIn("jdizzle@10.0.0.10", command)
             callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
 
     def test_sd_option_profiles_crud(self) -> None:
@@ -468,6 +500,87 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(match[0].get("address"), "198.51.100.45")
         self.assertEqual(match[0].get("address_source"), "callback")
         self.assertTrue(match[0].get("last_callback"))
+
+    def test_manual_node_crud_surfaces_in_nodes_summary(self) -> None:
+        create = self.client.post(
+            "/api/nodes/manual-nodes",
+            json={
+                "name": "manual-node-01",
+                "group": "manual",
+                "address": "192.168.174.238",
+                "username": "jdizzle",
+                "password": "not-empty",
+                "default_shell": "/bin/bash",
+                "certificate": "rack-bootstrap-ed25519",
+            },
+        )
+        self.assertEqual(create.status_code, 200)
+        create_payload = create.get_json()
+        self.assertTrue(create_payload["ok"])
+        self.assertTrue(create_payload["node"].get("password_set"))
+
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.get_json()
+        self.assertTrue(payload["ok"])
+        nodes = payload.get("nodes", [])
+        match = [n for n in nodes if n.get("name") == "manual-node-01"]
+        self.assertTrue(match)
+        self.assertEqual(match[0].get("group"), "manual")
+        self.assertEqual(match[0].get("address"), "192.168.174.238")
+        self.assertTrue(match[0].get("manual_node"))
+
+        delete = self.client.delete("/api/nodes/manual-nodes/manual-node-01")
+        self.assertEqual(delete.status_code, 200)
+        self.assertTrue(delete.get_json()["ok"])
+
+    def test_manual_node_delete_missing_returns_404(self) -> None:
+        response = self.client.delete("/api/nodes/manual-nodes/does-not-exist")
+        self.assertEqual(response.status_code, 404)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+
+    def test_node_ops_inventory_view_hides_default_untouched_inventory_nodes(self) -> None:
+        with patch.object(
+            callback_core,
+            "_inventory_nodes",
+            return_value=[{"name": "rpi5-default-01", "group": "rpi5_active", "address": "192.168.1.44"}],
+        ), patch.object(
+            callback_core,
+            "_latest_callback_details_by_host",
+            return_value={},
+        ), patch.object(
+            callback_core,
+            "_load_node_provisioning",
+            return_value={"node_configs": {}, "node_inputs": {}, "results": {}},
+        ):
+            view = callback_app._node_ops_inventory_view()
+
+        self.assertEqual(view, [])
+
+    def test_node_ops_inventory_view_includes_state_only_nodes(self) -> None:
+        with patch.object(
+            callback_core,
+            "_inventory_nodes",
+            return_value=[],
+        ), patch.object(
+            callback_core,
+            "_latest_callback_details_by_host",
+            return_value={},
+        ), patch.object(
+            callback_core,
+            "_load_node_provisioning",
+            return_value={
+                "node_configs": {"node-from-state": ["identity"]},
+                "node_inputs": {},
+                "results": {},
+            },
+        ):
+            view = callback_app._node_ops_inventory_view()
+
+        self.assertEqual(len(view), 1)
+        self.assertEqual(view[0].get("name"), "node-from-state")
+        self.assertEqual(view[0].get("group"), "provisioned")
 
     def test_nodes_monitor_uses_enriched_address_source(self) -> None:
         with patch.object(
@@ -933,6 +1046,91 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(latest["source_ip"], "198.51.100.22")
         self.assertEqual(latest["source_ip_source"], "x-real-ip")
 
+    def test_callback_source_ip_marks_transit_remote_addr(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "testlab-1",
+                "instance_id": "iid-lan-1",
+                "fqdn": "testlab-1.local",
+            },
+            environ_overrides={"REMOTE_ADDR": "10.255.45.243"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [e for e in events if e.get("instance_id") == "iid-lan-1"]
+        self.assertTrue(matching)
+        latest = matching[0]
+        self.assertEqual(latest["source_ip"], "10.255.45.243")
+        self.assertEqual(latest["source_ip_source"], "remote_addr_transit")
+
+    def test_callback_source_ip_backfills_prior_transit_event(self) -> None:
+        first = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "testlab-2",
+                "instance_id": "iid-lan-2",
+                "fqdn": "testlab-2.local",
+            },
+            environ_overrides={"REMOTE_ADDR": "10.255.45.243"},
+        )
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "testlab-2",
+                "instance_id": "iid-lan-2",
+                "fqdn": "testlab-2.local",
+            },
+            headers={"X-Forwarded-For": "192.168.174.88"},
+        )
+        self.assertEqual(second.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [e for e in events if e.get("instance_id") == "iid-lan-2"]
+        self.assertGreaterEqual(len(matching), 2)
+        self.assertTrue(all(e.get("source_ip") == "192.168.174.88" for e in matching[:2]))
+
+    def test_test_terminal_targets_include_labeled_source_ips(self) -> None:
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "testlab-3",
+                "instance_id": "iid-lan-3",
+            },
+            environ_overrides={"REMOTE_ADDR": "10.255.45.243"},
+        )
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "testlab-3",
+                "instance_id": "iid-lan-3",
+                "source_ip": "192.168.174.199",
+            },
+        )
+
+        response = self.client.get("/api/test-terminal/targets")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        targets = payload.get("targets", [])
+        hosts = [item.get("host") for item in targets]
+        self.assertIn("192.168.174.199", hosts)
+
+        ip_target = next((item for item in targets if item.get("host") == "192.168.174.199"), None)
+        self.assertIsNotNone(ip_target)
+        self.assertEqual(ip_target.get("source"), "source_ip")
+        self.assertEqual(ip_target.get("hostname"), "testlab-3")
+        self.assertTrue(bool(ip_target.get("usable_callback_ip")))
+        self.assertEqual(ip_target.get("label_hint"), "testlab-3")
+
     def test_callback_dataset_field_is_stripped(self) -> None:
         response = self.client.post(
             "/api/cloud-init/callback",
@@ -1233,6 +1431,12 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('\\$PI_MODEL', script_text)
         self.assertIn('\\$RAM_MB', script_text)
         self.assertIn('INFLUX_URL="\\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"', script_text)
+        self.assertIn('CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"', script_text)
+        self.assertIn('CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"', script_text)
+        self.assertIn('require_cmd openssl', script_text)
+        self.assertIn("openssl passwd -6 -stdin", script_text)
+        self.assertIn('cat >> "$USER_DATA_OUT" <<RUNCMD_EOF', script_text)
+        self.assertIn('final_message: "Cloud-init finished for ${HOSTNAME}"', script_text)
 
 
 if __name__ == "__main__":

@@ -1037,14 +1037,38 @@ def _save_node_provisioning(state: Dict[str, Any]) -> None:
 
 
 def _reset_node_ops_settings() -> Dict[str, Any]:
+    def _purge_files(path: Path) -> int:
+        if not path.exists() or not path.is_dir():
+            return 0
+        removed = 0
+        for child in path.iterdir():
+            if child.is_file():
+                try:
+                    child.unlink()
+                    removed += 1
+                except OSError:
+                    continue
+        return removed
+
     _ensure_data_file()
     node_cfg = _default_node_config()
     node_prov = _default_node_provisioning()
     NODE_CONFIG_FILE.write_text(json.dumps(node_cfg, indent=2), encoding="utf-8")
     NODE_PROVISION_FILE.write_text(json.dumps(node_prov, indent=2), encoding="utf-8")
+
+    deleted_ssh_files = _purge_files(KEYS_DIR)
+    deleted_archive_files = _purge_files(KEY_ARCHIVE_DIR)
+    if KEY_ARCHIVE_INDEX_FILE.exists():
+        try:
+            KEY_ARCHIVE_INDEX_FILE.unlink()
+        except OSError:
+            pass
     return {
         "node_config": True,
         "node_provisioning": True,
+        "deleted_ssh_files": deleted_ssh_files,
+        "deleted_archive_files": deleted_archive_files,
+        "deleted_archive_index": not KEY_ARCHIVE_INDEX_FILE.exists(),
     }
 
 
@@ -1491,6 +1515,29 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
             "password_set": bool(str(entry.get("password", ""))),
         }
 
+    # Callback-discovered nodes should appear even when not yet in inventory or
+    # provisioning state so Node Ops can immediately act on fresh callbacks.
+    for discovered_name, details in callback_details.items():
+        node_name = str(discovered_name or "").strip()
+        if not node_name or node_name in inventory_by_name:
+            continue
+        if "." in node_name and node_name.split(".", 1)[0] in callback_details:
+            # Avoid duplicate rows when both fqdn and short hostname aliases exist.
+            continue
+        profile = str(details.get("profile", "")).strip().lower()
+        if profile == "pi5":
+            group = "rpi5_active"
+        elif profile == "pibplus":
+            group = "rpi_bplus_active"
+        else:
+            group = "callback"
+        inventory_by_name[node_name] = {
+            "name": node_name,
+            "group": group,
+            "address": str(details.get("source_ip", "")).strip(),
+            "address_source": "callback",
+        }
+
     # Provisioning state can reference nodes not yet present in inventory groups.
     for name in sorted(state_node_names):
         if name in inventory_by_name:
@@ -1519,7 +1566,10 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
         callback_ip = str(callback.get("source_ip", "")).strip()
         inventory_addr = str(node.get("address", "")).strip()
 
-        if _is_usable_callback_ip(callback_ip) and _is_placeholder_inventory_address(inventory_addr):
+        if str(node.get("address_source", "")).strip() == "callback":
+            item["address"] = inventory_addr or callback_ip
+            item["address_source"] = "callback"
+        elif _is_usable_callback_ip(callback_ip) and _is_placeholder_inventory_address(inventory_addr):
             item["address"] = callback_ip
             item["address_source"] = "callback"
         else:

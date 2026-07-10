@@ -209,7 +209,8 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
         <div class="panel">
           <h2>Clean Slate: Node Ops Configuration</h2>
           <p class="note">
-            Clears saved Node Ops credentials, per-node profile assignments, stored profile inputs, and recorded provisioning results.
+            Clears saved Node Ops credentials, per-node profile assignments, stored profile inputs, recorded provisioning results,
+            and deletes locally stored SSH key/certificate material.
           </p>
           <button id="reset-node-ops" class="danger">Reset Node Ops State</button>
           <div id="settings-status" class="status">Idle.</div>
@@ -254,7 +255,7 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
       });
 
       async function resetNodeOps() {
-        const confirmed = window.confirm("Reset saved Node Ops config, node profile selections, and inputs?");
+        const confirmed = window.confirm("Reset Node Ops state and delete stored SSH key/certificate files?");
         if (!confirmed) {
           return;
         }

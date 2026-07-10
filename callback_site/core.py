@@ -4,6 +4,7 @@ import json
 import os
 import logging
 import hashlib
+import ipaddress
 import queue
 import re
 import socket
@@ -262,6 +263,102 @@ def _read_events(limit: int = 200) -> List[Dict[str, Any]]:
             continue
     events.reverse()
     return events
+
+
+def _backfill_event_profile(hostname: str, instance_id: str, fqdn: str, profile: str) -> int:
+    profile_value = str(profile or "").strip().lower()
+    if profile_value not in {"pi5", "pibplus"}:
+        return 0
+
+    _ensure_data_file()
+    lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        return 0
+
+    updated = 0
+    rewritten: List[str] = []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            rewritten.append(line)
+            continue
+
+        event_profile = str(event.get("profile", "")).strip().lower()
+        if event_profile and event_profile != "unknown":
+            rewritten.append(line)
+            continue
+
+        matches = False
+        if hostname and str(event.get("hostname", "")).strip() == hostname:
+            matches = True
+        if instance_id and str(event.get("instance_id", "")).strip() == instance_id:
+            matches = True
+        if fqdn and str(event.get("fqdn", "")).strip() == fqdn:
+            matches = True
+
+        if not matches:
+            rewritten.append(line)
+            continue
+
+        event["profile"] = profile_value
+        event["profile_source"] = event.get("profile_source") or "backfilled"
+        rewritten.append(json.dumps(event, separators=(",", ":")))
+        updated += 1
+
+    if updated:
+        DATA_FILE.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+    return updated
+
+
+def _backfill_event_source_ip(hostname: str, instance_id: str, fqdn: str, source_ip: str, source_ip_source: str) -> int:
+    ip_value = _normalize_ip(source_ip)
+    if not ip_value or _is_transit_hop_ip(ip_value):
+        return 0
+
+    _ensure_data_file()
+    lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        return 0
+
+    updated = 0
+    rewritten: List[str] = []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            rewritten.append(line)
+            continue
+
+        matches = False
+        if hostname and str(event.get("hostname", "")).strip() == hostname:
+            matches = True
+        if instance_id and str(event.get("instance_id", "")).strip() == instance_id:
+            matches = True
+        if fqdn and str(event.get("fqdn", "")).strip() == fqdn:
+            matches = True
+        if not matches:
+            rewritten.append(line)
+            continue
+
+        current_ip = _normalize_ip(str(event.get("source_ip", "")))
+        current_source = str(event.get("source_ip_source", "")).strip().lower()
+        if current_ip == ip_value:
+            rewritten.append(line)
+            continue
+
+        if current_source in {"remote_addr", ""} or _is_transit_hop_ip(current_ip):
+            event["source_ip"] = ip_value
+            event["source_ip_source"] = source_ip_source or "backfilled"
+            rewritten.append(json.dumps(event, separators=(",", ":")))
+            updated += 1
+            continue
+
+        rewritten.append(line)
+
+    if updated:
+        DATA_FILE.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+    return updated
 
 
 def _append_image_history(entry: Dict[str, Any]) -> None:
@@ -637,7 +734,7 @@ def _default_node_config() -> Dict[str, Any]:
 
 
 def _default_node_provisioning() -> Dict[str, Any]:
-    return {"node_configs": {}, "results": {}, "node_inputs": {}}
+    return {"node_configs": {}, "results": {}, "node_inputs": {}, "manual_nodes": {}}
 
 
 def _default_monitor_state() -> Dict[str, Any]:
@@ -906,13 +1003,16 @@ def _load_node_provisioning() -> Dict[str, Any]:
     node_configs = loaded.get("node_configs", {})
     results = loaded.get("results", {})
     node_inputs = loaded.get("node_inputs", {})
+    manual_nodes = loaded.get("manual_nodes", {})
     if not isinstance(node_configs, dict):
         node_configs = {}
     if not isinstance(results, dict):
         results = {}
     if not isinstance(node_inputs, dict):
         node_inputs = {}
-    return {"node_configs": node_configs, "results": results, "node_inputs": node_inputs}
+    if not isinstance(manual_nodes, dict):
+        manual_nodes = {}
+    return {"node_configs": node_configs, "results": results, "node_inputs": node_inputs, "manual_nodes": manual_nodes}
 
 
 def _save_node_provisioning(state: Dict[str, Any]) -> None:
@@ -1329,19 +1429,81 @@ def _latest_callback_details_by_host(limit: int = 2000) -> Dict[str, Dict[str, s
 def _node_ops_inventory_view() -> List[Dict[str, Any]]:
     nodes = _inventory_nodes()
     callback_details = _latest_callback_details_by_host()
+    provision_state = _load_node_provisioning()
+
+    node_configs = provision_state.get("node_configs", {}) if isinstance(provision_state.get("node_configs"), dict) else {}
+    node_inputs = provision_state.get("node_inputs", {}) if isinstance(provision_state.get("node_inputs"), dict) else {}
+    node_results = provision_state.get("results", {}) if isinstance(provision_state.get("results"), dict) else {}
+    manual_nodes = provision_state.get("manual_nodes", {}) if isinstance(provision_state.get("manual_nodes"), dict) else {}
+
+    # Show Node Ops rows only when we have prior callback/provisioning state.
+    state_node_names: set[str] = set()
+    for source in (node_configs, node_inputs, node_results, manual_nodes):
+        for raw_name in source.keys():
+            name = str(raw_name or "").strip()
+            if name:
+                state_node_names.add(name)
+
+    inventory_by_name: Dict[str, Dict[str, Any]] = {}
+    for node in nodes:
+        name = str(node.get("name", "")).strip()
+        if name:
+            inventory_by_name[name] = dict(node)
+
+    for name, raw in manual_nodes.items():
+        node_name = str(name or "").strip()
+        if not node_name:
+            continue
+        entry = raw if isinstance(raw, dict) else {}
+        if node_name in inventory_by_name:
+            inventory_by_name[node_name]["manual_node"] = True
+            inventory_by_name[node_name]["node_username"] = str(entry.get("username", "")).strip()
+            inventory_by_name[node_name]["default_shell"] = str(entry.get("default_shell", "")).strip()
+            inventory_by_name[node_name]["certificate"] = str(entry.get("certificate", "")).strip()
+            inventory_by_name[node_name]["password_set"] = bool(str(entry.get("password", "")))
+            if _is_placeholder_inventory_address(str(inventory_by_name[node_name].get("address", ""))):
+                inventory_by_name[node_name]["address"] = str(entry.get("address", "")).strip()
+            continue
+        inventory_by_name[node_name] = {
+            "name": node_name,
+            "group": str(entry.get("group", "manual")).strip() or "manual",
+            "address": str(entry.get("address", "")).strip(),
+            "manual_node": True,
+            "node_username": str(entry.get("username", "")).strip(),
+            "default_shell": str(entry.get("default_shell", "")).strip(),
+            "certificate": str(entry.get("certificate", "")).strip(),
+            "password_set": bool(str(entry.get("password", ""))),
+        }
+
+    # Provisioning state can reference nodes not yet present in inventory groups.
+    for name in sorted(state_node_names):
+        if name in inventory_by_name:
+            continue
+        inventory_by_name[name] = {
+            "name": name,
+            "group": "provisioned",
+            "address": "",
+        }
 
     enriched: List[Dict[str, Any]] = []
-    for node in nodes:
+    for node_name in sorted(inventory_by_name):
+        node = inventory_by_name[node_name]
         item = dict(node)
         callback = {}
         for alias in _node_aliases(str(node.get("name", ""))):
             callback = callback_details.get(alias, {})
             if callback:
                 break
+
+        has_provision_state = node_name in state_node_names
+        has_callback_state = bool(callback)
+        if not has_provision_state and not has_callback_state:
+            continue
+
         callback_ip = str(callback.get("source_ip", "")).strip()
         inventory_addr = str(node.get("address", "")).strip()
 
-        if callback_ip and _is_placeholder_inventory_address(inventory_addr):
+        if _is_usable_callback_ip(callback_ip) and _is_placeholder_inventory_address(inventory_addr):
             item["address"] = callback_ip
             item["address_source"] = "callback"
         else:
@@ -1350,6 +1512,7 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
 
         item["last_callback"] = str(callback.get("last_callback", "")).strip()
         item["callback_profile"] = str(callback.get("profile", "")).strip()
+        item["manual_node"] = bool(item.get("manual_node", False))
         enriched.append(item)
     return enriched
 
@@ -1566,24 +1729,92 @@ def _first_forwarded_ip(value: str) -> str:
     return parts[0] if parts else ""
 
 
-def _resolve_source_ip(payload: Dict[str, Any]) -> tuple[str, str]:
+def _normalize_ip(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        return ""
+
+
+def _is_transit_hop_ip(ip: str) -> bool:
+    parsed = _normalize_ip(ip)
+    if not parsed:
+        return False
+    try:
+        addr = ipaddress.ip_address(parsed)
+    except ValueError:
+        return False
+
+    # Common non-LAN transit ranges observed behind VPN/proxy edges.
+    return (
+        addr in ipaddress.ip_network("10.255.0.0/16")
+        or addr in ipaddress.ip_network("100.64.0.0/10")
+    )
+
+
+def _is_usable_callback_ip(ip: str) -> bool:
+    parsed = _normalize_ip(ip)
+    if not parsed:
+        return False
+    try:
+        addr = ipaddress.ip_address(parsed)
+    except ValueError:
+        return False
+    return addr.is_private and not _is_transit_hop_ip(parsed) and not addr.is_loopback and not addr.is_link_local
+
+
+def _resolve_lan_ip_from_names(*names: str) -> tuple[str, str]:
+    seen: set[str] = set()
+    for name in names:
+        target = str(name or "").strip()
+        if not target or target in seen:
+            continue
+        seen.add(target)
+        try:
+            infos = socket.getaddrinfo(target, None, socket.AF_INET, socket.SOCK_STREAM)
+        except OSError:
+            continue
+
+        for info in infos:
+            sockaddr = info[4] if len(info) > 4 else ()
+            candidate = sockaddr[0] if isinstance(sockaddr, tuple) and sockaddr else ""
+            normalized = _normalize_ip(candidate)
+            if not normalized:
+                continue
+            try:
+                addr = ipaddress.ip_address(normalized)
+            except ValueError:
+                continue
+            if addr.is_private and not addr.is_loopback and not addr.is_link_local:
+                return normalized, f"dns:{target}"
+    return "", ""
+
+
+def _resolve_source_ip(payload: Dict[str, Any], hostname: str = "", fqdn: str = "") -> tuple[str, str]:
     forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
     if forwarded_for:
-        ip = _first_forwarded_ip(forwarded_for)
+        ip = _normalize_ip(_first_forwarded_ip(forwarded_for))
         if ip:
             return ip, "x-forwarded-for"
 
     for header in ("X-Real-IP", "CF-Connecting-IP", "True-Client-IP"):
-        value = request.headers.get(header, "").strip()
+        value = _normalize_ip(request.headers.get(header, ""))
         if value:
             return value, header.lower()
 
     for key in ("source_ip", "client_ip", "ip", "remote_addr"):
-        value = str(payload.get(key, "")).strip()
+        value = _normalize_ip(str(payload.get(key, "")).strip())
         if value:
             return value, f"payload:{key}"
 
-    return request.remote_addr or "", "remote_addr"
+    remote = _normalize_ip(request.remote_addr or "")
+    if remote and _is_transit_hop_ip(remote):
+        return remote, "remote_addr_transit"
+
+    return remote, "remote_addr"
 
 
 def _header_or_payload(payload: Dict[str, Any], *keys: str) -> str:
@@ -1709,6 +1940,15 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             if cloud_init_options.get("install_telegraf"):
                 env["CLOUD_INIT_INSTALL_TELEGRAF"] = "true"
                 enabled_options.append("install_telegraf")
+            user_fields = {
+                "username": "CLOUD_INIT_USERNAME",
+                "password": "CLOUD_INIT_USER_PASSWORD",
+            }
+            for option_key, env_key in user_fields.items():
+                value = str(cloud_init_options.get(option_key, "")).strip()
+                if value:
+                    env[env_key] = value
+                    enabled_options.append(option_key)
             telegraf_fields = {
                 "telegraf_influx_url": "CLOUD_INIT_TELEGRAF_INFLUX_URL",
                 "telegraf_influx_token": "CLOUD_INIT_TELEGRAF_INFLUX_TOKEN",

@@ -271,7 +271,7 @@
           </div>
           <div class="field">
             <label for="username">Username</label>
-            <input id="username" value="ops">
+            <input id="username" value="jdizzle">
           </div>
           <div class="field">
             <label for="port">SSH Port</label>
@@ -445,7 +445,7 @@
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
               host,
-              username: usernameEl.value.trim() || "ops",
+              username: usernameEl.value.trim() || "jdizzle",
               key_name: keyNameEl.value,
               check_id: checkIdEl.value,
               port: Number(portEl.value || "22"),
@@ -538,7 +538,13 @@
           const opt = document.createElement("option");
           opt.value = target.host;
           const profile = target.profile ? ` | ${target.profile}` : "";
-          opt.textContent = `${target.host} (${target.source}${profile})`;
+          const assoc = target.hostname || target.fqdn || "unmapped";
+          if (target.source === "source_ip") {
+            const quality = target.usable_callback_ip === false ? "transit" : "node-ip";
+            opt.textContent = `${target.host} (ip for ${assoc} | ${quality}${profile})`;
+          } else {
+            opt.textContent = `${target.host} (${target.source}${profile})`;
+          }
           hostSelectEl.appendChild(opt);
         }
 

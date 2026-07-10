@@ -1026,7 +1026,11 @@
                 <div class="form-grid">
                   <div>
                     <label for="opt_username">Primary Username (optional)</label>
-                    <input id="opt_username" data-option-key="username" placeholder="ops">
+                    <input id="opt_username" data-option-key="username" value="jdizzle" placeholder="jdizzle">
+                  </div>
+                  <div>
+                    <label for="opt_user_password">User Password (optional)</label>
+                    <input id="opt_user_password" data-option-key="password" type="password" autocomplete="new-password" placeholder="Set a login password for the created user">
                   </div>
                   <div>
                     <label for="opt_shell">Default Shell (optional)</label>
@@ -1162,7 +1166,6 @@
         <div class="section-head">
           <h1>Rack Cloud-Init Callback Dashboard 📡🙂</h1>
           <div class="actions-row callback-toolbar" style="margin-top: 0;">
-            <a class="mini-link" href="/fragments/cloud-init/event-rows" hx-get="/fragments/cloud-init/event-rows" hx-target="#events-body" hx-swap="innerHTML">Refresh rows</a>
             <a class="mini-link" href="/test-terminal" target="_blank" rel="noopener noreferrer">Open verifier terminal</a>
             <span class="status-chip"><span class="status-dot"></span> Live Event Feed</span>
           </div>
@@ -1733,6 +1736,9 @@
         const raw = (event && typeof event.raw === "object" && event.raw) ? event.raw : {};
         const keys = Object.keys(raw);
         const stage = raw.stage || event.stage || "-";
+        const normalizedProfile = event.profile || "unknown";
+        const payloadProfile = event.raw_profile || "-";
+        const profileSource = event.profile_source || "unknown";
         const envelope = {
           received_at: event.received_at || "",
           source_ip: event.source_ip || "",
@@ -1743,7 +1749,9 @@
           hostname: event.hostname || "",
           fqdn: event.fqdn || "",
           instance_id: event.instance_id || "",
-          profile: event.profile || "",
+          profile: normalizedProfile,
+          raw_profile: payloadProfile,
+          profile_source: profileSource,
           stage: event.stage || "",
           cert_subject: event.cert_subject || "",
           cert_issuer: event.cert_issuer || "",
@@ -1753,7 +1761,7 @@
           raw,
         };
         return {
-          line: `${keys.length} key${keys.length === 1 ? "" : "s"} | stage: ${stage} | source: ${event.source_ip || event.remote_addr || "-"}`,
+          line: `${keys.length} key${keys.length === 1 ? "" : "s"} | profile: ${normalizedProfile} (${profileSource}) | stage: ${stage} | source: ${event.source_ip || event.remote_addr || "-"}`,
           json: JSON.stringify(envelope, null, 2),
         };
       }

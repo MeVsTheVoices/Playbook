@@ -130,6 +130,8 @@ require_cmd udevadm
 require_cmd parted
 require_cmd mktemp
 require_cmd sha256sum
+require_cmd python3
+require_cmd openssl
 
 if [[ -z "$IMAGE_FILE" ]]; then
   if [[ -z "$IMAGE_URL" && "$PROFILE" == "pi5" ]]; then
@@ -286,6 +288,12 @@ mount "$BOOT_PART" "$TMP_DIR/boot"
 USER_DATA_OUT="$TMP_DIR/user-data"
 META_DATA_OUT="$TMP_DIR/meta-data"
 INSTANCE_ID="${HOSTNAME}-$(date +%Y%m%d%H%M%S)"
+CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"
+CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"
+USER_PASSWORD_HASH=""
+if [[ -n "$CLOUD_INIT_USER_PASSWORD" ]]; then
+  USER_PASSWORD_HASH="$(printf '%s' "$CLOUD_INIT_USER_PASSWORD" | openssl passwd -6 -stdin)"
+fi
 
 PROFILE_ROLE="pi5"
 PROFILE_STORAGE="nvme"
@@ -303,13 +311,24 @@ manage_etc_hosts: true
 
 users:
   - default
-  - name: ops
+  - name: ${CLOUD_INIT_USERNAME}
     gecos: Rack Operations
     groups: [sudo]
     shell: /bin/bash
     sudo: "ALL=(ALL) NOPASSWD:ALL"
     ssh_authorized_keys:
       - ${SSH_KEY_CONTENT}
+EOF
+
+if [[ -n "$USER_PASSWORD_HASH" ]]; then
+  cat >> "$USER_DATA_OUT" <<EOF
+    lock_passwd: false
+    passwd: ${USER_PASSWORD_HASH}
+ssh_pwauth: true
+EOF
+fi
+
+cat >> "$USER_DATA_OUT" <<EOF
 
 package_update: true
 package_upgrade: false
@@ -345,12 +364,29 @@ write_files:
       rack_role=${PROFILE_ROLE}
       storage=${PROFILE_STORAGE}
       provisioner=cloud-init
+  - path: /usr/local/bin/rack-local-ip
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      ip -4 -o addr show scope global up 2>/dev/null | awk '
+        {
+          split(\$4, a, "/");
+          if (a[1] != "" && a[1] !~ /^169\.254\./) {
+            print a[1];
+            exit
+          }
+        }
+      '
+      if [[ -z "\$(ip -4 -o addr show scope global up 2>/dev/null | awk '{split(\$4, a, "/"); if (a[1] != "" && a[1] !~ /^169\\.254\\./) {print a[1]; exit}}')" ]]; then
+        hostname -I 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if (\$i !~ /^127\\./ && \$i !~ /^169\\.254\\./) {print \$i; exit}}'
+      fi
   - path: /usr/local/bin/rack-hardware-check
     permissions: "0755"
     content: |
       #!/bin/bash
       # Rack hardware detection and reporting
-      PI_MODEL="\$(cat /proc/device-tree/model 2>/dev/null | tr -d '\\0' || echo 'unknown')"
+      PI_MODEL="\$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || echo 'unknown')"
       RAM_MB="\$(awk '/MemTotal/ {print int(\$2/1024)}' /proc/meminfo 2>/dev/null || echo '0')"
       SD_CAPACITY="\$(lsblk -b --output SIZE -n /dev/mmcblk0 2>/dev/null | awk '{print int(\$1/1024/1024/1024)}' || echo '0')"
       NVME_PRESENT="false"
@@ -359,8 +395,9 @@ write_files:
       i2cdetect -y 1 2>/dev/null | grep -q "50\\|51" && HAT_PRESENT="true"
       POE_ENABLED="false"
       [[ -f /sys/class/pwm/pwmchip0/device/dtoverlay ]] && POE_ENABLED="true"
+      SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
       curl -fsS -X POST -H 'Content-Type: application/json' \\
-        -d "{\\"instance_id\\":\\"\$(hostname)-hw\\",\\"hostname\\":\\"\$(hostname)\\",\\"profile\\":\\"${PROFILE}\\",\\"stage\\":\\"hardware-check\\",\\"hardware\\":{\\"model\\":\\"\$PI_MODEL\\",\\"ram_mb\\":\$RAM_MB,\\"sd_capacity_gb\\":\$SD_CAPACITY,\\"nvme\\":\$NVME_PRESENT,\\"hat\\":\$HAT_PRESENT,\\"poe\\":\$POE_ENABLED}}" \\
+        -d "{\"instance_id\":\"\$(hostname)-hw\",\"hostname\":\"\$(hostname)\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\$SOURCE_IP\",\"stage\":\"hardware-check\",\"hardware\":{\"model\":\"\$PI_MODEL\",\"ram_mb\":\$RAM_MB,\"sd_capacity_gb\":\$SD_CAPACITY,\"nvme\":\$NVME_PRESENT,\"hat\":\$HAT_PRESENT,\"poe\":\$POE_ENABLED}}" \
         '${CALLBACK_URL}' || true
   - path: /etc/update-motd.d/10-fancy
     permissions: "0755"
@@ -452,8 +489,8 @@ RUNCMD_EOF
 fi
 
 # Append final runcmd callback
-cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ sh, -c, "curl -fsS -X POST -H 'Content-Type: application/json' -d '{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"stage\":\"runcmd\"}' '${CALLBACK_URL}' || true" ]
+cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
+  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; curl -fsS -X POST -H "Content-Type: application/json" -d "{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\${SOURCE_IP}\",\"stage\":\"runcmd\"}" "${CALLBACK_URL}" || true' ]
 
 final_message: "Cloud-init finished for ${HOSTNAME}"
 RUNCMD_EOF

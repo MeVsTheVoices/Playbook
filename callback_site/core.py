@@ -479,8 +479,22 @@ def _image_state_summary() -> Dict[str, Any]:
     latest_label = str(latest.get("label") or latest.get("source_value") or latest.get("download_path") or "-")
     latest_status = str(latest.get("job_status") or latest.get("hash_status") or "-")
     latest_recorded_at = str(latest.get("recorded_at") or "")
-    latest_available = bool(latest.get("local_available", False))
-    cache_path = str(latest.get("download_path") or latest.get("cache_path") or "")
+
+    # The newest record is not always the best cache-state signal (for example,
+    # records captured before cache path resolution). Prefer the most recent
+    # record that has a known local cache path or local-available flag.
+    state_entry = latest
+    for record in history:
+        record_cache_path = str(record.get("download_path") or record.get("cache_path") or "").strip()
+        if record_cache_path or bool(record.get("local_available", False)):
+            state_entry = record
+            break
+
+    latest_available = bool(state_entry.get("local_available", False))
+    cache_path = str(state_entry.get("download_path") or state_entry.get("cache_path") or "")
+    latest_state_emoji = "🎉" if latest_available else "🕳️"
+    latest_state_text = "Cached and ready" if latest_available else "No cached image recorded yet"
+
     return {
         "total_records": len(history),
         "latest_label": latest_label,
@@ -488,6 +502,8 @@ def _image_state_summary() -> Dict[str, Any]:
         "latest_recorded_at": latest_recorded_at,
         "latest_available": latest_available,
         "latest_cache_path": cache_path,
+        "latest_state_emoji": latest_state_emoji,
+        "latest_state_text": latest_state_text,
         "available_catalog_entries": catalog_available,
         "catalog_entries": len(IMAGE_CATALOG),
     }

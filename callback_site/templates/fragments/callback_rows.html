@@ -18,6 +18,8 @@
   "cert_fingerprint": e.cert_fingerprint,
   "cert_present": e.cert_present,
   "cert_header_present": e.cert_header_present,
+  "node_report_id": (e.node_report_id or ""),
+  "node_report_present": (e.node_report_present or false),
   "raw": (e.raw or {})
 } %}
 <tr>
@@ -62,6 +64,9 @@
     </code>
   </td>
   <td>
+    {% if e.node_report_id %}
+    <div class="payload-kv"><a href="/cloud-init/reports/{{ e.node_report_id }}" target="_blank" rel="noopener">View node report</a></div>
+    {% endif %}
     <details class="payload-details">
       <summary class="payload-summary">View payload</summary>
       <div class="payload-kv">

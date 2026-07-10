@@ -239,6 +239,41 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("local_available", first)
         self.assertIn("cache_path", first)
 
+    def test_image_state_summary_prefers_recent_available_state_entry(self) -> None:
+        history = [
+            {
+                "recorded_at": "2026-07-10T20:00:00+00:00",
+                "label": "newest-no-path",
+                "job_status": "completed",
+                "local_available": False,
+                "download_path": "",
+                "cache_path": "",
+            },
+            {
+                "recorded_at": "2026-07-10T19:59:00+00:00",
+                "label": "older-with-cache",
+                "job_status": "completed",
+                "local_available": True,
+                "download_path": "/tmp/cache/image.img.xz",
+            },
+        ]
+
+        with patch.object(callback_core, "_read_image_history", return_value=history), patch.object(
+            callback_core,
+            "_available_image_urls_from_history",
+            return_value=set(),
+        ), patch.object(
+            callback_core,
+            "_catalog_entry_with_availability",
+            return_value={"local_available": False},
+        ):
+            summary = callback_core._image_state_summary()
+
+        self.assertEqual(summary.get("latest_label"), "newest-no-path")
+        self.assertTrue(summary.get("latest_available"))
+        self.assertEqual(summary.get("latest_cache_path"), "/tmp/cache/image.img.xz")
+        self.assertEqual(summary.get("latest_state_emoji"), "🎉")
+
     def test_ssh_key_generate_and_kload_modes(self) -> None:
         key_name = "test-mode-key"
 
@@ -1205,6 +1240,38 @@ class CallbackSiteTests(unittest.TestCase):
         latest = matching[0]
         self.assertEqual(latest["profile"], "pibplus")
         self.assertEqual(latest["stage"], "hardware-check")
+
+    def test_callback_node_report_is_stored_and_retrievable(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-report-01",
+                "instance_id": "iid-report-01",
+                "profile": "pi5",
+                "stage": "runcmd",
+                "node_report": {
+                    "kernel": "Linux test",
+                    "cpu": "A72",
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        match = next((e for e in events if e.get("instance_id") == "iid-report-01"), None)
+        self.assertIsNotNone(match)
+        report_id = str(match.get("node_report_id", ""))
+        self.assertTrue(report_id)
+        self.assertNotIn("node_report", match.get("raw", {}))
+
+        report_response = self.client.get(f"/api/cloud-init/reports/{report_id}")
+        self.assertEqual(report_response.status_code, 200)
+        report_payload = report_response.get_json()
+        self.assertTrue(report_payload["ok"])
+        self.assertEqual(report_payload["report"].get("hostname"), "rpi5-report-01")
+        self.assertEqual(report_payload["report"].get("report", {}).get("cpu"), "A72")
 
     def test_callback_cert_presence_from_alt_header(self) -> None:
         response = self.client.post(

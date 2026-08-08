@@ -82,13 +82,14 @@ class CallbackSiteTests(unittest.TestCase):
         response = self.client.get("/images")
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
-        self.assertIn("Missing from cache", text)
-        self.assertIn("Already downloaded", text)
         self.assertIn("Add image manually", text)
         self.assertIn("Pull", text)
         self.assertIn('id="managed-images-body"', text)
         self.assertIn('id="image-catalog-body"', text)
         self.assertIn('compact-list', text)
+        self.assertIn('images.css', text)
+        self.assertIn('images.js', text)
+        self.assertIn('window.__IMAGE_CATALOG__', text)
 
     def test_images_page_renders_collapsible_manual_section(self) -> None:
         response = self.client.get("/images")
@@ -97,6 +98,27 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('class="collapsible-summary"', text)
         self.assertIn('class="collapsible-indicator"', text)
         self.assertNotIn('id="retrieved-image-manager" open', text)
+
+    def test_images_page_includes_pull_progress_markup(self) -> None:
+        response = self.client.get("/images")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="catalog-pull-progress-wrap"', text)
+        self.assertIn('id="catalog-pull-progress-fill"', text)
+        self.assertIn('🙂', text)
+
+    def test_images_pull_progress_copy_is_concise(self) -> None:
+        text = (APP_DIR / "static" / "images.js").read_text(encoding="utf-8")
+        self.assertIn("Download in progress.", text)
+        self.assertIn("Download complete.", text)
+        self.assertIn("Download failed.", text)
+        self.assertNotIn("Still working. The bar is moving and the tiles are reacting.", text)
+
+    def test_images_catalog_group_defaults_keep_missing_collapsed(self) -> None:
+        text = (APP_DIR / "static" / "images.js").read_text(encoding="utf-8")
+        self.assertIn('title: "Missing from cache"', text)
+        self.assertIn('open: false', text)
+        self.assertIn('title: "Already downloaded"', text)
 
     def test_home_page_contains_cloud_init_template_controls(self) -> None:
         response = self.client.get("/")
@@ -1158,6 +1180,110 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(job["summary"]["running"], 0)
         self.assertEqual(job["summary"]["total"], 1)
         self.assertEqual(job["results"][0]["status"], "ok")
+
+    def test_catalog_pull_worker_skips_stale_unwritable_part_file(self) -> None:
+        job_id = "job-test-catalog-stale-part"
+        entry = {
+            "id": "ubuntu-22.04-pi-arm64",
+            "label": "Ubuntu Server 22.04 LTS",
+            "image_url": "https://example.invalid/ubuntu-22.04.img.xz",
+            "image_sha256": "",
+            "profiles": ["pi5"],
+        }
+        target = callback_core.IMAGE_CACHE_DIR / callback_core._safe_catalog_filename(str(entry["image_url"]), str(entry["id"]))
+        stale_tmp = target.with_suffix(target.suffix + ".part")
+        stale_tmp.parent.mkdir(parents=True, exist_ok=True)
+        stale_tmp.write_text("stale", encoding="utf-8")
+        stale_tmp.chmod(0o444)
+
+        def fake_download(url: str, target_path: Path) -> str:
+            target_path.write_text("payload", encoding="utf-8")
+            return "abc123"
+
+        with callback_core.CATALOG_PULL_JOBS_LOCK:
+            callback_core.CATALOG_PULL_JOBS[job_id] = {
+                "id": job_id,
+                "status": "queued",
+                "created_at": "2026-06-29T00:00:00+00:00",
+                "storage_dir": str(TEST_DATA_DIR / "image_cache"),
+                "requested_ids": [entry["id"]],
+                "accepted_ids": [entry["id"]],
+                "missing_ids": [],
+                "missing_url_ids": [],
+                "skip_existing": False,
+                "results": [],
+                "summary": {"ok": 0, "failed": 0, "skipped": 0, "running": 0, "total": 0},
+            }
+
+        try:
+            with patch.object(callback_core, "_download_catalog_image", side_effect=fake_download), patch.object(
+                callback_core,
+                "_append_image_history",
+                return_value=None,
+            ):
+                callback_core._run_catalog_pull_job(job_id, [entry], skip_existing=False)
+
+            with callback_core.CATALOG_PULL_JOBS_LOCK:
+                job = callback_core.CATALOG_PULL_JOBS[job_id]
+
+            self.assertEqual(job["status"], "completed")
+            self.assertEqual(job["summary"]["ok"], 1)
+            self.assertEqual(job["results"][0]["status"], "ok")
+            self.assertTrue(target.exists())
+        finally:
+            if target.exists():
+                target.unlink()
+            if stale_tmp.exists():
+                stale_tmp.chmod(0o644)
+                stale_tmp.unlink()
+
+    def test_catalog_pull_worker_initializes_running_summary_before_download(self) -> None:
+        job_id = "job-test-catalog-running-summary"
+        entry = {
+            "id": "ubuntu-22.04-pi-arm64",
+            "label": "Ubuntu Server 22.04 LTS",
+            "image_url": "https://example.invalid/ubuntu-22.04.img.xz",
+            "image_sha256": "",
+            "profiles": ["pi5"],
+        }
+        observed_summary: dict[str, int] = {}
+
+        def fake_download(url: str, target_path: Path) -> str:
+            with callback_core.CATALOG_PULL_JOBS_LOCK:
+                job = callback_core.CATALOG_PULL_JOBS[job_id]
+                observed_summary.update(job.get("summary", {}))
+            target_path.write_text("payload", encoding="utf-8")
+            return "abc123"
+
+        with callback_core.CATALOG_PULL_JOBS_LOCK:
+            callback_core.CATALOG_PULL_JOBS[job_id] = {
+                "id": job_id,
+                "status": "queued",
+                "created_at": "2026-06-29T00:00:00+00:00",
+                "storage_dir": str(TEST_DATA_DIR / "image_cache"),
+                "requested_ids": [entry["id"]],
+                "accepted_ids": [entry["id"]],
+                "missing_ids": [],
+                "missing_url_ids": [],
+                "skip_existing": False,
+                "results": [],
+                "summary": {"ok": 0, "failed": 0, "skipped": 0, "running": 0, "total": 0},
+            }
+
+        try:
+            with patch.object(callback_core, "_download_catalog_image", side_effect=fake_download), patch.object(
+                callback_core,
+                "_append_image_history",
+                return_value=None,
+            ):
+                callback_core._run_catalog_pull_job(job_id, [entry], skip_existing=False)
+
+            self.assertEqual(observed_summary.get("running"), 1)
+            self.assertEqual(observed_summary.get("total"), 1)
+        finally:
+            target = callback_core.IMAGE_CACHE_DIR / callback_core._safe_catalog_filename(str(entry["image_url"]), str(entry["id"]))
+            if target.exists():
+                target.unlink()
 
     def test_callback_event_fragment(self) -> None:
         response = self.client.post(

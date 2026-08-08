@@ -899,6 +899,7 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
     node_cloud_init = state.get("node_cloud_init", {}) if isinstance(state.get("node_cloud_init", {}), dict) else {}
     events = _read_events(limit=2000)
     callbacks = _last_callback_by_host()
+    hardware_by_host = _latest_hardware_by_host(limit=2000)
 
     combined: Dict[str, Dict[str, Any]] = {}
 
@@ -962,6 +963,14 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
         enriched["cert"] = cert
         enriched["cloud_init_option_ids"] = cloud_ids
         enriched["selected_profiles"] = _effective_node_profiles(enriched, provision)
+
+        hw: Dict[str, Any] = {}
+        for alias in _node_aliases(node_name):
+            hw = hardware_by_host.get(alias, {})
+            if hw:
+                break
+        enriched["hardware"] = hw
+
         nodes.append(enriched)
 
     raw_options = state.get("cloud_init_options", {}) if isinstance(state.get("cloud_init_options", {}), dict) else {}
@@ -1191,10 +1200,26 @@ def _latest_node_check(node_name: str, state: Dict[str, Any]) -> Dict[str, Any]:
     return latest
 
 
-def _run_node_profile(node_name: str, profile: Dict[str, Any], mode: str, run_ansible: bool, profile_inputs: Dict[str, str]) -> Dict[str, Any]:
+def _run_node_profile(
+    node_name: str,
+    profile: Dict[str, Any],
+    mode: str,
+    run_ansible: bool,
+    profile_inputs: Dict[str, str],
+    node_group: str | None = None,
+    node_address: str | None = None,
+) -> Dict[str, Any]:
     checked_at = datetime.now(timezone.utc).isoformat()
     profile_id = str(profile.get("id", ""))
     tags = profile.get("tags") or []
+
+    logger.info(
+        "Starting provisioning for node=%s profile=%s mode=%s run_ansible=%s",
+        node_name,
+        profile_id,
+        mode,
+        run_ansible,
+    )
 
     if not run_ansible:
         return {
@@ -1214,14 +1239,42 @@ def _run_node_profile(node_name: str, profile: Dict[str, Any], mode: str, run_an
         if venv_ansible.exists() and venv_ansible.is_file():
             ansible_cmd = str(venv_ansible)
 
+    inventory_path = str(INVENTORY_FILE)
+    limit_target = node_name
+    temporary_inventory_path = None
+    host_target = str(node_address or "").strip()
+    resolved_group = str(node_group or "").strip()
+    if host_target:
+        temp_inventory = tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8")
+        temp_inventory.write("all:\n")
+        temp_inventory.write("  children:\n")
+        temp_inventory.write(f"    {resolved_group or 'dynamic_provisioning'}:\n")
+        temp_inventory.write("      hosts:\n")
+        temp_inventory.write(f"        {node_name}:\n")
+        temp_inventory.write(f"          ansible_host: {host_target}\n")
+        temp_inventory.write("          ansible_user: jdizzle\n")
+        temp_inventory.write(f"          ansible_ssh_private_key_file: {KEYS_DIR / 'rack-bootstrap-ed25519'}\n")
+        temp_inventory.write("          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=publickey'\n")
+        temp_inventory.write("          ansible_connection: ssh\n")
+        temp_inventory.write("          ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
+        temp_inventory.flush()
+        temp_inventory.close()
+        temporary_inventory_path = temp_inventory.name
+        inventory_path = temporary_inventory_path
+        limit_target = node_name
+
     cmd = [
         ansible_cmd or "ansible-playbook",
         "-i",
-        str(INVENTORY_FILE),
+        inventory_path,
         "site.yml",
         "--limit",
-        node_name,
+        limit_target,
     ]
+    env = os.environ.copy()
+    env.pop("ANSIBLE_ASK_VAULT_PASS", None)
+    env.pop("ANSIBLE_VAULT_IDENTITY_LIST", None)
+    env.pop("ANSIBLE_VAULT_PASSWORD_FILE", None)
     if tags:
         cmd.extend(["--tags", ",".join(str(t) for t in tags)])
     if mode == "check":
@@ -1241,10 +1294,46 @@ def _run_node_profile(node_name: str, profile: Dict[str, Any], mode: str, run_an
             check=False,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
             timeout=420,
             cwd=str(BASE_DIR.parent),
+            env=env,
         )
         output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        logger.info(
+            "Completed provisioning for node=%s profile=%s mode=%s status=%s exit_code=%s",
+            node_name,
+            profile_id,
+            mode,
+            "ok" if proc.returncode == 0 else "failed",
+            proc.returncode,
+        )
+        if proc.returncode != 0 and ("vault" in output.lower() or "password" in output.lower() or "prompt" in output.lower()):
+            return {
+                "profile_id": profile_id,
+                "status": "failed",
+                "mode": mode,
+                "checked_at": checked_at,
+                "command": cmd_for_log,
+                "exit_code": proc.returncode,
+                "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+                "output": output[-12000:] or "Ansible failed before provisioning completed. Check vault/password prompts and credentials.",
+            }
+        if proc.returncode != 0 and ("permission denied" in output.lower() or "unreachable" in output.lower() or "failed to connect" in output.lower()):
+            ssh_hint = (
+                "SSH authentication or reachability failed. Ensure the target node has the bootstrap SSH key installed "
+                "for the expected user (often root or ops) and that the node is reachable at the configured address."
+            )
+            return {
+                "profile_id": profile_id,
+                "status": "failed",
+                "mode": mode,
+                "checked_at": checked_at,
+                "command": cmd_for_log,
+                "exit_code": proc.returncode,
+                "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+                "output": f"{output[-12000:]}\n\n{ssh_hint}",
+            }
         return {
             "profile_id": profile_id,
             "status": "ok" if proc.returncode == 0 else "failed",
@@ -1286,10 +1375,22 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
     state = _load_node_provisioning()
     valid_profile_ids = [pid for pid in profile_ids if pid in profile_by_id]
     inputs_by_profile = _node_profile_inputs(node_name, state)
+    node_view = {item.get("name"): item for item in _node_ops_inventory_view() if isinstance(item, dict) and item.get("name")}
+    node_entry = node_view.get(node_name, {})
+    node_group = str(node_entry.get("group", "") or "").strip()
+    node_address = str(node_entry.get("address", "") or "").strip()
     node_results: Dict[str, Any] = {}
     for pid in valid_profile_ids:
         profile_inputs = inputs_by_profile.get(pid, {})
-        result = _run_node_profile(node_name, profile_by_id[pid], mode=mode, run_ansible=run_ansible, profile_inputs=profile_inputs)
+        result = _run_node_profile(
+            node_name,
+            profile_by_id[pid],
+            mode=mode,
+            run_ansible=run_ansible,
+            profile_inputs=profile_inputs,
+            node_group=node_group or None,
+            node_address=node_address or None,
+        )
         node_results[pid] = result
 
     state_results = state.setdefault("results", {})
@@ -1585,6 +1686,39 @@ def _is_placeholder_inventory_address(address: str) -> bool:
         return True
     upper = value.upper()
     return upper.startswith("CHANGE_ME") or upper.startswith("TODO")
+
+
+def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
+    """Return the most recent hardware-check event payload per hostname."""
+    seen: Dict[str, Dict[str, Any]] = {}
+    for event in _read_events(limit=limit):
+        if str(event.get("stage", "")).strip() != "hardware-check":
+            continue
+        candidates: set[str] = set()
+        for raw in (event.get("hostname"), event.get("fqdn")):
+            candidates.update(_node_aliases(str(raw or "")))
+        if not candidates:
+            continue
+        hw = event.get("raw", {})
+        if isinstance(hw, dict):
+            hw_block = hw.get("hardware") or {}
+        else:
+            hw_block = {}
+        payload: Dict[str, Any] = {
+            "received_at": str(event.get("received_at", "")).strip(),
+            "model": str(hw_block.get("model", "")).strip(),
+            "ram_mb": hw_block.get("ram_mb"),
+            "sd_capacity_gb": hw_block.get("sd_capacity_gb"),
+            "nvme": hw_block.get("nvme"),
+            "hat": hw_block.get("hat"),
+            "poe": hw_block.get("poe"),
+            "node_report_id": str(event.get("node_report_id", "")).strip(),
+            "source_ip": str(event.get("source_ip", "")).strip(),
+        }
+        for host in candidates:
+            if host and host not in seen:
+                seen[host] = payload
+    return seen
 
 
 def _latest_callback_details_by_host(limit: int = 2000) -> Dict[str, Dict[str, str]]:

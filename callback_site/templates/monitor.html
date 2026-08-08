@@ -215,17 +215,42 @@
     <main class="content">
       <div class="wrap">
         <div class="panel">
-          <h1>Node Monitor 📡</h1>
-          <p>Focused node inventory and monitoring workspace. Add/edit nodes, inspect certificate callbacks, and review provisioning profiles.</p>
+          <h1>Hardware Monitor 🖥️</h1>
+          <p>Per-node hardware configuration state from callback reports. Rows appear after a node's first <code>hardware-check</code> or <code>runcmd</code> callback.</p>
           <div class="actions-row">
             <button id="refresh-summary" type="button">Refresh</button>
             <span class="note" id="monitor-status">Idle.</span>
           </div>
         </div>
 
+        <div class="panel">
+          <h2>Hardware Status</h2>
+          <p class="note">Populated from hardware-check callbacks. Trigger a fresh check via Node Ops → Check Closer to update any row.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>Group</th>
+                <th>Address</th>
+                <th>Model</th>
+                <th>RAM (MB)</th>
+                <th>Storage (GB)</th>
+                <th>NVMe</th>
+                <th>Cert</th>
+                <th>Last HW Check</th>
+                <th>Report</th>
+              </tr>
+            </thead>
+            <tbody id="hw-body">
+              <tr><td colspan="10">No hardware data yet. Run a hardware-check from Node Ops.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
         <div class="split">
           <div class="panel">
-            <h2>Nodes Registry</h2>
+            <h2>Node Registry</h2>
+            <p class="note">Add or annotate managed nodes here. Nodes discovered via callbacks appear automatically.</p>
             <div class="grid">
               <div>
                 <label for="node-name">Node Name</label>
@@ -256,30 +281,11 @@
               <button id="clear-node-form" type="button" class="secondary">Clear</button>
             </div>
             <p class="note" id="node-form-status"></p>
-
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Source</th>
-                  <th>Group</th>
-                  <th>Address</th>
-                  <th>Enabled</th>
-                  <th>Callback</th>
-                  <th>Cert</th>
-                  <th>Profiles</th>
-                  <th>Cloud-init</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="nodes-body">
-                <tr><td colspan="10">Loading nodes...</td></tr>
-              </tbody>
-            </table>
           </div>
 
           <div class="panel">
             <h2>Certificate Pull</h2>
+            <p class="note">Pull the latest certificate details reported by a node in its callback.</p>
             <div class="actions-row">
               <label for="cert-node" style="margin:0;">Node</label>
               <select id="cert-node" style="max-width: 230px;"></select>
@@ -289,17 +295,6 @@
             <div class="cert-box" id="cert-output">No certificate details loaded yet.</div>
           </div>
         </div>
-
-        <div class="panel">
-          <h2>Provisioning Profiles Available</h2>
-          <div class="cards" id="profiles-cards"></div>
-        </div>
-
-        <div class="panel">
-          <h2>Cloud-Init Template Workflow</h2>
-          <p>Cloud-init optional templates were moved to the Home page SD Card Imager section.</p>
-          <p class="note">Use Home to define reusable cloud-init options now, then apply those values later during Ansible-driven node configuration.</p>
-        </div>
       </div>
     </main>
 
@@ -307,15 +302,13 @@
       const body = document.body;
       const toggleBtn = document.getElementById("sidebar-toggle");
       const monitorStatus = document.getElementById("monitor-status");
-      const nodesBodyEl = document.getElementById("nodes-body");
       const nodeFormStatusEl = document.getElementById("node-form-status");
       const certNodeEl = document.getElementById("cert-node");
       const certStatusEl = document.getElementById("cert-status");
       const certOutputEl = document.getElementById("cert-output");
-      const profilesCardsEl = document.getElementById("profiles-cards");
+      const hwBodyEl = document.getElementById("hw-body");
 
       let nodes = [];
-      let profiles = [];
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -334,98 +327,50 @@
           .replaceAll(">", "&gt;");
       }
 
-      function selectedProfileLabels(node) {
-        const ids = Array.isArray(node.selected_profiles) ? node.selected_profiles : [];
-        if (!ids.length) return "-";
-        const byId = new Map(profiles.map((p) => [p.id, p.label]));
-        return ids.map((id) => byId.get(id) || id).join(", ");
-      }
-
       function renderNodeSelectors() {
         const currentCertNode = certNodeEl.value;
-
         certNodeEl.innerHTML = "";
         for (const node of nodes) {
-          const opt1 = document.createElement("option");
-          opt1.value = node.name;
-          opt1.textContent = node.name;
-          certNodeEl.appendChild(opt1);
+          const opt = document.createElement("option");
+          opt.value = node.name;
+          opt.textContent = node.name;
+          certNodeEl.appendChild(opt);
         }
-
-        if (currentCertNode && nodes.some((n) => n.name === currentCertNode)) certNodeEl.value = currentCertNode;
+        if (currentCertNode && nodes.some((n) => n.name === currentCertNode)) {
+          certNodeEl.value = currentCertNode;
+        }
       }
 
-      function renderNodesTable() {
-        nodesBodyEl.innerHTML = "";
-        if (!nodes.length) {
-          nodesBodyEl.innerHTML = "<tr><td colspan='10'>No nodes yet.</td></tr>";
+      function renderHardwareTable() {
+        hwBodyEl.innerHTML = "";
+        const hwNodes = nodes.filter((n) => n.hardware && n.hardware.received_at);
+        if (!hwNodes.length) {
+          hwBodyEl.innerHTML = "<tr><td colspan='10' style='color:var(--muted)'>No hardware-check callbacks received yet. Run <em>Check Closer</em> in Node Ops to trigger one.</td></tr>";
           return;
         }
-
-        for (const node of nodes) {
+        for (const node of hwNodes) {
+          const hw = node.hardware || {};
           const cert = node.cert || {};
-          const certTag = cert.cert_present ? "<span class='tag ok'>present</span>" : "<span class='tag bad'>missing</span>";
-          const cloudCount = Array.isArray(node.cloud_init_option_ids) ? node.cloud_init_option_ids.length : 0;
+          const certTag = cert.cert_present
+            ? "<span class='tag ok'>present</span>"
+            : "<span class='tag bad'>missing</span>";
+          const reportLink = hw.node_report_id
+            ? `<a href='/cloud-init/reports/${escapeHtml(hw.node_report_id)}' target='_blank' rel='noopener'>report ↗</a>`
+            : "-";
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td><strong>${escapeHtml(node.name)}</strong></td>
-            <td>${escapeHtml(node.source || "-")}</td>
             <td>${escapeHtml(node.group || "-")}</td>
-            <td class="mono">${escapeHtml(node.address || "-")}</td>
-            <td>${node.enabled ? "true" : "false"}</td>
-            <td>${escapeHtml(node.last_callback || "-")}</td>
+            <td class='mono'>${escapeHtml(hw.source_ip || node.address || "-")}</td>
+            <td>${escapeHtml(hw.model || "-")}</td>
+            <td>${hw.ram_mb != null ? hw.ram_mb : "-"}</td>
+            <td>${hw.sd_capacity_gb != null ? hw.sd_capacity_gb : "-"}</td>
+            <td>${hw.nvme != null ? String(hw.nvme) : "-"}</td>
             <td>${certTag}</td>
-            <td>${escapeHtml(selectedProfileLabels(node))}</td>
-            <td>${cloudCount}</td>
-            <td>
-              <div class="actions-row">
-                <button type="button" data-act="edit" data-node="${escapeHtml(node.name)}" class="secondary">Edit</button>
-                <button type="button" data-act="cert" data-node="${escapeHtml(node.name)}" class="secondary">Cert</button>
-                <button type="button" data-act="delete" data-node="${escapeHtml(node.name)}" class="danger">Delete</button>
-              </div>
-            </td>
+            <td>${escapeHtml(hw.received_at ? hw.received_at.replace("T", " ").replace("+00:00", " UTC") : "-")}</td>
+            <td>${reportLink}</td>
           `;
-          nodesBodyEl.appendChild(tr);
-        }
-
-        nodesBodyEl.querySelectorAll("button[data-act]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const action = btn.dataset.act;
-            const nodeName = btn.dataset.node || "";
-            if (action === "edit") {
-              fillNodeForm(nodeName);
-            } else if (action === "cert") {
-              certNodeEl.value = nodeName;
-              await pullCertificate();
-            } else if (action === "delete") {
-              await deleteNode(nodeName);
-            }
-          });
-        });
-      }
-
-      function renderProfiles() {
-        profilesCardsEl.innerHTML = "";
-        if (!profiles.length) {
-          profilesCardsEl.innerHTML = "<div class='note'>No provisioning profiles found.</div>";
-          return;
-        }
-
-        for (const profile of profiles) {
-          const card = document.createElement("div");
-          card.className = "card";
-          const tags = Array.isArray(profile.tags) ? profile.tags.join(", ") : "-";
-          const groups = Array.isArray(profile.groups) ? profile.groups.join(", ") : "-";
-          const inputs = Array.isArray(profile.input_specs) ? profile.input_specs.length : 0;
-          card.innerHTML = `
-            <h3>${escapeHtml(profile.label || profile.id || "profile")}</h3>
-            <p>${escapeHtml(profile.description || "")}</p>
-            <div class="note">ID: <span class="mono">${escapeHtml(profile.id || "-")}</span></div>
-            <div class="note">Tags: ${escapeHtml(tags)}</div>
-            <div class="note">Groups: ${escapeHtml(groups)}</div>
-            <div class="note">Input fields: ${inputs}</div>
-          `;
-          profilesCardsEl.appendChild(card);
+          hwBodyEl.appendChild(tr);
         }
       }
 
@@ -450,20 +395,18 @@
       }
 
       async function loadSummary() {
-        monitorStatus.textContent = "Loading monitor summary...";
+        monitorStatus.textContent = "Loading...";
         const res = await fetch("/api/monitor/summary");
         const data = await res.json();
         if (!res.ok || !data.ok) {
           monitorStatus.textContent = data.error || "Failed to load monitor summary.";
           return;
         }
-
         nodes = Array.isArray(data.nodes) ? data.nodes : [];
-        profiles = Array.isArray(data.profiles) ? data.profiles : [];
-        renderNodesTable();
-        renderProfiles();
+        renderHardwareTable();
         renderNodeSelectors();
-        monitorStatus.textContent = `Loaded ${nodes.length} nodes.`;
+        const hwCount = nodes.filter((n) => n.hardware && n.hardware.received_at).length;
+        monitorStatus.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"} loaded, ${hwCount} with hardware data.`;
       }
 
       async function saveNode() {
@@ -474,8 +417,7 @@
           enabled: document.getElementById("node-enabled").value === "true",
           notes: document.getElementById("node-notes").value.trim(),
         };
-
-        nodeFormStatusEl.textContent = "Saving node...";
+        nodeFormStatusEl.textContent = "Saving...";
         const res = await fetch("/api/monitor/nodes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -486,27 +428,7 @@
           nodeFormStatusEl.textContent = data.error || "Failed to save node.";
           return;
         }
-
-        nodeFormStatusEl.textContent = `Saved node ${data.node.name}.`;
-        await loadSummary();
-      }
-
-      async function deleteNode(nodeName) {
-        const target = nodes.find((n) => n.name === nodeName);
-        if (target && String(target.source || "").includes("inventory") && !String(target.source || "").includes("managed")) {
-          nodeFormStatusEl.textContent = "Inventory-only nodes cannot be deleted here; add an override to disable or adjust them.";
-          return;
-        }
-
-        if (!confirm(`Delete managed node ${nodeName}?`)) return;
-        nodeFormStatusEl.textContent = "Deleting node...";
-        const res = await fetch(`/api/monitor/nodes/${encodeURIComponent(nodeName)}`, { method: "DELETE" });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          nodeFormStatusEl.textContent = data.error || "Failed to delete node.";
-          return;
-        }
-        nodeFormStatusEl.textContent = `Deleted node ${nodeName}.`;
+        nodeFormStatusEl.textContent = `Saved ${data.node.name}.`;
         await loadSummary();
       }
 
@@ -516,15 +438,13 @@
           certStatusEl.textContent = "Choose a node first.";
           return;
         }
-
-        certStatusEl.textContent = `Pulling certificate info for ${nodeName}...`;
+        certStatusEl.textContent = `Pulling certificate for ${nodeName}...`;
         const res = await fetch(`/api/monitor/nodes/${encodeURIComponent(nodeName)}/certificate`);
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          certStatusEl.textContent = data.error || "Failed to pull certificate info.";
+          certStatusEl.textContent = data.error || "Failed to pull certificate.";
           return;
         }
-
         const cert = data.certificate || {};
         certOutputEl.textContent = [
           `node: ${nodeName}`,

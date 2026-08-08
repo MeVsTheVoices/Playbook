@@ -170,6 +170,13 @@ Provisioning execution modes:
 Node profile and check state is persisted in:
 - `callback_site/data/node_provisioning.json`
 
+### Node Ops operational notes
+- The live provisioning path prefers the current node address over hostname-based inventory values when the node is reachable by IP.
+- For environments without local DNS or an `/etc/hosts` entry, use the node IP in the Node Ops UI and let the temporary inventory generated for provisioning target the address directly.
+- Provisioning is intentionally non-interactive: the app strips prompt-driven environment variables and uses the bootstrap SSH identity and private key path that match the node's initial cloud-init setup.
+- Save node-specific input values before running `check` or `apply`; missing required fields return `400` with a `missing_inputs` payload.
+- When `run_ansible=true`, the workflow executes `ansible-playbook` with the selected profile tags; when `false`, it records the intended run without executing it.
+
 Fragment endpoints:
 - `GET /fragments/sd/image-catalog-rows`
 - `GET /fragments/sd/images-rows`
@@ -325,6 +332,7 @@ This app persists state to a local appdata directory.
 
 - Default path: `callback_site/data/`
 - Override path with environment variable: `CALLBACK_APPDATA_DIR`
+- Everything that should survive restarts or container recreation lives under this directory, including logs, callback state, image history, SSH key material, node provisioning state, and SD option templates.
 
 Example (local custom path):
 
@@ -332,6 +340,18 @@ Example (local custom path):
 CALLBACK_APPDATA_DIR=/home/jdizzle/appdata/callback_site sudo PORT=9821 .venv/bin/python3 app.py
 ```
 
+Example Docker-style mount:
+
+```bash
+mkdir -p /srv/appdata/callback_site
+docker run -d \
+  --name callback-site \
+  -e CALLBACK_APPDATA_DIR=/data \
+  -v /srv/appdata/callback_site:/data \
+  -p 9821:9821 \
+  your-image:latest
+```
+
 This mirrors a simple Docker volume pattern (host path mounted as appdata) without requiring any other changes.
 
-For containerized deployments, map your host Docker volume to `CALLBACK_APPDATA_DIR` so background catalog pulls persist downloaded images across restarts.
+For containerized deployments, map your host Docker volume to `CALLBACK_APPDATA_DIR` so background catalog pulls persist downloaded images across restarts and operator-edited state remains available after upgrades or container rebuilds.

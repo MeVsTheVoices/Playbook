@@ -13,6 +13,9 @@ const enableVerboseBtn = document.getElementById("enable-verbose-logging");
 const disableVerboseBtn = document.getElementById("disable-verbose-logging");
 const loggingStatus = document.getElementById("logging-status");
 const loggingOutput = document.getElementById("logging-output");
+const refreshModuleSyncBtn = document.getElementById("refresh-module-sync");
+const moduleSyncStatus = document.getElementById("module-sync-status");
+const moduleSyncGrid = document.getElementById("module-sync-grid");
 
 function initSidebar() {
   const saved = localStorage.getItem("sidebar-collapsed");
@@ -87,6 +90,97 @@ async function loadRackSettings() {
 function updateVerboseButtons(enabled) {
   enableVerboseBtn.disabled = Boolean(enabled);
   disableVerboseBtn.disabled = !enabled;
+}
+
+function renderModuleSyncCard(title, value, detail, state) {
+  return `<article class="module-card ${state}"><p class="module-k">${title}</p><p class="module-v">${value}</p><p class="module-d">${detail}</p></article>`;
+}
+
+async function refreshModuleSync() {
+  if (!moduleSyncStatus || !moduleSyncGrid) {
+    return;
+  }
+
+  moduleSyncStatus.textContent = "Refreshing module snapshot...";
+  const requests = await Promise.allSettled([
+    fetch("/api/sd/catalog"),
+    fetch("/api/sd/options-profiles"),
+    fetch("/api/sd/devices"),
+    fetch("/api/cloud-init/events"),
+    fetch("/api/settings"),
+  ]);
+
+  const [catalogRes, profilesRes, devicesRes, eventsRes, settingsRes] = requests;
+  const failed = requests.filter((entry) => entry.status !== "fulfilled").length;
+
+  if (failed > 0) {
+    moduleSyncStatus.textContent = `Snapshot loaded with ${failed} request error${failed === 1 ? "" : "s"}.`;
+  }
+
+  const catalogData =
+    catalogRes.status === "fulfilled" && catalogRes.value.ok ? await catalogRes.value.json() : { entries: [] };
+  const profilesData =
+    profilesRes.status === "fulfilled" && profilesRes.value.ok ? await profilesRes.value.json() : { profiles: [] };
+  const devicesData =
+    devicesRes.status === "fulfilled" && devicesRes.value.ok ? await devicesRes.value.json() : { devices: [], errors: [] };
+  const eventsData =
+    eventsRes.status === "fulfilled" && eventsRes.value.ok ? await eventsRes.value.json() : { events: [] };
+  const settingsData =
+    settingsRes.status === "fulfilled" && settingsRes.value.ok ? await settingsRes.value.json() : { settings: {} };
+
+  const catalogEntries = Array.isArray(catalogData.entries) ? catalogData.entries : [];
+  const catalogAvailable = catalogEntries.filter((entry) => Boolean(entry.local_available)).length;
+  const catalogDownloadable = catalogEntries.filter((entry) => String(entry.image_url || "").trim()).length;
+
+  const profiles = Array.isArray(profilesData.profiles) ? profilesData.profiles : [];
+  const tailscaleProfiles = profiles.filter((profile) => Boolean(profile.options && profile.options.tailscale_enable)).length;
+
+  const devices = Array.isArray(devicesData.devices) ? devicesData.devices : [];
+  const deviceErrors = Array.isArray(devicesData.errors) ? devicesData.errors.length : 0;
+
+  const events = Array.isArray(eventsData.events) ? eventsData.events : [];
+  const eventsWithProfile = events.filter((event) => String(event.profile || "").trim()).length;
+  const rackName = ((settingsData.settings || {}).rack_name || "homelab").trim() || "homelab";
+
+  const cards = [
+    renderModuleSyncCard(
+      "Image Catalog",
+      `${catalogAvailable}/${catalogEntries.length}`,
+      `${catalogDownloadable} downloadable presets in Image Library`,
+      catalogEntries.length > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Node Profiles",
+      String(profiles.length),
+      `${tailscaleProfiles} profiles have Tailscale enabled`,
+      profiles.length > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Discovered Devices",
+      String(devices.length),
+      deviceErrors > 0 ? `${deviceErrors} ingest errors reported` : "No ingest errors reported",
+      deviceErrors > 0 ? "bad" : "ok"
+    ),
+    renderModuleSyncCard(
+      "Callback Events",
+      String(events.length),
+      `${eventsWithProfile} events include profile metadata`,
+      events.length > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Rack Identity",
+      rackName,
+      "Used by ACL defaults and rack-aware presets",
+      rackName ? "ok" : "warn"
+    ),
+  ];
+
+  moduleSyncGrid.innerHTML = cards.join("");
+
+  if (failed === 0) {
+    const now = new Date();
+    moduleSyncStatus.textContent = `Snapshot refreshed at ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}.`;
+  }
 }
 
 async function saveRackSettings() {
@@ -165,6 +259,10 @@ checkCatalogHealthBtn.addEventListener("click", checkCatalogHealth);
 enableVerboseBtn.addEventListener("click", () => toggleVerboseLogging(true));
 disableVerboseBtn.addEventListener("click", () => toggleVerboseLogging(false));
 document.getElementById("view-recent-logs").addEventListener("click", viewRecentLogs);
+if (refreshModuleSyncBtn) {
+  refreshModuleSyncBtn.addEventListener("click", refreshModuleSync);
+}
 
 initSidebar();
 loadRackSettings();
+refreshModuleSync();

@@ -1,0 +1,156 @@
+:root {
+  --bg: #f3f5f7;
+  --card: #ffffff;
+  --ink: #1d2939;
+  --muted: #52606d;
+  --accent: #0f766e;
+  --line: #d0d7de;
+}
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at 12% 12%, #e6fffa 0, transparent 35%), var(--bg);
+  color: var(--ink);
+}
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  background: #0f172a;
+  color: #cbd5e1;
+  transition: width 0.2s ease;
+  overflow: hidden;
+  padding: 0.8rem;
+  box-sizing: border-box;
+}
+.sidebar-brand {
+  padding: 0.25rem 0.45rem 0.8rem;
+  margin-bottom: 0.7rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+.sidebar-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: 0.02em;
+}
+.sidebar-subtitle {
+  margin-top: 0.2rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+.sidebar a {
+  display: block;
+  color: #cbd5e1;
+  text-decoration: none;
+  padding: 0.55rem;
+  border-radius: 8px;
+  margin-bottom: 0.25rem;
+}
+.sidebar a:hover {
+  background: rgba(148, 163, 184, 0.16);
+}
+.sidebar a.active {
+  background: rgba(20, 184, 166, 0.18);
+  color: #ecfeff;
+  border: 1px solid rgba(45, 212, 191, 0.2);
+}
+.toggle-btn {
+  width: 100%;
+  margin-bottom: 0.8rem;
+  border: 1px solid #334155;
+  background: #111827;
+  color: #cbd5e1;
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+body.sidebar-collapsed .sidebar {
+  width: 72px;
+}
+body.sidebar-collapsed .sidebar .label {
+  display: none;
+}
+body.sidebar-collapsed .sidebar .sidebar-brand {
+  display: none;
+}
+.content {
+  margin-left: 236px;
+  transition: margin-left 0.2s ease;
+}
+body.sidebar-collapsed .content {
+  margin-left: 88px;
+}
+.wrap {
+  max-width: 1150px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1rem;
+}
+.lazy {
+  min-height: 80px;
+}
+.skeleton {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.top-nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.8rem;
+}
+label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+input,
+textarea,
+button {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem;
+  font-family: inherit;
+  font-size: 0.92rem;
+  box-sizing: border-box;
+}
+textarea {
+  min-height: 84px;
+}
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+pre {
+  background: #0b1020;
+  color: #d6deeb;
+  border-radius: 10px;
+  padding: 0.8rem;
+  overflow: auto;
+  font-size: 0.82rem;
+}
+.warn {
+  color: #7f1d1d;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 0.6rem;
+}

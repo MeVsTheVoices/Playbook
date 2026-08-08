@@ -4,152 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Settings</title>
-    <style>
-      :root {
-        --bg: #f3f5f7;
-        --card: #ffffff;
-        --ink: #1d2939;
-        --muted: #52606d;
-        --accent: #0f766e;
-        --line: #d0d7de;
-        --danger: #b91c1c;
-      }
-      body {
-        margin: 0;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-        background: radial-gradient(circle at 12% 12%, #e6fffa 0, transparent 35%), var(--bg);
-        color: var(--ink);
-      }
-      .sidebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        width: 220px;
-        background: #0f172a;
-        color: #cbd5e1;
-        transition: width 0.2s ease;
-        overflow: hidden;
-        padding: 0.8rem;
-        box-sizing: border-box;
-      }
-      .sidebar-brand {
-        padding: 0.25rem 0.45rem 0.8rem;
-        margin-bottom: 0.7rem;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-      }
-      .sidebar-title {
-        font-size: 0.95rem;
-        font-weight: 800;
-        color: #f8fafc;
-        letter-spacing: 0.02em;
-      }
-      .sidebar-subtitle {
-        margin-top: 0.2rem;
-        color: #94a3b8;
-        font-size: 0.75rem;
-      }
-      .sidebar a {
-        display: block;
-        color: #cbd5e1;
-        text-decoration: none;
-        padding: 0.55rem;
-        border-radius: 8px;
-        margin-bottom: 0.25rem;
-      }
-      .sidebar a:hover { background: rgba(148, 163, 184, 0.16); }
-      .sidebar a.active {
-        background: rgba(20, 184, 166, 0.18);
-        color: #ecfeff;
-        border: 1px solid rgba(45, 212, 191, 0.2);
-      }
-      .toggle-btn {
-        width: 100%;
-        margin-bottom: 0.8rem;
-        border: 1px solid #334155;
-        background: #111827;
-        color: #cbd5e1;
-        border-radius: 8px;
-        padding: 0.5rem;
-        cursor: pointer;
-      }
-      body.sidebar-collapsed .sidebar { width: 72px; }
-      body.sidebar-collapsed .sidebar .label { display: none; }
-      body.sidebar-collapsed .sidebar .sidebar-brand { display: none; }
-      .content {
-        margin-left: 236px;
-        transition: margin-left 0.2s ease;
-      }
-      body.sidebar-collapsed .content { margin-left: 88px; }
-      .wrap {
-        max-width: 980px;
-        margin: 2rem auto;
-        padding: 0 1rem;
-      }
-      .panel {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 1rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
-        margin-bottom: 1rem;
-      }
-      button {
-        border: none;
-        border-radius: 10px;
-        padding: 0.65rem 0.9rem;
-        font-family: inherit;
-        font-size: 0.92rem;
-        cursor: pointer;
-      }
-      .danger {
-        background: var(--danger);
-        color: white;
-      }
-      .danger-alt {
-        background: #dc2626;
-        color: white;
-      }
-      .note {
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
-      .status {
-        margin-top: 0.8rem;
-        font-family: "IBM Plex Mono", monospace;
-        font-size: 0.82rem;
-        background: #f8fafc;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 0.6rem;
-        white-space: pre-wrap;
-      }
-      label {
-        display: block;
-        font-size: 0.86rem;
-        color: var(--muted);
-        margin-bottom: 0.3rem;
-      }
-      input {
-        width: 100%;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 0.62rem;
-        font-family: inherit;
-        font-size: 0.9rem;
-        box-sizing: border-box;
-      }
-      .primary {
-        background: var(--accent);
-        color: white;
-      }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
   </head>
   <body>
     <aside class="sidebar">
       <div class="sidebar-brand">
         <div class="sidebar-title">Callback Site</div>
-        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops 🙂</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops</div>
       </div>
       <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
       <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span class="label">Dashboard</span></a>
@@ -164,8 +25,8 @@
     <main class="content">
       <div class="wrap">
         <div class="panel">
-          <h1>Settings ⚙️</h1>
-          <p class="note">Quick maintenance actions for resetting saved state and checking site behavior 😌</p>
+          <h1>Settings</h1>
+          <p class="note">Quick maintenance actions for resetting saved state and checking site behavior.</p>
         </div>
 
         <div class="panel">
@@ -173,7 +34,7 @@
           <p class="note">Set the main rack name used for rack-aware defaults (for example in Tailscale ACL planner tags).</p>
           <label for="rack-name">Rack Name</label>
           <input id="rack-name" placeholder="homelab">
-          <div style="margin-top: 0.7rem;">
+          <div class="button-row" style="margin-top: 0.7rem; margin-bottom: 0;">
             <button id="save-rack-name" class="primary">Save Rack Name</button>
           </div>
           <div id="rack-status" class="status">Loading rack settings...</div>
@@ -197,13 +58,13 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
         <div class="panel">
           <h2>Logging and Diagnostics</h2>
           <p class="note">Configure logging verbosity and view recent logs for troubleshooting.</p>
-          <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <div class="button-row">
             <button id="enable-verbose-logging" class="primary">Enable Verbose Logging</button>
             <button id="disable-verbose-logging" class="primary">Disable Verbose Logging</button>
             <button id="view-recent-logs" class="primary">View Recent Logs (100 lines)</button>
           </div>
           <div id="logging-status" class="status">Idle.</div>
-          <div id="logging-output" style="background: #f3f5f7; padding: 0.5rem; border-radius: 6px; border: 1px solid #d0d7de; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; display: none;"></div>
+          <div id="logging-output" class="log-output"></div>
         </div>
 
         <div class="panel">
@@ -227,178 +88,6 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
       </div>
     </main>
 
-    <script>
-      const body = document.body;
-      const toggleBtn = document.getElementById("sidebar-toggle");
-      const statusBox = document.getElementById("settings-status");
-      const resetNodeOpsBtn = document.getElementById("reset-node-ops");
-      const clearCallbackBtn = document.getElementById("clear-callback-backlog");
-      const callbackClearStatus = document.getElementById("callback-clear-status");
-      const rackNameInput = document.getElementById("rack-name");
-      const saveRackNameBtn = document.getElementById("save-rack-name");
-      const rackStatus = document.getElementById("rack-status");
-      const checkCatalogHealthBtn = document.getElementById("check-catalog-health");
-      const catalogHealthStatus = document.getElementById("catalog-health-status");
-      const enableVerboseBtn = document.getElementById("enable-verbose-logging");
-      const disableVerboseBtn = document.getElementById("disable-verbose-logging");
-
-      function initSidebar() {
-        const saved = localStorage.getItem("sidebar-collapsed");
-        if (saved === "1") {
-          body.classList.add("sidebar-collapsed");
-        }
-      }
-
-      toggleBtn.addEventListener("click", () => {
-        body.classList.toggle("sidebar-collapsed");
-        localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
-      });
-
-      async function resetNodeOps() {
-        const confirmed = window.confirm("Reset Node Ops state and delete stored SSH key/certificate files?");
-        if (!confirmed) {
-          return;
-        }
-
-        statusBox.textContent = "Resetting node ops settings...";
-        const res = await fetch("/api/settings/reset", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scope: "node_ops" }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          statusBox.textContent = data.error || "Reset failed.";
-          return;
-        }
-        statusBox.textContent = `Reset complete: ${JSON.stringify(data.reset, null, 2)}`;
-      }
-
-      async function clearCallbackBacklog() {
-        const confirmed = window.confirm("Clear all stored callback events?");
-        if (!confirmed) {
-          return;
-        }
-
-        callbackClearStatus.textContent = "Clearing callback backlog...";
-        const res = await fetch("/api/cloud-init/events/clear", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          callbackClearStatus.textContent = data.error || "Clear failed.";
-          return;
-        }
-        callbackClearStatus.textContent = `Cleared events: ${data.cleared}`;
-      }
-
-      async function loadRackSettings() {
-        rackStatus.textContent = "Loading rack settings...";
-        const res = await fetch("/api/settings");
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          rackStatus.textContent = data.error || "Failed to load rack settings.";
-          return;
-        }
-        const rackName = ((data.settings || {}).rack_name || "homelab");
-        const verboseEnabled = Boolean(data.settings && data.settings.verbose_logging);
-        rackNameInput.value = rackName;
-        rackStatus.textContent = `Current rack name: ${rackName}`;
-        updateVerboseButtons(verboseEnabled);
-        document.getElementById("logging-status").innerText = verboseEnabled
-          ? "Verbose logging is currently enabled 😎"
-          : "Verbose logging is currently disabled 😌";
-      }
-
-      function updateVerboseButtons(enabled) {
-        enableVerboseBtn.disabled = Boolean(enabled);
-        disableVerboseBtn.disabled = !enabled;
-      }
-
-      async function saveRackSettings() {
-        const rackName = rackNameInput.value.trim();
-        if (!rackName) {
-          rackStatus.textContent = "Rack name cannot be empty.";
-          return;
-        }
-
-        rackStatus.textContent = "Saving rack name...";
-        const res = await fetch("/api/settings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rack_name: rackName }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          rackStatus.textContent = data.error || "Failed to save rack name.";
-          return;
-        }
-        rackNameInput.value = (data.settings || {}).rack_name || rackName;
-        rackStatus.textContent = `Saved rack name: ${rackNameInput.value}`;
-      }
-
-      async function checkCatalogHealth() {
-        catalogHealthStatus.textContent = "Checking catalog...";
-        const res = await fetch("/api/sd/catalog");
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          catalogHealthStatus.textContent = data.error || "Failed to check catalog state.";
-          return;
-        }
-
-        const entries = Array.isArray(data.entries) ? data.entries : [];
-        const downloadable = entries.filter((entry) => String(entry.image_url || "").trim());
-        const available = entries.filter((entry) => Boolean(entry.local_available));
-        const missingUrl = entries.filter((entry) => !String(entry.image_url || "").trim());
-        const sampleDownloadable = downloadable.slice(0, 5).map((entry) => entry.id).join(", ") || "(none)";
-
-        catalogHealthStatus.textContent = [
-          `Total entries: ${entries.length}`,
-          `Downloadable entries: ${downloadable.length}`,
-          `Available in cache/history: ${available.length}`,
-          `Manual URL required: ${missingUrl.length}`,
-          `Sample downloadable IDs: ${sampleDownloadable}`,
-        ].join("\n");
-      }
-
-      resetNodeOpsBtn.addEventListener("click", resetNodeOps);
-      clearCallbackBtn.addEventListener("click", clearCallbackBacklog);
-      saveRackNameBtn.addEventListener("click", saveRackSettings);
-      checkCatalogHealthBtn.addEventListener("click", checkCatalogHealth);
-
-      // Logging controls
-      async function toggleVerboseLogging(enable) {
-        const res = await fetch("/api/logging/verbose", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enable }),
-        });
-        const data = await res.json();
-        updateVerboseButtons(Boolean(data.verbose_logging));
-        document.getElementById("logging-status").innerText = data.message || (data.ok ? "Updated" : "Error");
-      }
-
-      async function viewRecentLogs() {
-        const res = await fetch("/api/logging/tail?lines=100");
-        const data = await res.json();
-        if (!data.ok) {
-          document.getElementById("logging-status").innerText = "Failed to load logs";
-          return;
-        }
-        const output = document.getElementById("logging-output");
-        output.innerText = data.lines.join("");
-        output.style.display = "block";
-        document.getElementById("logging-status").innerText = `Loaded from: ${data.log_file}`;
-      }
-
-      enableVerboseBtn.addEventListener("click", () => toggleVerboseLogging(true));
-      disableVerboseBtn.addEventListener("click", () => toggleVerboseLogging(false));
-      document.getElementById("view-recent-logs").addEventListener("click", viewRecentLogs);
-
-      initSidebar();
-      loadRackSettings();
-    </script>
+    <script src="{{ url_for('static', filename='settings.js') }}" defer></script>
   </body>
 </html>

@@ -90,6 +90,14 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('id="image-catalog-body"', text)
         self.assertIn('compact-list', text)
 
+    def test_images_page_renders_collapsible_manual_section(self) -> None:
+        response = self.client.get("/images")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('class="collapsible-summary"', text)
+        self.assertIn('class="collapsible-indicator"', text)
+        self.assertNotIn('id="retrieved-image-manager" open', text)
+
     def test_home_page_contains_cloud_init_template_controls(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

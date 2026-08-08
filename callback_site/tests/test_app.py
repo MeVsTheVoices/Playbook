@@ -86,6 +86,9 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("Already downloaded", text)
         self.assertIn("Add image manually", text)
         self.assertIn("Pull", text)
+        self.assertIn('id="managed-images-body"', text)
+        self.assertIn('id="image-catalog-body"', text)
+        self.assertIn('compact-list', text)
 
     def test_home_page_contains_cloud_init_template_controls(self) -> None:
         response = self.client.get("/")

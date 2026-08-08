@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tailscale ACL Planner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='tailscale_acl.css') }}">
   </head>
@@ -25,13 +28,25 @@
 
     <main class="content">
       <div class="wrap">
-        <div class="panel top-nav">
-          <a href="/">Back To Callback Dashboard</a>
-        </div>
+        <header class="acl-hero panel">
+          <div class="hero-corner hero-corner-left" aria-hidden="true">:)</div>
+          <div class="hero-corner hero-corner-right" aria-hidden="true">:)</div>
+          <div>
+            <p class="eyebrow">Policy Composer</p>
+            <h1>Tailscale ACL Planner</h1>
+            <p class="hero-subtext">Design a clean baseline policy for your rack and push it into Access Controls with confidence.</p>
+          </div>
+          <div class="hero-actions">
+            <a class="ghost-link" href="/">Back To Callback Dashboard</a>
+            <span class="hero-dot" aria-hidden="true"></span>
+            <span class="hero-meta">Live local generator</span>
+            <span class="hero-note">Calm edits, clean rules, happy tailnet.</span>
+          </div>
+        </header>
 
         <section
           id="acl-overview-section"
-          class="panel lazy"
+          class="panel lazy reveal"
           hx-get="/fragments/tailscale-acl/overview"
           hx-trigger="load delay:80ms"
           hx-swap="innerHTML"
@@ -41,7 +56,7 @@
 
         <section
           id="acl-inputs-section"
-          class="panel lazy"
+          class="panel lazy reveal"
           hx-get="/fragments/tailscale-acl/inputs"
           hx-trigger="load delay:220ms"
           hx-swap="innerHTML"
@@ -51,7 +66,7 @@
 
         <section
           id="acl-output-section"
-          class="panel lazy"
+          class="panel lazy reveal"
           hx-get="/fragments/tailscale-acl/output"
           hx-trigger="load delay:420ms"
           hx-swap="innerHTML"
@@ -61,7 +76,7 @@
 
         <section
           id="acl-apply-guide-section"
-          class="panel lazy"
+          class="panel lazy reveal"
           hx-get="/fragments/tailscale-acl/apply-guide"
           hx-trigger="load delay:620ms"
           hx-swap="innerHTML"

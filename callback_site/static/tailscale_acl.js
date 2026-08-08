@@ -8,10 +8,12 @@ function initSidebar() {
   }
 }
 
-toggleBtn.addEventListener("click", () => {
-  body.classList.toggle("sidebar-collapsed");
-  localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
-});
+if (toggleBtn) {
+  toggleBtn.addEventListener("click", () => {
+    body.classList.toggle("sidebar-collapsed");
+    localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
+  });
+}
 
 function parseSubnets(text) {
   return text
@@ -22,14 +24,16 @@ function parseSubnets(text) {
 
 function generatePolicy() {
   const out = document.getElementById("policy_output");
+  const status = document.getElementById("policy_status");
   const rackNameEl = document.getElementById("rack_name");
+  const tailnetEl = document.getElementById("tailnet");
   const adminEl = document.getElementById("admin_group");
   const rpi5El = document.getElementById("rpi5_tag");
   const bplusEl = document.getElementById("rpi_bplus_tag");
   const homelabEl = document.getElementById("homelab_tag");
   const subnetEl = document.getElementById("pi5_subnets");
 
-  if (!out || !rackNameEl || !adminEl || !rpi5El || !bplusEl || !homelabEl || !subnetEl) {
+  if (!out || !rackNameEl || !tailnetEl || !adminEl || !rpi5El || !bplusEl || !homelabEl || !subnetEl) {
     return;
   }
 
@@ -82,6 +86,110 @@ function generatePolicy() {
   });
 
   out.textContent = JSON.stringify(policy, null, 2);
+  if (status) {
+    const now = new Date();
+    const stamp = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    status.textContent = `Updated ${stamp} - ${subnets.length} route${subnets.length === 1 ? "" : "s"}`;
+  }
+
+  syncOverview({
+    rack: rackNameEl.value.trim() || "Not set",
+    tailnet: tailnetEl.value.trim() || "Not set",
+    routes: subnets.length,
+  });
+  refreshFieldCards();
+  updateSubnetCounter(subnets.length);
+}
+
+function syncOverview(data) {
+  const rackEl = document.getElementById("ov-rack");
+  const tailnetEl = document.getElementById("ov-tailnet");
+  const routeEl = document.getElementById("ov-route-count");
+  if (rackEl) rackEl.textContent = data.rack;
+  if (tailnetEl) tailnetEl.textContent = data.tailnet;
+  if (routeEl) routeEl.textContent = String(data.routes);
+}
+
+function updateSubnetCounter(count) {
+  const counter = document.getElementById("subnet_counter");
+  if (!counter) {
+    return;
+  }
+  counter.textContent = `${count} route${count === 1 ? "" : "s"}`;
+}
+
+function refreshFieldCards() {
+  const fieldCards = document.querySelectorAll(".field-card");
+  fieldCards.forEach((card) => {
+    const input = card.querySelector("input, textarea");
+    if (!input) {
+      return;
+    }
+    card.classList.toggle("field-ready", !!input.value.trim());
+  });
+}
+
+function formatPolicyOutput() {
+  const out = document.getElementById("policy_output");
+  if (!out) {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(out.textContent || "{}");
+    out.textContent = JSON.stringify(parsed, null, 2);
+  } catch (error) {
+    // Keep existing content if output is not parseable.
+  }
+}
+
+async function copyPolicyOutput() {
+  const out = document.getElementById("policy_output");
+  const status = document.getElementById("policy_status");
+  if (!out) {
+    return;
+  }
+  const text = out.textContent || "";
+  if (!text.trim()) {
+    return;
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ghost = document.createElement("textarea");
+      ghost.value = text;
+      document.body.appendChild(ghost);
+      ghost.select();
+      document.execCommand("copy");
+      document.body.removeChild(ghost);
+    }
+    if (status) {
+      status.textContent = "Copied policy JSON to clipboard.";
+    }
+  } catch (error) {
+    if (status) {
+      status.textContent = "Copy failed. Select and copy manually.";
+    }
+  }
+}
+
+function bindOutputActions() {
+  const copyBtn = document.getElementById("copy_policy");
+  const formatBtn = document.getElementById("format_policy");
+
+  if (copyBtn && !copyBtn.dataset.bound) {
+    copyBtn.addEventListener("click", () => {
+      copyPolicyOutput();
+    });
+    copyBtn.dataset.bound = "1";
+  }
+
+  if (formatBtn && !formatBtn.dataset.bound) {
+    formatBtn.addEventListener("click", () => {
+      formatPolicyOutput();
+    });
+    formatBtn.dataset.bound = "1";
+  }
 }
 
 function bindAclInputEvents() {
@@ -110,7 +218,12 @@ document.body.addEventListener("htmx:afterSwap", (event) => {
   const targetId = event.target && event.target.id ? event.target.id : "";
   if (targetId === "acl-inputs-section" || targetId === "acl-output-section") {
     bindAclInputEvents();
+    bindOutputActions();
+  }
+  if (targetId === "acl-overview-section") {
+    generatePolicy();
   }
 });
 
 initSidebar();
+bindOutputActions();

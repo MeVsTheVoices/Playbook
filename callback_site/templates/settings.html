@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
   </head>
   <body>
@@ -27,6 +30,23 @@
         <div class="panel">
           <h1>Settings</h1>
           <p class="note">Quick maintenance actions for resetting saved state and checking site behavior.</p>
+          <div class="quick-links">
+            <a href="/images">Open Image Library</a>
+            <a href="/nodes">Open Node Ops</a>
+            <a href="/monitor">Open Monitor</a>
+            <a href="/tailscale-acl">Open Tailscale ACL</a>
+            <a href="/test-terminal">Open Verifier</a>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Module Alignment Snapshot</h2>
+          <p class="note">Live summary from Images, Node Ops, Monitor, and callback intake. Use this to confirm Settings reflects current module state.</p>
+          <div class="button-row">
+            <button id="refresh-module-sync" class="primary">Refresh Module Snapshot</button>
+          </div>
+          <div id="module-sync-status" class="status">Loading module snapshot...</div>
+          <div class="module-grid" id="module-sync-grid"></div>
         </div>
 
         <div class="panel">
@@ -49,7 +69,7 @@
 
         <div class="panel">
           <h2>Catalog Source Of Truth</h2>
-          <p class="note">Catalog entries are maintained in a YAML file for easier human edits and separation from code.</p>
+          <p class="note">Catalog entries are maintained in a YAML file for easier human edits and separation from code. Image Library and Dashboard preset availability both read from this source.</p>
           <div class="status">File: callback_site/catalogs/image_catalog.yml
 Loaded at runtime by: callback_site/domain_defaults.py
 Parser mode: PyYAML if installed, fallback parser otherwise.</div>

@@ -1,34 +1,53 @@
-<h2>Inputs</h2>
-<div class="grid">
+<div class="section-head">
   <div>
+    <p class="eyebrow">Inputs</p>
+    <h2>Identity And Routing</h2>
+  </div>
+  <p class="muted-copy">Edit values and the policy output updates instantly.</p>
+</div>
+
+<div class="grid input-grid">
+  <div class="field-card">
     <label for="rack_name">Rack Name</label>
     <input id="rack_name" value="{{ defaults.rack_name }}" placeholder="homelab">
+    <p class="field-hint">Used to derive a normalized default for the homelab tag.</p>
   </div>
-  <div>
-    <label for="tailnet">Tailnet (for display)</label>
+  <div class="field-card">
+    <label for="tailnet">Tailnet (display)</label>
     <input id="tailnet" value="{{ defaults.tailnet }}">
+    <p class="field-hint">Reference-only label for your workspace context.</p>
   </div>
-  <div>
+  <div class="field-card">
     <label for="admin_group">Admin Group/User</label>
     <input id="admin_group" value="{{ defaults.admin_group }}">
+    <p class="field-hint">Source principal used in tag ownership and SSH rules.</p>
   </div>
-  <div>
+  <div class="field-card">
     <label for="rpi5_tag">Pi 5 Tag</label>
     <input id="rpi5_tag" value="{{ defaults.rpi5_tag }}">
+    <p class="field-hint">Target group for Pi 5 nodes.</p>
   </div>
-  <div>
+  <div class="field-card">
     <label for="rpi_bplus_tag">Pi B+ Tag</label>
     <input id="rpi_bplus_tag" value="{{ defaults.rpi_bplus_tag }}">
+    <p class="field-hint">Target group for Raspberry Pi B+ nodes.</p>
   </div>
-  <div>
+  <div class="field-card">
     <label for="homelab_tag">Homelab Tag</label>
     <input id="homelab_tag" value="{{ defaults.homelab_tag }}">
+    <p class="field-hint">Shared umbrella tag used for east-west access patterns.</p>
   </div>
 </div>
-<div style="margin-top: 0.8rem;">
-  <label for="pi5_subnets">Pi 5 Advertised Subnets (one CIDR per line)</label>
-  <textarea id="pi5_subnets">{{ defaults.pi5_subnets | join('\n') }}</textarea>
+
+<div class="subnet-block">
+  <label for="pi5_subnets">Pi 5 Advertised Subnets</label>
+  <textarea id="pi5_subnets" placeholder="10.42.0.0/24\n10.50.0.0/24">{{ defaults.pi5_subnets | join('\n') }}</textarea>
+  <div class="subnet-meta">
+    <span class="field-hint">One CIDR per line. Empty lines are ignored automatically.</span>
+    <span id="subnet_counter" class="pill subtle">0 routes</span>
+  </div>
 </div>
-<div style="margin-top: 0.8rem;">
-  <button id="generate">Generate ACL Snippets</button>
+
+<div class="button-row">
+  <button id="generate" type="button">Generate ACL Snippets</button>
 </div>

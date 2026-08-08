@@ -1,16 +1,19 @@
 :root {
-  --bg: #f3f5f7;
+  --bg: #f6f7f9;
   --card: #ffffff;
-  --ink: #1d2939;
-  --muted: #52606d;
-  --accent: #0f766e;
-  --line: #d0d7de;
+  --ink: #16202d;
+  --muted: #4f6070;
+  --accent: #0b8b6e;
+  --line: #d3dbe5;
   --danger: #b91c1c;
 }
 body {
   margin: 0;
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-  background: radial-gradient(circle at 12% 12%, #e6fffa 0, transparent 35%), var(--bg);
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 15% 12%, rgba(11, 139, 110, 0.18), transparent 38%),
+    radial-gradient(circle at 89% 9%, rgba(19, 119, 176, 0.14), transparent 42%),
+    linear-gradient(165deg, #deefe7, var(--bg));
   color: var(--ink);
 }
 .sidebar {
@@ -18,13 +21,16 @@ body {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 220px;
-  background: #0f172a;
+  width: 230px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(45, 212, 191, 0.2), transparent 42%),
+    #0e1a2e;
   color: #cbd5e1;
   transition: width 0.2s ease;
   overflow: hidden;
   padding: 0.8rem;
   box-sizing: border-box;
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
 }
 .sidebar-brand {
   padding: 0.25rem 0.45rem 0.8rem;
@@ -69,7 +75,7 @@ body {
   cursor: pointer;
 }
 body.sidebar-collapsed .sidebar {
-  width: 72px;
+  width: 74px;
 }
 body.sidebar-collapsed .sidebar .label {
   display: none;
@@ -78,11 +84,11 @@ body.sidebar-collapsed .sidebar .sidebar-brand {
   display: none;
 }
 .content {
-  margin-left: 236px;
+  margin-left: 246px;
   transition: margin-left 0.2s ease;
 }
 body.sidebar-collapsed .content {
-  margin-left: 88px;
+  margin-left: 92px;
 }
 .wrap {
   max-width: 980px;
@@ -92,9 +98,9 @@ body.sidebar-collapsed .content {
 .panel {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 1rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 16px 44px rgba(14, 42, 71, 0.08);
   margin-bottom: 1rem;
 }
 button {
@@ -152,6 +158,78 @@ input {
   margin-bottom: 0.5rem;
   flex-wrap: wrap;
 }
+
+.quick-links {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.quick-links a {
+  text-decoration: none;
+  color: #0f4a84;
+  background: #eaf2fb;
+  border: 1px solid #c9d8ea;
+  border-radius: 999px;
+  padding: 0.24rem 0.62rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.quick-links a:hover {
+  background: #dfebf8;
+}
+
+.module-grid {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.module-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.7rem;
+}
+
+.module-card.ok {
+  border-color: #b7e4d5;
+  background: #f4fdf9;
+}
+
+.module-card.warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.module-card.bad {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.module-k {
+  margin: 0;
+  color: #5f7388;
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.module-v {
+  margin: 0.3rem 0 0;
+  font-size: 1.14rem;
+  font-weight: 700;
+  color: #122233;
+}
+
+.module-d {
+  margin: 0.35rem 0 0;
+  color: #4f6070;
+  font-size: 0.79rem;
+}
 .log-output {
   background: #f3f5f7;
   padding: 0.5rem;
@@ -164,4 +242,54 @@ input {
   white-space: pre-wrap;
   word-break: break-word;
   display: none;
+}
+
+@media (max-width: 980px) {
+  .sidebar {
+    width: 196px;
+  }
+
+  .content {
+    margin-left: 208px;
+  }
+
+  body.sidebar-collapsed .content {
+    margin-left: 90px;
+  }
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  }
+
+  .content,
+  body.sidebar-collapsed .content {
+    margin-left: 0;
+  }
+
+  body.sidebar-collapsed .sidebar {
+    width: 100%;
+  }
+
+  body.sidebar-collapsed .sidebar .label,
+  body.sidebar-collapsed .sidebar .sidebar-brand {
+    display: block;
+  }
+
+  .toggle-btn {
+    display: none;
+  }
+
+  .wrap {
+    margin-top: 1rem;
+    padding: 0 0.72rem;
+  }
+
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
 }

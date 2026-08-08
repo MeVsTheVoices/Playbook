@@ -7,7 +7,7 @@
       <strong>Profile:</strong> {{ row.profile or '-' }} • <strong>Source:</strong> {{ (row.source_value or row.download_path or '-') | truncate(80, true, '…') }}
     </div>
     <div class="compact-list-item-meta">
-      <strong>Recorded:</strong> {{ row.recorded_at or '-' }} • <strong>Hash:</strong> {{ row.hash_status or '-' }} • <strong>Job:</strong> {{ row.job_status or '-' }} ({{ row.exit_code if row.exit_code is not none else '-' }})
+      <strong>Recorded:</strong> {{ row.recorded_at | default('-') | replace('T', ' ') | replace('+00:00', ' UTC') }} • <strong>Hash:</strong> {{ row.hash_status or '-' }} • <strong>Job:</strong> {{ row.job_status or '-' }} ({{ row.exit_code if row.exit_code is not none else '-' }})
     </div>
     {% if row.notes %}
     <div class="compact-list-item-meta"><strong>Notes:</strong> {{ row.notes }}</div>
@@ -19,7 +19,6 @@
     {% else %}
       <span class="download-state missing"><span class="mark">❌</span> <span>missing</span></span>
     {% endif %}
-    <button type="button" class="compact-list-inline-btn" onclick='fillImageRecordForm({{ row | tojson }})'>Edit</button>
     <button type="button" class="compact-list-inline-btn secondary" onclick='deleteManagedImage({{ row.id | tojson }}, {{ (row.label or "Retrieved image") | tojson }})'>Delete</button>
   </div>
 </div>

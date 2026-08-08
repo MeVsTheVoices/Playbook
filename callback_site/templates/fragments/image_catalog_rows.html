@@ -3,7 +3,7 @@
   <div class="compact-list-item-main">
     <div class="compact-list-item-title">{{ (row.label or row.source_value or row.source or 'Catalog entry') | truncate(80, true, '…') }}</div>
     <div class="compact-list-item-meta">
-      <strong>Profile:</strong> {{ row.profile or '-' }} • <strong>Recorded:</strong> {{ row.recorded_at or '-' }}
+      <strong>Profile:</strong> {{ row.profile or '-' }} • <strong>Recorded:</strong> {{ row.recorded_at | default('-') | replace('T', ' ') | replace('+00:00', ' UTC') }}
     </div>
     <div class="compact-list-item-meta">
       <strong>Source:</strong> {{ (row.source_value or row.source or '-') | truncate(80, true, '…') }}

@@ -325,6 +325,42 @@
         color: #92400e;
         font-size: 0.95rem;
       }
+      .segment-card {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.7rem;
+        background: #f8fafc;
+        margin-top: 0.6rem;
+      }
+      .segment-card h4 {
+        margin: 0 0 0.35rem;
+        font-size: 0.9rem;
+      }
+      .segment-meta {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin-bottom: 0.4rem;
+      }
+      .segment-block {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.6rem;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.77rem;
+        white-space: pre-wrap;
+        margin-top: 0.4rem;
+      }
+      .segment-pill {
+        display: inline-block;
+        background: #ccfbf1;
+        color: #134e4a;
+        border-radius: 999px;
+        padding: 0.16rem 0.5rem;
+        font-size: 0.72rem;
+        margin-right: 0.35rem;
+        margin-top: 0.35rem;
+      }
       @media (max-width: 1050px) {
         .split { grid-template-columns: 1fr; }
       }
@@ -469,6 +505,43 @@
         </div>
 
         <div class="panel">
+          <h2>User-defined profile segments 🧩</h2>
+          <p class="note">This is the first skeleton for reusable profile-specific config blocks. Save a text block plus optional defaults and Galaxy requirements for a profile, then reuse the structure later when the provisioning engine becomes more expressive.</p>
+          <div class="grid">
+            <div>
+              <label for="profile-segment-profile">Target Profile</label>
+              <select id="profile-segment-profile">
+                <option value="">Select profile...</option>
+              </select>
+            </div>
+            <div>
+              <label for="profile-segment-name">Segment Name</label>
+              <input id="profile-segment-name" placeholder="docker-override">
+            </div>
+          </div>
+          <div style="margin-top: 0.7rem;">
+            <label for="profile-segment-config">Config Block</label>
+            <textarea id="profile-segment-config" rows="8" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:0.6rem; font-family:IBM Plex Mono, monospace;"></textarea>
+          </div>
+          <div class="grid" style="margin-top: 0.7rem;">
+            <div>
+              <label for="profile-segment-defaults">Defaults JSON</label>
+              <textarea id="profile-segment-defaults" rows="4" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:0.6rem; font-family:IBM Plex Mono, monospace;" placeholder='{"image": "example:latest"}'></textarea>
+            </div>
+            <div>
+              <label for="profile-segment-galaxy">Ansible Galaxy requirements</label>
+              <textarea id="profile-segment-galaxy" rows="4" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:0.6rem; font-family:IBM Plex Mono, monospace;" placeholder='community.general&#10;ansible.posix'></textarea>
+            </div>
+          </div>
+          <div class="inline-actions" style="margin-top: 0.8rem;">
+            <button id="save-profile-segment" type="button">Save Segment</button>
+            <button id="refresh-profile-segments" class="secondary" type="button">Refresh Segments</button>
+          </div>
+          <p id="profile-segment-status" class="note">No saved profile segments yet.</p>
+          <div id="profile-segment-list"></div>
+        </div>
+
+        <div class="panel">
           <h2>Monitoring + Provisioning State 📈</h2>
           <div class="stats-grid">
             <div class="stat-card">
@@ -547,6 +620,13 @@
       const manualNodePasswordEl = document.getElementById("manual-node-password");
       const manualNodeShellEl = document.getElementById("manual-node-shell");
       const manualNodeCertificateEl = document.getElementById("manual-node-certificate");
+      const profileSegmentProfileEl = document.getElementById("profile-segment-profile");
+      const profileSegmentNameEl = document.getElementById("profile-segment-name");
+      const profileSegmentConfigEl = document.getElementById("profile-segment-config");
+      const profileSegmentDefaultsEl = document.getElementById("profile-segment-defaults");
+      const profileSegmentGalaxyEl = document.getElementById("profile-segment-galaxy");
+      const profileSegmentStatusEl = document.getElementById("profile-segment-status");
+      const profileSegmentListEl = document.getElementById("profile-segment-list");
 
       let nodes = [];
       let profiles = [];
@@ -812,6 +892,109 @@
         });
       }
 
+      function renderProfileSegmentOptions() {
+        profileSegmentProfileEl.innerHTML = "<option value=''>Select profile...</option>";
+        for (const profile of profiles) {
+          const option = document.createElement("option");
+          option.value = profile.id;
+          option.textContent = profile.label;
+          profileSegmentProfileEl.appendChild(option);
+        }
+      }
+
+      function renderProfileSegments(segments) {
+        profileSegmentListEl.innerHTML = "";
+        const entries = Object.entries(segments || {}).sort(([a], [b]) => a.localeCompare(b));
+        if (!entries.length) {
+          profileSegmentListEl.innerHTML = '<div class="note">No saved profile segments yet.</div>';
+          return;
+        }
+
+        for (const [profileId, items] of entries) {
+          const card = document.createElement("div");
+          card.className = "segment-card";
+          const title = document.createElement("h4");
+          title.textContent = `${profileId} (${Array.isArray(items) ? items.length : 0} segment${Array.isArray(items) && items.length === 1 ? "" : "s"})`;
+          card.appendChild(title);
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              const meta = document.createElement("div");
+              meta.className = "segment-meta";
+              meta.textContent = `${item.name || "segment"} • updated ${item.updated_at || "just now"}`;
+              card.appendChild(meta);
+              const defaults = document.createElement("div");
+              defaults.className = "segment-pill";
+              defaults.textContent = item.defaults_json ? "defaults JSON" : "no defaults";
+              const galaxy = document.createElement("div");
+              galaxy.className = "segment-pill";
+              galaxy.textContent = Array.isArray(item.galaxy_requirements) && item.galaxy_requirements.length ? `${item.galaxy_requirements.length} galaxy req` : "no galaxy req";
+              card.appendChild(defaults);
+              card.appendChild(galaxy);
+              if (item.config_block) {
+                const block = document.createElement("pre");
+                block.className = "segment-block";
+                block.textContent = item.config_block;
+                card.appendChild(block);
+              }
+            }
+          }
+          profileSegmentListEl.appendChild(card);
+        }
+      }
+
+      async function refreshProfileSegments() {
+        try {
+          const res = await fetch("/api/nodes/profile-segments");
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || "Failed to load profile segments");
+          }
+          renderProfileSegments(data.segments || {});
+          profileSegmentStatusEl.textContent = `Loaded ${Object.keys(data.segments || {}).length} profile segment group${Object.keys(data.segments || {}).length === 1 ? "" : "s"}.`;
+        } catch (err) {
+          profileSegmentStatusEl.textContent = `Profile segment load error: ${String(err.message || err)}`;
+        }
+      }
+
+      async function saveProfileSegment() {
+        const profileId = profileSegmentProfileEl.value.trim();
+        const name = profileSegmentNameEl.value.trim();
+        if (!profileId || !name) {
+          profileSegmentStatusEl.textContent = "Select a profile and give the segment a name first.";
+          return;
+        }
+        const requirements = profileSegmentGalaxyEl.value
+          .split(/\n|,/)
+          .map((value) => value.trim())
+          .filter(Boolean);
+        const payload = {
+          profile_id: profileId,
+          segment_name: name,
+          config_block: profileSegmentConfigEl.value.trim(),
+          defaults_json: profileSegmentDefaultsEl.value.trim(),
+          galaxy_requirements: requirements,
+        };
+        try {
+          const res = await fetch("/api/nodes/profile-segments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || "Failed to save profile segment");
+          }
+          profileSegmentStatusEl.textContent = `Saved profile segment '${name}' for ${profileId}.`;
+          profileSegmentNameEl.value = "";
+          profileSegmentConfigEl.value = "";
+          profileSegmentDefaultsEl.value = "";
+          profileSegmentGalaxyEl.value = "";
+          await refreshProfileSegments();
+        } catch (err) {
+          profileSegmentStatusEl.textContent = `Profile segment save error: ${String(err.message || err)}`;
+        }
+      }
+
       async function refreshCertificates() {
         try {
           const res = await fetch("/api/ssh/keys");
@@ -907,6 +1090,7 @@
         nodes = Array.isArray(data.nodes) ? data.nodes : [];
         profiles = Array.isArray(data.profiles) ? data.profiles : [];
         nodeInputs = (data.node_inputs && typeof data.node_inputs === "object") ? data.node_inputs : {};
+        renderProfileSegmentOptions();
         manualNodes = (data.manual_nodes && typeof data.manual_nodes === "object") ? data.manual_nodes : {};
 
         statusByNode = {};
@@ -1130,6 +1314,8 @@
 
       provisionNode.addEventListener("change", renderProfileChecklist);
       document.getElementById("save-config").addEventListener("click", saveConfig);
+      document.getElementById("save-profile-segment").addEventListener("click", saveProfileSegment);
+      document.getElementById("refresh-profile-segments").addEventListener("click", refreshProfileSegments);
       document.getElementById("add-manual-node").addEventListener("click", addManualNode);
       document.getElementById("refresh-certificates").addEventListener("click", refreshCertificates);
       document.getElementById("refresh-monitor").addEventListener("click", () => refreshMonitor(false));

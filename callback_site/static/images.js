@@ -67,6 +67,20 @@
     return Math.max(0, Math.min(100, Math.round((finished / total) * 100)));
   }
 
+  function formatBytes(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let size = bytes;
+    let idx = 0;
+    while (size >= 1024 && idx < units.length - 1) {
+      size /= 1024;
+      idx += 1;
+    }
+    const digits = size >= 100 || idx === 0 ? 0 : size >= 10 ? 1 : 2;
+    return `${size.toFixed(digits)} ${units[idx]}`;
+  }
+
   function catalogPullStateText(status) {
     if (status === "running" || status === "queued") return "Pulling images now";
     if (status === "completed" || status === "completed_with_errors") return "Pull complete";
@@ -172,19 +186,37 @@
     const total = Number(summary?.total || 0);
     const finished = Number(summary?.ok || 0) + Number(summary?.failed || 0) + Number(summary?.skipped || 0);
     const running = Number(summary?.running || 0);
-    const percent = catalogPullPercent(summary);
+    const results = Array.isArray(job?.results) ? job.results : [];
+    const activeResult = results.find((item) => String(item?.status || "") === "downloading") || null;
+    const activeDownloaded = Number(activeResult?.bytes_downloaded || 0);
+    const activeTotal = Number(activeResult?.bytes_total || 0);
+    const activePercent = Number(activeResult?.progress_percent || 0);
+    const percent = status === "running" && activePercent > 0 ? activePercent : catalogPullPercent(summary);
     if (catalogPullProgressLabelEl) {
       catalogPullProgressLabelEl.textContent = catalogPullStateText(status);
     }
     if (catalogPullProgressTextEl) {
-      catalogPullProgressTextEl.textContent = total ? `${finished} / ${total} complete${running ? ` • ${running} active` : ""}` : "0 / 0 complete";
+      const bytesText = activeResult
+        ? activeTotal > 0
+          ? `${formatBytes(activeDownloaded)} / ${formatBytes(activeTotal)}`
+          : `${formatBytes(activeDownloaded)} downloaded`
+        : "";
+      const summaryText = total ? `${finished} / ${total} complete${running ? ` • ${running} active` : ""}` : "0 / 0 complete";
+      catalogPullProgressTextEl.textContent = bytesText ? `${summaryText} • ${bytesText}` : summaryText;
     }
     if (catalogPullProgressFillEl) {
       catalogPullProgressFillEl.style.width = `${percent}%`;
     }
     if (catalogPullProgressMetaEl) {
       if (status === "running" || status === "queued") {
-        catalogPullProgressMetaEl.innerHTML = `<span>Download in progress.</span><span>Watch the active tile and the count above.</span>`;
+        if (activeResult) {
+          const detail = activeTotal > 0
+            ? `${formatBytes(activeDownloaded)} of ${formatBytes(activeTotal)} transferred (${Math.max(0, Math.min(100, activePercent))}%).`
+            : `${formatBytes(activeDownloaded)} transferred so far.`;
+          catalogPullProgressMetaEl.innerHTML = `<span>Download in progress.</span><span>${detail}</span>`;
+        } else {
+          catalogPullProgressMetaEl.innerHTML = `<span>Download in progress.</span><span>Waiting for transfer metrics.</span>`;
+        }
       } else if (status === "completed" || status === "completed_with_errors") {
         catalogPullProgressMetaEl.innerHTML = `<span>Download complete.</span><span>Refresh the catalog if you want the tiles to relabel immediately.</span>`;
       } else if (status === "failed") {

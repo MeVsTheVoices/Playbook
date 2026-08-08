@@ -4,20 +4,26 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Rack Cloud-Init Callback</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <style>
       :root {
-        --bg: #f3f5f7;
+        --bg: #f6f7f9;
         --card: #ffffff;
-        --ink: #1d2939;
-        --muted: #52606d;
-        --accent: #0f766e;
-        --line: #d0d7de;
+        --ink: #16202d;
+        --muted: #4f6070;
+        --accent: #0b8b6e;
+        --line: #d3dbe5;
       }
       body {
         margin: 0;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-        background: radial-gradient(circle at 10% 10%, #e6fffa 0, transparent 35%), var(--bg);
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 15% 12%, rgba(11, 139, 110, 0.18), transparent 38%),
+          radial-gradient(circle at 89% 9%, rgba(19, 119, 176, 0.14), transparent 42%),
+          linear-gradient(165deg, #deefe7, var(--bg));
         color: var(--ink);
       }
       .sidebar {
@@ -25,13 +31,16 @@
         top: 0;
         left: 0;
         bottom: 0;
-        width: 220px;
-        background: #0f172a;
+        width: 230px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(45, 212, 191, 0.2), transparent 42%),
+          #0e1a2e;
         color: #cbd5e1;
         transition: width 0.2s ease;
         overflow: hidden;
         padding: 0.8rem;
         box-sizing: border-box;
+        border-right: 1px solid rgba(148, 163, 184, 0.2);
       }
       .sidebar-brand {
         padding: 0.25rem 0.45rem 0.8rem;
@@ -75,14 +84,14 @@
         padding: 0.5rem;
         cursor: pointer;
       }
-      body.sidebar-collapsed .sidebar { width: 72px; }
+      body.sidebar-collapsed .sidebar { width: 74px; }
       body.sidebar-collapsed .sidebar .label { display: none; }
       body.sidebar-collapsed .sidebar .sidebar-brand { display: none; }
       .content {
-        margin-left: 236px;
+        margin-left: 246px;
         transition: margin-left 0.2s ease;
       }
-      body.sidebar-collapsed .content { margin-left: 88px; }
+      body.sidebar-collapsed .content { margin-left: 92px; }
       .wrap {
         max-width: 1100px;
         margin: 2rem auto;
@@ -91,9 +100,9 @@
       .panel {
         background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 14px;
+        border-radius: 16px;
         padding: 1.1rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 16px 44px rgba(14, 42, 71, 0.08);
         margin-bottom: 1rem;
       }
       .hero {
@@ -124,6 +133,29 @@
       }
       .hero p {
         margin: 0.35rem 0 0;
+      }
+      @media (max-width: 980px) {
+        .sidebar { width: 196px; }
+        .content { margin-left: 208px; }
+        body.sidebar-collapsed .content { margin-left: 90px; }
+      }
+      @media (max-width: 760px) {
+        .sidebar {
+          position: static;
+          width: 100%;
+          border-right: none;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+        }
+        .content,
+        body.sidebar-collapsed .content { margin-left: 0; }
+        body.sidebar-collapsed .sidebar { width: 100%; }
+        body.sidebar-collapsed .sidebar .label,
+        body.sidebar-collapsed .sidebar .sidebar-brand { display: block; }
+        .toggle-btn { display: none; }
+        .wrap {
+          margin-top: 1rem;
+          padding: 0 0.72rem;
+        }
       }
       .pill {
         display: inline-block;
@@ -510,6 +542,41 @@
       .catalog-meta a {
         color: var(--accent);
         text-decoration: none;
+      }
+      .catalog-pills {
+        display: flex;
+        gap: 0.45rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 0.45rem;
+      }
+      .catalog-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.32rem;
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
+        font-size: 0.74rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+      }
+      .catalog-pill.available {
+        color: #14532d;
+        background: #dcfce7;
+        border-color: #86efac;
+      }
+      .catalog-pill.missing {
+        color: #9a3412;
+        background: #ffedd5;
+        border-color: #fdba74;
+      }
+      #os_preset.cached-selected {
+        border-color: #22c55e;
+        background: #f0fdf4;
+      }
+      #os_preset.download-needed {
+        border-color: #fb923c;
+        background: #fff7ed;
       }
       .grid-span-full {
         grid-column: 1 / -1;
@@ -2093,6 +2160,7 @@
         }
 
         entries.sort((a, b) => {
+          if (!!a.local_available !== !!b.local_available) return a.local_available ? -1 : 1;
           if (a.recommended !== b.recommended) return a.recommended ? -1 : 1;
           return a.label.localeCompare(b.label);
         });
@@ -2100,7 +2168,7 @@
         for (const preset of entries) {
           const option = document.createElement("option");
           option.value = preset.id;
-          option.textContent = `${preset.label}${preset.recommended ? " [Recommended]" : ""}`;
+          option.textContent = `${preset.local_available ? "✅ Cached" : "⬇️ Pull needed"} • ${preset.label}${preset.recommended ? " [Recommended]" : ""}`;
           option.dataset.imageUrl = preset.image_url || "";
           option.dataset.cachePath = preset.cache_path || "";
           option.dataset.localAvailable = preset.local_available ? "1" : "";
@@ -2119,11 +2187,26 @@
         applyOsPreset();
       }
 
+      function escapeHtml(value) {
+        return String(value || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function updatePresetSelectState(localAvailable) {
+        form.os_preset.classList.toggle("cached-selected", !!localAvailable);
+        form.os_preset.classList.toggle("download-needed", !localAvailable);
+      }
+
       function applyOsPreset() {
         const selected = form.os_preset.selectedOptions[0];
         const profile = form.profile.value;
         const arch = profileArch(profile);
         if (!selected || !selected.value) {
+          form.os_preset.classList.remove("cached-selected", "download-needed");
           osPresetNoteEl.textContent = `No preset selected for ${profile} (${arch}). You can provide Image URL or local file manually.`;
           catalogMetaEl.textContent = "Tip: choose a distro family/release or search to narrow options.";
           return;
@@ -2137,6 +2220,7 @@
         const docsUrl = selected.dataset.docsUrl || "";
         const distro = selected.dataset.distro || "";
         const release = selected.dataset.release || "";
+        updatePresetSelectState(localAvailable);
         if (localAvailable && cachePath) {
           form.image_file.value = cachePath;
           form.image_url.value = "";
@@ -2155,10 +2239,15 @@
           form.image_sha256.value = imageSha;
         }
 
+        const statusPill = localAvailable
+          ? `<span class="catalog-pill available">✅ Cached locally</span>`
+          : `<span class="catalog-pill missing">⬇️ Needs download</span>`;
+        const notesHtml = notes ? `<div>${escapeHtml(notes)}</div>` : "";
         if (docsUrl) {
-          catalogMetaEl.innerHTML = `${notes ? `${notes} ` : ""}<a href="${docsUrl}" target="_blank" rel="noopener noreferrer">Open distro download docs 📚</a>`;
+          catalogMetaEl.innerHTML = `<div class="catalog-pills">${statusPill}</div>${notesHtml}<a href="${docsUrl}" target="_blank" rel="noopener noreferrer">Open distro download docs 📚</a>`;
         } else {
-          catalogMetaEl.textContent = notes || "No docs URL for this preset. Provide image details manually.";
+          const fallback = notes || "No docs URL for this preset. Provide image details manually.";
+          catalogMetaEl.innerHTML = `<div class="catalog-pills">${statusPill}</div><div>${escapeHtml(fallback)}</div>`;
         }
       }
 

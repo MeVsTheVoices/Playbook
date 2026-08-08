@@ -71,6 +71,20 @@ def _ensure_image_cache_dir() -> None:
     IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        tmp_path.replace(path)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _default_app_settings() -> Dict[str, Any]:
     return {
         "rack_name": "homelab",
@@ -433,8 +447,18 @@ def _backfill_event_source_ip(hostname: str, instance_id: str, fqdn: str, source
 
 def _append_image_history(entry: Dict[str, Any]) -> None:
     _ensure_image_history_file()
-    with IMAGE_HISTORY_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    line = json.dumps(entry, separators=(',', ':'))
+    try:
+        with IMAGE_HISTORY_FILE.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except PermissionError:
+        existing_lines: List[str] = []
+        if IMAGE_HISTORY_FILE.exists():
+            try:
+                existing_lines = IMAGE_HISTORY_FILE.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                existing_lines = []
+        _atomic_write_text(IMAGE_HISTORY_FILE, "\n".join([*existing_lines, line]) + "\n")
 
 
 def _image_record_id(entry: Dict[str, Any], raw_line: str = "") -> str:
@@ -459,9 +483,13 @@ def _normalize_image_record(entry: Dict[str, Any], raw_line: str = "") -> Dict[s
 
 def _write_image_history(entries: List[Dict[str, Any]]) -> None:
     _ensure_image_history_file()
-    with IMAGE_HISTORY_FILE.open("w", encoding="utf-8") as f:
-        for entry in entries:
-            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    try:
+        with IMAGE_HISTORY_FILE.open("w", encoding="utf-8") as f:
+            for entry in entries:
+                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except PermissionError:
+        rendered = "".join(json.dumps(entry, separators=(",", ":")) + "\n" for entry in entries)
+        _atomic_write_text(IMAGE_HISTORY_FILE, rendered)
 
 
 def _list_image_records(limit: int = 200) -> List[Dict[str, Any]]:
@@ -636,6 +664,12 @@ def _safe_catalog_filename(url: str, entry_id: str) -> str:
     return f"{entry_id}-{safe}"
 
 
+def _catalog_pull_temp_path(target: Path) -> Path:
+    fd, temp_name = tempfile.mkstemp(prefix=f"{target.name}.", suffix=".part", dir=str(target.parent))
+    os.close(fd)
+    return Path(temp_name)
+
+
 def _download_catalog_image(url: str, target: Path) -> str:
     req = urlrequest.Request(url, headers={"User-Agent": "callback-site-catalog-pull/1.0"})
     digest = hashlib.sha256()
@@ -698,6 +732,13 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
             return
         job["status"] = "running"
         job["started_at"] = datetime.now(timezone.utc).isoformat()
+        job["summary"] = {
+            "ok": 0,
+            "failed": 0,
+            "skipped": 0,
+            "running": len(entries),
+            "total": len(entries),
+        }
 
     for entry in entries:
         entry_id = str(entry.get("id", ""))
@@ -726,6 +767,7 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
 
         filename = _safe_catalog_filename(image_url, entry_id)
         target = IMAGE_CACHE_DIR / filename
+        tmp: Path | None = None
 
         try:
             if target.exists() and skip_existing:
@@ -734,7 +776,7 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
                 item_result["message"] = "already exists"
                 continue
 
-            tmp = target.with_suffix(target.suffix + ".part")
+            tmp = _catalog_pull_temp_path(target)
             observed_sha = _download_catalog_image(image_url, tmp)
             tmp.replace(target)
 
@@ -770,6 +812,11 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
         except Exception as exc:
             item_result["status"] = "failed"
             item_result["message"] = str(exc)
+            try:
+                if tmp is not None:
+                    tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         with CATALOG_PULL_JOBS_LOCK:
             job = CATALOG_PULL_JOBS.get(job_id)

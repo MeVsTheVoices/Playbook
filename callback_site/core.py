@@ -40,6 +40,7 @@ NODE_PROVISION_FILE = DATA_DIR / "node_provisioning.json"
 MONITOR_STATE_FILE = DATA_DIR / "node_monitor_state.json"
 APP_SETTINGS_FILE = DATA_DIR / "app_settings.json"
 SD_OPTION_PROFILES_FILE = DATA_DIR / "sd_option_profiles.json"
+PROFILE_SEGMENTS_FILE = DATA_DIR / "profile_segments.json"
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 SCRIPT_PATH = BASE_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh"
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -147,6 +148,74 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
 def _save_sd_option_profiles(profiles: Dict[str, Dict[str, Any]]) -> None:
     _ensure_data_file()
     SD_OPTION_PROFILES_FILE.write_text(json.dumps(profiles, indent=2), encoding="utf-8")
+
+
+def _load_profile_segments() -> Dict[str, List[Dict[str, Any]]]:
+    _ensure_data_file()
+    if not PROFILE_SEGMENTS_FILE.exists():
+        return {}
+    try:
+        loaded = json.loads(PROFILE_SEGMENTS_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for profile_id, value in loaded.items():
+        pid = str(profile_id).strip()
+        if not pid:
+            continue
+        if isinstance(value, list):
+            segments = []
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                segments.append(
+                    {
+                        "name": str(item.get("name", "")).strip() or "segment",
+                        "config_block": str(item.get("config_block", "")).strip(),
+                        "defaults_json": str(item.get("defaults_json", "")).strip(),
+                        "galaxy_requirements": [str(v).strip() for v in item.get("galaxy_requirements", []) if str(v).strip()],
+                        "updated_at": str(item.get("updated_at", "")).strip(),
+                    }
+                )
+            out[pid] = segments
+    return out
+
+
+def _save_profile_segments(segments: Dict[str, List[Dict[str, Any]]]) -> None:
+    _ensure_data_file()
+    PROFILE_SEGMENTS_FILE.write_text(json.dumps(segments, indent=2), encoding="utf-8")
+
+
+def _upsert_profile_segment(profile_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    pid = str(profile_id).strip()
+    if not pid:
+        raise ValueError("profile_id is required")
+
+    segments = _load_profile_segments()
+    profile_segments = segments.setdefault(pid, [])
+    name = str(payload.get("segment_name", "")).strip() or str(payload.get("name", "")).strip() or "segment"
+    if not name:
+        raise ValueError("segment_name is required")
+
+    entry = {
+        "name": name,
+        "config_block": str(payload.get("config_block", "")).strip(),
+        "defaults_json": str(payload.get("defaults_json", "")).strip(),
+        "galaxy_requirements": [str(v).strip() for v in payload.get("galaxy_requirements", []) if str(v).strip()],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    existing_index = next((idx for idx, item in enumerate(profile_segments) if str(item.get("name", "")).strip() == name), None)
+    if existing_index is None:
+        profile_segments.append(entry)
+    else:
+        profile_segments[existing_index] = entry
+
+    _save_profile_segments(segments)
+    return entry
 
 
 def _resolve_download_path(download_path: str) -> Path | None:

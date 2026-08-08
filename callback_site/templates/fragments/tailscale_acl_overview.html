@@ -1,4 +1,30 @@
-<h1>Tailscale ACL Planner</h1>
-<p>Use this page to generate policy blocks for tags, tag owners, ACL rules, and auto-approvers. Paste output into the Tailscale admin policy file.</p>
-<p>Defaults are rack-aware: the rack name from Settings is used to prefill the homelab tag pattern.</p>
-<div class="warn">Generated policy is a baseline. Review before applying in production.</div>
+<div class="overview-head">
+	<div>
+		<p class="eyebrow">Overview</p>
+		<h2>Policy Baseline Builder</h2>
+		<p class="muted-copy">Generate a rack-aware baseline with tags, ACL rules, SSH policy, and route auto-approvers.</p>
+	</div>
+	<div class="pill-row">
+		<span class="pill info">No API calls required</span>
+		<span class="pill info">Safe to iterate</span>
+	</div>
+</div>
+
+<div class="overview-grid">
+	<article class="stat-card">
+		<p class="stat-label">Rack Profile</p>
+		<p class="stat-value" id="ov-rack">Not set</p>
+	</article>
+	<article class="stat-card">
+		<p class="stat-label">Tailnet</p>
+		<p class="stat-value" id="ov-tailnet">Not set</p>
+	</article>
+	<article class="stat-card">
+		<p class="stat-label">Advertised Routes</p>
+		<p class="stat-value" id="ov-route-count">0</p>
+	</article>
+</div>
+
+<p class="charm-line">A little planning now saves big policy stress later 🙂</p>
+
+<div class="warn compact-warn">Generated policy is a baseline. Always review before applying in production.</div>

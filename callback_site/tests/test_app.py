@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import configparser
 import json
 import os
 import shutil
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="callback-site-tests-"))
 os.environ["CALLBACK_APPDATA_DIR"] = str(TEST_DATA_DIR)
@@ -25,6 +27,13 @@ class CallbackSiteTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         shutil.rmtree(TEST_DATA_DIR, ignore_errors=True)
+
+    def test_ansible_cfg_disables_vault_prompting(self) -> None:
+        config = configparser.ConfigParser()
+        config.read(Path(__file__).resolve().parents[2] / "ansible.cfg")
+        defaults = config["defaults"]
+        self.assertEqual(defaults.get("ask_vault_pass", "").lower(), "false")
+        self.assertNotIn("vault_identity_list", defaults)
 
     def setUp(self) -> None:
         self.client = app.test_client()
@@ -104,7 +113,8 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertNotIn("Cloud-init Option Selection", text)
         self.assertNotIn("Option ID", text)
         self.assertNotIn("No fields staged.", text)
-        self.assertIn("Cloud-init optional templates were moved to the Home page SD Card Imager section.", text)
+        self.assertIn("Hardware Monitor", text)
+        self.assertIn("Hardware Status", text)
 
     def test_monitor_node_and_cloud_init_options(self) -> None:
         summary = self.client.get("/api/monitor/summary")
@@ -1510,6 +1520,119 @@ class CallbackSiteTests(unittest.TestCase):
         latest_check = match[0].get("latest_check", {})
         self.assertEqual(latest_check.get("status"), "planned")
         self.assertEqual(latest_check.get("mode"), "check")
+
+    def test_node_provision_apply_mode_persists_plan_only_results(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.get_json()
+        nodes = payload.get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes in inventory for apply-mode provisioning test")
+
+        node_name = nodes[0]["name"]
+
+        set_profiles = self.client.post(
+            "/api/nodes/node-configs",
+            json={"node": node_name, "profile_ids": ["baseline", "docker"]},
+        )
+        self.assertEqual(set_profiles.status_code, 200)
+        self.assertTrue(set_profiles.get_json()["ok"])
+
+        apply_result = self.client.post(
+            "/api/nodes/provision",
+            json={"node": node_name, "mode": "apply", "run_ansible": False},
+        )
+        self.assertEqual(apply_result.status_code, 200)
+        apply_payload = apply_result.get_json()
+        self.assertTrue(apply_payload["ok"])
+        self.assertEqual(apply_payload["mode"], "apply")
+        self.assertEqual(apply_payload["results"][0]["node"], node_name)
+
+        state = callback_core._load_node_provisioning()
+        node_results = state.get("results", {}).get(node_name, {})
+        self.assertTrue(node_results)
+        self.assertTrue(all(item["status"] == "planned" for item in node_results.values()))
+
+    def test_group_vars_all_vault_file_is_plain_yaml(self) -> None:
+        vault_path = Path(__file__).resolve().parents[2] / "group_vars" / "all" / "vault.yml"
+        self.assertTrue(vault_path.exists())
+        vault_text = vault_path.read_text(encoding="utf-8")
+        self.assertNotIn("$ANSIBLE_VAULT", vault_text)
+        self.assertIn("vault_maas_api_key", vault_text)
+
+    def test_run_node_profile_uses_address_based_temp_inventory(self) -> None:
+        with patch.object(callback_core.logger, "info"), patch.object(callback_core.shutil, "which", return_value="/tmp/fake-ansible"), patch.object(
+            callback_core.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout="ok\n", stderr=""),
+        ) as run_mock:
+            result = callback_core._run_node_profile(
+                "he-test-node-1-aug-7",
+                {"id": "docker", "tags": ["docker"]},
+                mode="apply",
+                run_ansible=True,
+                profile_inputs={},
+                node_group="rpi5_active",
+                node_address="192.0.2.10",
+            )
+
+        self.assertEqual(result["status"], "ok")
+        cmd = run_mock.call_args.args[0]
+        self.assertIn("-i", cmd)
+        inventory_index = cmd.index("-i") + 1
+        inventory_path = cmd[inventory_index]
+        self.assertNotEqual(inventory_path, str(callback_core.INVENTORY_FILE))
+        self.assertTrue(Path(inventory_path).exists())
+        inventory_text = Path(inventory_path).read_text(encoding="utf-8")
+        self.assertIn("192.0.2.10", inventory_text)
+        self.assertIn("he-test-node-1-aug-7", inventory_text)
+        self.assertIn("ansible_user: jdizzle", inventory_text)
+        self.assertIn("ansible_ssh_private_key_file", inventory_text)
+        self.assertIn("rack-bootstrap-ed25519", inventory_text)
+        self.assertIn("PreferredAuthentications=publickey", inventory_text)
+
+    def test_run_node_profile_uses_appdata_backed_ssh_key_path(self) -> None:
+        with patch.object(callback_core.logger, "info"), patch.object(callback_core.shutil, "which", return_value="/tmp/fake-ansible"), patch.object(
+            callback_core.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout="ok\n", stderr=""),
+        ) as run_mock:
+            callback_core._run_node_profile(
+                "node-01",
+                {"id": "docker", "tags": ["docker"]},
+                mode="apply",
+                run_ansible=True,
+                profile_inputs={},
+                node_group="rpi5_active",
+                node_address="192.0.2.10",
+            )
+
+        cmd = run_mock.call_args.args[0]
+        inventory_index = cmd.index("-i") + 1
+        inventory_path = Path(cmd[inventory_index])
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        expected_key_path = str(callback_core.KEYS_DIR / "rack-bootstrap-ed25519")
+        self.assertIn(expected_key_path, inventory_text)
+        self.assertNotIn("/home/jdizzle/Playbook/callback_site/data/ssh_keys/rack-bootstrap-ed25519", inventory_text)
+
+    def test_run_node_profile_logs_start_and_completion(self) -> None:
+        with patch.object(callback_core.logger, "info") as log_info, patch.object(callback_core.shutil, "which", return_value="/tmp/fake-ansible"), patch.object(
+            callback_core.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout="ok\n", stderr=""),
+        ) as run_mock:
+            result = callback_core._run_node_profile(
+                "node-01",
+                {"id": "docker", "tags": ["docker"]},
+                mode="apply",
+                run_ansible=True,
+                profile_inputs={},
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(run_mock.call_args.kwargs["stdin"], callback_core.subprocess.DEVNULL)
+        self.assertTrue(any("Starting provisioning" in str(call.args[0]) for call in log_info.call_args_list))
+        self.assertTrue(any("Completed provisioning" in str(call.args[0]) for call in log_info.call_args_list))
 
     def test_node_inputs_ignore_unselected_profiles(self) -> None:
         summary = self.client.get("/api/nodes/summary")

@@ -2,9 +2,9 @@
 {% for row in records %}
 <tr>
   <td>{{ row.recorded_at or '-' }}</td>
-  <td><code>{{ row.label or row.source_value or row.download_path or 'Retrieved image' }}</code></td>
+  <td><code>{{ (row.label or row.source_value or row.download_path or 'Retrieved image') | truncate(70, true, '…') }}</code></td>
   <td>{{ row.profile or '-' }}</td>
-  <td><code>{{ row.source_value or row.download_path or '-' }}</code></td>
+  <td><code>{{ (row.source_value or row.download_path or '-') | truncate(70, true, '…') }}</code></td>
   <td>
     {% if row.local_available %}
       <span class="download-state available"><span class="mark">✅</span> <span>downloaded</span></span>

@@ -286,6 +286,45 @@
         font-family: "IBM Plex Mono", monospace;
         font-size: 0.81rem;
       }
+      .hero-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .hero-badges {
+        display: flex;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        margin-top: 0.35rem;
+      }
+      .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.28rem;
+        padding: 0.32rem 0.6rem;
+        border-radius: 999px;
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+      .hero-badge.secondary {
+        border-color: #e2e8f0;
+        background: #f8fafc;
+        color: #475569;
+      }
+      .hero-callout {
+        margin-top: 0.75rem;
+        padding: 0.75rem 0.9rem;
+        border-radius: 0.8rem;
+        border: 1px solid #fde68a;
+        background: linear-gradient(90deg, #fffdf2 0%, #fef3c7 100%);
+        color: #92400e;
+        font-size: 0.95rem;
+      }
       @media (max-width: 1050px) {
         .split { grid-template-columns: 1fr; }
       }
@@ -314,13 +353,23 @@
     <main class="content">
       <div class="wrap">
         <div class="panel">
-          <h1>Node Ops 🛠️</h1>
+          <div class="hero-row">
+            <div>
+              <h1>Node Ops 🛠️</h1>
+              <div class="hero-badges">
+                <span class="hero-badge">⚡ Fast path</span>
+                <span class="hero-badge secondary">🌐 IP-first targeting</span>
+                <span class="hero-badge secondary">🔐 Bootstrap SSH ready</span>
+              </div>
+            </div>
+          </div>
           <p class="note">This stage picks up after callback registration. Choose per-node configuration sets, run closer checks, and optionally apply provisioning through Ansible.</p>
+          <div class="hero-callout">Use the current node IP when local DNS is not available, save profile inputs before you apply, and let the provisioning flow use the bootstrap SSH identity that already worked for the node.</div>
         </div>
 
         <div class="split">
           <div class="panel">
-            <h2>Node Access Defaults + Webhook</h2>
+            <h2>Node Access Defaults + Webhook 🔐</h2>
             <p class="note">These are global defaults for checks/webhooks. Add per-node identity details below when enrolling manual nodes.</p>
             <div class="grid">
               <div>
@@ -387,7 +436,7 @@
           </div>
 
           <div class="panel">
-            <h2>Provisioning Profiles</h2>
+            <h2>Provisioning Profiles ⚙️</h2>
             <div>
               <label for="provision-node">Node</label>
               <select id="provision-node"></select>
@@ -420,7 +469,7 @@
         </div>
 
         <div class="panel">
-          <h2>Monitoring + Provisioning State</h2>
+          <h2>Monitoring + Provisioning State 📈</h2>
           <div class="stats-grid">
             <div class="stat-card">
               <div class="k">Nodes In View</div>
@@ -466,7 +515,7 @@
         </div>
 
         <div class="panel">
-          <h2>Provisioning Output</h2>
+          <h2>Provisioning Output 🧾</h2>
           <p class="note">Latest check/apply output for profile runs.</p>
           <div id="provision-log" class="log">No provisioning actions yet.</div>
         </div>
@@ -1014,14 +1063,25 @@
       function formatProvisionResult(result) {
         const lines = [];
         for (const nodeResult of result.results || []) {
-          lines.push(`Node: ${nodeResult.node} | mode=${nodeResult.mode} | ansible=${nodeResult.run_ansible}`);
+          const summary = [];
           for (const item of nodeResult.results || []) {
-            lines.push(`  - ${item.profile_id}: ${item.status} (exit=${item.exit_code ?? "-"}) @ ${item.checked_at}`);
-            if (item.command && item.command.length) {
-              lines.push(`    command: ${item.command.join(" ")}`);
-            }
+            const label = item.profile_id || "profile";
+            const state = item.status || "unknown";
+            const exitCode = item.exit_code ?? "-";
+            summary.push(`${label}: ${state} (exit ${exitCode})`);
+          }
+
+          lines.push(`Node ${nodeResult.node}: ${summary.join(" | ") || "no profile results"}`);
+          if (nodeResult.mode) {
+            lines.push(`Mode: ${nodeResult.mode}${nodeResult.run_ansible ? " • Ansible enabled" : " • plan only"}`);
+          }
+          for (const item of nodeResult.results || []) {
             if (item.output) {
-              lines.push(`    output: ${String(item.output).slice(0, 700)}`);
+              const output = String(item.output).trim();
+              if (output) {
+                const shortOutput = output.length > 500 ? `${output.slice(0, 500)}…` : output;
+                lines.push(`  ${item.profile_id || "profile"}: ${shortOutput}`);
+              }
             }
           }
           lines.push("");
@@ -1037,7 +1097,7 @@
           }
         }
 
-        provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning...`;
+        provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning for the selected node...`;
         const res = await fetch("/api/nodes/provision", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1060,7 +1120,10 @@
           return;
         }
 
-        provisionStatus.textContent = `${mode === "check" ? "Check" : "Apply"} completed.`;
+        const hasFailures = (data.results || []).some((nodeResult) => (nodeResult.results || []).some((item) => item.status === "failed" || item.status === "timeout" || item.status === "unavailable"));
+        provisionStatus.textContent = hasFailures
+          ? `${mode === "check" ? "Check" : "Apply"} finished, but one or more profiles need attention.`
+          : `${mode === "check" ? "Check" : "Apply"} finished successfully.`;
         provisionLog.textContent = formatProvisionResult(data);
         await loadSummary();
       }

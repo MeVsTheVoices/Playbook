@@ -59,10 +59,12 @@
 1. After callback events appear for a node, open `/nodes`.
 2. Assign per-node configuration profiles (baseline/tailscale/telegraf/docker/kubernetes).
 3. Save profile-specific inputs (for example, Telegraf endpoint/bucket/org/access key/secret key, Tailscale auth key/tailnet).
-4. Run "Check Closer" to validate node profile sets (`mode=check`).
-5. If required values are missing, fill them in and save inputs, then re-run check.
-6. Run "Apply" for optional provisioning once checks look correct.
-7. Use plan-only checks by disabling Ansible execution in the Node Ops UI.
+4. Prefer the node's current IP in Node Ops when local DNS is not available; the provisioning workflow uses that address to build a temporary inventory and target the live node directly.
+5. Run "Check Closer" to validate node profile sets (`mode=check`).
+6. If required values are missing, fill them in and save inputs, then re-run check.
+7. Run "Apply" for optional provisioning once checks look correct.
+8. Use plan-only checks by disabling Ansible execution in the Node Ops UI.
+9. Expect the provisioning path to be non-interactive: it should not hang on vault prompts, and it should use the bootstrap SSH identity/private key that matches the original cloud-init bootstrap.
 
 ## Kubernetes (K8s) Primer
 - What it is: Kubernetes is a scheduler and control plane for running containerized workloads across multiple machines.

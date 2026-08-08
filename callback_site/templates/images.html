@@ -336,6 +336,49 @@
         align-items: center;
         flex-shrink: 0;
       }
+      .compact-list {
+        display: grid;
+        gap: 0.55rem;
+        margin-top: 0.75rem;
+      }
+      .compact-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.8rem;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: linear-gradient(180deg, #fcfdff 0%, #f8fafc 100%);
+      }
+      .compact-list-item-main {
+        min-width: 0;
+        display: grid;
+        gap: 0.25rem;
+      }
+      .compact-list-item-title {
+        font-weight: 700;
+        font-size: 0.9rem;
+        line-height: 1.3;
+      }
+      .compact-list-item-meta {
+        color: var(--muted);
+        font-size: 0.76rem;
+        word-break: break-word;
+      }
+      .compact-list-item-actions {
+        display: flex;
+        gap: 0.35rem;
+        flex-shrink: 0;
+        align-items: center;
+      }
+      .compact-list-inline-btn {
+        width: auto;
+        padding: 0.38rem 0.62rem;
+        font-size: 0.78rem;
+        border-radius: 8px;
+      }
+      .compact-list-inline-btn.secondary { background: #475569; }
       .catalog-inline-btn {
         width: auto;
         padding: 0.4rem 0.6rem;
@@ -505,24 +548,9 @@
             </div>
           </form>
 
-          <table style="margin-top: 0.8rem;">
-            <thead>
-              <tr>
-                <th>Recorded</th>
-                <th>Label</th>
-                <th>Profile</th>
-                <th>Source</th>
-                <th>Available</th>
-                <th>Hash</th>
-                <th>Job</th>
-                <th>Notes</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="managed-images-body">
-              {% include "fragments/managed_image_rows.html" %}
-            </tbody>
-          </table>
+          <div id="managed-images-body" class="compact-list">
+            {% include "fragments/managed_image_rows.html" %}
+          </div>
         </div>
 
         <div class="panel" id="image-download-catalog">
@@ -530,22 +558,9 @@
             <h2>Image Download Catalog</h2>
             <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Recorded (UTC)</th>
-                <th>Profile</th>
-                <th>Source</th>
-                <th>Available</th>
-                <th>Hash Status</th>
-                <th>Observed SHA256</th>
-                <th>Job</th>
-              </tr>
-            </thead>
-            <tbody id="image-catalog-body">
-              {% include "fragments/image_catalog_rows.html" %}
-            </tbody>
-          </table>
+          <div id="image-catalog-body" class="compact-list">
+            {% include "fragments/image_catalog_rows.html" %}
+          </div>
         </div>
 
         <div class="panel" id="retrieved-image-manager-alt" style="display:none;">

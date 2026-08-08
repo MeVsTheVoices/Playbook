@@ -289,6 +289,60 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .catalog-group-list {
+        display: grid;
+        gap: 0.6rem;
+        margin-top: 0.7rem;
+      }
+      .catalog-group-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+        overflow: hidden;
+      }
+      .catalog-group-card > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 0.8rem 0.9rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 0.8rem;
+        align-items: center;
+      }
+      .catalog-group-card > summary::-webkit-details-marker { display: none; }
+      .catalog-group-title { font-weight: 700; }
+      .catalog-group-subtitle { color: var(--muted); font-size: 0.78rem; margin-top: 0.1rem; }
+      .catalog-group-body {
+        padding: 0 0.9rem 0.9rem;
+        display: grid;
+        gap: 0.5rem;
+      }
+      .catalog-group-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.8rem;
+        align-items: center;
+        padding: 0.6rem 0.7rem;
+        border-radius: 10px;
+        background: white;
+        border: 1px solid #e2e8f0;
+      }
+      .catalog-group-item-main { min-width: 0; }
+      .catalog-group-item-title { font-weight: 700; font-size: 0.9rem; }
+      .catalog-group-item-meta { color: var(--muted); font-size: 0.76rem; margin-top: 0.2rem; word-break: break-word; }
+      .catalog-group-item-actions {
+        display: flex;
+        gap: 0.35rem;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .catalog-inline-btn {
+        width: auto;
+        padding: 0.4rem 0.6rem;
+        font-size: 0.8rem;
+        border-radius: 8px;
+      }
+      .catalog-inline-btn.secondary { background: #475569; }
     </style>
   </head>
   <body>
@@ -346,6 +400,7 @@
                 </tbody>
               </table>
             </div>
+            <div id="catalog-grouped-list" class="catalog-group-list" style="margin-top: 0.9rem;"></div>
 
             <div style="margin-top: 0.9rem; border-top: 1px dashed var(--line); padding-top: 0.9rem;">
               <label for="catalog_pull_ids">Downloadable Distro Presets</label>
@@ -377,35 +432,12 @@
           </div>
         </details>
 
-        <div class="panel" id="image-download-catalog">
-          <div class="split-head" style="margin-bottom: 0.5rem;">
-            <h2>Image Download Catalog</h2>
-            <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Recorded (UTC)</th>
-                <th>Profile</th>
-                <th>Source</th>
-                <th>Available</th>
-                <th>Hash Status</th>
-                <th>Observed SHA256</th>
-                <th>Job</th>
-              </tr>
-            </thead>
-            <tbody id="image-catalog-body">
-              {% include "fragments/image_catalog_rows.html" %}
-            </tbody>
-          </table>
-        </div>
-
         <div class="panel" id="retrieved-image-manager">
           <div class="split-head">
-            <h2>Retrieved Image Manager</h2>
+            <h2>Add image manually</h2>
             <a class="mini-link" href="/fragments/sd/images-rows" hx-get="/fragments/sd/images-rows" hx-target="#managed-images-body" hx-swap="innerHTML">Refresh rows</a>
           </div>
-          <p class="hint">Availability reflects whether the current download path exists on disk.</p>
+          <p class="hint">Track images you want to keep available for later, even before they are pulled locally.</p>
 
           <form id="image-record-form">
             <input type="hidden" id="image_record_id">
@@ -493,6 +525,37 @@
           </table>
         </div>
 
+        <div class="panel" id="image-download-catalog">
+          <div class="split-head" style="margin-bottom: 0.5rem;">
+            <h2>Image Download Catalog</h2>
+            <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Recorded (UTC)</th>
+                <th>Profile</th>
+                <th>Source</th>
+                <th>Available</th>
+                <th>Hash Status</th>
+                <th>Observed SHA256</th>
+                <th>Job</th>
+              </tr>
+            </thead>
+            <tbody id="image-catalog-body">
+              {% include "fragments/image_catalog_rows.html" %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel" id="retrieved-image-manager-alt" style="display:none;">
+          <div class="split-head">
+            <h2>Retrieved Image Manager</h2>
+            <a class="mini-link" href="/fragments/sd/images-rows" hx-get="/fragments/sd/images-rows" hx-target="#managed-images-body" hx-swap="innerHTML">Refresh rows</a>
+          </div>
+          <p class="hint">Availability reflects whether the current download path exists on disk.</p>
+        </div>
+
         <div class="panel" id="cloud-init-viewer">
           <div class="split-head" style="margin-bottom: 0.5rem;">
             <h2>Cloud-Init Options Reference</h2>
@@ -543,6 +606,7 @@
       const catalogAvailabilityBodyEl = document.getElementById("catalog-availability-body");
       const catalogAvailabilityStatusEl = document.getElementById("catalog-availability-status");
       const catalogAvailabilityWrapEl = document.getElementById("catalog-availability-wrap");
+      const catalogGroupedListEl = document.getElementById("catalog-grouped-list");
       const toggleCatalogCompactBtn = document.getElementById("toggle-catalog-compact");
       const catalogSourceCountEl = document.getElementById("catalog-source-count");
       const catalogSourceSummaryEl = document.getElementById("catalog-source-summary");
@@ -897,6 +961,74 @@
         }
       }
 
+      function renderGroupedCatalogEntries(entries) {
+        if (!catalogGroupedListEl) return;
+        const available = entries.filter((entry) => entry.local_available);
+        const missing = entries.filter((entry) => !entry.local_available);
+        const groups = [
+          { key: "missing", title: "Missing from cache", subtitle: "These are the ones you can safely ignore for now while you focus on what is already present.", items: missing, open: true },
+          { key: "downloaded", title: "Already downloaded", subtitle: "These are the presets you can use immediately.", items: available, open: false },
+        ];
+
+        catalogGroupedListEl.innerHTML = "";
+        for (const group of groups) {
+          const details = document.createElement("details");
+          details.className = "catalog-group-card";
+          details.open = group.open;
+
+          const summary = document.createElement("summary");
+          summary.innerHTML = `
+            <div>
+              <div class="catalog-group-title">${group.title}</div>
+              <div class="catalog-group-subtitle">${group.subtitle}</div>
+            </div>
+            <span class="tag ${group.items.length ? "" : "tag-muted"}">${group.items.length} preset${group.items.length === 1 ? "" : "s"}</span>
+          `;
+
+          const body = document.createElement("div");
+          body.className = "catalog-group-body";
+          if (!group.items.length) {
+            const empty = document.createElement("div");
+            empty.className = "hint";
+            empty.textContent = `No ${group.key === "missing" ? "missing" : "downloaded"} presets right now.`;
+            body.appendChild(empty);
+          } else {
+            for (const entry of group.items) {
+              const item = document.createElement("div");
+              item.className = "catalog-group-item";
+              const main = document.createElement("div");
+              main.className = "catalog-group-item-main";
+              const title = document.createElement("div");
+              title.className = "catalog-group-item-title";
+              title.textContent = entry.label || entry.id || "Catalog entry";
+              const meta = document.createElement("div");
+              meta.className = "catalog-group-item-meta";
+              meta.textContent = `${entry.id || "-"}${entry.image_url ? ` • ${entry.image_url}` : ""}`;
+              main.appendChild(title);
+              main.appendChild(meta);
+              const actions = document.createElement("div");
+              actions.className = "catalog-group-item-actions";
+              const pullBtn = document.createElement("button");
+              pullBtn.type = "button";
+              pullBtn.className = "catalog-inline-btn";
+              pullBtn.textContent = group.key === "missing" ? "Pull" : "Pull again";
+              pullBtn.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                startCatalogPullForIds([entry.id], entry.label || entry.id);
+              });
+              actions.appendChild(pullBtn);
+              item.appendChild(main);
+              item.appendChild(actions);
+              body.appendChild(item);
+            }
+          }
+          details.appendChild(summary);
+          details.appendChild(body);
+          catalogGroupedListEl.appendChild(details);
+        }
+      }
+
       async function loadCatalogAvailability() {
         catalogAvailabilityStatusEl.textContent = "Loading availability...";
         const res = await fetch("/api/sd/catalog");
@@ -948,6 +1080,7 @@
           }
         }
 
+        renderGroupedCatalogEntries(entries);
         rebuildCatalogPullOptions(entries);
         const availableCount = entries.filter((e) => e.local_available).length;
         const missingCount = Math.max(0, entries.length - availableCount);
@@ -1002,17 +1135,17 @@
         }
       }
 
-      async function startCatalogPull() {
-        const selectedIds = Array.from(catalogPullSelectEl.selectedOptions)
-          .map((option) => String(option.value || "").trim())
-          .filter(Boolean);
+      async function startCatalogPullForIds(catalogIds, label = "selected presets") {
+        const selectedIds = Array.isArray(catalogIds)
+          ? catalogIds.filter(Boolean)
+          : [];
 
         if (!selectedIds.length) {
           catalogPullStatusEl.textContent = "Select at least one catalog entry to pull.";
           return;
         }
 
-        catalogPullStatusEl.textContent = "Submitting bulk pull job...";
+        catalogPullStatusEl.textContent = `Submitting pull job for ${label}...`;
         catalogPullLogEl.textContent = "";
         const res = await fetch("/api/sd/catalog-pull", {
           method: "POST",
@@ -1033,9 +1166,22 @@
         }
 
         currentCatalogPullJob = data.job_id;
-        catalogPullStatusEl.textContent = `Bulk pull job started: ${data.job_id}`;
+        catalogPullStatusEl.textContent = `Pull job started for ${label}: ${data.job_id}`;
         setPullCardState({ id: data.job_id, status: "running", created_at: new Date().toISOString() });
         pollCatalogPullJob();
+      }
+
+      async function startCatalogPull() {
+        const selectedIds = Array.from(catalogPullSelectEl.selectedOptions)
+          .map((option) => String(option.value || "").trim())
+          .filter(Boolean);
+
+        if (!selectedIds.length) {
+          catalogPullStatusEl.textContent = "Select at least one catalog entry to pull.";
+          return;
+        }
+
+        await startCatalogPullForIds(selectedIds, "selected presets");
       }
 
       async function loadCloudInitProfiles() {

@@ -48,6 +48,45 @@ class CallbackSiteTests(unittest.TestCase):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
 
+    def test_nodes_page_exposes_profile_segment_and_galaxy_controls(self) -> None:
+        response = self.client.get("/nodes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("User-defined profile segments", text)
+        self.assertIn("Ansible Galaxy requirements", text)
+
+    def test_profile_segments_api_round_trips(self) -> None:
+        response = self.client.post(
+            "/api/nodes/profile-segments",
+            json={
+                "profile_id": "docker",
+                "segment_name": "docker-override",
+                "config_block": "version: '3.8'\nservices:\n  app:\n    image: example",
+                "defaults_json": '{"image":"example:latest"}',
+                "galaxy_requirements": ["community.general", "ansible.posix"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["profile_id"], "docker")
+
+        loaded = self.client.get("/api/nodes/profile-segments")
+        self.assertEqual(loaded.status_code, 200)
+        loaded_payload = loaded.get_json()
+        self.assertTrue(loaded_payload["ok"])
+        self.assertIn("docker", loaded_payload["segments"])
+        self.assertEqual(loaded_payload["segments"]["docker"][0]["name"], "docker-override")
+
+    def test_images_page_exposes_grouped_catalog_and_manual_record_controls(self) -> None:
+        response = self.client.get("/images")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Missing from cache", text)
+        self.assertIn("Already downloaded", text)
+        self.assertIn("Add image manually", text)
+        self.assertIn("Pull", text)
+
     def test_home_page_contains_cloud_init_template_controls(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

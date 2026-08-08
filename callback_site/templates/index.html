@@ -656,6 +656,13 @@
       .event-row-new {
         animation: event-row-fade 900ms ease;
       }
+      .events-table tbody tr:hover td {
+        background: #f0fdfa;
+        cursor: pointer;
+      }
+      .event-row-selected td {
+        background: #ccfbf1 !important;
+      }
       @keyframes event-row-fade {
         from { background: #e0f2fe; }
         to { background: transparent; }
@@ -1211,6 +1218,7 @@
           </div>
         </div>
         <p class="small-note" id="event-meta">Waiting for callback updates...</p>
+        <p class="small-note">Click any row to inspect its full payload below the table.</p>
         <table class="events-table">
           <thead>
             <tr>
@@ -1222,13 +1230,21 @@
               <th>Stage</th>
               <th>Source IP</th>
               <th>Cert</th>
-              <th>Payload</th>
             </tr>
           </thead>
           <tbody id="events-body">
             {% include "fragments/callback_rows.html" %}
           </tbody>
         </table>
+      </div>
+
+      <div class="panel" id="payload-inspect-panel">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.55rem;">
+          <h2 style="margin:0;">Payload Inspector</h2>
+          <button type="button" id="payload-inspect-clear" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;">Clear Selection</button>
+        </div>
+        <p class="note" id="payload-inspect-meta">Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.</p>
+        <pre id="payload-inspect-json" style="background:#0b1020; color:#d6deeb; border-radius:10px; padding:0.8rem; max-height:480px; overflow:auto; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; white-space:pre-wrap; margin:0;">No payload selected yet.</pre>
       </div>
     </div>
     </main>
@@ -1787,12 +1803,57 @@
         eventMetaEl.textContent = `Showing ${visible.length} of ${all.length} events. Latest callback: ${latestAt}. Auto-refresh every 5s.`;
       }
 
+      const payloadInspectPanel = document.getElementById("payload-inspect-panel");
+      const payloadInspectMeta = document.getElementById("payload-inspect-meta");
+      const payloadInspectJson = document.getElementById("payload-inspect-json");
+      let inspectedEventId = null;
+      let inspectedSnapshot = null;
+
+      function eventIdentity(event) {
+        return [
+          String(event.received_at || ""),
+          String(event.hostname || ""),
+          String(event.instance_id || ""),
+          String(event.stage || ""),
+        ].join("|");
+      }
+
+      function showPayloadInspect(event) {
+        const summary = payloadSummary(event);
+        const id = eventIdentity(event);
+        inspectedEventId = id;
+        inspectedSnapshot = {
+          id,
+          event,
+          summary,
+        };
+        payloadInspectMeta.textContent = summary.line;
+        payloadInspectJson.textContent = summary.json;
+
+        eventsBodyEl.querySelectorAll("tr.event-row-selected").forEach((r) => r.classList.remove("event-row-selected"));
+        const allRows = eventsBodyEl.querySelectorAll("tr");
+        for (const row of allRows) {
+          if (row.dataset.eventId === id) {
+            row.classList.add("event-row-selected");
+            break;
+          }
+        }
+      }
+
+      document.getElementById("payload-inspect-clear").addEventListener("click", () => {
+        inspectedEventId = null;
+        inspectedSnapshot = null;
+        payloadInspectMeta.textContent = "Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.";
+        payloadInspectJson.textContent = "No payload selected yet.";
+        eventsBodyEl.querySelectorAll("tr.event-row-selected").forEach((r) => r.classList.remove("event-row-selected"));
+      });
+
       function renderEvents(events) {
         eventsBodyEl.innerHTML = "";
         if (!events || !events.length) {
           const tr = document.createElement("tr");
           const td = document.createElement("td");
-          td.colSpan = 9;
+          td.colSpan = 8;
           td.textContent = "No events received yet.";
           tr.appendChild(td);
           eventsBodyEl.appendChild(tr);
@@ -1802,6 +1863,13 @@
         for (const e of events.slice(0, 200)) {
           const tr = document.createElement("tr");
           tr.className = "event-row-new";
+          const eventId = eventIdentity(e);
+          tr.dataset.eventId = eventId;
+          if (inspectedEventId && inspectedEventId === eventId) {
+            tr.classList.add("event-row-selected");
+          }
+          tr.style.cursor = "pointer";
+          tr.title = "Click to inspect payload";
           const sourceIp = e.source_ip || e.remote_addr || "-";
           const sourceIpNote = e.source_ip_source
             ? `via ${e.source_ip_source}${e.forwarded_for ? ` (${e.forwarded_for})` : ""}`
@@ -1836,38 +1904,6 @@
             tr.appendChild(td);
           });
 
-          const rawTd = document.createElement("td");
-          const summary = payloadSummary(e);
-          if (e.node_report_id) {
-            const reportLinkWrap = document.createElement("div");
-            reportLinkWrap.className = "payload-kv";
-            const reportLink = document.createElement("a");
-            reportLink.href = `/cloud-init/reports/${encodeURIComponent(e.node_report_id)}`;
-            reportLink.target = "_blank";
-            reportLink.rel = "noopener";
-            reportLink.textContent = "View node report";
-            reportLinkWrap.appendChild(reportLink);
-            rawTd.appendChild(reportLinkWrap);
-          }
-          const details = document.createElement("details");
-          details.className = "payload-details";
-          const detailSummary = document.createElement("summary");
-          detailSummary.className = "payload-summary";
-          detailSummary.textContent = "View payload";
-          details.appendChild(detailSummary);
-
-          const meta = document.createElement("div");
-          meta.className = "payload-kv";
-          meta.textContent = summary.line;
-          details.appendChild(meta);
-
-          const pre = document.createElement("pre");
-          pre.className = "payload-json";
-          pre.textContent = summary.json;
-          details.appendChild(pre);
-          rawTd.appendChild(details);
-          tr.appendChild(rawTd);
-
           const stageTd = tr.children[5];
           if (stageTd) {
             const stageValue = values[5];
@@ -1878,7 +1914,21 @@
             stageTd.appendChild(stage);
           }
 
+          tr.addEventListener("click", () => showPayloadInspect(e));
           eventsBodyEl.appendChild(tr);
+        }
+
+        if (inspectedEventId && inspectedSnapshot) {
+          const match = events.find((e) => eventIdentity(e) === inspectedEventId);
+          if (match) {
+            const summary = payloadSummary(match);
+            payloadInspectMeta.textContent = summary.line;
+            payloadInspectJson.textContent = summary.json;
+            inspectedSnapshot = { id: inspectedEventId, event: match, summary };
+          } else {
+            payloadInspectMeta.textContent = `${inspectedSnapshot.summary.line} (snapshot retained; event not in current filtered view)`;
+            payloadInspectJson.textContent = inspectedSnapshot.summary.json;
+          }
         }
       }
 

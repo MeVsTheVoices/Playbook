@@ -2,7 +2,7 @@
 <tr>
   <td>{{ row.recorded_at or '-' }}</td>
   <td>{{ row.profile or '-' }}</td>
-  <td><code>{{ row.source_value or row.source or '-' }}</code></td>
+  <td><code>{{ (row.source_value or row.source or '-') | truncate(70, true, '…') }}</code></td>
   <td>
     {% if row.local_available %}
       <span class="download-state available"><span class="mark">✅</span> <span>downloaded</span></span>
@@ -11,7 +11,7 @@
     {% endif %}
   </td>
   <td>{{ row.hash_status or '-' }}</td>
-  <td><code>{{ row.observed_sha256 or row.expected_sha256 or '-' }}</code></td>
+  <td><code>{{ (row.observed_sha256 or row.expected_sha256 or '-') | truncate(20, true, '…') }}</code></td>
   <td>{{ row.job_status or '-' }} ({{ row.exit_code if row.exit_code is not none else '-' }})</td>
 </tr>
 {% else %}

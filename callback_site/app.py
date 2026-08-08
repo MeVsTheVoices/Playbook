@@ -980,6 +980,28 @@ def monitor_node_cloud_init_assign(node_name: str) -> Any:
     return jsonify({"ok": True, "node": node_name, "option_ids": valid_ids})
 
 
+@app.get("/api/nodes/profile-segments")
+def nodes_profile_segments() -> Any:
+    return jsonify({"ok": True, "segments": _load_profile_segments()})
+
+
+@app.post("/api/nodes/profile-segments")
+def nodes_profile_segments_upsert() -> Any:
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+    profile_id = str(payload.get("profile_id", "")).strip()
+    if not profile_id:
+        return jsonify({"ok": False, "error": "profile_id is required"}), 400
+
+    try:
+        entry = _upsert_profile_segment(profile_id, payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    return jsonify({"ok": True, "profile_id": profile_id, "segment": entry})
+
+
 @app.post("/api/nodes/config")
 def nodes_config() -> Any:
     payload = request.get_json(silent=True) or {}

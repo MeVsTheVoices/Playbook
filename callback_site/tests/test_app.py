@@ -174,8 +174,8 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('class="sidebar"', text)
         self.assertIn('href="/test-terminal"', text)
         self.assertIn('id="sidebar-toggle"', text)
-        self.assertIn("resolveVerificationHost", text)
-        self.assertIn("hostSelectEl.value.trim() || hostEl.value.trim()", text)
+        self.assertIn('/static/test_terminal.css', text)
+        self.assertIn('/static/test_terminal.js', text)
 
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
@@ -1040,12 +1040,15 @@ class CallbackSiteTests(unittest.TestCase):
         response = self.client.get("/images")
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
-        self.assertIn("cache-path-ok", text)
-        self.assertIn("cache-path-missing", text)
+        assets = self.client.get("/static/images.js")
+        self.assertEqual(assets.status_code, 200)
+        script = assets.get_data(as_text=True)
+        self.assertIn("cache-path-ok", script)
+        self.assertIn("cache-path-missing", script)
         self.assertIn("source-panel", text)
         self.assertIn("Distro image presets", text)
-        self.assertIn("download-state available", text)
-        self.assertIn("download-state missing", text)
+        self.assertIn("download-state available", script)
+        self.assertIn("download-state missing", script)
 
     def test_image_crud_and_fragment_rows(self) -> None:
         created = self.client.post(

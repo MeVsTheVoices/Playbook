@@ -102,6 +102,70 @@ body.sidebar-collapsed .content {
   padding: 1.15rem;
   margin-bottom: 1rem;
 }
+
+.terminal-hero {
+  position: relative;
+  margin: -0.15rem -0.15rem 0.85rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid #c9f8ef;
+  background: linear-gradient(135deg, #ecfeff 0%, #f8fafc 60%, #f0fdfa 100%);
+  overflow: hidden;
+}
+
+.sparkle-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #bfdbfe;
+  animation: glitter-bob 1.8s ease-in-out infinite;
+}
+
+.sparkle-left {
+  top: 10px;
+  right: 64px;
+}
+
+.sparkle-right {
+  top: 14px;
+  right: 22px;
+  animation-delay: 0.4s;
+}
+
+.hero-chips {
+  margin-top: 0.45rem;
+  display: flex;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+}
+
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.16rem 0.52rem;
+}
+
+@keyframes glitter-bob {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(8deg);
+  }
+}
 h1 {
   margin: 0 0 0.3rem;
 }
@@ -274,5 +338,13 @@ button {
   .wrap {
     margin-top: 1rem;
     padding: 0 0.72rem;
+  }
+
+  .sparkle-left {
+    right: 52px;
+  }
+
+  .sparkle-right {
+    right: 14px;
   }
 }

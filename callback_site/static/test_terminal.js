@@ -20,7 +20,8 @@ let activeJobId = null;
 let pollTimer = null;
 let checksCatalog = [];
 let callbackTargets = [];
-const MANUAL_HOSTS_KEY = "verifier-manual-hosts";
+const MANUAL_HOSTS_KEY = "terminal-manual-hosts";
+const LEGACY_MANUAL_HOSTS_KEY = "verifier-manual-hosts";
 
 function initSidebar() {
   const saved = localStorage.getItem("sidebar-collapsed");
@@ -126,7 +127,7 @@ async function startCheck() {
     return;
   }
   if (!checkIdEl.value) {
-    jobStatusEl.textContent = "Select a verification check.";
+    jobStatusEl.textContent = "Select a terminal task.";
     checkIdEl.focus();
     return;
   }
@@ -202,7 +203,11 @@ async function refreshKeys() {
 
 function readManualHosts() {
   try {
-    const raw = JSON.parse(localStorage.getItem(MANUAL_HOSTS_KEY) || "[]");
+    let rawText = localStorage.getItem(MANUAL_HOSTS_KEY);
+    if (!rawText) {
+      rawText = localStorage.getItem(LEGACY_MANUAL_HOSTS_KEY) || "[]";
+    }
+    const raw = JSON.parse(rawText || "[]");
     if (!Array.isArray(raw)) {
       return [];
     }
@@ -316,7 +321,7 @@ function renderChecks() {
 
 function updateCheckDescription() {
   const selected = checksCatalog.find((c) => c.id === checkIdEl.value);
-  checkDescriptionEl.textContent = selected?.description || "Choose a predefined check.";
+  checkDescriptionEl.textContent = selected?.description || "Choose a predefined task.";
 }
 
 async function refreshChecks() {

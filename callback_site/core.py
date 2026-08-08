@@ -19,7 +19,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
 
@@ -670,16 +670,35 @@ def _catalog_pull_temp_path(target: Path) -> Path:
     return Path(temp_name)
 
 
-def _download_catalog_image(url: str, target: Path) -> str:
+def _download_catalog_image(
+    url: str,
+    target: Path,
+    on_progress: Callable[[int, int | None], None] | None = None,
+) -> str:
     req = urlrequest.Request(url, headers={"User-Agent": "callback-site-catalog-pull/1.0"})
     digest = hashlib.sha256()
     with urlrequest.urlopen(req, timeout=60) as resp, target.open("wb") as dst:  # nosec B310
+        total_bytes_raw = resp.headers.get("Content-Length")
+        total_bytes: int | None = None
+        if total_bytes_raw:
+            try:
+                total_bytes = int(total_bytes_raw)
+            except (TypeError, ValueError):
+                total_bytes = None
+
+        downloaded_bytes = 0
+        if on_progress:
+            on_progress(downloaded_bytes, total_bytes)
+
         while True:
             chunk = resp.read(1024 * 1024)
             if not chunk:
                 break
             dst.write(chunk)
             digest.update(chunk)
+            downloaded_bytes += len(chunk)
+            if on_progress:
+                on_progress(downloaded_bytes, total_bytes)
     return digest.hexdigest()
 
 
@@ -758,6 +777,9 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
             "observed_sha256": "",
             "expected_sha256": expected_sha,
             "message": "",
+            "bytes_downloaded": 0,
+            "bytes_total": None,
+            "progress_percent": 0,
         }
 
         with CATALOG_PULL_JOBS_LOCK:
@@ -777,7 +799,23 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
                 continue
 
             tmp = _catalog_pull_temp_path(target)
-            observed_sha = _download_catalog_image(image_url, tmp)
+
+            def _on_item_progress(downloaded: int, total: int | None) -> None:
+                percent = 0
+                if total and total > 0:
+                    percent = int(max(0, min(100, round((downloaded / total) * 100))))
+                with CATALOG_PULL_JOBS_LOCK:
+                    active_job = CATALOG_PULL_JOBS.get(job_id)
+                    if not active_job:
+                        return
+                    for result in active_job.get("results", []):
+                        if result is item_result:
+                            result["bytes_downloaded"] = downloaded
+                            result["bytes_total"] = total
+                            result["progress_percent"] = percent
+                            break
+
+            observed_sha = _download_catalog_image(image_url, tmp, on_progress=_on_item_progress)
             tmp.replace(target)
 
             hash_status = "verified" if expected_sha and observed_sha == expected_sha else "downloaded"
@@ -788,6 +826,7 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
             item_result["download_path"] = str(target)
             item_result["observed_sha256"] = observed_sha
             item_result["message"] = hash_status
+            item_result["progress_percent"] = 100
 
             _append_image_history(
                 {

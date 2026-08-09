@@ -448,6 +448,65 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("rpi5-target-01.lab.local", hosts)
         self.assertIn("198.51.100.78", hosts)
 
+    def test_test_terminal_targets_hostname_alias_points_to_connect_host(self) -> None:
+        self.client.post(
+            "/api/cloud-init/events/clear",
+            json={},
+        )
+        self.client.post(
+            "/api/nodes/manual-nodes",
+            json={
+                "name": "he-test-node-1-aug-7",
+                "group": "manual",
+                "address": "10.255.45.84",
+                "username": "jdizzle",
+            },
+        )
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "he-test-node-1-aug-7",
+                "instance_id": "iid-he-aug-7",
+                "source_ip": "192.168.174.199",
+                "stage": "phone_home",
+            },
+        )
+
+        response = self.client.get("/api/test-terminal/targets")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+
+        targets = payload.get("targets") or []
+        alias_target = next((t for t in targets if t.get("host") == "he-test-node-1-aug-7"), None)
+        self.assertIsNotNone(alias_target)
+        self.assertEqual(alias_target.get("connect_host"), "192.168.174.199")
+
+        ip_target = next((t for t in targets if t.get("host") == "192.168.174.199"), None)
+        self.assertIsNotNone(ip_target)
+        self.assertEqual(ip_target.get("source"), "source_ip")
+
+    def test_test_terminal_targets_include_manual_nodes_from_node_ops_inventory(self) -> None:
+        self.client.post(
+            "/api/nodes/manual-nodes",
+            json={
+                "name": "manual-terminal-01",
+                "group": "manual",
+                "address": "192.168.174.238",
+                "username": "jdizzle",
+            },
+        )
+
+        response = self.client.get("/api/test-terminal/targets")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+
+        targets = payload.get("targets") or []
+        manual_target = next((t for t in targets if t.get("host") == "192.168.174.238"), None)
+        self.assertIsNotNone(manual_target)
+        self.assertEqual(manual_target.get("connect_host"), "192.168.174.238")
+
     def test_test_terminal_start_rejects_invalid_check_id(self) -> None:
         response = self.client.post(
             "/api/test-terminal/start",
@@ -501,6 +560,193 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertTrue(kwargs.get("daemon"))
 
         with callback_app.TEST_TERMINAL_LOCK:
+            callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
+
+    def test_test_terminal_start_resolves_hostname_to_callback_ip(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertIn(create_key.status_code, (200, 409))
+
+        self.client.post(
+            "/api/nodes/manual-nodes",
+            json={
+                "name": "he-test-node-1-aug-7",
+                "group": "manual",
+                "address": "10.255.45.243",
+                "username": "jdizzle",
+            },
+        )
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "he-test-node-1-aug-7",
+                "instance_id": "iid-he-test-node-1",
+                "source_ip": "192.168.174.199",
+                "stage": "phone_home",
+            },
+        )
+
+        with patch("app.threading.Thread"):
+            response = self.client.post(
+                "/api/test-terminal/start",
+                json={
+                    "host": "he-test-node-1-aug-7",
+                    "username": "jdizzle",
+                    "key_name": "rack-bootstrap-ed25519",
+                    "check_id": "identity",
+                    "port": 22,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            job = callback_app.TEST_TERMINAL_JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            command = list(job.get("command") or []) if job else []
+            self.assertTrue(command)
+            self.assertIn("jdizzle@192.168.174.199", command)
+            self.assertEqual(job.get("requested_host"), "he-test-node-1-aug-7")
+            self.assertEqual(job.get("resolved_host"), "192.168.174.199")
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
+
+    def test_test_terminal_start_resolves_fqdn_to_callback_ip(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertIn(create_key.status_code, (200, 409))
+
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "he-test-node-2",
+                "fqdn": "he-test-node-2.lab.local",
+                "instance_id": "iid-he-test-node-2",
+                "source_ip": "192.168.174.210",
+                "stage": "phone_home",
+            },
+        )
+
+        with patch("app.threading.Thread"):
+            response = self.client.post(
+                "/api/test-terminal/start",
+                json={
+                    "host": "he-test-node-2.lab.local",
+                    "username": "jdizzle",
+                    "key_name": "rack-bootstrap-ed25519",
+                    "check_id": "identity",
+                    "port": 22,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            job = callback_app.TEST_TERMINAL_JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            command = list(job.get("command") or []) if job else []
+            self.assertIn("jdizzle@192.168.174.210", command)
+            self.assertEqual(job.get("requested_host"), "he-test-node-2.lab.local")
+            self.assertEqual(job.get("resolved_host"), "192.168.174.210")
+            callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
+
+    def test_test_terminal_start_prefers_inventory_when_callback_ip_not_usable(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertIn(create_key.status_code, (200, 409))
+
+        self.client.post(
+            "/api/nodes/manual-nodes",
+            json={
+                "name": "he-test-node-transit",
+                "group": "manual",
+                "address": "192.168.174.240",
+                "username": "jdizzle",
+            },
+        )
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "he-test-node-transit",
+                "instance_id": "iid-he-test-node-transit",
+                "source_ip": "10.255.45.84",
+                "stage": "phone_home",
+            },
+        )
+
+        with patch("app.threading.Thread"):
+            response = self.client.post(
+                "/api/test-terminal/start",
+                json={
+                    "host": "he-test-node-transit",
+                    "username": "jdizzle",
+                    "key_name": "rack-bootstrap-ed25519",
+                    "check_id": "identity",
+                    "port": 22,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            job = callback_app.TEST_TERMINAL_JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            command = list(job.get("command") or []) if job else []
+            self.assertIn("jdizzle@192.168.174.240", command)
+            self.assertEqual(job.get("resolved_host"), "192.168.174.240")
+            callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
+
+    def test_test_terminal_start_falls_back_to_raw_host_when_unmapped(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertIn(create_key.status_code, (200, 409))
+
+        with patch("app.threading.Thread"):
+            response = self.client.post(
+                "/api/test-terminal/start",
+                json={
+                    "host": "custom-lab-host",
+                    "username": "jdizzle",
+                    "key_name": "rack-bootstrap-ed25519",
+                    "check_id": "identity",
+                    "port": 22,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.TEST_TERMINAL_LOCK:
+            job = callback_app.TEST_TERMINAL_JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            command = list(job.get("command") or []) if job else []
+            self.assertIn("jdizzle@custom-lab-host", command)
+            self.assertEqual(job.get("requested_host"), "custom-lab-host")
+            self.assertEqual(job.get("resolved_host"), "custom-lab-host")
             callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
 
     def test_test_terminal_start_defaults_to_jdizzle_username(self) -> None:
@@ -1149,7 +1395,9 @@ class CallbackSiteTests(unittest.TestCase):
             "profiles": ["pi5"],
         }
 
-        def fake_download(url: str, target: Path) -> str:
+        def fake_download(url: str, target: Path, on_progress=None) -> str:
+            if callable(on_progress):
+                on_progress(4, 8)
             target.write_text("payload", encoding="utf-8")
             return "abc123"
 
@@ -1199,7 +1447,9 @@ class CallbackSiteTests(unittest.TestCase):
         stale_tmp.write_text("stale", encoding="utf-8")
         stale_tmp.chmod(0o444)
 
-        def fake_download(url: str, target_path: Path) -> str:
+        def fake_download(url: str, target_path: Path, on_progress=None) -> str:
+            if callable(on_progress):
+                on_progress(4, 8)
             target_path.write_text("payload", encoding="utf-8")
             return "abc123"
 
@@ -1251,10 +1501,12 @@ class CallbackSiteTests(unittest.TestCase):
         }
         observed_summary: dict[str, int] = {}
 
-        def fake_download(url: str, target_path: Path) -> str:
+        def fake_download(url: str, target_path: Path, on_progress=None) -> str:
             with callback_core.CATALOG_PULL_JOBS_LOCK:
                 job = callback_core.CATALOG_PULL_JOBS[job_id]
                 observed_summary.update(job.get("summary", {}))
+            if callable(on_progress):
+                on_progress(4, 8)
             target_path.write_text("payload", encoding="utf-8")
             return "abc123"
 
@@ -1436,6 +1688,10 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertTrue(all(e.get("source_ip") == "192.168.174.88" for e in matching[:2]))
 
     def test_test_terminal_targets_include_labeled_source_ips(self) -> None:
+        self.client.post(
+            "/api/cloud-init/events/clear",
+            json={},
+        )
         self.client.post(
             "/api/cloud-init/callback",
             json={

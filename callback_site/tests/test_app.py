@@ -283,6 +283,14 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("Hardware Monitor", text)
         self.assertIn("Hardware Status", text)
 
+    def test_monitor_page_exposes_discovered_node_closer_controls(self) -> None:
+        response = self.client.get("/monitor")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="monitor-node-select"', text)
+        self.assertIn('id="monitor-run-check"', text)
+        self.assertIn("Discovered node", text)
+
     def test_monitor_node_and_cloud_init_options(self) -> None:
         summary = self.client.get("/api/monitor/summary")
         self.assertEqual(summary.status_code, 200)
@@ -1893,6 +1901,23 @@ class CallbackSiteTests(unittest.TestCase):
         latest = matching[0]
         self.assertEqual(latest["profile"], "pibplus")
         self.assertEqual(latest["stage"], "hardware-check")
+
+    def test_initial_callback_triggers_auto_closer_check(self) -> None:
+        with patch("core._apply_node_provisioning", return_value={"node": "auto-check-node", "results": []}) as apply_mock:
+            response = self.client.post(
+                "/api/cloud-init/callback",
+                json={
+                    "hostname": "auto-check-node",
+                    "instance_id": "iid-auto-check",
+                    "profile": "pi5",
+                    "stage": "phone_home",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(apply_mock.called)
+        self.assertEqual(apply_mock.call_args.kwargs["mode"], "check")
+        self.assertTrue(apply_mock.call_args.kwargs["run_ansible"])
 
     def test_callback_node_report_is_stored_and_retrievable(self) -> None:
         response = self.client.post(

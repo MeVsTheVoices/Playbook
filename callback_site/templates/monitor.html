@@ -257,8 +257,21 @@
         </div>
 
         <div class="panel">
+          <h2>Run Closer Check</h2>
+          <p class="note">Select a discovered node and trigger a closer check so the hardware monitor refreshes with the latest callback data.</p>
+          <div class="actions-row">
+            <label for="monitor-node-select" style="margin: 0; min-width: 240px;">
+              Discovered node
+              <select id="monitor-node-select"></select>
+            </label>
+            <button id="monitor-run-check" type="button">Check Closer</button>
+          </div>
+          <p class="note" id="monitor-check-status">Select a discovered node to trigger a closer check.</p>
+        </div>
+
+        <div class="panel">
           <h2>Hardware Status</h2>
-          <p class="note">Populated from hardware-check callbacks. Trigger a fresh check via Node Ops → Check Closer to update any row.</p>
+          <p class="note">Populated from hardware-check callbacks. Trigger a fresh check from this page or Node Ops → Check Closer to update any row.</p>
           <table>
             <thead>
               <tr>
@@ -340,6 +353,9 @@
       const certStatusEl = document.getElementById("cert-status");
       const certOutputEl = document.getElementById("cert-output");
       const hwBodyEl = document.getElementById("hw-body");
+      const monitorNodeSelectEl = document.getElementById("monitor-node-select");
+      const monitorRunCheckBtn = document.getElementById("monitor-run-check");
+      const monitorCheckStatusEl = document.getElementById("monitor-check-status");
 
       let nodes = [];
 
@@ -372,6 +388,34 @@
         if (currentCertNode && nodes.some((n) => n.name === currentCertNode)) {
           certNodeEl.value = currentCertNode;
         }
+      }
+
+      function renderMonitorNodeSelector() {
+        const currentSelection = monitorNodeSelectEl.value;
+        const discoveredNodes = nodes.filter((node) => node.source === "callback" || node.source === "callback+managed");
+        monitorNodeSelectEl.innerHTML = "";
+        if (!discoveredNodes.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No discovered nodes yet";
+          monitorNodeSelectEl.appendChild(opt);
+          monitorRunCheckBtn.disabled = true;
+          return;
+        }
+
+        for (const node of discoveredNodes) {
+          const opt = document.createElement("option");
+          opt.value = node.name;
+          opt.textContent = `${node.name} (${node.group || "discovered"})`;
+          monitorNodeSelectEl.appendChild(opt);
+        }
+
+        if (currentSelection && discoveredNodes.some((n) => n.name === currentSelection)) {
+          monitorNodeSelectEl.value = currentSelection;
+        } else {
+          monitorNodeSelectEl.value = discoveredNodes[0].name;
+        }
+        monitorRunCheckBtn.disabled = false;
       }
 
       function renderHardwareTable() {
@@ -438,8 +482,33 @@
         nodes = Array.isArray(data.nodes) ? data.nodes : [];
         renderHardwareTable();
         renderNodeSelectors();
+        renderMonitorNodeSelector();
         const hwCount = nodes.filter((n) => n.hardware && n.hardware.received_at).length;
         monitorStatus.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"} loaded, ${hwCount} with hardware data.`;
+      }
+
+      async function runMonitorCloserCheck() {
+        const nodeName = monitorNodeSelectEl.value;
+        if (!nodeName) {
+          monitorCheckStatusEl.textContent = "No discovered node is available yet.";
+          return;
+        }
+
+        monitorCheckStatusEl.textContent = `Triggering closer check for ${nodeName}...`;
+        const res = await fetch("/api/nodes/provision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node: nodeName, mode: "check", run_ansible: true }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+          monitorCheckStatusEl.textContent = data.error || "Closer check request failed.";
+          return;
+        }
+
+        await loadSummary();
+        monitorCheckStatusEl.textContent = `Closer check requested for ${nodeName}. Hardware data will refresh shortly.`;
       }
 
       async function saveNode() {
@@ -492,6 +561,7 @@
       }
 
       document.getElementById("refresh-summary").addEventListener("click", loadSummary);
+      monitorRunCheckBtn.addEventListener("click", runMonitorCloserCheck);
       document.getElementById("save-node").addEventListener("click", saveNode);
       document.getElementById("clear-node-form").addEventListener("click", clearNodeForm);
       document.getElementById("pull-cert").addEventListener("click", pullCertificate);

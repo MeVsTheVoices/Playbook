@@ -187,6 +187,9 @@ h1 {
   padding: 0.72rem;
   min-width: 0;
 }
+.field-full {
+  grid-column: 1 / -1;
+}
 label {
   display: block;
   font-size: 0.82rem;
@@ -223,16 +226,33 @@ button {
   background: #334155;
 }
 .status {
+  position: relative;
   margin-top: 0.9rem;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.86rem;
-  background: #f8fafc;
-  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #f8fbff 0%, #f1f7ff 100%);
+  border: 1px solid #bfd6ea;
   border-radius: 10px;
   padding: 0.85rem;
   white-space: pre-wrap;
   line-height: 1.55;
   overflow-wrap: anywhere;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 6px 16px rgba(11, 67, 124, 0.08);
+}
+.status::before {
+  content: "runtime status";
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0f4c81;
+  border: 1px solid #b8e1ff;
+  padding: 0.1rem 0.45rem;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 .dns-hint {
   margin-top: 0.65rem;
@@ -244,10 +264,13 @@ button {
   display: none;
 }
 .terminal {
+  position: relative;
   margin-top: 0.8rem;
   border-radius: 12px;
-  border: 1px solid #111827;
-  background: #020617;
+  border: 1px solid #1e293b;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(45, 212, 191, 0.2), transparent 32%),
+    linear-gradient(180deg, #031228 0%, #020617 72%);
   color: #d1fae5;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.86rem;
@@ -257,6 +280,22 @@ button {
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.28), 0 14px 24px rgba(2, 6, 23, 0.24);
+}
+.terminal::before {
+  content: "terminal feed";
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(45, 212, 191, 0.55);
+  background: rgba(15, 23, 42, 0.72);
+  color: #5eead4;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.5rem;
 }
 .chip {
   display: inline-block;
@@ -306,6 +345,10 @@ button {
 
   body.sidebar-collapsed .content {
     margin-left: 90px;
+  }
+
+  .field-key {
+    grid-column: 1 / -1;
   }
 }
 

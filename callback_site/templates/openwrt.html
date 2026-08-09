@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenWrt Ansible Probe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --ink: #16202d;
+        --muted: #4f6070;
+        --accent: #0b8b6e;
+        --line: #d3dbe5;
+        --side: #0f172a;
+        --side-ink: #cbd5e1;
+      }
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        background: linear-gradient(165deg, #eef7f4, var(--bg));
+        color: var(--ink);
+      }
+      .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 230px; background: #0e1a2e; color: var(--side-ink); padding: 0.8rem; box-sizing: border-box; }
+      .sidebar a { display: block; color: var(--side-ink); text-decoration: none; padding: 0.55rem; border-radius: 8px; margin-bottom: 0.25rem; }
+      .sidebar a.active { background: rgba(20, 184, 166, 0.18); color: #ecfeff; border: 1px solid rgba(45, 212, 191, 0.2); }
+      .content { margin-left: 246px; padding: 1.2rem; }
+      .panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; box-shadow: 0 16px 44px rgba(14,42,71,0.08); margin-bottom: 1rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.8rem; }
+      label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 0.2rem; }
+      input, select, textarea, button { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 0.65rem; font-family: inherit; font-size: 0.92rem; box-sizing: border-box; }
+      button { background: var(--accent); color: white; border: none; cursor: pointer; }
+      .note { color: var(--muted); font-size: 0.85rem; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem; font-family: "IBM Plex Mono", monospace; font-size: 0.82rem; }
+      .pill { display: inline-block; background: #ccfbf1; color: #134e4a; border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.75rem; font-weight: 600; }
+      @media (max-width: 900px) { .sidebar { position: static; width: 100%; } .content { margin-left: 0; } }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="sidebar-brand" style="padding:0.25rem 0.45rem 0.8rem; margin-bottom:0.7rem; border-bottom:1px solid rgba(148,163,184,0.2);">
+        <div class="sidebar-title" style="font-size:0.95rem; font-weight:800; color:#f8fafc; letter-spacing:0.02em;">Rack Ops</div>
+        <div class="sidebar-subtitle" style="margin-top:0.2rem; color:#94a3b8; font-size:0.75rem;">OpenWrt Ansible Probe</div>
+      </div>
+      <a href="/">Home</a>
+      <a href="/nodes">Nodes</a>
+      <a href="/monitor">Monitor</a>
+      <a href="/images">Images</a>
+      <a href="/tailscale-acl">Tailscale ACL</a>
+      <a href="/openwrt" class="active">OpenWrt</a>
+      <a href="/settings">Settings</a>
+      <a href="/test-terminal">Test Terminal</a>
+    </div>
+    <div class="content">
+      <div class="panel">
+        <div class="pill">OpenWrt Ansible Probe</div>
+        <h1 style="margin:0.45rem 0 0.35rem; font-size:1.45rem;">Inspect the details needed for an OpenWrt Ansible login</h1>
+        <p class="note" style="margin:0;">This page collects the connection details that matter for Ansible and returns a basic module-oriented summary for a discovered OpenWrt-compatible module.</p>
+      </div>
+
+      <div class="panel">
+        <div class="grid">
+          <div>
+            <label for="host">Host</label>
+            <input id="host" placeholder="192.168.1.1" value="192.168.1.1">
+          </div>
+          <div>
+            <label for="port">Port</label>
+            <input id="port" type="number" min="1" max="65535" value="22">
+          </div>
+          <div>
+            <label for="username">Username</label>
+            <input id="username" placeholder="root" value="root">
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" placeholder="optional">
+          </div>
+          <div>
+            <label for="connection">Connection</label>
+            <select id="connection">
+              <option value="ssh">ssh</option>
+              <option value="paramiko">paramiko</option>
+              <option value="local">local</option>
+            </select>
+          </div>
+          <div>
+            <label for="module-hint">Module hint</label>
+            <input id="module-hint" placeholder="opkg" value="opkg">
+          </div>
+        </div>
+        <div class="grid" style="margin-top:0.8rem;">
+          <label style="display:flex; align-items:center; gap:0.5rem;">
+            <input id="become" type="checkbox">
+            <span>Use become</span>
+          </label>
+          <button id="inspect-btn" type="button">Inspect</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2 style="margin:0 0 0.45rem; font-size:1rem;">Results</h2>
+        <div id="result-status" class="note">Fill in the fields and inspect to preview the connection inventory and module summary.</div>
+        <pre style="margin-top:0.7rem;">all:
+  children:
+    openwrt_probe:
+      hosts:
+        openwrt-router:
+          ansible_host: 192.168.1.1
+          ansible_port: 22
+          ansible_user: root
+          ansible_connection: ssh</pre>
+        <div id="result-body" style="margin-top:0.7rem;"></div>
+      </div>
+    </div>
+
+    <script>
+      const inspectBtn = document.getElementById('inspect-btn');
+      const resultStatus = document.getElementById('result-status');
+      const resultBody = document.getElementById('result-body');
+
+      inspectBtn.addEventListener('click', async () => {
+        const payload = {
+          host: document.getElementById('host').value.trim(),
+          port: Number(document.getElementById('port').value || 22),
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value,
+          connection: document.getElementById('connection').value,
+          module_hint: document.getElementById('module-hint').value.trim(),
+          become: document.getElementById('become').checked,
+        };
+
+        resultStatus.textContent = 'Inspecting...';
+        resultBody.innerHTML = '';
+
+        const response = await fetch('/api/openwrt/inspect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!data.ok) {
+          resultStatus.textContent = data.error || 'Inspection failed.';
+          return;
+        }
+
+        const stats = data.stats || {};
+        resultStatus.innerHTML = `Module <strong>${data.module}</strong> • ${stats.summary}`;
+        resultBody.innerHTML = `
+          <div class="grid" style="margin-bottom:0.8rem;">
+            <div><strong>Host</strong><br>${data.request.host}</div>
+            <div><strong>Port</strong><br>${stats.port}</div>
+            <div><strong>Username</strong><br>${data.request.username}</div>
+            <div><strong>Connection</strong><br>${stats.connection}</div>
+            <div><strong>Become</strong><br>${stats.become ? 'yes' : 'no'}</div>
+            <div><strong>Uses password</strong><br>${stats.uses_password ? 'yes' : 'no'}</div>
+          </div>
+          <h3 style="margin:0 0 0.45rem; font-size:1rem;">Inventory preview</h3>
+          <pre>${data.inventory_preview}</pre>
+        `;
+      });
+    </script>
+  </body>
+</html>

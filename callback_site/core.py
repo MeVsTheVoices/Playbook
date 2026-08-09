@@ -144,6 +144,11 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     become = bool(payload.get("become", False))
     module_hint = str(payload.get("module_hint", "")).strip().lower()
+    ssh_key_name = str(payload.get("ssh_key_name", "")).strip()
+    ssh_key_path = None
+    if ssh_key_name:
+        ssh_key = _resolve_openwrt_ssh_key(ssh_key_name)
+        ssh_key_path = ssh_key["private_key_path"]
 
     discovered = _discover_openwrt_module(module_hint)
     inventory_preview = _render_openwrt_inventory_preview(
@@ -154,6 +159,7 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
         connection=connection,
         become=become,
         module_name=discovered["name"],
+        private_key_path=ssh_key_path,
     )
 
     probe = {
@@ -163,7 +169,13 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
         "timed_out": False,
     }
     if connection == "ssh":
-        probe = _probe_ssh_target(host=host, port=port, username=username, password=password)
+        probe = _probe_ssh_target(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            private_key_path=ssh_key_path,
+        )
 
     return {
         "request": {
@@ -174,6 +186,7 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
             "become": become,
             "module_hint": module_hint or None,
             "uses_password": bool(password),
+            "ssh_key_name": ssh_key_name or None,
         },
         "module": discovered["name"],
         "stats": {
@@ -183,21 +196,60 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
             "port": port,
             "become": become,
             "uses_password": bool(password),
+            "uses_ssh_key": bool(ssh_key_path),
             "inventory_lines": len(inventory_preview.splitlines()),
             "module_hint": module_hint or None,
+            "ssh_key_name": ssh_key_name or None,
         },
         "inventory_preview": inventory_preview,
         "probe": probe,
     }
 
 
-def _probe_ssh_target(*, host: str, port: int, username: str, password: str) -> Dict[str, Any]:
-    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=4", "-p", str(port), f"{username}@{host}", "true"]
-    if password:
-        cmd = ["sshpass", "-p", password, *cmd]
+def _resolve_openwrt_ssh_key(key_name: str) -> Dict[str, str]:
+    _ensure_keys_dir()
+    name = str(key_name or "").strip()
+    if not name:
+        raise ValueError("ssh key name is required")
 
+    private_key = KEYS_DIR / name
+    public_key = KEYS_DIR / f"{name}.pub"
+    if not private_key.exists() or not private_key.is_file():
+        raise FileNotFoundError(f"private key not found: {name}")
+    if not public_key.exists() or not public_key.is_file():
+        raise FileNotFoundError(f"public key not found: {name}")
+
+    return {
+        "key_name": name,
+        "private_key_path": str(private_key),
+        "public_key_path": str(public_key),
+        "public_key": public_key.read_text(encoding="utf-8").strip(),
+    }
+
+
+def _probe_ssh_target(*, host: str, port: int, username: str, password: str, private_key_path: str | None = None) -> Dict[str, Any]:
+    cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=no",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=5",
+        "-o",
+        "PreferredAuthentications=password,publickey",
+        "-o",
+        "NumberOfPasswordPrompts=1",
+        "-p",
+        str(port),
+    ]
+    if private_key_path:
+        cmd.extend(["-i", private_key_path])
+    cmd.extend([f"{username}@{host}", "true"])
+
+    password_input = f"{password}\n" if password else None
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=8, check=False)
+        proc = subprocess.run(cmd, input=password_input, capture_output=True, text=True, timeout=10, check=False)
     except FileNotFoundError:
         return {"ok": False, "error": "ssh is not installed or available on this host", "details": "", "timed_out": False}
     except subprocess.TimeoutExpired:
@@ -207,6 +259,61 @@ def _probe_ssh_target(*, host: str, port: int, username: str, password: str) -> 
     if proc.returncode == 0:
         return {"ok": True, "error": "", "details": output or "SSH authentication and connectivity succeeded.", "timed_out": False}
     return {"ok": False, "error": f"ssh probe failed with exit code {proc.returncode}", "details": output, "timed_out": False}
+
+
+def _push_ssh_key_to_target(*, host: str, port: int, username: str, password: str, public_key: str, public_key_path: str, key_name: str) -> Dict[str, Any]:
+    target = f"{username}@{host}"
+    ssh_opts = [
+        "-o",
+        "BatchMode=no",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=6",
+        "-o",
+        "PreferredAuthentications=password,publickey",
+        "-o",
+        "NumberOfPasswordPrompts=1",
+        "-p",
+        str(port),
+    ]
+    remote_script = (
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && "
+        "if ! grep -Fqx \"$PUBLIC_KEY\" ~/.ssh/authorized_keys; then printf '%s\\n' \"$PUBLIC_KEY\" >> ~/.ssh/authorized_keys; fi"
+    )
+
+    env = os.environ.copy()
+    env["PUBLIC_KEY"] = public_key
+
+    cmd = ["ssh", *ssh_opts, target, "sh", "-c", remote_script]
+    password_input = f"{password}\n" if password else None
+    try:
+        proc = subprocess.run(cmd, input=password_input, capture_output=True, text=True, timeout=20, check=False, env=env)
+    except FileNotFoundError:
+        return {
+            "key_name": key_name,
+            "pushed": False,
+            "method": "ssh",
+            "details": "ssh is not installed or available on this host",
+            "error": "ssh is not installed or available on this host",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "key_name": key_name,
+            "pushed": False,
+            "method": "ssh",
+            "details": "The push attempt timed out.",
+            "error": "The push attempt timed out.",
+        }
+
+    output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    return {
+        "key_name": key_name,
+        "pushed": proc.returncode == 0,
+        "method": "ssh",
+        "details": output or "The public key push completed without additional output.",
+        "error": output if proc.returncode != 0 else "",
+    }
 
 
 def _discover_openwrt_module(module_hint: str) -> Dict[str, str]:
@@ -263,6 +370,7 @@ def _render_openwrt_inventory_preview(
     connection: str,
     become: bool,
     module_name: str,
+    private_key_path: str | None = None,
 ) -> str:
     lines = [
         "all:",
@@ -278,6 +386,8 @@ def _render_openwrt_inventory_preview(
 
     if password:
         lines.append(f"          ansible_password: {password}")
+    if private_key_path:
+        lines.append(f"          ansible_ssh_private_key_file: {private_key_path}")
     if become:
         lines.append("          ansible_become: true")
         lines.append("          ansible_become_method: sudo")

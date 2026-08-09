@@ -124,6 +124,140 @@ def _save_app_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     return settings
 
 
+def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+
+    host = str(payload.get("host", "")).strip()
+    if not host:
+        raise ValueError("host is required")
+
+    port = int(payload.get("port", 22) or 22)
+    if port < 1 or port > 65535:
+        raise ValueError("port must be between 1 and 65535")
+
+    username = str(payload.get("username", "root")).strip() or "root"
+    password = str(payload.get("password", ""))
+    connection = str(payload.get("connection", "ssh")).strip().lower() or "ssh"
+    if connection not in {"ssh", "paramiko", "local"}:
+        connection = "ssh"
+
+    become = bool(payload.get("become", False))
+    module_hint = str(payload.get("module_hint", "")).strip().lower()
+
+    discovered = _discover_openwrt_module(module_hint)
+    inventory_preview = _render_openwrt_inventory_preview(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        connection=connection,
+        become=become,
+        module_name=discovered["name"],
+    )
+
+    return {
+        "request": {
+            "host": host,
+            "port": port,
+            "username": username,
+            "connection": connection,
+            "become": become,
+            "module_hint": module_hint or None,
+            "uses_password": bool(password),
+        },
+        "module": discovered["name"],
+        "stats": {
+            "module_source": discovered["source"],
+            "summary": discovered["summary"],
+            "connection": connection,
+            "port": port,
+            "become": become,
+            "uses_password": bool(password),
+            "inventory_lines": len(inventory_preview.splitlines()),
+            "module_hint": module_hint or None,
+        },
+        "inventory_preview": inventory_preview,
+    }
+
+
+def _discover_openwrt_module(module_hint: str) -> Dict[str, str]:
+    lookup_names = []
+    if module_hint:
+        lookup_names.append(module_hint)
+    lookup_names.extend(["opkg", "uci", "service", "sysctl", "ping"])
+
+    known_modules = {
+        "community.general.opkg": "Manage OpenWrt packages through opkg.",
+        "community.general.uci": "Manage OpenWrt UCI configuration values.",
+        "community.general.ping": "Simple connectivity check for the target device.",
+    }
+
+    for candidate in lookup_names:
+        if candidate.startswith("community.general."):
+            if candidate in known_modules:
+                return {"name": candidate, "summary": known_modules[candidate], "source": "known-fallback"}
+        if candidate in {"opkg", "uci", "service", "sysctl", "ping"}:
+            if candidate == "opkg":
+                return {"name": "community.general.opkg", "summary": known_modules["community.general.opkg"], "source": "known-fallback"}
+            if candidate == "uci":
+                return {"name": "community.general.uci", "summary": known_modules["community.general.uci"], "source": "known-fallback"}
+
+    if shutil.which("ansible-doc"):
+        try:
+            proc = subprocess.run(["ansible-doc", "-l"], capture_output=True, text=True, check=False)
+            if proc.returncode == 0:
+                output = proc.stdout or proc.stderr or ""
+                for line in output.splitlines():
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    if "openwrt" in stripped.lower() or "opkg" in stripped.lower() or "uci" in stripped.lower():
+                        module_name = stripped.split()[0]
+                        if module_name.startswith("community.general.") or module_name.startswith("ansible."):
+                            return {"name": module_name, "summary": f"Discovered from local ansible-doc output: {module_name}", "source": "ansible-doc"}
+        except OSError:
+            pass
+
+    return {
+        "name": "community.general.opkg",
+        "summary": known_modules["community.general.opkg"],
+        "source": "fallback",
+    }
+
+
+def _render_openwrt_inventory_preview(
+    *,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    connection: str,
+    become: bool,
+    module_name: str,
+) -> str:
+    lines = [
+        "all:",
+        "  children:",
+        "    openwrt_probe:",
+        "      hosts:",
+        f"        openwrt-router:",
+        f"          ansible_host: {host}",
+        f"          ansible_port: {port}",
+        f"          ansible_user: {username}",
+        f"          ansible_connection: {connection}",
+    ]
+
+    if password:
+        lines.append(f"          ansible_password: {password}")
+    if become:
+        lines.append("          ansible_become: true")
+        lines.append("          ansible_become_method: sudo")
+
+    lines.append(f"          ansible_module: {module_name}")
+    return "\n".join(lines)
+
+
 def _tailscale_policy_defaults() -> Dict[str, Any]:
     settings = _load_app_settings()
     rack_name = _sanitize_rack_name(str(settings.get("rack_name", "homelab")))

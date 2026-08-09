@@ -339,15 +339,6 @@ for pkg in $PROFILE_PACKAGES; do
   echo "  - ${pkg}" >> "$USER_DATA_OUT"
 done
 
-# Add fancy MOTD packages if enabled
-if [[ "${CLOUD_INIT_FANCY_MOTD:-false}" == "true" ]]; then
-  cat >> "$USER_DATA_OUT" <<'FANCY_MOTD_PKGS'
-  - fortune
-  - cowsay
-  - lolcat
-FANCY_MOTD_PKGS
-fi
-
 # Add Telegraf package if enabled
 if [[ "${CLOUD_INIT_INSTALL_TELEGRAF:-false}" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'TELEGRAF_PKGS'
@@ -446,12 +437,17 @@ write_files:
     permissions: "0755"
     content: |
       #!/bin/bash
-      if command -v fortune &>/dev/null && command -v cowsay &>/dev/null; then
-        if command -v lolcat &>/dev/null; then
+      if [[ "${CLOUD_INIT_FANCY_MOTD:-false}" != "true" ]]; then
+        exit 0
+      fi
+      if command -v fortune >/dev/null 2>&1 && command -v cowsay >/dev/null 2>&1; then
+        if command -v lolcat >/dev/null 2>&1; then
           fortune | cowsay | lolcat 2>/dev/null || fortune | cowsay
         else
           fortune | cowsay
         fi
+      else
+        echo "Rack node online: $(hostname)"
       fi
   - path: /usr/local/bin/rack-telegraf-bootstrap
     permissions: "0755"

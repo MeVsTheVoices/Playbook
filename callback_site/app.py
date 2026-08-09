@@ -721,46 +721,177 @@ def test_terminal_checks() -> Any:
     return jsonify({"ok": True, "checks": checks})
 
 
+TERMINAL_IP_SOURCES = {"source_ip", "callback"}
+
+
+def _terminal_preferred_host_for_node(node: Dict[str, Any]) -> str:
+    callback_ip = str(node.get("callback_source_ip", "") or "").strip()
+    if _is_usable_callback_ip(callback_ip):
+        return callback_ip
+    return str(node.get("address", "") or "").strip()
+
+
+def _terminal_alias_connect_host_map(nodes: list[Dict[str, Any]]) -> Dict[str, str]:
+    alias_map: Dict[str, str] = {}
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_name = str(node.get("name", "") or "").strip()
+        preferred = _terminal_preferred_host_for_node(node)
+        if not node_name or not preferred:
+            continue
+        for alias in _node_aliases(node_name):
+            alias_key = str(alias or "").strip().lower()
+            if alias_key:
+                alias_map[alias_key] = preferred
+    return alias_map
+
+
+def _terminal_event_connect_host(event: Dict[str, Any], alias_map: Dict[str, str]) -> str:
+    hostname = str(event.get("hostname", "") or "").strip().lower()
+    fqdn = str(event.get("fqdn", "") or "").strip().lower()
+    for alias in (hostname, fqdn):
+        if alias and alias in alias_map:
+            return alias_map[alias]
+
+    source_ip = str(event.get("source_ip", "") or "").strip()
+    if _is_usable_callback_ip(source_ip):
+        return source_ip
+    return ""
+
+
+def _append_terminal_target(
+    targets: list[Dict[str, Any]],
+    seen: set[str],
+    *,
+    host: str,
+    source: str,
+    event: Dict[str, Any],
+    connect_host: str = "",
+) -> None:
+    value = str(host or "").strip()
+    if not value:
+        return
+    lowered = value.lower()
+    if lowered in {"unknown", "none", "-"}:
+        return
+    if lowered in seen:
+        return
+    seen.add(lowered)
+
+    hostname = str(event.get("hostname", "") or "").strip()
+    fqdn = str(event.get("fqdn", "") or "").strip()
+    profile = str(event.get("profile", "") or "").strip()
+    target_connect_host = str(connect_host or value).strip()
+    targets.append(
+        {
+            "host": value,
+            "connect_host": target_connect_host,
+            "source": source,
+            "hostname": hostname,
+            "fqdn": fqdn,
+            "instance_id": str(event.get("instance_id", "") or "").strip(),
+            "profile": profile,
+            "last_seen": str(event.get("received_at", "") or "").strip(),
+            "usable_callback_ip": _is_usable_callback_ip(target_connect_host) if source in TERMINAL_IP_SOURCES else None,
+            "label_hint": hostname or fqdn or profile,
+        }
+    )
+
+
 def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
     events = _read_events(limit=limit)
+    nodes = _node_ops_inventory_view()
     targets: list[Dict[str, Any]] = []
     seen: set[str] = set()
+    alias_map = _terminal_alias_connect_host_map(nodes)
 
-    def add_target(host: str, source: str, event: Dict[str, Any]) -> None:
-        value = str(host or "").strip()
-        if not value:
-            return
-        lowered = value.lower()
-        if lowered in {"unknown", "none", "-"}:
-            return
-        if lowered in seen:
-            return
-        seen.add(lowered)
-        hostname = str(event.get("hostname", "") or "").strip()
-        fqdn = str(event.get("fqdn", "") or "").strip()
-        profile = str(event.get("profile", "") or "").strip()
-        targets.append(
-            {
-                "host": value,
-                "source": source,
-                "hostname": hostname,
-                "fqdn": fqdn,
-                "instance_id": str(event.get("instance_id", "") or "").strip(),
-                "profile": profile,
-                "last_seen": str(event.get("received_at", "") or "").strip(),
-                "usable_callback_ip": _is_usable_callback_ip(value) if source == "source_ip" else None,
-                "label_hint": hostname or fqdn or profile,
-            }
-        )
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_name = str(node.get("name", "") or "").strip()
+        node_address = _terminal_preferred_host_for_node(node)
+        callback_ip = str(node.get("callback_source_ip", "") or "").strip()
+        if not node_name or not node_address:
+            continue
+        normalized_source = str(node.get("address_source", "") or "inventory").strip() or "inventory"
+        if callback_ip and node_address == callback_ip and _is_usable_callback_ip(callback_ip):
+            source = "source_ip"
+        elif normalized_source == "callback":
+            source = "source_ip"
+        else:
+            source = normalized_source
+        event_like = {
+            "hostname": node_name,
+            "fqdn": "",
+            "profile": str(node.get("callback_profile", "") or "").strip(),
+            "instance_id": str(node.get("callback_instance_id", "") or "").strip(),
+            "received_at": str(node.get("last_callback", "") or "").strip(),
+        }
+        _append_terminal_target(targets, seen, host=node_address, source=source, event=event_like, connect_host=node_address)
 
     for event in events:
         if not isinstance(event, dict):
             continue
-        add_target(event.get("hostname", ""), "hostname", event)
-        add_target(event.get("fqdn", ""), "fqdn", event)
-        add_target(event.get("source_ip", ""), "source_ip", event)
+        hostname = str(event.get("hostname", "") or "").strip()
+        fqdn = str(event.get("fqdn", "") or "").strip()
+        source_ip = str(event.get("source_ip", "") or "").strip()
+        resolved_connect = _terminal_event_connect_host(event, alias_map)
+
+        _append_terminal_target(
+            targets,
+            seen,
+            host=hostname,
+            source="hostname",
+            event=event,
+            connect_host=resolved_connect or hostname,
+        )
+        _append_terminal_target(
+            targets,
+            seen,
+            host=fqdn,
+            source="fqdn",
+            event=event,
+            connect_host=resolved_connect or fqdn,
+        )
+        _append_terminal_target(
+            targets,
+            seen,
+            host=source_ip,
+            source="source_ip",
+            event=event,
+            connect_host=source_ip,
+        )
 
     return targets
+
+
+def _resolve_terminal_host(host: str, limit: int = 2000) -> str:
+    raw = str(host or "").strip()
+    if not raw:
+        return ""
+    if _normalize_ip(raw):
+        return raw
+
+    lowered = raw.lower()
+    nodes = _node_ops_inventory_view()
+    alias_map = _terminal_alias_connect_host_map(nodes)
+    from_nodes = alias_map.get(lowered, "")
+    if from_nodes:
+        return from_nodes
+
+    for event in _read_events(limit=limit):
+        if not isinstance(event, dict):
+            continue
+        event_connect = _terminal_event_connect_host(event, alias_map)
+        if not event_connect:
+            continue
+        hostname = str(event.get("hostname", "") or "").strip().lower()
+        fqdn = str(event.get("fqdn", "") or "").strip().lower()
+        if lowered not in {hostname, fqdn}:
+            continue
+        return event_connect
+    return raw
 
 
 @app.get("/api/test-terminal/targets")
@@ -772,6 +903,7 @@ def test_terminal_targets() -> Any:
 def test_terminal_start() -> Any:
     payload = request.get_json(silent=True) or {}
     host = str(payload.get("host", payload.get("hostname", ""))).strip()
+    resolved_host = _resolve_terminal_host(host)
     username = str(payload.get("username", "jdizzle")).strip() or "jdizzle"
     key_name = str(payload.get("key_name", "rack-bootstrap-ed25519")).strip() or "rack-bootstrap-ed25519"
     check_id = str(payload.get("check_id", "identity")).strip() or "identity"
@@ -805,7 +937,7 @@ def test_terminal_start() -> Any:
         str(key_path),
         "-p",
         str(port),
-        f"{username}@{host}",
+        f"{username}@{resolved_host}",
         remote_command,
     ]
 
@@ -817,6 +949,8 @@ def test_terminal_start() -> Any:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "started_at": datetime.now(timezone.utc).isoformat(),
             "command": cmd,
+            "requested_host": host,
+            "resolved_host": resolved_host,
             "check_id": check_id,
             "check_label": selected_check["label"],
             "stdout": "",
@@ -826,7 +960,14 @@ def test_terminal_start() -> Any:
 
     thread = threading.Thread(target=_run_test_terminal_job, args=(job_id, cmd), daemon=True)
     thread.start()
-    logger.info(f"Started verifier terminal job: id={job_id}, host={host}, user={username}, check_id={check_id}")
+    logger.info(
+        "Started terminal job: id=%s, host=%s, resolved_host=%s, user=%s, check_id=%s",
+        job_id,
+        host,
+        resolved_host,
+        username,
+        check_id,
+    )
     return jsonify({"ok": True, "job_id": job_id})
 
 

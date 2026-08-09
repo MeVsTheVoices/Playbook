@@ -72,12 +72,18 @@ def _ensure_image_cache_dir() -> None:
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
     os.close(fd)
     tmp_path = Path(tmp_name)
     try:
         tmp_path.write_text(text, encoding="utf-8")
+        os.chmod(tmp_path, 0o666)
         tmp_path.replace(path)
+        try:
+            os.chmod(path, 0o666)
+        except OSError:
+            pass
     finally:
         try:
             tmp_path.unlink(missing_ok=True)
@@ -120,7 +126,7 @@ def _save_app_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     if "rack_name" in payload:
         settings["rack_name"] = _sanitize_rack_name(str(payload.get("rack_name", "")))
     _ensure_data_file()
-    APP_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    _atomic_write_text(APP_SETTINGS_FILE, json.dumps(settings, indent=2))
     return settings
 
 
@@ -1439,6 +1445,49 @@ def _default_profiles_for_group(group: str) -> List[str]:
     if group == "rpi5_active":
         defaults.append("docker")
     return defaults
+
+
+def _trigger_initial_callback_closer(event: Dict[str, Any]) -> None:
+    hostname = str(event.get("hostname", "") or "").strip()
+    if not hostname:
+        return
+
+    stage = str(event.get("stage", "") or "").strip().lower()
+    if stage not in {"phone_home", "runcmd", "hardware-check"}:
+        return
+
+    prior_events = _read_events(limit=2000)
+    has_prior_event = any(
+        str(prior.get("hostname", "") or "").strip() == hostname
+        or str(prior.get("fqdn", "") or "").strip() == hostname
+        for prior in prior_events
+    )
+    if has_prior_event:
+        return
+
+    profile = str(event.get("profile", "") or "").strip().lower()
+    profile_group = ""
+    if profile == "pi5":
+        profile_group = "rpi5_active"
+    elif profile == "pibplus":
+        profile_group = "rpi_bplus_active"
+
+    if not profile_group:
+        return
+
+    provision_state = _load_node_provisioning()
+    node = {"name": hostname, "group": profile_group}
+    profile_ids = _effective_node_profiles(node, provision_state)
+    if not profile_ids:
+        return
+
+    logger.info(
+        "Auto-triggering initial closer check for hostname=%s profiles=%s stage=%s",
+        hostname,
+        profile_ids,
+        stage,
+    )
+    _apply_node_provisioning(hostname, profile_ids, mode="check", run_ansible=True)
 
 
 def _load_node_provisioning() -> Dict[str, Any]:

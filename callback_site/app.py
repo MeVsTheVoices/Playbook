@@ -298,6 +298,7 @@ def settings_get() -> Any:
     settings = _load_app_settings()
     settings["log_file"] = str(LOG_FILE)
     settings["verbose_logging"] = root_logger.level == logging.DEBUG
+    settings["appdata_dir"] = str(APPDATA_DIR)
     return jsonify({"ok": True, "settings": settings})
 
 
@@ -603,6 +604,7 @@ def callback() -> Any:
         hardware_data = payload.get("hardware")
         logger.info(f"Hardware check reported: hostname={event.get('hostname')}, hardware={hardware_data}")
     
+    _trigger_initial_callback_closer(event)
     _append_event(event)
     _backfill_event_profile(hostname, instance_id, fqdn, profile)
     _backfill_event_source_ip(hostname, instance_id, fqdn, source_ip, source_ip_source)

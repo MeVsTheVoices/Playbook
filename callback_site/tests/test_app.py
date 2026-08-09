@@ -44,9 +44,36 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"ok": True})
 
     def test_dashboard_and_pages_render(self) -> None:
-        for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/test-terminal"):
+        for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/test-terminal", "/openwrt"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
+
+    def test_openwrt_page_renders_and_api_returns_probe_stats(self) -> None:
+        page = self.client.get("/openwrt")
+        self.assertEqual(page.status_code, 200)
+        text = page.get_data(as_text=True)
+        self.assertIn("OpenWrt Ansible Probe", text)
+        self.assertIn("ansible_host", text)
+
+        response = self.client.post(
+            "/api/openwrt/inspect",
+            json={
+                "host": "192.168.1.1",
+                "port": 22,
+                "username": "root",
+                "password": "secret",
+                "connection": "ssh",
+                "become": True,
+                "module_hint": "opkg",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("module", payload)
+        self.assertIn("stats", payload)
+        self.assertIn("inventory_preview", payload)
+        self.assertEqual(payload["request"]["host"], "192.168.1.1")
 
     def test_nodes_page_exposes_profile_segment_and_galaxy_controls(self) -> None:
         response = self.client.get("/nodes")

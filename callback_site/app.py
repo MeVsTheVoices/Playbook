@@ -197,6 +197,21 @@ def tailscale_acl() -> str:
     return render_template("tailscale_acl.html")
 
 
+@app.get("/openwrt")
+def openwrt_page() -> str:
+    return render_template("openwrt.html", rack_name=_load_app_settings().get("rack_name", "homelab"))
+
+
+@app.post("/api/openwrt/inspect")
+def openwrt_inspect() -> Any:
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = _inspect_openwrt_probe(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
 @app.get("/fragments/tailscale-acl/overview")
 def tailscale_acl_overview_fragment() -> str:
     return render_template("fragments/tailscale_acl_overview.html")

@@ -148,6 +148,7 @@
         }
 
         const stats = data.stats || {};
+        const probe = data.probe || {};
         resultStatus.innerHTML = `Module <strong>${data.module}</strong> • ${stats.summary}`;
         resultBody.innerHTML = `
           <div class="grid" style="margin-bottom:0.8rem;">
@@ -157,6 +158,12 @@
             <div><strong>Connection</strong><br>${stats.connection}</div>
             <div><strong>Become</strong><br>${stats.become ? 'yes' : 'no'}</div>
             <div><strong>Uses password</strong><br>${stats.uses_password ? 'yes' : 'no'}</div>
+          </div>
+          <div class="panel" style="margin:0 0 0.7rem; padding:0.8rem;">
+            <strong>SSH probe</strong><br>
+            <span>${probe.ok ? 'Connected' : 'Connection failed'}</span>
+            ${probe.error ? `<div class="note">${probe.error}</div>` : ''}
+            ${probe.details ? `<pre>${probe.details}</pre>` : ''}
           </div>
           <h3 style="margin:0 0 0.45rem; font-size:1rem;">Inventory preview</h3>
           <pre>${data.inventory_preview}</pre>

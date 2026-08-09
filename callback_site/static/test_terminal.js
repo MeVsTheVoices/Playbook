@@ -237,20 +237,30 @@ function renderTargets() {
   hostSelectEl.appendChild(placeholder);
 
   for (const target of callbackTargets) {
+    const connectHost = String(target.connect_host || target.host || "").trim();
+    if (!connectHost) {
+      continue;
+    }
+    const displayHost = String(target.host || connectHost).trim();
     const opt = document.createElement("option");
-    opt.value = target.host;
+    opt.value = connectHost;
     const profile = target.profile ? ` | ${target.profile}` : "";
     const assoc = target.hostname || target.fqdn || "unmapped";
-    if (target.source === "source_ip") {
+    const aliasHint = displayHost !== connectHost ? ` as ${displayHost}` : "";
+    if (target.source === "source_ip" || target.source === "callback") {
       const quality = target.usable_callback_ip === false ? "transit" : "node-ip";
-      opt.textContent = `${target.host} (ip for ${assoc} | ${quality}${profile})`;
+      opt.textContent = `${connectHost}${aliasHint} (ip for ${assoc} | ${quality}${profile})`;
     } else {
-      opt.textContent = `${target.host} (${target.source}${profile})`;
+      opt.textContent = `${connectHost}${aliasHint} (${target.source}${profile})`;
     }
     hostSelectEl.appendChild(opt);
   }
 
-  const discovered = new Set(callbackTargets.map((t) => String(t.host || "").toLowerCase()));
+  const discovered = new Set(
+    callbackTargets
+      .flatMap((t) => [String(t.host || "").toLowerCase(), String(t.connect_host || "").toLowerCase()])
+      .filter((v) => Boolean(v))
+  );
   for (const host of manual) {
     if (discovered.has(host.toLowerCase())) {
       continue;

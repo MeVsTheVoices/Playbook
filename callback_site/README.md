@@ -25,6 +25,13 @@ sudo PORT=9821 .venv/bin/python3 app.py
 - http://127.0.0.1:9821/
 - API events: http://127.0.0.1:9821/api/cloud-init/events
 
+## Additional Operator Pages
+
+The app now includes a lightweight OpenWrt workflow for collecting the connection details needed for Ansible-based router access:
+- `/openwrt` renders a small operator form for host, port, username, password, connection mode, and module hint.
+- `POST /api/openwrt/inspect` returns an Ansible-style inventory preview plus a live SSH probe result.
+- The page is intentionally simple and is meant to help you inspect router login details before wiring up a full playbook.
+
 ## SD Card Imager Workflow
 
 The UI supports end-to-end preparation of cloud-init capable images:
@@ -142,6 +149,10 @@ Node Ops:
 - `POST /api/nodes/node-configs`
 - `POST /api/nodes/node-inputs`
 - `POST /api/nodes/provision`
+
+OpenWrt probe:
+- `GET /openwrt`
+- `POST /api/openwrt/inspect`
 
 Settings:
 - `POST /api/settings/reset` (`scope: node_ops`) to clean-slate Node Ops credentials, node profile selections, saved per-profile inputs, and provisioning results.

@@ -54,6 +54,9 @@ class CallbackSiteTests(unittest.TestCase):
         text = page.get_data(as_text=True)
         self.assertIn("OpenWrt Ansible Probe", text)
         self.assertIn("ansible_host", text)
+        self.assertIn("router-activity", text)
+        self.assertIn("🙂", text)
+        self.assertIn("🐶", text)
 
         response = self.client.post(
             "/api/openwrt/inspect",

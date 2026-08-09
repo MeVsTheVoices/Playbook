@@ -156,6 +156,15 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
         module_name=discovered["name"],
     )
 
+    probe = {
+        "ok": False,
+        "error": "",
+        "details": "",
+        "timed_out": False,
+    }
+    if connection == "ssh":
+        probe = _probe_ssh_target(host=host, port=port, username=username, password=password)
+
     return {
         "request": {
             "host": host,
@@ -178,7 +187,26 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
             "module_hint": module_hint or None,
         },
         "inventory_preview": inventory_preview,
+        "probe": probe,
     }
+
+
+def _probe_ssh_target(*, host: str, port: int, username: str, password: str) -> Dict[str, Any]:
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=4", "-p", str(port), f"{username}@{host}", "true"]
+    if password:
+        cmd = ["sshpass", "-p", password, *cmd]
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=8, check=False)
+    except FileNotFoundError:
+        return {"ok": False, "error": "ssh is not installed or available on this host", "details": "", "timed_out": False}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "ssh probe timed out", "details": "", "timed_out": True}
+
+    output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    if proc.returncode == 0:
+        return {"ok": True, "error": "", "details": output or "SSH authentication and connectivity succeeded.", "timed_out": False}
+    return {"ok": False, "error": f"ssh probe failed with exit code {proc.returncode}", "details": output, "timed_out": False}
 
 
 def _discover_openwrt_module(module_hint: str) -> Dict[str, str]:

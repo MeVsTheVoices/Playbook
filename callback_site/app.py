@@ -1450,7 +1450,7 @@ def nodes_provision() -> Any:
     for node in target_nodes:
         profile_ids = _effective_node_profiles(node, state)
         missing = _missing_required_inputs(node["name"], profile_ids, state)
-        if missing:
+        if missing and mode == "apply":
             missing_by_node.append(
                 {
                     "node": node["name"],

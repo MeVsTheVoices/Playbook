@@ -272,6 +272,27 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('/static/test_terminal.css', text)
         self.assertIn('/static/test_terminal.js', text)
 
+    def test_node_ops_page_exposes_manual_node_selector(self) -> None:
+        response = self.client.get("/nodes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="manual-node-selector"', text)
+        self.assertIn("Add / Update Manual Node", text)
+
+    def test_node_ops_page_guides_manual_node_edit_flow(self) -> None:
+        response = self.client.get("/nodes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Choose a discovered or saved node", text)
+        self.assertIn("Create new node", text)
+
+    def test_node_ops_page_uses_compact_profile_dropdown(self) -> None:
+        response = self.client.get("/nodes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="profile-select"', text)
+        self.assertIn("Hold Ctrl/Cmd to select multiple profiles", text)
+
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
         self.assertEqual(response.status_code, 200)
@@ -2232,7 +2253,7 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("tailscale", node_inputs)
         self.assertNotIn("telegraf", node_inputs)
 
-    def test_node_provision_requires_profile_inputs(self) -> None:
+    def test_node_provision_check_mode_does_not_require_profile_inputs(self) -> None:
         summary = self.client.get("/api/nodes/summary")
         self.assertEqual(summary.status_code, 200)
         payload = summary.get_json()
@@ -2252,11 +2273,11 @@ class CallbackSiteTests(unittest.TestCase):
             "/api/nodes/provision",
             json={"node": node_name, "mode": "check", "run_ansible": False},
         )
-        self.assertEqual(check_missing.status_code, 400)
+        self.assertEqual(check_missing.status_code, 200)
         missing_payload = check_missing.get_json()
-        self.assertFalse(missing_payload["ok"])
-        self.assertEqual(missing_payload["error"], "missing required provisioning inputs")
-        self.assertTrue(missing_payload.get("missing_inputs"))
+        self.assertTrue(missing_payload["ok"])
+        self.assertEqual(missing_payload["mode"], "check")
+        self.assertEqual(missing_payload["results"][0]["mode"], "check")
 
     def test_nodes_telegraf_test_uses_current_profile_inputs(self) -> None:
         summary = self.client.get("/api/nodes/summary")

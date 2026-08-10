@@ -162,11 +162,22 @@
         margin-bottom: 0.25rem;
       }
       .profile-list {
-        border: 1px dashed var(--line);
+        border: 1px solid var(--line);
         border-radius: 10px;
         padding: 0.7rem;
-        max-height: 240px;
-        overflow: auto;
+        background: linear-gradient(180deg, #fcfeff 0%, #f8fafc 100%);
+      }
+      .profile-list select {
+        min-height: 92px;
+        padding: 0.65rem;
+        font-weight: 600;
+        color: #0f172a;
+        background: #fff;
+      }
+      .profile-list .hint {
+        margin-top: 0.5rem;
+        color: var(--muted);
+        font-size: 0.8rem;
       }
       .profile-inputs {
         border: 1px solid var(--line);
@@ -417,6 +428,23 @@
       .node-action-btn {
         min-width: 124px;
       }
+      .manual-node-helper-active {
+        animation: helper-pop 0.28s ease;
+        color: #0f766e;
+      }
+      .manual-node-burst {
+        animation: button-bloom 0.34s ease;
+      }
+      @keyframes helper-pop {
+        0% { transform: translateY(2px); opacity: 0.8; }
+        60% { transform: translateY(-2px); opacity: 1; }
+        100% { transform: translateY(0); opacity: 1; }
+      }
+      @keyframes button-bloom {
+        0% { transform: scale(0.99); box-shadow: 0 0 0 rgba(15, 118, 110, 0); }
+        60% { transform: scale(1.01); box-shadow: 0 6px 16px rgba(15, 118, 110, 0.16); }
+        100% { transform: scale(1); box-shadow: 0 0 0 rgba(15, 118, 110, 0); }
+      }
       @media (max-width: 1050px) {
         .split { grid-template-columns: 1fr; }
       }
@@ -511,8 +539,15 @@
             <p id="config-status" class="note"></p>
 
             <hr style="border: 0; border-top: 1px solid var(--line); margin: 1rem 0;">
-            <h3 style="margin: 0 0 0.5rem; font-size: 1rem;">Add Node Manually</h3>
+            <h3 style="margin: 0 0 0.5rem; font-size: 1rem;">Add / Edit Node Manually</h3>
             <div class="grid">
+              <div>
+                <label for="manual-node-selector">Existing Node</label>
+                <select id="manual-node-selector">
+                  <option value="">Create new node</option>
+                </select>
+                <p id="manual-node-helper" class="note">Choose a discovered or saved node to edit its identity, or leave this blank to add a fresh one.</p>
+              </div>
               <div>
                 <label for="manual-node-name">Node Name</label>
                 <input id="manual-node-name" placeholder="node-1-jd">
@@ -557,7 +592,12 @@
               <label for="provision-node">Node</label>
               <select id="provision-node"></select>
             </div>
-            <div class="profile-list" id="profile-list"></div>
+            <div class="profile-list" id="profile-list">
+              <select id="profile-select" aria-label="Provisioning profiles" multiple>
+                <option value="">Loading profiles…</option>
+              </select>
+              <div class="hint">Hold Ctrl/Cmd to select multiple profiles.</div>
+            </div>
             <div class="profile-inputs" id="profile-inputs"></div>
             <div style="margin-top: 0.6rem;">
               <label><input type="checkbox" id="run-ansible" checked style="width:auto; margin-right:0.4rem;">Run ansible-playbook now</label>
@@ -584,7 +624,7 @@
           </div>
         </div>
 
-        <details class="panel collapsible-panel" id="user-profile-segments" open>
+        <details class="panel collapsible-panel" id="user-profile-segments">
           <summary>
             <div class="collapsible-summary">
               <h2>User-defined profile segments 🧩</h2>
@@ -701,6 +741,7 @@
       const statCallbackAddressCountEl = document.getElementById("stat-callback-address-count");
       const statCallbackCountEl = document.getElementById("stat-callback-count");
       const manualNodeStatus = document.getElementById("manual-node-status");
+      const manualNodeSelectorEl = document.getElementById("manual-node-selector");
       const manualNodeNameEl = document.getElementById("manual-node-name");
       const manualNodeGroupEl = document.getElementById("manual-node-group");
       const manualNodeAddressEl = document.getElementById("manual-node-address");
@@ -762,31 +803,33 @@
       function renderProfileChecklist() {
         const nodeName = provisionNode.value;
         const selected = new Set(selectedProfileIdsForNode(nodeName));
-        profileList.innerHTML = "";
-        for (const profile of profiles) {
-          const row = document.createElement("label");
-          row.className = "profile-row";
-
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.value = profile.id;
-          checkbox.checked = selected.has(profile.id);
-
-          const meta = document.createElement("div");
-          meta.className = "profile-meta";
-          const name = document.createElement("div");
-          name.className = "profile-name";
-          name.textContent = profile.label;
-          const desc = document.createElement("div");
-          desc.className = "profile-desc";
-          desc.textContent = profile.description;
-          meta.appendChild(name);
-          meta.appendChild(desc);
-
-          row.appendChild(checkbox);
-          row.appendChild(meta);
-          profileList.appendChild(row);
+        const select = document.getElementById("profile-select");
+        if (!select) {
+          profileList.innerHTML = "";
+          renderProfileInputs();
+          return;
         }
+
+        select.innerHTML = "";
+        select.multiple = true;
+        select.setAttribute("aria-label", "Provisioning profiles");
+        select.size = Math.min(Math.max(profiles.length, 3), 8);
+
+        for (const profile of profiles) {
+          const option = document.createElement("option");
+          option.value = profile.id;
+          option.textContent = `${profile.label} — ${profile.description}`;
+          option.selected = selected.has(profile.id);
+          select.appendChild(option);
+        }
+
+        if (!profiles.length) {
+          const emptyOption = document.createElement("option");
+          emptyOption.value = "";
+          emptyOption.textContent = "No profiles available";
+          select.appendChild(emptyOption);
+        }
+
         renderProfileInputs();
       }
 
@@ -893,9 +936,13 @@
       }
 
       function checkedProfileIds() {
-        return Array.from(profileList.querySelectorAll("input[type='checkbox']"))
-          .filter((el) => el.checked)
-          .map((el) => el.value);
+        const select = document.getElementById("profile-select");
+        if (!select) {
+          return [];
+        }
+        return Array.from(select.selectedOptions)
+          .map((option) => option.value)
+          .filter(Boolean);
       }
 
       function statusBadge(node) {
@@ -1098,6 +1145,79 @@
         }
       }
 
+      function resetManualNodeForm() {
+        manualNodeNameEl.value = "";
+        manualNodeGroupEl.value = "manual";
+        manualNodeAddressEl.value = "";
+        manualNodeUsernameEl.value = "";
+        manualNodePasswordEl.value = "";
+        manualNodeShellEl.value = "";
+        manualNodeCertificateEl.value = "";
+        const helper = document.getElementById("manual-node-helper");
+        if (helper) {
+          helper.textContent = "Choose a discovered or saved node to edit its identity, or leave this blank to add a fresh one.";
+          helper.classList.remove("manual-node-helper-active");
+        }
+      }
+
+      function renderManualNodeSelector() {
+        const currentSelection = manualNodeSelectorEl.value;
+        manualNodeSelectorEl.innerHTML = '<option value="">Create new node</option>';
+
+        const seenNames = new Set();
+        const candidateNames = [];
+        for (const node of nodes) {
+          const name = String(node?.name || "").trim();
+          if (!name || seenNames.has(name)) continue;
+          seenNames.add(name);
+          candidateNames.push(name);
+        }
+
+        for (const name of Object.keys(manualNodes || {}).sort((a, b) => a.localeCompare(b))) {
+          if (!seenNames.has(name)) {
+            seenNames.add(name);
+            candidateNames.push(name);
+          }
+        }
+
+        for (const name of candidateNames.sort((a, b) => a.localeCompare(b))) {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          manualNodeSelectorEl.appendChild(opt);
+        }
+
+        if (currentSelection && candidateNames.includes(currentSelection)) {
+          manualNodeSelectorEl.value = currentSelection;
+        } else {
+          manualNodeSelectorEl.value = "";
+        }
+      }
+
+      function fillManualNodeForm(nodeName) {
+        const entry = manualNodes[nodeName];
+        const node = nodes.find((item) => item.name === nodeName);
+        const source = entry || node || null;
+        if (!source) {
+          resetManualNodeForm();
+          return;
+        }
+        manualNodeNameEl.value = source.name || nodeName || "";
+        manualNodeGroupEl.value = source.group || entry?.group || "manual";
+        manualNodeAddressEl.value = source.address || "";
+        manualNodeUsernameEl.value = source.username || source.node_username || "";
+        manualNodePasswordEl.value = "";
+        manualNodeShellEl.value = source.default_shell || "";
+        manualNodeCertificateEl.value = source.certificate || "";
+        const helper = document.getElementById("manual-node-helper");
+        if (helper) {
+          helper.textContent = `Editing ${nodeName}. Tweak the fields and save to refresh that node’s identity.`;
+          helper.classList.remove("manual-node-helper-active");
+          void helper.offsetWidth;
+          helper.classList.add("manual-node-helper-active");
+        }
+      }
+
       async function refreshCertificates() {
         try {
           const res = await fetch("/api/ssh/keys");
@@ -1127,8 +1247,9 @@
       }
 
       async function addManualNode() {
+        const selectedNode = manualNodeSelectorEl.value.trim();
         const payload = {
-          name: manualNodeNameEl.value.trim(),
+          name: manualNodeNameEl.value.trim() || selectedNode,
           group: manualNodeGroupEl.value.trim() || "manual",
           address: manualNodeAddressEl.value.trim(),
           username: manualNodeUsernameEl.value.trim(),
@@ -1154,7 +1275,18 @@
             throw new Error(data.error || "Failed to save manual node");
           }
           manualNodeStatus.textContent = `Saved manual node '${payload.name}'.`;
+          const actionButton = document.getElementById("add-manual-node");
+          actionButton.classList.remove("manual-node-burst");
+          void actionButton.offsetWidth;
+          actionButton.classList.add("manual-node-burst");
           manualNodePasswordEl.value = "";
+          if (selectedNode) {
+            manualNodeSelectorEl.value = payload.name;
+            fillManualNodeForm(payload.name);
+          } else {
+            manualNodeSelectorEl.value = "";
+            resetManualNodeForm();
+          }
           await loadSummary();
         } catch (err) {
           manualNodeStatus.textContent = `Manual node save error: ${String(err.message || err)}`;
@@ -1195,6 +1327,7 @@
         nodeInputs = (data.node_inputs && typeof data.node_inputs === "object") ? data.node_inputs : {};
         renderProfileSegmentOptions();
         manualNodes = (data.manual_nodes && typeof data.manual_nodes === "object") ? data.manual_nodes : {};
+        renderManualNodeSelector();
 
         statusByNode = {};
         for (const node of nodes) {
@@ -1420,6 +1553,14 @@
       document.getElementById("save-profile-segment").addEventListener("click", saveProfileSegment);
       document.getElementById("refresh-profile-segments").addEventListener("click", refreshProfileSegments);
       document.getElementById("add-manual-node").addEventListener("click", addManualNode);
+      manualNodeSelectorEl.addEventListener("change", () => {
+        const selectedNode = manualNodeSelectorEl.value.trim();
+        if (!selectedNode) {
+          resetManualNodeForm();
+          return;
+        }
+        fillManualNodeForm(selectedNode);
+      });
       document.getElementById("refresh-certificates").addEventListener("click", refreshCertificates);
       document.getElementById("refresh-monitor").addEventListener("click", () => refreshMonitor(false));
       document.getElementById("refresh-monitor-webhook").addEventListener("click", () => refreshMonitor(true));

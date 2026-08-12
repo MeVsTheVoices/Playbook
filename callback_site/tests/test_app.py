@@ -1614,6 +1614,57 @@ class CallbackSiteTests(unittest.TestCase):
                 stale_tmp.chmod(0o644)
                 stale_tmp.unlink()
 
+    def test_catalog_pull_worker_removes_stale_part_files_before_download(self) -> None:
+        job_id = "job-test-catalog-stale-part-cleanup"
+        entry = {
+            "id": "ubuntu-22.04-pi-arm64",
+            "label": "Ubuntu Server 22.04 LTS",
+            "image_url": "https://example.invalid/ubuntu-22.04.img.xz",
+            "image_sha256": "",
+            "profiles": ["pi5"],
+        }
+        target = callback_core.IMAGE_CACHE_DIR / callback_core._safe_catalog_filename(str(entry["image_url"]), str(entry["id"]))
+        stale_tmp = target.with_suffix(target.suffix + ".part")
+        stale_tmp.parent.mkdir(parents=True, exist_ok=True)
+        stale_tmp.write_text("stale", encoding="utf-8")
+
+        def fake_download(url: str, target_path: Path, on_progress=None) -> str:
+            if callable(on_progress):
+                on_progress(4, 8)
+            target_path.write_text("payload", encoding="utf-8")
+            return "abc123"
+
+        with callback_core.CATALOG_PULL_JOBS_LOCK:
+            callback_core.CATALOG_PULL_JOBS[job_id] = {
+                "id": job_id,
+                "status": "queued",
+                "created_at": "2026-06-29T00:00:00+00:00",
+                "storage_dir": str(TEST_DATA_DIR / "image_cache"),
+                "requested_ids": [entry["id"]],
+                "accepted_ids": [entry["id"]],
+                "missing_ids": [],
+                "missing_url_ids": [],
+                "skip_existing": False,
+                "results": [],
+                "summary": {"ok": 0, "failed": 0, "skipped": 0, "running": 0, "total": 0},
+            }
+
+        try:
+            with patch.object(callback_core, "_download_catalog_image", side_effect=fake_download), patch.object(
+                callback_core,
+                "_append_image_history",
+                return_value=None,
+            ):
+                callback_core._run_catalog_pull_job(job_id, [entry], skip_existing=False)
+
+            self.assertFalse(stale_tmp.exists())
+            self.assertTrue(target.exists())
+        finally:
+            if target.exists():
+                target.unlink()
+            if stale_tmp.exists():
+                stale_tmp.unlink()
+
     def test_catalog_pull_worker_initializes_running_summary_before_download(self) -> None:
         job_id = "job-test-catalog-running-summary"
         entry = {

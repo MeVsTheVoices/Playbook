@@ -1076,6 +1076,12 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
                 item_result["message"] = "already exists"
                 continue
 
+            for stale_part in sorted(IMAGE_CACHE_DIR.glob(f"{target.name}*.part")):
+                try:
+                    stale_part.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(f"Unable to remove stale catalog temp file: {stale_part}")
+
             tmp = _catalog_pull_temp_path(target)
 
             def _on_item_progress(downloaded: int, total: int | None) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 try:
     from .test_support import BaseCallbackSiteTest, callback_app
 except ImportError:
@@ -27,20 +29,22 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         self.assertIn("pragma: k3s-config-v1", cleaned["cloud_init_options"]["k3s_config"])
 
     def test_sanitize_sd_prepare_payload_autofills_k3s_config_when_missing(self) -> None:
-        cleaned = callback_app._sanitize_sd_prepare_payload(
-            {
-                "profile": "pi5",
-                "hostname": "rack-node-k3s",
-                "device": "/dev/sdb",
-                "ssh_public_key": "ssh-ed25519 AAAA",
-                "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
-                "distribution": "k3s",
-                "cloud_init_options": {},
-            }
-        )
+        with patch.object(callback_app, "_detect_local_ip", return_value="10.255.45.164"):
+            cleaned = callback_app._sanitize_sd_prepare_payload(
+                {
+                    "profile": "pi5",
+                    "hostname": "rack-node-k3s",
+                    "device": "/dev/sdb",
+                    "ssh_public_key": "ssh-ed25519 AAAA",
+                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "distribution": "k3s",
+                    "cloud_init_options": {},
+                }
+            )
         self.assertEqual(cleaned["distribution"], "k3s")
         self.assertIn("k3s_config", cleaned["cloud_init_options"])
         self.assertIn("pragma: k3s-config-v1", cleaned["cloud_init_options"]["k3s_config"])
+        self.assertIn("server: https://10.255.45.164:6443", cleaned["cloud_init_options"]["k3s_config"])
 
     def test_sanitize_sd_prepare_payload_infers_k3s_from_config_block(self) -> None:
         cleaned = callback_app._sanitize_sd_prepare_payload(

@@ -43,8 +43,15 @@ IMAGE_SHA256=""
 WORKSPACE="${PWD}/.build"
 AUTO_CONFIRM="false"
 DISTRIBUTION="${CLOUD_INIT_DISTRIBUTION:-standard}"
+DEFAULT_K3S_SERVER_HOST="${CLOUD_INIT_K3S_SERVER_HOST:-}"
+if [[ -z "$DEFAULT_K3S_SERVER_HOST" ]]; then
+  DEFAULT_K3S_SERVER_HOST="$(hostname -I | awk '{print $1}')"
+fi
+if [[ -z "$DEFAULT_K3S_SERVER_HOST" ]]; then
+  DEFAULT_K3S_SERVER_HOST="127.0.0.1"
+fi
 DEFAULT_K3S_CONFIG="${CLOUD_INIT_K3S_CONFIG:-# pragma: k3s-config-v1
-server: https://control-plane.example:6443
+server: https://${DEFAULT_K3S_SERVER_HOST}:6443
 }"
 
 while [[ $# -gt 0 ]]; do

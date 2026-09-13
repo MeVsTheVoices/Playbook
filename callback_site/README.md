@@ -61,6 +61,7 @@ Then open:
 - The optional settings panel includes an integrated security starter action (`Apply Security Starter Defaults`) that sets conservative defaults in-place (disable SSH password auth, disable root SSH login, enable fail2ban, enable unattended upgrades).
 - Additional SSH hardening options are supported through cloud-init options, including `ssh_port`, `ssh_allow_groups`, and extra authorized keys.
 - `distribution` is supported with `standard` and `k3s` values.
+- Stale node cleanup is supported through a threshold-based prune operation that removes old callback-discovered nodes across callback history, monitor state, and Node Ops saved state.
 - When `distribution` is `k3s`, the UI opens a K3s config section and populates a default config block using a pragma header:
 
 ```yaml
@@ -81,6 +82,7 @@ This config is carried forward in the cloud-init payload and later used by the p
 - `POST /api/sd/options-profiles`
 - `DELETE /api/sd/options-profiles/<name>`
 - `GET /api/nodes/summary`
+- `POST /api/nodes/stale/prune`
 - `POST /api/nodes/provision`
 - `POST /api/ssh/generate`
 - `GET /api/ssh/keys`

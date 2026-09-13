@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent
-IMAGE_CATALOG_FILE = BASE_DIR / "catalogs" / "image_catalog.yml"
+_DEFAULT_IMAGE_CATALOG_FILE = BASE_DIR / "catalogs" / "image_catalog.yml"
+IMAGE_CATALOG_FILE = Path(os.getenv("CALLBACK_IMAGE_CATALOG_FILE", str(_DEFAULT_IMAGE_CATALOG_FILE))).expanduser()
 
 TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
     "tailnet": "tail00c2ce.ts.net",

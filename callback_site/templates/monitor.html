@@ -104,9 +104,64 @@
         box-shadow: 0 16px 44px rgba(14, 42, 71, 0.08);
         margin-bottom: 1rem;
       }
+      .panel.hero {
+        background:
+          linear-gradient(120deg, rgba(15, 118, 110, 0.09), rgba(8, 47, 73, 0.03)),
+          var(--card);
+      }
       h1, h2, h3 { margin: 0 0 0.6rem; }
       p { margin: 0 0 0.8rem; color: var(--muted); }
       .note { color: var(--muted); font-size: 0.84rem; }
+      .status-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-height: 1.6rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      }
+      .status-state::before {
+        content: "";
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        background: #94a3b8;
+        box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.4);
+      }
+      .status-state.busy {
+        background: #fff7ed;
+        border-color: #fdba74;
+        color: #9a4f00;
+      }
+      .status-state.busy::before {
+        background: #f59e0b;
+        animation: pulse-amber 1.1s ease-in-out infinite;
+      }
+      .status-state.ok {
+        background: #ecfdf5;
+        border-color: #86efac;
+        color: #166534;
+      }
+      .status-state.ok::before {
+        background: #22c55e;
+      }
+      .status-state.error {
+        background: #fef2f2;
+        border-color: #fca5a5;
+        color: #991b1b;
+      }
+      .status-state.error::before {
+        background: #ef4444;
+      }
+      @keyframes pulse-amber {
+        0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+        70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+      }
       .grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -149,6 +204,15 @@
         align-items: center;
       }
       .actions-row button { width: auto; min-width: 120px; }
+      .actions-row.controls-inline {
+        align-items: flex-end;
+      }
+      .actions-row.controls-inline > label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        margin-bottom: 0;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -174,6 +238,32 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 0.75rem;
+      }
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.65rem;
+        margin-top: 0.7rem;
+      }
+      .kpi {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 0.62rem;
+      }
+      .kpi .label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .kpi .value {
+        margin-top: 0.24rem;
+        font-size: 1.07rem;
+        font-weight: 700;
+      }
+      .table-wrap {
+        overflow-x: auto;
       }
       .card {
         border: 1px solid var(--line);
@@ -247,24 +337,60 @@
 
     <main class="content">
       <div class="wrap">
-        <div class="panel">
+        <div class="panel hero">
           <h1>Hardware Monitor 🖥️</h1>
           <p>Per-node hardware configuration state from callback reports. Rows appear after a node's first <code>hardware-check</code> or <code>runcmd</code> callback.</p>
-          <div class="actions-row">
+          <div class="actions-row controls-inline">
             <button id="refresh-summary" type="button">Refresh</button>
+            <label for="monitor-ping-node-select" style="margin: 0; min-width: 220px;">
+              Node
+              <select id="monitor-ping-node-select"></select>
+            </label>
+            <button id="summary-run-ping" type="button" class="secondary">Simple Ping</button>
             <span class="note" id="monitor-status">Idle.</span>
           </div>
+          <p class="note" id="summary-ping-status"></p>
+        </div>
+
+        <div class="panel">
+          <h2>Single Source of Truth</h2>
+          <p class="note">Unified state for what is downloaded, where to get it, what is provisioned, and how each node is configured.</p>
+          <div id="sot-kpis" class="kpi-grid">
+            <div class="kpi"><div class="label">Nodes In Monitor</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">Nodes With Hardware</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">Catalog Available</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">Image History Records</div><div class="value">-</div></div>
+          </div>
+          <div class="table-wrap" style="margin-top: 0.75rem;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>Address</th>
+                  <th>Provisioned How</th>
+                  <th>Latest Check</th>
+                  <th>Image Source</th>
+                  <th>Cached</th>
+                </tr>
+              </thead>
+              <tbody id="sot-body">
+                <tr><td colspan="6">No source-of-truth data loaded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note mono" id="sot-meta">Waiting for unified state payload...</p>
         </div>
 
         <div class="panel">
           <h2>Run Closer Check</h2>
           <p class="note">Select a discovered node and trigger a closer check so the hardware monitor refreshes with the latest callback data.</p>
-          <div class="actions-row">
+          <div class="actions-row controls-inline">
             <label for="monitor-node-select" style="margin: 0; min-width: 240px;">
               Discovered node
               <select id="monitor-node-select"></select>
             </label>
             <button id="monitor-run-check" type="button">Check Closer</button>
+            <button id="monitor-run-ping" type="button" class="secondary">Simple Ping</button>
           </div>
           <p class="note" id="monitor-check-status">Select a discovered node to trigger a closer check.</p>
         </div>
@@ -324,6 +450,7 @@
             </div>
             <div class="actions-row" style="margin-top: 0.7rem;">
               <button id="save-node" type="button">Save Node</button>
+              <button id="node-form-ping" type="button" class="secondary">Simple Ping</button>
               <button id="clear-node-form" type="button" class="secondary">Clear</button>
             </div>
             <p class="note" id="node-form-status"></p>
@@ -354,10 +481,19 @@
       const certOutputEl = document.getElementById("cert-output");
       const hwBodyEl = document.getElementById("hw-body");
       const monitorNodeSelectEl = document.getElementById("monitor-node-select");
+      const monitorPingNodeSelectEl = document.getElementById("monitor-ping-node-select");
       const monitorRunCheckBtn = document.getElementById("monitor-run-check");
+      const summaryRunPingBtn = document.getElementById("summary-run-ping");
+      const monitorRunPingBtn = document.getElementById("monitor-run-ping");
+      const nodeFormPingBtn = document.getElementById("node-form-ping");
       const monitorCheckStatusEl = document.getElementById("monitor-check-status");
+      const summaryPingStatusEl = document.getElementById("summary-ping-status");
+      const sotKpisEl = document.getElementById("sot-kpis");
+      const sotBodyEl = document.getElementById("sot-body");
+      const sotMetaEl = document.getElementById("sot-meta");
 
       let nodes = [];
+      let sourceOfTruthState = null;
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -376,18 +512,78 @@
           .replaceAll(">", "&gt;");
       }
 
+      function compactPathLabel(value) {
+        const text = String(value || "").trim();
+        if (!text || !text.includes("/")) {
+          return text;
+        }
+        const parts = text.split("/").filter(Boolean);
+        if (parts.length < 2) {
+          return text;
+        }
+        return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+      }
+
+      function formatTimestamp(value) {
+        const text = String(value || "").trim();
+        if (!text || text === "-") {
+          return "-";
+        }
+        const dt = new Date(text);
+        if (Number.isNaN(dt.getTime())) {
+          return text;
+        }
+        return dt.toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          timeZoneName: "short",
+        });
+      }
+
       function renderNodeSelectors() {
         const currentCertNode = certNodeEl.value;
+        const currentSummaryNode = monitorPingNodeSelectEl.value;
         certNodeEl.innerHTML = "";
+        monitorPingNodeSelectEl.innerHTML = "";
+        if (!nodes.length) {
+          const emptyCert = document.createElement("option");
+          emptyCert.value = "";
+          emptyCert.textContent = "No nodes available";
+          certNodeEl.appendChild(emptyCert);
+
+          const emptyPing = document.createElement("option");
+          emptyPing.value = "";
+          emptyPing.textContent = "No nodes available";
+          monitorPingNodeSelectEl.appendChild(emptyPing);
+          summaryRunPingBtn.disabled = true;
+          return;
+        }
+
         for (const node of nodes) {
           const opt = document.createElement("option");
           opt.value = node.name;
           opt.textContent = node.name;
           certNodeEl.appendChild(opt);
+
+          const pingOpt = document.createElement("option");
+          pingOpt.value = node.name;
+          pingOpt.textContent = `${node.name} (${node.group || "node"})`;
+          monitorPingNodeSelectEl.appendChild(pingOpt);
         }
         if (currentCertNode && nodes.some((n) => n.name === currentCertNode)) {
           certNodeEl.value = currentCertNode;
         }
+        if (currentSummaryNode && nodes.some((n) => n.name === currentSummaryNode)) {
+          monitorPingNodeSelectEl.value = currentSummaryNode;
+        } else {
+          monitorPingNodeSelectEl.value = nodes[0].name;
+        }
+        summaryRunPingBtn.disabled = false;
       }
 
       function renderMonitorNodeSelector() {
@@ -416,6 +612,15 @@
           monitorNodeSelectEl.value = discoveredNodes[0].name;
         }
         monitorRunCheckBtn.disabled = false;
+      }
+
+      function setMonitorCheckState(state, message) {
+        const classes = ["status-state"];
+        if (state === "busy") classes.push("busy");
+        if (state === "ok") classes.push("ok");
+        if (state === "error") classes.push("error");
+        monitorCheckStatusEl.className = classes.join(" ");
+        monitorCheckStatusEl.textContent = message;
       }
 
       function renderHardwareTable() {
@@ -471,44 +676,220 @@
         nodeFormStatusEl.textContent = "";
       }
 
-      async function loadSummary() {
-        monitorStatus.textContent = "Loading...";
-        const res = await fetch("/api/monitor/summary");
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          monitorStatus.textContent = data.error || "Failed to load monitor summary.";
+      function renderSourceOfTruth() {
+        if (!sourceOfTruthState || typeof sourceOfTruthState !== "object") {
+          sotBodyEl.innerHTML = "<tr><td colspan='6'>Source-of-truth payload is unavailable.</td></tr>";
+          sotMetaEl.textContent = "Unified state endpoint did not return data.";
           return;
         }
-        nodes = Array.isArray(data.nodes) ? data.nodes : [];
+
+        const counts = sourceOfTruthState.counts || {};
+        const kpis = [
+          ["Nodes In Monitor", counts.nodes_in_monitor],
+          ["Nodes With Hardware", counts.nodes_with_hardware],
+          ["Catalog Available", `${counts.catalog_available || 0} / ${counts.catalog_entries || 0}`],
+          ["Image History Records", counts.image_history_records],
+        ];
+        sotKpisEl.innerHTML = "";
+        for (const [label, value] of kpis) {
+          const card = document.createElement("div");
+          card.className = "kpi";
+          card.innerHTML = `<div class='label'>${escapeHtml(label)}</div><div class='value'>${escapeHtml(value == null ? "-" : String(value))}</div>`;
+          sotKpisEl.appendChild(card);
+        }
+
+        const rows = Array.isArray(sourceOfTruthState.nodes) ? sourceOfTruthState.nodes : [];
+        sotBodyEl.innerHTML = "";
+        if (!rows.length) {
+          sotBodyEl.innerHTML = "<tr><td colspan='6' style='color:var(--muted)'>No nodes in unified state yet.</td></tr>";
+        }
+        for (const row of rows.slice(0, 14)) {
+          const image = row.image || {};
+          const provisionHow = Array.isArray(row.provision_how) ? row.provision_how : [];
+          const provisionText = provisionHow.map((item) => item.label || item.id || "-").join(", ") || "-";
+          const latestCheck = row.latest_check || {};
+          const latestCheckTs = formatTimestamp(latestCheck.checked_at || "-");
+          const latestCheckOk = latestCheck.ok === true ? "ok" : latestCheck.ok === false ? "failed" : "-";
+          const sourceText = compactPathLabel(image.source_value || image.source || "-");
+          const cached = image.local_available ? "yes" : "no";
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><strong>${escapeHtml(row.name || "-")}</strong></td>
+            <td class='mono'>${escapeHtml(row.address || "-")}</td>
+            <td>${escapeHtml(provisionText)}</td>
+            <td>${escapeHtml(`${latestCheckOk} @ ${latestCheckTs}`)}</td>
+            <td class='mono'>${escapeHtml(sourceText)}</td>
+            <td>${escapeHtml(cached)}</td>
+          `;
+          sotBodyEl.appendChild(tr);
+        }
+
+        const generatedAt = sourceOfTruthState.generated_at || "unknown";
+        sotMetaEl.textContent = `Generated ${generatedAt}. Source files: callbacks + monitor_state + node_provisioning + image_history + image_catalog + inventory.`;
+      }
+
+      async function loadSummary() {
+        monitorStatus.textContent = "Loading...";
+        const sotRes = await fetch("/api/state/source-of-truth");
+        const sotPayload = await sotRes.json();
+        if (!sotRes.ok || !sotPayload.ok) {
+          monitorStatus.textContent = sotPayload.error || "Failed to load monitor summary.";
+          return;
+        }
+        sourceOfTruthState = sotPayload.state || null;
+        const allNodes = Array.isArray(sourceOfTruthState && sourceOfTruthState.nodes) ? sourceOfTruthState.nodes : [];
+        nodes = allNodes.filter((node) => node && node.in_monitor_view);
         renderHardwareTable();
         renderNodeSelectors();
         renderMonitorNodeSelector();
+        renderSourceOfTruth();
         const hwCount = nodes.filter((n) => n.hardware && n.hardware.received_at).length;
         monitorStatus.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"} loaded, ${hwCount} with hardware data.`;
+      }
+
+      async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 20000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      async function pollMonitorProvisionJob(jobId, nodeName, previouslySeenHardwareAt) {
+        const deadline = Date.now() + 120000;
+        while (Date.now() < deadline) {
+          try {
+            const res = await fetch(`/api/nodes/provision/jobs/${encodeURIComponent(jobId)}`);
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              setMonitorCheckState("error", data.error || "Closer check job lookup failed.");
+              return;
+            }
+            const job = data.job || {};
+            if (job.status === "completed") {
+              await loadSummary();
+              const currentNode = nodes.find((item) => item.name === nodeName);
+              const currentHardwareAt = currentNode && currentNode.hardware ? currentNode.hardware.received_at : "";
+              if (currentHardwareAt && currentHardwareAt !== previouslySeenHardwareAt) {
+                setMonitorCheckState("ok", `Hardware callback refreshed for ${nodeName}.`);
+                return;
+              }
+              const resultEntry = Array.isArray(job.results)
+                ? job.results.find((entry) => entry && entry.node === nodeName)
+                : null;
+              const hardwareTrigger = resultEntry && Array.isArray(resultEntry.results)
+                ? resultEntry.results.find((entry) => entry && entry.profile_id === "hardware_check_trigger")
+                : null;
+              if (hardwareTrigger && hardwareTrigger.status && hardwareTrigger.status !== "ok") {
+                const details = String(hardwareTrigger.output || "").trim();
+                const shortDetails = details ? ` ${details.slice(0, 220)}` : "";
+                setMonitorCheckState("error", `Closer check completed for ${nodeName}, but hardware-check trigger failed (${hardwareTrigger.status}).${shortDetails}`);
+                return;
+              }
+              setMonitorCheckState("error", `Closer check completed for ${nodeName}, but no fresh hardware callback has been seen yet.`);
+              return;
+            }
+            if (job.status === "failed") {
+              setMonitorCheckState("error", job.error || `Closer check failed for ${nodeName}.`);
+              return;
+            }
+            setMonitorCheckState("busy", `Triggering closer check for ${nodeName}...`);
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          } catch (err) {
+            setMonitorCheckState("error", `Closer check request failed: ${String(err && err.message ? err.message : err)}`);
+            return;
+          }
+        }
+        setMonitorCheckState("error", `The closer check is still running for ${nodeName}; refresh the summary to see if a hardware callback arrives.`);
       }
 
       async function runMonitorCloserCheck() {
         const nodeName = monitorNodeSelectEl.value;
         if (!nodeName) {
-          monitorCheckStatusEl.textContent = "No discovered node is available yet.";
+          setMonitorCheckState("error", "No discovered node is available yet.");
           return;
         }
 
-        monitorCheckStatusEl.textContent = `Triggering closer check for ${nodeName}...`;
-        const res = await fetch("/api/nodes/provision", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ node: nodeName, mode: "check", run_ansible: true }),
-        });
-        const data = await res.json();
+        const currentNode = nodes.find((item) => item.name === nodeName);
+        const previouslySeenHardwareAt = currentNode && currentNode.hardware ? currentNode.hardware.received_at : "";
 
-        if (!res.ok || !data.ok) {
-          monitorCheckStatusEl.textContent = data.error || "Closer check request failed.";
+        monitorRunCheckBtn.disabled = true;
+        setMonitorCheckState("busy", `Triggering closer check for ${nodeName}...`);
+        try {
+          const res = await fetchJsonWithTimeout("/api/nodes/provision", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node: nodeName, mode: "check", run_ansible: true }),
+          }, 20000);
+          const data = await res.json();
+
+          if (!res.ok || !data.ok) {
+            setMonitorCheckState("error", data.error || "Closer check request failed.");
+            return;
+          }
+
+          if (data.job_id) {
+            await pollMonitorProvisionJob(data.job_id, nodeName, previouslySeenHardwareAt);
+            return;
+          }
+
+          await loadSummary();
+          const refreshedNode = nodes.find((item) => item.name === nodeName);
+          const refreshedHardwareAt = refreshedNode && refreshedNode.hardware ? refreshedNode.hardware.received_at : "";
+          setMonitorCheckState(
+            refreshedHardwareAt && refreshedHardwareAt !== previouslySeenHardwareAt ? "ok" : "error",
+            refreshedHardwareAt && refreshedHardwareAt !== previouslySeenHardwareAt
+              ? `Closer check triggered for ${nodeName}; a fresh hardware callback is visible.`
+              : `Closer check submitted for ${nodeName}, but no new hardware callback has been observed yet.`
+          );
+        } catch (err) {
+          if (err && err.name === "AbortError") {
+            setMonitorCheckState("error", `The closer check is still running for ${nodeName}; refresh the summary to see if a hardware callback arrives.`);
+            return;
+          }
+          setMonitorCheckState("error", `Closer check request failed: ${String(err && err.message ? err.message : err)}`);
+        } finally {
+          monitorRunCheckBtn.disabled = false;
+        }
+      }
+
+      async function runSimplePing(nodeName, statusEl, triggerButton, prefixMessage) {
+        const selected = String(nodeName || "").trim();
+        if (!selected) {
+          statusEl.textContent = "Choose a node first.";
           return;
         }
 
-        await loadSummary();
-        monitorCheckStatusEl.textContent = `Closer check requested for ${nodeName}. Hardware data will refresh shortly.`;
+        triggerButton.disabled = true;
+        statusEl.textContent = `Pinging ${selected}...`;
+        try {
+          const res = await fetchJsonWithTimeout(`/api/monitor/nodes/${encodeURIComponent(selected)}/ping`, {}, 12000);
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            statusEl.textContent = data.error || "Ping failed.";
+            return;
+          }
+
+          if (data.reachable) {
+            const latencyText = data.latency_ms != null ? `${data.latency_ms} ms` : "reachable";
+            statusEl.textContent = `${prefixMessage} ${selected} is reachable (${latencyText}).`;
+            return;
+          }
+
+          const reason = data.error ? ` ${data.error}` : "";
+          statusEl.textContent = `${prefixMessage} ${selected} is unreachable.${reason}`;
+        } catch (err) {
+          if (err && err.name === "AbortError") {
+            statusEl.textContent = `Ping timed out for ${selected}.`;
+          } else {
+            statusEl.textContent = `Ping request failed: ${String(err && err.message ? err.message : err)}`;
+          }
+        } finally {
+          triggerButton.disabled = false;
+        }
       }
 
       async function saveNode() {
@@ -562,7 +943,17 @@
 
       document.getElementById("refresh-summary").addEventListener("click", loadSummary);
       monitorRunCheckBtn.addEventListener("click", runMonitorCloserCheck);
+      summaryRunPingBtn.addEventListener("click", () =>
+        runSimplePing(monitorPingNodeSelectEl.value, summaryPingStatusEl, summaryRunPingBtn, "Simple ping:")
+      );
+      monitorRunPingBtn.addEventListener("click", () =>
+        runSimplePing(monitorNodeSelectEl.value, monitorCheckStatusEl, monitorRunPingBtn, "Simple ping:")
+      );
       document.getElementById("save-node").addEventListener("click", saveNode);
+      nodeFormPingBtn.addEventListener("click", () => {
+        const requested = document.getElementById("node-name").value.trim();
+        runSimplePing(requested, nodeFormStatusEl, nodeFormPingBtn, "Simple ping:");
+      });
       document.getElementById("clear-node-form").addEventListener("click", clearNodeForm);
       document.getElementById("pull-cert").addEventListener("click", pullCertificate);
 

@@ -14,6 +14,9 @@ from typing import Any, Dict
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
 
 from core import *
+from routes_openwrt import register_openwrt_routes
+from routes_pages import register_page_routes
+from routes_settings import register_settings_routes
 
 # Setup logs directory
 LOG_DIR = APPDATA_DIR / "logs"
@@ -54,6 +57,8 @@ NODE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 TEST_TERMINAL_JOBS: Dict[str, Dict[str, Any]] = {}
 TEST_TERMINAL_LOCK = threading.Lock()
+PROVISION_JOBS: Dict[str, Dict[str, Any]] = {}
+PROVISION_JOBS_LOCK = threading.Lock()
 TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
     "identity": {
         "label": "Identity + Kernel",
@@ -101,6 +106,60 @@ def _run_test_terminal_job(job_id: str, cmd: list[str]) -> None:
         TEST_TERMINAL_JOBS[job_id]["exit_code"] = proc.returncode
         TEST_TERMINAL_JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
         TEST_TERMINAL_JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _run_node_provision_job(job_id: str, target_node_names: list[str], mode: str, run_ansible: bool) -> None:
+    started_at = datetime.now(timezone.utc).isoformat()
+    with PROVISION_JOBS_LOCK:
+        job = PROVISION_JOBS.get(job_id)
+        if job is None:
+            return
+        job["status"] = "running"
+        job["started_at"] = started_at
+        job["updated_at"] = started_at
+
+    try:
+        node_lookup = {
+            item.get("name"): item
+            for item in _node_ops_inventory_view()
+            if isinstance(item, dict) and item.get("name")
+        }
+        results: list[Dict[str, Any]] = []
+        for node_name in target_node_names:
+            node = node_lookup.get(node_name)
+            if not node:
+                continue
+            state = _load_node_provisioning()
+            profile_ids = _effective_node_profiles(node, state)
+            if mode == "apply":
+                missing = _missing_required_inputs(node_name, profile_ids, state)
+                if missing:
+                    with PROVISION_JOBS_LOCK:
+                        job = PROVISION_JOBS.get(job_id)
+                        if job:
+                            job["status"] = "failed"
+                            job["error"] = "missing required provisioning inputs"
+                            job["missing_inputs"] = missing
+                            job["finished_at"] = datetime.now(timezone.utc).isoformat()
+                            job["updated_at"] = job["finished_at"]
+                    return
+            results.append(_apply_node_provisioning(node_name, profile_ids, mode=mode, run_ansible=run_ansible))
+
+        with PROVISION_JOBS_LOCK:
+            job = PROVISION_JOBS.get(job_id)
+            if job:
+                job["status"] = "completed"
+                job["results"] = results
+                job["finished_at"] = datetime.now(timezone.utc).isoformat()
+                job["updated_at"] = job["finished_at"]
+    except Exception as exc:
+        with PROVISION_JOBS_LOCK:
+            job = PROVISION_JOBS.get(job_id)
+            if job:
+                job["status"] = "failed"
+                job["error"] = str(exc)
+                job["finished_at"] = datetime.now(timezone.utc).isoformat()
+                job["updated_at"] = job["finished_at"]
 
 
 def _is_valid_report_id(value: str) -> bool:
@@ -171,161 +230,15 @@ def _read_node_report(report_id: str) -> Dict[str, Any] | None:
 
 app = Flask(__name__)
 
-@app.get("/")
-def index() -> str:
-    _ensure_device_monitor_started()
-    events = _read_events(limit=200)
-    rack_name = _load_app_settings().get("rack_name", "homelab")
-    option_profiles = _load_sd_option_profiles()
+
+def _catalog_entries_for_ui() -> List[Dict[str, Any]]:
     available_urls = _available_image_urls_from_history(limit=5000)
-    image_catalog = [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
-    return render_template(
-        "index.html",
-        events=events,
-        image_history=_read_image_history(limit=150),
-        image_summary=_image_state_summary(),
-        hostname_prefix=f"{rack_name}-",
-        sd_option_profiles=option_profiles,
-        devices=_list_sd_devices(),
-        callback_url_default=_default_callback_url(),
-        image_catalog=image_catalog,
-    )
+    return [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
 
 
-@app.get("/tailscale-acl")
-def tailscale_acl() -> str:
-    return render_template("tailscale_acl.html")
-
-
-@app.get("/openwrt")
-def openwrt_page() -> str:
-    return render_template("openwrt.html", rack_name=_load_app_settings().get("rack_name", "homelab"))
-
-
-@app.post("/api/openwrt/inspect")
-def openwrt_inspect() -> Any:
-    payload = request.get_json(silent=True) or {}
-    try:
-        result = _inspect_openwrt_probe(payload)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except FileNotFoundError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 404
-    return jsonify({"ok": True, **result})
-
-
-@app.post("/api/openwrt/push-key")
-def openwrt_push_key() -> Any:
-    payload = request.get_json(silent=True) or {}
-    try:
-        host = str(payload.get("host", "")).strip()
-        port = int(payload.get("port", 22) or 22)
-        username = str(payload.get("username", "root")).strip() or "root"
-        password = str(payload.get("password", ""))
-        key_name = str(payload.get("key_name", "")).strip()
-        if not host:
-            raise ValueError("host is required")
-        if not key_name:
-            raise ValueError("key_name is required")
-
-        key_info = _resolve_openwrt_ssh_key(key_name)
-        result = _push_ssh_key_to_target(
-            host=host,
-            port=port,
-            username=username,
-            password=password,
-            public_key=key_info["public_key"],
-            public_key_path=key_info["public_key_path"],
-            key_name=key_name,
-        )
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except FileNotFoundError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 404
-    return jsonify({"ok": True, **result})
-
-
-@app.get("/fragments/tailscale-acl/overview")
-def tailscale_acl_overview_fragment() -> str:
-    return render_template("fragments/tailscale_acl_overview.html")
-
-
-@app.get("/fragments/tailscale-acl/inputs")
-def tailscale_acl_inputs_fragment() -> str:
-    return render_template("fragments/tailscale_acl_inputs.html", defaults=_tailscale_policy_defaults())
-
-
-@app.get("/fragments/tailscale-acl/output")
-def tailscale_acl_output_fragment() -> str:
-    return render_template("fragments/tailscale_acl_output.html")
-
-
-@app.get("/fragments/tailscale-acl/apply-guide")
-def tailscale_acl_apply_guide_fragment() -> str:
-    return render_template("fragments/tailscale_acl_apply_guide.html")
-
-
-@app.get("/nodes")
-def nodes_page() -> str:
-    return render_template("nodes.html")
-
-
-@app.get("/monitor")
-def monitor_page() -> str:
-    return render_template("monitor.html")
-
-
-@app.get("/test-terminal")
-def test_terminal_page() -> str:
-    return render_template("test_terminal.html")
-
-
-@app.get("/images")
-def images_page() -> str:
-    image_history = _read_image_history(limit=500)
-    available_urls = _available_image_urls_from_history(limit=5000)
-    image_catalog = [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
-    return render_template("images.html", image_catalog=image_catalog, image_history=image_history, image_records=image_history)
-
-
-@app.get("/settings")
-def settings_page() -> str:
-    return render_template("settings.html")
-
-
-@app.get("/api/settings")
-def settings_get() -> Any:
-    settings = _load_app_settings()
-    settings["log_file"] = str(LOG_FILE)
-    settings["verbose_logging"] = root_logger.level == logging.DEBUG
-    settings["appdata_dir"] = str(APPDATA_DIR)
-    return jsonify({"ok": True, "settings": settings})
-
-
-@app.post("/api/logging/verbose")
-def logging_verbose() -> Any:
-    payload = request.get_json(silent=True) or {}
-    enable = payload.get("enable", False)
-    if enable:
-        root_logger.setLevel(logging.DEBUG)
-        logger.info("Verbose logging enabled")
-        msg = "Verbose logging enabled"
-    else:
-        root_logger.setLevel(logging.INFO)
-        logger.info("Verbose logging disabled")
-        msg = "Verbose logging disabled"
-    return jsonify({"ok": True, "message": msg, "verbose_logging": enable})
-
-
-@app.get("/api/logging/tail")
-def logging_tail() -> Any:
-    lines = request.args.get("lines", "50", type=int)
-    try:
-        with open(LOG_FILE, "r") as f:
-            log_lines = f.readlines()[-lines:]
-        return jsonify({"ok": True, "log_file": str(LOG_FILE), "lines": log_lines})
-    except FileNotFoundError:
-        return jsonify({"ok": False, "error": "log file not found"}), 404
+register_page_routes(app, catalog_entries_for_ui=_catalog_entries_for_ui)
+register_openwrt_routes(app)
+register_settings_routes(app, log_file=LOG_FILE, root_logger=root_logger, logger=logger)
 
 
 @app.get("/api/sd/options-profiles")
@@ -369,20 +282,6 @@ def sd_options_profiles_delete(profile_name: str) -> Any:
     return jsonify({"ok": True})
 
 
-@app.post("/api/settings")
-def settings_update() -> Any:
-    payload = request.get_json(silent=True) or {}
-    if not isinstance(payload, dict):
-        return jsonify({"ok": False, "error": "invalid payload"}), 400
-    settings = _save_app_settings(payload)
-    return jsonify({"ok": True, "settings": settings})
-
-
-@app.get("/health")
-def health() -> Any:
-    return jsonify({"ok": True})
-
-
 @app.get("/api/cloud-init/events")
 def events() -> Any:
     return jsonify({"events": _read_events(limit=500)})
@@ -392,11 +291,6 @@ def events() -> Any:
 def clear_events() -> Any:
     cleared = _clear_events()
     return jsonify({"ok": True, "cleared": cleared})
-
-
-@app.get("/fragments/cloud-init/event-rows")
-def cloud_init_event_rows() -> str:
-    return render_template("fragments/callback_rows.html", events=_read_events(limit=200))
 
 
 def _normalize_stage(payload: Dict[str, Any]) -> str:
@@ -605,10 +499,8 @@ def callback() -> Any:
         logger.info(f"Hardware check reported: hostname={event.get('hostname')}, hardware={hardware_data}")
     
     _trigger_initial_callback_closer(event)
-    _append_event(event)
-    _backfill_event_profile(hostname, instance_id, fqdn, profile)
-    _backfill_event_source_ip(hostname, instance_id, fqdn, source_ip, source_ip_source)
-    return jsonify({"ok": True})
+    deduped = _store_callback_event(event)
+    return jsonify({"ok": True, "deduped": deduped})
 
 
 @app.get("/api/cloud-init/reports/<report_id>")
@@ -683,6 +575,11 @@ def sd_prepare() -> Any:
     if payload["profile"] not in {"pi5", "pibplus"}:
         return jsonify({"ok": False, "errors": ["profile must be pi5 or pibplus"]}), 400
 
+    distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
+    if distribution not in {"standard", "k3s"}:
+        return jsonify({"ok": False, "errors": ["distribution must be standard or k3s"]}), 400
+    payload["distribution"] = distribution
+
     job_id = uuid.uuid4().hex
     with JOBS_LOCK:
         JOBS[job_id] = {
@@ -691,6 +588,7 @@ def sd_prepare() -> Any:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "request": {
                 "profile": payload["profile"],
+                "distribution": payload["distribution"],
                 "hostname": payload["hostname"],
                 "device": payload["device"],
                 "callback_url": payload["callback_url"],
@@ -1032,49 +930,49 @@ def test_terminal_job_status(job_id: str) -> Any:
 
 @app.get("/api/nodes/summary")
 def nodes_summary() -> Any:
-    config = _load_node_config()
-    nodes = _node_ops_inventory_view()
-    provision = _load_node_provisioning()
-
-    enriched_nodes: List[Dict[str, Any]] = []
-    for node in nodes:
-        enriched = dict(node)
-        selected = _effective_node_profiles(node, provision)
-        enriched["selected_profiles"] = selected
-        enriched["latest_check"] = _latest_node_check(node["name"], provision)
-        enriched_nodes.append(enriched)
-
-    masked = {
-        "username": config.get("username", ""),
-        "password_set": bool(config.get("password")),
-        "webhook_url": config.get("webhook_url", ""),
-        "verify_tls": bool(config.get("verify_tls", True)),
-    }
+    state = _single_source_of_truth_summary()
+    provisioning = state.get("provisioning", {}) if isinstance(state.get("provisioning"), dict) else {}
+    nodes = [
+        node
+        for node in (state.get("nodes", []) if isinstance(state.get("nodes", []), list) else [])
+        if isinstance(node, dict) and bool(node.get("in_node_ops_view", False))
+    ]
     return jsonify(
         {
             "ok": True,
-            "nodes": enriched_nodes,
-            "config": masked,
+            "nodes": nodes,
+            "config": provisioning.get("config", {}),
             "profiles": NODE_PROVISION_PROFILES,
-            "node_inputs": provision.get("node_inputs", {}),
-            "manual_nodes": provision.get("manual_nodes", {}),
-            "image_summary": _image_state_summary(),
+            "node_inputs": provisioning.get("node_inputs", {}),
+            "manual_nodes": provisioning.get("manual_nodes", {}),
+            "image_summary": state.get("images", {}).get("summary", {}) if isinstance(state.get("images"), dict) else {},
         }
     )
 
 
 @app.get("/api/monitor/summary")
 def monitor_summary() -> Any:
-    summary = _monitor_nodes_summary()
+    state = _single_source_of_truth_summary()
+    monitor = state.get("monitor", {}) if isinstance(state.get("monitor"), dict) else {}
+    nodes = [
+        node
+        for node in (state.get("nodes", []) if isinstance(state.get("nodes", []), list) else [])
+        if isinstance(node, dict) and bool(node.get("in_monitor_view", False))
+    ]
     return jsonify(
         {
             "ok": True,
-            "nodes": summary["nodes"],
+            "nodes": nodes,
             "profiles": NODE_PROVISION_PROFILES,
-            "cloud_init_options": summary["cloud_init_options"],
-            "node_cloud_init": summary["node_cloud_init"],
+            "cloud_init_options": monitor.get("cloud_init_options", []),
+            "node_cloud_init": monitor.get("node_cloud_init", {}),
         }
     )
+
+
+@app.get("/api/state/source-of-truth")
+def source_of_truth_summary() -> Any:
+    return jsonify({"ok": True, "state": _single_source_of_truth_summary()})
 
 
 @app.post("/api/monitor/nodes")
@@ -1116,6 +1014,34 @@ def monitor_node_delete(node_name: str) -> Any:
 def monitor_node_certificate(node_name: str) -> Any:
     cert = _latest_node_cert(node_name, _read_events(limit=2000))
     return jsonify({"ok": True, "node": node_name, "certificate": cert})
+
+
+@app.get("/api/monitor/nodes/<node_name>/ping")
+def monitor_node_ping(node_name: str) -> Any:
+    requested = str(node_name or "").strip()
+    if not requested:
+        return jsonify({"ok": False, "error": "node name is required"}), 400
+
+    summary = _monitor_nodes_summary()
+    node = next((item for item in summary.get("nodes", []) if str(item.get("name", "")) == requested), None)
+    if not node:
+        return jsonify({"ok": False, "error": "node not found"}), 404
+
+    address = str(node.get("address", "")).strip()
+    if not address:
+        return jsonify({"ok": False, "error": "node has no address configured"}), 400
+
+    status = _ping_status(address)
+    return jsonify(
+        {
+            "ok": True,
+            "node": requested,
+            "address": address,
+            "reachable": bool(status.get("reachable")),
+            "latency_ms": status.get("latency_ms"),
+            "error": str(status.get("error", "")),
+        }
+    )
 
 
 @app.post("/api/monitor/cloud-init/options")
@@ -1444,7 +1370,6 @@ def nodes_provision() -> Any:
         target_nodes = nodes
 
     state = _load_node_provisioning()
-    results: List[Dict[str, Any]] = []
     missing_by_node: List[Dict[str, Any]] = []
 
     for node in target_nodes:
@@ -1467,11 +1392,42 @@ def nodes_provision() -> Any:
             }
         ), 400
 
+    if run_ansible:
+        job_id = uuid.uuid4().hex
+        with PROVISION_JOBS_LOCK:
+            PROVISION_JOBS[job_id] = {
+                "id": job_id,
+                "status": "queued",
+                "mode": mode,
+                "run_ansible": run_ansible,
+                "target_nodes": [node["name"] for node in target_nodes],
+                "results": [],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        thread = threading.Thread(
+            target=_run_node_provision_job,
+            args=(job_id, [node["name"] for node in target_nodes], mode, run_ansible),
+            daemon=True,
+        )
+        thread.start()
+        return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "job_id": job_id, "status": "queued"}), 202
+
+    results: List[Dict[str, Any]] = []
     for node in target_nodes:
         profile_ids = _effective_node_profiles(node, state)
         results.append(_apply_node_provisioning(node["name"], profile_ids, mode=mode, run_ansible=run_ansible))
 
     return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "results": results})
+
+
+@app.get("/api/nodes/provision/jobs/<job_id>")
+def node_provision_job_status(job_id: str) -> Any:
+    with PROVISION_JOBS_LOCK:
+        job = PROVISION_JOBS.get(job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "job not found"}), 404
+        return jsonify({"ok": True, "job": job})
 
 
 @app.post("/api/settings/reset")
@@ -1497,14 +1453,12 @@ def sd_job(job_id: str) -> Any:
 
 @app.get("/api/sd/image-catalog")
 def sd_image_catalog() -> Any:
-    return jsonify({"ok": True, "entries": _read_image_history(limit=300)})
+    return jsonify({"ok": True, "entries": _catalog_entries_for_ui()})
 
 
 @app.get("/api/sd/catalog")
 def sd_catalog() -> Any:
-    available_urls = _available_image_urls_from_history(limit=5000)
-    entries = [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
-    return jsonify({"ok": True, "entries": entries})
+    return jsonify({"ok": True, "entries": _catalog_entries_for_ui()})
 
 
 @app.post("/api/sd/catalog-pull")
@@ -1584,19 +1538,9 @@ def sd_catalog_pull_job(job_id: str) -> Any:
     return jsonify({"ok": True, "job": job})
 
 
-@app.get("/fragments/sd/image-catalog-rows")
-def sd_image_catalog_rows() -> str:
-    return render_template("fragments/image_catalog_rows.html", image_history=_read_image_history(limit=150))
-
-
 @app.get("/api/sd/images")
 def sd_images() -> Any:
     return jsonify({"ok": True, "entries": _read_image_history(limit=500)})
-
-
-@app.get("/fragments/sd/images-rows")
-def sd_images_rows() -> str:
-    return render_template("fragments/managed_image_rows.html", image_records=_read_image_history(limit=500))
 
 
 @app.post("/api/sd/images")

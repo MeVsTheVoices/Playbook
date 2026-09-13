@@ -51,7 +51,7 @@ DEVICE_SUBSCRIBERS: List[queue.Queue[str]] = []
 DEVICE_SUBSCRIBERS_LOCK = threading.Lock()
 DEVICE_MONITOR_STARTED = False
 DEVICE_MONITOR_LOCK = threading.Lock()
-from domain_defaults import IMAGE_CATALOG, NODE_PROVISION_PROFILES, TAILSCALE_POLICY_DEFAULTS
+from domain_defaults import IMAGE_CATALOG, IMAGE_CATALOG_FILE, NODE_PROVISION_PROFILES, TAILSCALE_POLICY_DEFAULTS
 
 
 
@@ -72,6 +72,7 @@ def _ensure_image_cache_dir() -> None:
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
+    # Temp-file then replace: keeps JSON files from becoming cursed half-writes.
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
     os.close(fd)
@@ -439,7 +440,7 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
 
 def _save_sd_option_profiles(profiles: Dict[str, Dict[str, Any]]) -> None:
     _ensure_data_file()
-    SD_OPTION_PROFILES_FILE.write_text(json.dumps(profiles, indent=2), encoding="utf-8")
+    _atomic_write_text(SD_OPTION_PROFILES_FILE, json.dumps(profiles, indent=2))
 
 
 def _load_profile_segments() -> Dict[str, List[Dict[str, Any]]]:
@@ -478,7 +479,7 @@ def _load_profile_segments() -> Dict[str, List[Dict[str, Any]]]:
 
 def _save_profile_segments(segments: Dict[str, List[Dict[str, Any]]]) -> None:
     _ensure_data_file()
-    PROFILE_SEGMENTS_FILE.write_text(json.dumps(segments, indent=2), encoding="utf-8")
+    _atomic_write_text(PROFILE_SEGMENTS_FILE, json.dumps(segments, indent=2))
 
 
 def _upsert_profile_segment(profile_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -606,6 +607,69 @@ def _append_event(event: Dict[str, Any]) -> None:
         f.write(json.dumps(event, separators=(",", ":")) + "\n")
 
 
+def _event_matches_identity(event: Dict[str, Any], hostname: str, instance_id: str, fqdn: str) -> bool:
+    if hostname and str(event.get("hostname", "")).strip() == hostname:
+        return True
+    if instance_id and str(event.get("instance_id", "")).strip() == instance_id:
+        return True
+    if fqdn and str(event.get("fqdn", "")).strip() == fqdn:
+        return True
+    return False
+
+
+def _parse_event_time(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _callback_event_fingerprint(event: Dict[str, Any]) -> str:
+    raw = event.get("raw") if isinstance(event.get("raw"), dict) else {}
+    seed = {
+        "hostname": str(event.get("hostname", "")).strip(),
+        "instance_id": str(event.get("instance_id", "")).strip(),
+        "fqdn": str(event.get("fqdn", "")).strip(),
+        "profile": str(event.get("profile", "")).strip().lower(),
+        "stage": str(event.get("stage", "")).strip(),
+        "source_ip": str(event.get("source_ip", "")).strip(),
+        "source_ip_source": str(event.get("source_ip_source", "")).strip(),
+        "cert_subject": str(event.get("cert_subject", "")).strip(),
+        "cert_fingerprint": str(event.get("cert_fingerprint", "")).strip(),
+        "raw": raw,
+    }
+    return json.dumps(seed, sort_keys=True, separators=(",", ":"))
+
+
+def _is_duplicate_callback_event(event: Dict[str, Any], within_seconds: int = 15) -> bool:
+    hostname = str(event.get("hostname", "")).strip()
+    instance_id = str(event.get("instance_id", "")).strip()
+    fqdn = str(event.get("fqdn", "")).strip()
+    if not any((hostname, instance_id, fqdn)):
+        return False
+
+    current_ts = _parse_event_time(str(event.get("received_at", "")))
+    current_fp = _callback_event_fingerprint(event)
+
+    for prior in _read_events(limit=120):
+        if not isinstance(prior, dict):
+            continue
+        if not _event_matches_identity(prior, hostname, instance_id, fqdn):
+            continue
+        if _callback_event_fingerprint(prior) != current_fp:
+            continue
+        prior_ts = _parse_event_time(str(prior.get("received_at", "")))
+        if current_ts is None or prior_ts is None:
+            return True
+        delta = abs((current_ts - prior_ts).total_seconds())
+        if delta <= within_seconds:
+            return True
+    return False
+
+
 def _clear_events() -> int:
     _ensure_data_file()
     lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
@@ -651,15 +715,7 @@ def _backfill_event_profile(hostname: str, instance_id: str, fqdn: str, profile:
             rewritten.append(line)
             continue
 
-        matches = False
-        if hostname and str(event.get("hostname", "")).strip() == hostname:
-            matches = True
-        if instance_id and str(event.get("instance_id", "")).strip() == instance_id:
-            matches = True
-        if fqdn and str(event.get("fqdn", "")).strip() == fqdn:
-            matches = True
-
-        if not matches:
+        if not _event_matches_identity(event, hostname, instance_id, fqdn):
             rewritten.append(line)
             continue
 
@@ -692,14 +748,7 @@ def _backfill_event_source_ip(hostname: str, instance_id: str, fqdn: str, source
             rewritten.append(line)
             continue
 
-        matches = False
-        if hostname and str(event.get("hostname", "")).strip() == hostname:
-            matches = True
-        if instance_id and str(event.get("instance_id", "")).strip() == instance_id:
-            matches = True
-        if fqdn and str(event.get("fqdn", "")).strip() == fqdn:
-            matches = True
-        if not matches:
+        if not _event_matches_identity(event, hostname, instance_id, fqdn):
             rewritten.append(line)
             continue
 
@@ -721,6 +770,107 @@ def _backfill_event_source_ip(hostname: str, instance_id: str, fqdn: str, source
     if updated:
         DATA_FILE.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
     return updated
+
+
+def _backfill_event_fields(hostname: str, instance_id: str, fqdn: str, event_fields: Dict[str, Any]) -> int:
+    _ensure_data_file()
+    lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        return 0
+
+    incoming = {
+        "hostname": str(event_fields.get("hostname", "")).strip(),
+        "instance_id": str(event_fields.get("instance_id", "")).strip(),
+        "fqdn": str(event_fields.get("fqdn", "")).strip(),
+        "profile": str(event_fields.get("profile", "")).strip().lower(),
+        "raw_profile": str(event_fields.get("raw_profile", "")).strip().lower(),
+        "profile_source": str(event_fields.get("profile_source", "")).strip(),
+        "stage": str(event_fields.get("stage", "")).strip(),
+        "cert_subject": str(event_fields.get("cert_subject", "")).strip(),
+        "cert_issuer": str(event_fields.get("cert_issuer", "")).strip(),
+        "cert_fingerprint": str(event_fields.get("cert_fingerprint", "")).strip(),
+        "node_report_id": str(event_fields.get("node_report_id", "")).strip(),
+        "source_ip_source": str(event_fields.get("source_ip_source", "")).strip(),
+    }
+    incoming_cert_present = bool(event_fields.get("cert_present", False))
+
+    updated = 0
+    rewritten: List[str] = []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            rewritten.append(line)
+            continue
+
+        if not _event_matches_identity(event, hostname, instance_id, fqdn):
+            rewritten.append(line)
+            continue
+
+        changed = False
+
+        for key in ("hostname", "instance_id", "fqdn", "cert_subject", "cert_issuer", "cert_fingerprint", "node_report_id"):
+            current = str(event.get(key, "")).strip()
+            if not current and incoming.get(key):
+                event[key] = incoming[key]
+                changed = True
+
+        current_profile = str(event.get("profile", "")).strip().lower()
+        if incoming["profile"] in {"pi5", "pibplus"} and current_profile in {"", "unknown"}:
+            event["profile"] = incoming["profile"]
+            changed = True
+
+        current_raw_profile = str(event.get("raw_profile", "")).strip().lower()
+        if not current_raw_profile and incoming["raw_profile"]:
+            event["raw_profile"] = incoming["raw_profile"]
+            changed = True
+
+        current_profile_source = str(event.get("profile_source", "")).strip()
+        if not current_profile_source and incoming["profile_source"]:
+            event["profile_source"] = incoming["profile_source"]
+            changed = True
+
+        current_stage = str(event.get("stage", "")).strip()
+        if incoming["stage"] and current_stage in {"", "phone_home"}:
+            event["stage"] = incoming["stage"]
+            changed = True
+
+        current_source_ip_source = str(event.get("source_ip_source", "")).strip()
+        if not current_source_ip_source and incoming["source_ip_source"]:
+            event["source_ip_source"] = incoming["source_ip_source"]
+            changed = True
+
+        if incoming_cert_present and not bool(event.get("cert_present", False)):
+            event["cert_present"] = True
+            changed = True
+
+        if changed:
+            rewritten.append(json.dumps(event, separators=(",", ":")))
+            updated += 1
+        else:
+            rewritten.append(line)
+
+    if updated:
+        DATA_FILE.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+    return updated
+
+
+def _store_callback_event(event: Dict[str, Any]) -> bool:
+    hostname = str(event.get("hostname", "")).strip()
+    instance_id = str(event.get("instance_id", "")).strip()
+    fqdn = str(event.get("fqdn", "")).strip()
+    profile = str(event.get("profile", "")).strip().lower()
+    source_ip = str(event.get("source_ip", "")).strip()
+    source_ip_source = str(event.get("source_ip_source", "")).strip()
+
+    deduped = _is_duplicate_callback_event(event)
+    if not deduped:
+        _append_event(event)
+
+    _backfill_event_profile(hostname, instance_id, fqdn, profile)
+    _backfill_event_source_ip(hostname, instance_id, fqdn, source_ip, source_ip_source)
+    _backfill_event_fields(hostname, instance_id, fqdn, event)
+    return deduped
 
 
 def _append_image_history(entry: Dict[str, Any]) -> None:
@@ -761,13 +911,9 @@ def _normalize_image_record(entry: Dict[str, Any], raw_line: str = "") -> Dict[s
 
 def _write_image_history(entries: List[Dict[str, Any]]) -> None:
     _ensure_image_history_file()
-    try:
-        with IMAGE_HISTORY_FILE.open("w", encoding="utf-8") as f:
-            for entry in entries:
-                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
-    except PermissionError:
-        rendered = "".join(json.dumps(entry, separators=(",", ":")) + "\n" for entry in entries)
-        _atomic_write_text(IMAGE_HISTORY_FILE, rendered)
+    # Rewrite in one shot so history stays coherent even if the process gets bonked.
+    rendered = "".join(json.dumps(entry, separators=(",", ":")) + "\n" for entry in entries)
+    _atomic_write_text(IMAGE_HISTORY_FILE, rendered)
 
 
 def _list_image_records(limit: int = 200) -> List[Dict[str, Any]]:
@@ -843,6 +989,16 @@ def _read_image_history(limit: int = 200) -> List[Dict[str, Any]]:
     return _list_image_records(limit=limit)
 
 
+def _compact_path_label(value: str) -> str:
+    text = str(value or "").strip()
+    if not text or "/" not in text:
+        return text
+    parts = [part for part in text.split("/") if part]
+    if len(parts) < 2:
+        return text
+    return f"{parts[-2]}/{parts[-1]}"
+
+
 def _image_state_summary() -> Dict[str, Any]:
     history = _read_image_history(limit=500)
     available_urls = _available_image_urls_from_history(limit=5000)
@@ -878,6 +1034,7 @@ def _image_state_summary() -> Dict[str, Any]:
         "latest_recorded_at": latest_recorded_at,
         "latest_available": latest_available,
         "latest_cache_path": cache_path,
+        "latest_cache_path_short": _compact_path_label(cache_path),
         "latest_state_emoji": latest_state_emoji,
         "latest_state_text": latest_state_text,
         "available_catalog_entries": catalog_available,
@@ -1234,7 +1391,7 @@ def _load_monitor_state() -> Dict[str, Any]:
 
 def _save_monitor_state(state: Dict[str, Any]) -> None:
     _ensure_data_file()
-    MONITOR_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    _atomic_write_text(MONITOR_STATE_FILE, json.dumps(state, indent=2))
 
 
 def _sanitize_managed_node(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -1423,6 +1580,167 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
     }
 
 
+def _single_source_of_truth_summary() -> Dict[str, Any]:
+    monitor_summary = _monitor_nodes_summary()
+    provision_state = _load_node_provisioning()
+    node_config = _load_node_config()
+    nodes_view = _node_ops_inventory_view()
+    image_summary = _image_state_summary()
+    image_history = _read_image_history(limit=1000)
+
+    latest_image_by_profile: Dict[str, Dict[str, Any]] = {}
+    for record in image_history:
+        profile_key = str(record.get("profile", "")).strip().lower() or "unknown"
+        if profile_key in latest_image_by_profile:
+            continue
+        latest_image_by_profile[profile_key] = {
+            "profile": profile_key,
+            "label": str(record.get("label", "")).strip(),
+            "source": str(record.get("source", "")).strip(),
+            "source_value": str(record.get("source_value", "")).strip(),
+            "download_path": str(record.get("download_path", "")).strip(),
+            "recorded_at": str(record.get("recorded_at", "")).strip(),
+            "local_available": bool(record.get("local_available", False)),
+            "hash_status": str(record.get("hash_status", "")).strip(),
+            "job_status": str(record.get("job_status", "")).strip(),
+        }
+
+    profile_meta: Dict[str, Dict[str, Any]] = {}
+    for profile in NODE_PROVISION_PROFILES:
+        if not isinstance(profile, dict):
+            continue
+        pid = str(profile.get("id", "")).strip()
+        if not pid:
+            continue
+        profile_meta[pid] = {
+            "id": pid,
+            "label": str(profile.get("label", pid)).strip() or pid,
+            "description": str(profile.get("description", "")).strip(),
+            "tags": [str(tag).strip() for tag in profile.get("tags", []) if str(tag).strip()],
+        }
+
+    monitor_nodes = monitor_summary.get("nodes", []) if isinstance(monitor_summary.get("nodes", []), list) else []
+    monitor_by_name: Dict[str, Dict[str, Any]] = {}
+    for monitor_node in monitor_nodes:
+        if not isinstance(monitor_node, dict):
+            continue
+        monitor_name = str(monitor_node.get("name", "")).strip()
+        if monitor_name:
+            monitor_by_name[monitor_name] = monitor_node
+
+    node_ops_by_name: Dict[str, Dict[str, Any]] = {}
+    for node in nodes_view:
+        if not isinstance(node, dict):
+            continue
+        node_name = str(node.get("name", "")).strip()
+        if node_name:
+            node_ops_by_name[node_name] = node
+
+    normalized_nodes: List[Dict[str, Any]] = []
+    all_node_names = sorted(set(node_ops_by_name.keys()).union(monitor_by_name.keys()), key=lambda name: name.lower())
+
+    for node_name in all_node_names:
+        node = dict(node_ops_by_name.get(node_name, {}))
+        monitor_info = monitor_by_name.get(node_name, {})
+        if not node:
+            node = {
+                "name": node_name,
+                "group": str(monitor_info.get("group", "")).strip(),
+                "address": str(monitor_info.get("address", "")).strip(),
+                "address_source": "monitor",
+                "last_callback": str(monitor_info.get("last_callback", "")).strip(),
+                "source": str(monitor_info.get("source", "")).strip() or "monitor",
+            }
+
+        selected_profiles = _effective_node_profiles(node, provision_state)
+        latest_check = _latest_node_check(node_name, provision_state)
+        latest_check_steps: List[Dict[str, Any]] = []
+        for raw_step in latest_check.get("results", []) if isinstance(latest_check, dict) else []:
+            if not isinstance(raw_step, dict):
+                continue
+            latest_check_steps.append(
+                {
+                    "profile_id": str(raw_step.get("profile_id", "")).strip(),
+                    "status": str(raw_step.get("status", "")).strip(),
+                    "changed": bool(raw_step.get("changed", False)),
+                    "command": str(raw_step.get("command", "")).strip(),
+                    "output": str(raw_step.get("output", "")).strip()[:220],
+                }
+            )
+
+        callback_profile = str(node.get("callback_profile", "")).strip().lower()
+        image_profile_key = callback_profile or (selected_profiles[0] if selected_profiles else "")
+        image_for_node = latest_image_by_profile.get(image_profile_key) if image_profile_key else {}
+        cert_info = monitor_info.get("cert", {}) if isinstance(monitor_info.get("cert"), dict) else {}
+        hardware_info = monitor_info.get("hardware", {}) if isinstance(monitor_info.get("hardware"), dict) else {}
+
+        # Keep all existing node-ops fields while adding normalized contract fields.
+        node_record = dict(node)
+        node_record.update(
+            {
+                "in_node_ops_view": node_name in node_ops_by_name,
+                "in_monitor_view": node_name in monitor_by_name,
+                "source": str(node.get("source", "")).strip()
+                or str(monitor_info.get("source", "")).strip()
+                or ("node_ops" if node_name in node_ops_by_name else "monitor"),
+                "callback_profile": callback_profile,
+                "selected_profiles": selected_profiles,
+                "provision_how": [profile_meta.get(pid, {"id": pid, "label": pid, "description": "", "tags": []}) for pid in selected_profiles],
+                "latest_check": latest_check,
+                "latest_check_steps": latest_check_steps,
+                "image": image_for_node,
+                "cert": cert_info,
+                "hardware": hardware_info,
+            }
+        )
+
+        normalized_nodes.append(node_record)
+
+    hardware_nodes = sum(1 for node in monitor_nodes if isinstance(node, dict) and isinstance(node.get("hardware"), dict) and node.get("hardware", {}).get("received_at"))
+    node_ops_nodes = sum(1 for node in normalized_nodes if bool(node.get("in_node_ops_view", False)))
+    masked_config = {
+        "username": str(node_config.get("username", "")).strip(),
+        "password_set": bool(node_config.get("password")),
+        "webhook_url": str(node_config.get("webhook_url", "")).strip(),
+        "verify_tls": bool(node_config.get("verify_tls", True)),
+    }
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "counts": {
+            "nodes_in_monitor": len(monitor_nodes),
+            "nodes_in_node_ops": node_ops_nodes,
+            "nodes_with_hardware": hardware_nodes,
+            "catalog_entries": int(image_summary.get("catalog_entries", 0) or 0),
+            "catalog_available": int(image_summary.get("available_catalog_entries", 0) or 0),
+            "image_history_records": int(image_summary.get("total_records", 0) or 0),
+        },
+        "images": {
+            "summary": image_summary,
+            "latest_by_profile": latest_image_by_profile,
+        },
+        "monitor": {
+            "cloud_init_options": monitor_summary.get("cloud_init_options", []),
+            "node_cloud_init": monitor_summary.get("node_cloud_init", {}),
+        },
+        "provisioning": {
+            "config": masked_config,
+            "node_inputs": provision_state.get("node_inputs", {}),
+            "manual_nodes": provision_state.get("manual_nodes", {}),
+        },
+        "nodes": normalized_nodes,
+        "profiles": list(profile_meta.values()),
+        "sources": {
+            "callbacks": str(DATA_FILE),
+            "monitor_state": str(MONITOR_STATE_FILE),
+            "node_provisioning": str(NODE_PROVISION_FILE),
+            "image_history": str(IMAGE_HISTORY_FILE),
+            "image_catalog": str(IMAGE_CATALOG_FILE),
+            "inventory": str(INVENTORY_FILE),
+        },
+    }
+
+
 def _load_node_config() -> Dict[str, Any]:
     _ensure_data_file()
     default = _default_node_config()
@@ -1442,7 +1760,7 @@ def _save_node_config(payload: Dict[str, Any]) -> Dict[str, Any]:
         if key in payload:
             config[key] = payload[key]
     _ensure_data_file()
-    NODE_CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    _atomic_write_text(NODE_CONFIG_FILE, json.dumps(config, indent=2))
     return config
 
 
@@ -1525,7 +1843,7 @@ def _load_node_provisioning() -> Dict[str, Any]:
 
 def _save_node_provisioning(state: Dict[str, Any]) -> None:
     _ensure_data_file()
-    NODE_PROVISION_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    _atomic_write_text(NODE_PROVISION_FILE, json.dumps(state, indent=2))
 
 
 def _reset_node_ops_settings() -> Dict[str, Any]:
@@ -1545,8 +1863,8 @@ def _reset_node_ops_settings() -> Dict[str, Any]:
     _ensure_data_file()
     node_cfg = _default_node_config()
     node_prov = _default_node_provisioning()
-    NODE_CONFIG_FILE.write_text(json.dumps(node_cfg, indent=2), encoding="utf-8")
-    NODE_PROVISION_FILE.write_text(json.dumps(node_prov, indent=2), encoding="utf-8")
+    _atomic_write_text(NODE_CONFIG_FILE, json.dumps(node_cfg, indent=2))
+    _atomic_write_text(NODE_PROVISION_FILE, json.dumps(node_prov, indent=2))
 
     deleted_ssh_files = _purge_files(KEYS_DIR)
     deleted_archive_files = _purge_files(KEY_ARCHIVE_DIR)
@@ -1852,6 +2170,111 @@ def _run_node_profile(
         }
 
 
+def _run_hardware_check_callback(node_name: str, node_group: str | None = None, node_address: str | None = None) -> Dict[str, Any]:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    host_target = str(node_address or "").strip()
+    if not host_target:
+        return {
+            "profile_id": "hardware_check_trigger",
+            "status": "failed",
+            "mode": "check",
+            "checked_at": checked_at,
+            "command": [],
+            "exit_code": None,
+            "inputs": {},
+            "output": "Cannot trigger hardware-check callback because node address is empty.",
+        }
+
+    ansible_cmd = shutil.which("ansible")
+    if not ansible_cmd:
+        venv_ansible = BASE_DIR.parent / ".venv" / "bin" / "ansible"
+        if venv_ansible.exists() and venv_ansible.is_file():
+            ansible_cmd = str(venv_ansible)
+
+    temp_inventory = tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8")
+    temp_inventory.write("all:\n")
+    temp_inventory.write("  children:\n")
+    temp_inventory.write(f"    {str(node_group or '').strip() or 'dynamic_provisioning'}:\n")
+    temp_inventory.write("      hosts:\n")
+    temp_inventory.write(f"        {node_name}:\n")
+    temp_inventory.write(f"          ansible_host: {host_target}\n")
+    temp_inventory.write("          ansible_user: jdizzle\n")
+    temp_inventory.write(f"          ansible_ssh_private_key_file: {KEYS_DIR / 'rack-bootstrap-ed25519'}\n")
+    temp_inventory.write("          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=publickey'\n")
+    temp_inventory.write("          ansible_connection: ssh\n")
+    temp_inventory.write("          ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
+    temp_inventory.flush()
+    temp_inventory.close()
+
+    cmd = [
+        ansible_cmd or "ansible",
+        "-i",
+        temp_inventory.name,
+        node_name,
+        "-m",
+        "ansible.builtin.shell",
+        "-a",
+        "/usr/local/bin/rack-hardware-check",
+        "-o",
+    ]
+    env = os.environ.copy()
+    env.pop("ANSIBLE_ASK_VAULT_PASS", None)
+    env.pop("ANSIBLE_VAULT_IDENTITY_LIST", None)
+    env.pop("ANSIBLE_VAULT_PASSWORD_FILE", None)
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=150,
+            cwd=str(BASE_DIR.parent),
+            env=env,
+        )
+        output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        return {
+            "profile_id": "hardware_check_trigger",
+            "status": "ok" if proc.returncode == 0 else "failed",
+            "mode": "check",
+            "checked_at": checked_at,
+            "command": cmd,
+            "exit_code": proc.returncode,
+            "inputs": {},
+            "output": output[-12000:],
+        }
+    except FileNotFoundError:
+        return {
+            "profile_id": "hardware_check_trigger",
+            "status": "unavailable",
+            "mode": "check",
+            "checked_at": checked_at,
+            "command": cmd,
+            "exit_code": None,
+            "inputs": {},
+            "output": "ansible command not found on host.",
+        }
+    except subprocess.TimeoutExpired as exc:
+        stdout = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+        stderr = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+        return {
+            "profile_id": "hardware_check_trigger",
+            "status": "timeout",
+            "mode": "check",
+            "checked_at": checked_at,
+            "command": cmd,
+            "exit_code": None,
+            "inputs": {},
+            "output": ((stdout + "\n" + stderr).strip() or "Hardware check trigger timed out.")[-12000:],
+        }
+    finally:
+        try:
+            Path(temp_inventory.name).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, run_ansible: bool) -> Dict[str, Any]:
     profile_by_id = _profile_map()
     state = _load_node_provisioning()
@@ -1875,19 +2298,26 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
         )
         node_results[pid] = result
 
+    ordered_result_ids = list(valid_profile_ids)
+    if mode == "check" and run_ansible:
+        hardware_trigger_result = _run_hardware_check_callback(
+            node_name,
+            node_group=node_group or None,
+            node_address=node_address or None,
+        )
+        node_results["hardware_check_trigger"] = hardware_trigger_result
+        ordered_result_ids.append("hardware_check_trigger")
+
     state_results = state.setdefault("results", {})
-    existing = state_results.get(node_name)
-    if not isinstance(existing, dict):
-        existing = {}
-    existing.update(node_results)
-    state_results[node_name] = existing
+    current_results = {pid: node_results[pid] for pid in ordered_result_ids if pid in node_results}
+    state_results[node_name] = current_results
     _save_node_provisioning(state)
 
     return {
         "node": node_name,
         "mode": mode,
         "run_ansible": run_ansible,
-        "results": [node_results[pid] for pid in valid_profile_ids],
+        "results": [node_results[pid] for pid in ordered_result_ids if pid in node_results],
     }
 
 
@@ -2690,6 +3120,7 @@ def _strip_dataset_fields(payload: Any) -> Any:
 def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     allowed_keys = {
         "profile",
+        "distribution",
         "hostname",
         "device",
         "ssh_public_key",
@@ -2772,10 +3203,30 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
 
         # Build environment with cloud-init options
         env = os.environ.copy()
+        distribution = str(form.get("distribution", "standard")).strip().lower() or "standard"
+        env["CLOUD_INIT_DISTRIBUTION"] = distribution
+
         cloud_init_options = form.get("cloud_init_options", {})
         if isinstance(cloud_init_options, dict):
             # Map cloud-init options to environment variables
             enabled_options = []
+            bool_env_fields = {
+                "disable_ssh_password_auth": "CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH",
+                "disable_root_ssh": "CLOUD_INIT_DISABLE_ROOT_SSH",
+                "enable_fail2ban": "CLOUD_INIT_ENABLE_FAIL2BAN",
+                "enable_unattended_upgrades": "CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES",
+                "reboot_after_bootstrap": "CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP",
+            }
+            for option_key, env_key in bool_env_fields.items():
+                if bool(cloud_init_options.get(option_key, False)):
+                    env[env_key] = "true"
+                    enabled_options.append(option_key)
+            if distribution == "k3s":
+                k3s_config = str(cloud_init_options.get("k3s_config", "") or "").strip()
+                if not k3s_config:
+                    k3s_config = "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n"
+                env["CLOUD_INIT_K3S_CONFIG"] = k3s_config
+                enabled_options.append("k3s_config")
             if cloud_init_options.get("enable_hardware_checks"):
                 env["CLOUD_INIT_ENABLE_HARDWARE_CHECKS"] = "true"
                 enabled_options.append("hardware_checks")
@@ -2806,6 +3257,31 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
                 if value:
                     env[env_key] = value
                     enabled_options.append(option_key)
+            ssh_scalar_fields = {
+                "ssh_port": "CLOUD_INIT_SSH_PORT",
+            }
+            for option_key, env_key in ssh_scalar_fields.items():
+                value = str(cloud_init_options.get(option_key, "")).strip()
+                if value:
+                    env[env_key] = value
+                    enabled_options.append(option_key)
+
+            ssh_list_fields = {
+                "ssh_allow_groups": "CLOUD_INIT_SSH_ALLOW_GROUPS",
+                "extra_ssh_keys": "CLOUD_INIT_EXTRA_SSH_KEYS",
+            }
+            for option_key, env_key in ssh_list_fields.items():
+                raw_value = cloud_init_options.get(option_key)
+                if isinstance(raw_value, list):
+                    cleaned_items = [str(item).strip() for item in raw_value if str(item).strip()]
+                    if cleaned_items:
+                        env[env_key] = "\n".join(cleaned_items) if option_key == "extra_ssh_keys" else ",".join(cleaned_items)
+                        enabled_options.append(option_key)
+                else:
+                    value = str(raw_value or "").strip()
+                    if value:
+                        env[env_key] = value
+                        enabled_options.append(option_key)
             if enabled_options:
                 logger.info(f"Cloud-init options enabled for {hostname}: {', '.join(enabled_options)}")
 

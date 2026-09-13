@@ -3467,12 +3467,16 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
         "ok": True,
         "available": bool(runtime.get("available", False)),
         "runtime": runtime,
+        "observed_at": datetime.now(timezone.utc).isoformat(),
         "nodes_total": 0,
         "nodes_ready": 0,
         "control_plane_nodes": 0,
         "pods_total": 0,
         "pods_running": 0,
         "namespaces_total": 0,
+        "node_rows": [],
+        "pod_rows": [],
+        "namespace_rows": [],
         "last_error": "",
     }
 
@@ -3516,22 +3520,117 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
     summary["nodes_ready"] = nodes_ready
     summary["control_plane_nodes"] = control_plane_nodes
 
+    node_rows: List[Dict[str, Any]] = []
+    for item in node_items:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
+        labels = metadata.get("labels", {}) if isinstance(metadata.get("labels"), dict) else {}
+        status = item.get("status", {}) if isinstance(item.get("status"), dict) else {}
+        conditions = status.get("conditions", []) if isinstance(status.get("conditions"), list) else []
+        is_ready = any(
+            isinstance(cond, dict)
+            and str(cond.get("type", "")) == "Ready"
+            and str(cond.get("status", "")) == "True"
+            for cond in conditions
+        )
+        addresses = status.get("addresses", []) if isinstance(status.get("addresses"), list) else []
+        internal_ip = ""
+        external_ip = ""
+        for address in addresses:
+            if not isinstance(address, dict):
+                continue
+            address_type = str(address.get("type", ""))
+            address_value = str(address.get("address", ""))
+            if address_type == "InternalIP" and not internal_ip:
+                internal_ip = address_value
+            elif address_type == "ExternalIP" and not external_ip:
+                external_ip = address_value
+        node_rows.append(
+            {
+                "name": str(metadata.get("name", "")),
+                "ready": is_ready,
+                "role": "control-plane" if "node-role.kubernetes.io/control-plane" in labels or str(labels.get("role", "")) == "control-plane" else "worker",
+                "internal_ip": internal_ip,
+                "external_ip": external_ip,
+                "os_image": str(status.get("nodeInfo", {}).get("osImage", "")) if isinstance(status.get("nodeInfo"), dict) else "",
+                "kernel": str(status.get("nodeInfo", {}).get("kernelVersion", "")) if isinstance(status.get("nodeInfo"), dict) else "",
+                "container_runtime": str(status.get("nodeInfo", {}).get("containerRuntimeVersion", "")) if isinstance(status.get("nodeInfo"), dict) else "",
+                "labels": ", ".join(sorted(str(k) for k in labels.keys())[:6]),
+            }
+        )
+    summary["node_rows"] = node_rows
+
     if isinstance(pods_doc, dict):
         pod_items = pods_doc.get("items", []) if isinstance(pods_doc.get("items"), list) else []
         summary["pods_total"] = len(pod_items)
-        summary["pods_running"] = len(
-            [
-                pod
-                for pod in pod_items
-                if isinstance(pod, dict)
-                and isinstance(pod.get("status"), dict)
-                and str(pod.get("status", {}).get("phase", "")) == "Running"
-            ]
-        )
+        pod_rows: List[Dict[str, Any]] = []
+        pods_running = 0
+        for pod in pod_items:
+            if not isinstance(pod, dict):
+                continue
+            metadata = pod.get("metadata", {}) if isinstance(pod.get("metadata"), dict) else {}
+            status = pod.get("status", {}) if isinstance(pod.get("status"), dict) else {}
+            phase = str(status.get("phase", ""))
+            if phase == "Running":
+                pods_running += 1
+            container_statuses = status.get("containerStatuses", []) if isinstance(status.get("containerStatuses"), list) else []
+            ready_count = 0
+            restart_count = 0
+            for container_status in container_statuses:
+                if not isinstance(container_status, dict):
+                    continue
+                if container_status.get("ready") is True:
+                    ready_count += 1
+                try:
+                    restart_count += int(container_status.get("restartCount", 0) or 0)
+                except (TypeError, ValueError):
+                    continue
+            pod_rows.append(
+                {
+                    "namespace": str(metadata.get("namespace", "")),
+                    "name": str(metadata.get("name", "")),
+                    "phase": phase,
+                    "node": str(status.get("nodeName", "")),
+                    "ready_containers": ready_count,
+                    "restart_count": restart_count,
+                    "created_at": str(metadata.get("creationTimestamp", "")),
+                }
+            )
+        summary["pods_running"] = pods_running
+        summary["pod_rows"] = pod_rows[:60]
 
     if isinstance(ns_doc, dict):
         ns_items = ns_doc.get("items", []) if isinstance(ns_doc.get("items"), list) else []
         summary["namespaces_total"] = len(ns_items)
+        namespace_rows: List[Dict[str, Any]] = []
+        pod_namespace_counts: Dict[str, Dict[str, int]] = {}
+        for pod_row in summary.get("pod_rows", []):
+            if not isinstance(pod_row, dict):
+                continue
+            namespace = str(pod_row.get("namespace", ""))
+            if not namespace:
+                continue
+            counts = pod_namespace_counts.setdefault(namespace, {"total": 0, "running": 0})
+            counts["total"] += 1
+            if str(pod_row.get("phase", "")) == "Running":
+                counts["running"] += 1
+        for ns in ns_items:
+            if not isinstance(ns, dict):
+                continue
+            metadata = ns.get("metadata", {}) if isinstance(ns.get("metadata"), dict) else {}
+            status = ns.get("status", {}) if isinstance(ns.get("status"), dict) else {}
+            name = str(metadata.get("name", ""))
+            counts = pod_namespace_counts.get(name, {"total": 0, "running": 0})
+            namespace_rows.append(
+                {
+                    "name": name,
+                    "phase": str(status.get("phase", "")),
+                    "total_pods": counts.get("total", 0),
+                    "running_pods": counts.get("running", 0),
+                }
+            )
+        summary["namespace_rows"] = namespace_rows
 
     if not summary["last_error"] and (pods_err or ns_err):
         summary["last_error"] = pods_err or ns_err

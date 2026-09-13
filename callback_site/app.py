@@ -1248,6 +1248,10 @@ def nodes_manual_node_upsert() -> Any:
     if not re.fullmatch(r"[A-Za-z0-9._-]+", group):
         return jsonify({"ok": False, "error": "invalid group"}), 400
 
+    certificate = str(payload.get("certificate", "")).strip()
+    if not certificate:
+        return jsonify({"ok": False, "error": "certificate is required"}), 400
+
     state = _load_node_provisioning()
     manual_nodes = state.setdefault("manual_nodes", {})
     manual_nodes[node_name] = {
@@ -1257,9 +1261,9 @@ def nodes_manual_node_upsert() -> Any:
         "username": str(payload.get("username", "")).strip(),
         "password": str(payload.get("password", "")),
         "default_shell": str(payload.get("default_shell", "")).strip(),
-        "certificate": str(payload.get("certificate", "")).strip(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    manual_nodes[node_name]["certificate"] = certificate
     _save_node_provisioning(state)
 
     redacted = dict(manual_nodes[node_name])

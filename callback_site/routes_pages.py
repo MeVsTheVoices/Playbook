@@ -61,6 +61,10 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
     def monitor_page() -> str:
         return render_template("monitor.html")
 
+    @pages.get("/kubernetes")
+    def kubernetes_page() -> str:
+        return render_template("kubernetes.html")
+
     @pages.get("/test-terminal")
     def test_terminal_page() -> str:
         return render_template("test_terminal.html")

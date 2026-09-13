@@ -42,6 +42,10 @@ IMAGE_FILE=""
 IMAGE_SHA256=""
 WORKSPACE="${PWD}/.build"
 AUTO_CONFIRM="false"
+DISTRIBUTION="${CLOUD_INIT_DISTRIBUTION:-standard}"
+DEFAULT_K3S_CONFIG="${CLOUD_INIT_K3S_CONFIG:-# pragma: k3s-config-v1
+server: https://control-plane.example:6443
+}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -107,6 +111,15 @@ if [[ "$PROFILE" != "pi5" && "$PROFILE" != "pibplus" ]]; then
   echo "Invalid --profile value: $PROFILE" >&2
   exit 1
 fi
+
+case "$DISTRIBUTION" in
+  standard|k3s)
+    ;;
+  *)
+    echo "Invalid distribution value: $DISTRIBUTION" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -b "$DEVICE" ]]; then
   echo "Device does not exist or is not a block device: $DEVICE" >&2
@@ -290,6 +303,14 @@ META_DATA_OUT="$TMP_DIR/meta-data"
 INSTANCE_ID="${HOSTNAME}-$(date +%Y%m%d%H%M%S)"
 CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"
 CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"
+CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH="${CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH:-false}"
+CLOUD_INIT_DISABLE_ROOT_SSH="${CLOUD_INIT_DISABLE_ROOT_SSH:-false}"
+CLOUD_INIT_ENABLE_FAIL2BAN="${CLOUD_INIT_ENABLE_FAIL2BAN:-false}"
+CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES="${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES:-false}"
+CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"
+CLOUD_INIT_SSH_PORT="${CLOUD_INIT_SSH_PORT:-}"
+CLOUD_INIT_SSH_ALLOW_GROUPS="${CLOUD_INIT_SSH_ALLOW_GROUPS:-}"
+CLOUD_INIT_EXTRA_SSH_KEYS="${CLOUD_INIT_EXTRA_SSH_KEYS:-}"
 USER_PASSWORD_HASH=""
 if [[ -n "$CLOUD_INIT_USER_PASSWORD" ]]; then
   USER_PASSWORD_HASH="$(printf '%s' "$CLOUD_INIT_USER_PASSWORD" | openssl passwd -6 -stdin)"
@@ -324,6 +345,15 @@ if [[ -n "$USER_PASSWORD_HASH" ]]; then
   cat >> "$USER_DATA_OUT" <<EOF
     lock_passwd: false
     passwd: ${USER_PASSWORD_HASH}
+EOF
+fi
+
+if [[ "$CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'EOF'
+ssh_pwauth: false
+EOF
+elif [[ -n "$USER_PASSWORD_HASH" ]]; then
+  cat >> "$USER_DATA_OUT" <<'EOF'
 ssh_pwauth: true
 EOF
 fi
@@ -338,6 +368,18 @@ EOF
 for pkg in $PROFILE_PACKAGES; do
   echo "  - ${pkg}" >> "$USER_DATA_OUT"
 done
+
+if [[ "$CLOUD_INIT_ENABLE_FAIL2BAN" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'SEC_PKGS'
+  - fail2ban
+SEC_PKGS
+fi
+
+if [[ "$CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'SEC_PKGS'
+  - unattended-upgrades
+SEC_PKGS
+fi
 
 # Add Telegraf package if enabled
 if [[ "${CLOUD_INIT_INSTALL_TELEGRAF:-false}" == "true" ]]; then
@@ -355,6 +397,50 @@ write_files:
       rack_role=${PROFILE_ROLE}
       storage=${PROFILE_STORAGE}
       provisioner=cloud-init
+EOF
+
+if [[ "$DISTRIBUTION" == "k3s" ]]; then
+  cat >> "$USER_DATA_OUT" <<K3S_FILE
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: "0644"
+    content: |
+$(printf '%s\n' "$DEFAULT_K3S_CONFIG" | sed 's/^/      /')
+K3S_FILE
+fi
+
+if [[ "$CLOUD_INIT_DISABLE_ROOT_SSH" == "true" || "$CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH" == "true" || -n "$CLOUD_INIT_SSH_PORT" || -n "$CLOUD_INIT_SSH_ALLOW_GROUPS" ]]; then
+  cat >> "$USER_DATA_OUT" <<SSH_HARDEN_FILE
+  - path: /etc/ssh/sshd_config.d/99-rack-hardening.conf
+    permissions: "0644"
+    content: |
+      # Managed by rack cloud-init option defaults.
+SSH_HARDEN_FILE
+  if [[ "$CLOUD_INIT_DISABLE_ROOT_SSH" == "true" ]]; then
+    echo "      PermitRootLogin no" >> "$USER_DATA_OUT"
+  fi
+  if [[ "$CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH" == "true" ]]; then
+    echo "      PasswordAuthentication no" >> "$USER_DATA_OUT"
+    echo "      KbdInteractiveAuthentication no" >> "$USER_DATA_OUT"
+  fi
+  if [[ -n "$CLOUD_INIT_SSH_PORT" ]]; then
+    echo "      Port ${CLOUD_INIT_SSH_PORT}" >> "$USER_DATA_OUT"
+  fi
+  if [[ -n "$CLOUD_INIT_SSH_ALLOW_GROUPS" ]]; then
+    echo "      AllowGroups ${CLOUD_INIT_SSH_ALLOW_GROUPS}" >> "$USER_DATA_OUT"
+  fi
+fi
+
+if [[ -n "$CLOUD_INIT_EXTRA_SSH_KEYS" ]]; then
+  cat >> "$USER_DATA_OUT" <<EXTRA_KEYS
+  - path: /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys.d/rack-extra.keys
+    permissions: "0600"
+    owner: ${CLOUD_INIT_USERNAME}:${CLOUD_INIT_USERNAME}
+    content: |
+$(printf '%s\n' "$CLOUD_INIT_EXTRA_SSH_KEYS" | sed 's/^/      /')
+EXTRA_KEYS
+fi
+
+cat >> "$USER_DATA_OUT" <<EOF
   - path: /usr/local/bin/rack-local-ip
     permissions: "0755"
     content: |
@@ -514,6 +600,12 @@ runcmd:
   - [ systemctl, restart, ssh ]
 EOF
 
+if [[ "$DISTRIBUTION" == "k3s" ]]; then
+  cat >> "$USER_DATA_OUT" <<'K3S_RUNCMD'
+  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="server --config /etc/rancher/k3s/config.yaml" sh -' ]
+K3S_RUNCMD
+fi
+
 # Conditionally append runcmd items based on cloud-init options
 if [[ "${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
@@ -527,9 +619,38 @@ if [[ "${CLOUD_INIT_INSTALL_TELEGRAF:-false}" == "true" ]]; then
 RUNCMD_EOF
 fi
 
+if [[ "$CLOUD_INIT_ENABLE_FAIL2BAN" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ systemctl, enable, fail2ban ]
+  - [ systemctl, restart, fail2ban ]
+RUNCMD_EOF
+fi
+
+if [[ "$CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ sh, -c, 'DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive unattended-upgrades || true' ]
+RUNCMD_EOF
+fi
+
+if [[ -n "$CLOUD_INIT_EXTRA_SSH_KEYS" ]]; then
+  cat >> "$USER_DATA_OUT" <<EXTRA_KEYS_RUNCMD
+  - [ sh, -c, 'if [ -f /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys.d/rack-extra.keys ]; then cat /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys.d/rack-extra.keys >> /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys; chown ${CLOUD_INIT_USERNAME}:${CLOUD_INIT_USERNAME} /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys; chmod 600 /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys; fi' ]
+EXTRA_KEYS_RUNCMD
+fi
+
 # Append final runcmd callback
 cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
   - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; curl -fsS -X POST -H "Content-Type: application/json" -d "{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\${SOURCE_IP}\",\"stage\":\"runcmd\",\"node_report_b64\":\"\${NODE_REPORT_B64}\"}" "${CALLBACK_URL}" || true' ]
+
+RUNCMD_EOF
+
+if [[ "$CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ sh, -c, 'sleep 2; reboot' ]
+RUNCMD_EOF
+fi
+
+cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
 
 final_message: "Cloud-init finished for ${HOSTNAME}"
 RUNCMD_EOF

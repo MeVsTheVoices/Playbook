@@ -23,7 +23,7 @@
   "raw": (e.raw or {})
 } %}
 <tr>
-  <td>{{ e.received_at }}</td>
+  <td>{{ (e.received_at or '-') | replace('T', ' ') | replace('+00:00', ' UTC') }}</td>
   <td>{{ e.hostname or '-' }}</td>
   <td>{{ e.instance_id or '-' }}</td>
   <td>{{ e.fqdn or '-' }}</td>

@@ -786,6 +786,94 @@
         align-items: center;
         flex-wrap: wrap;
       }
+      .activity-dock {
+        background: linear-gradient(135deg, #fffdf2 0%, #f0fdfa 46%, #eef2ff 100%);
+        border: 1px solid #d9f99d;
+      }
+      .activity-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 0.7rem;
+        margin-top: 0.8rem;
+      }
+      .activity-card {
+        border: 1px solid #dbe4ee;
+        border-radius: 12px;
+        background: #ffffff;
+        padding: 0.7rem;
+        box-shadow: 0 8px 24px rgba(9, 30, 66, 0.07);
+        transition: transform 0.22s ease, box-shadow 0.22s ease;
+      }
+      .activity-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 28px rgba(9, 30, 66, 0.09);
+      }
+      .activity-card .k {
+        margin: 0;
+        color: #4f6070;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .activity-card .v {
+        margin: 0.25rem 0 0;
+        color: #10243a;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .activity-card .d {
+        margin: 0.35rem 0 0;
+        color: #4f6070;
+        font-size: 0.8rem;
+      }
+      .activity-card.waiting {
+        border-color: #93c5fd;
+        background: linear-gradient(90deg, #eff6ff 0%, #ffffff 45%, #eff6ff 100%);
+        background-size: 220% 100%;
+        animation: activity-shimmer 2.2s linear infinite;
+      }
+      .activity-card.ok {
+        border-color: #86efac;
+        background: #f0fdf4;
+      }
+      .activity-card.warn {
+        border-color: #fde68a;
+        background: #fffbeb;
+      }
+      .activity-card.bad {
+        border-color: #fecaca;
+        background: #fff1f2;
+      }
+      .activity-banner {
+        margin-top: 0.8rem;
+        border: 1px dashed #c7d2fe;
+        border-radius: 12px;
+        padding: 0.6rem 0.7rem;
+        color: #374151;
+        background: rgba(255, 255, 255, 0.75);
+        font-size: 0.86rem;
+        font-weight: 600;
+      }
+      .activity-banner.waiting {
+        border-color: #93c5fd;
+        color: #1e40af;
+      }
+      .activity-banner.ok {
+        border-color: #86efac;
+        color: #166534;
+      }
+      .activity-banner.warn {
+        border-color: #facc15;
+        color: #854d0e;
+      }
+      .activity-banner.bad {
+        border-color: #fca5a5;
+        color: #991b1b;
+      }
+      @keyframes activity-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -40% 0; }
+      }
       .events-table {
         width: 100%;
         border-collapse: separate;
@@ -883,7 +971,7 @@
           <div class="stat-card">
             <div class="k">Latest state</div>
             <div class="v">{{ image_summary.latest_state_text }} {{ image_summary.latest_state_emoji }}</div>
-            <div class="payload-kv">{{ image_summary.latest_cache_path or "No cached path recorded yet. 😶" }}</div>
+            <div class="payload-kv">{{ image_summary.latest_cache_path_short or "No cached path recorded yet. 😶" }}</div>
           </div>
         </div>
         <form id="sd-form">
@@ -895,6 +983,13 @@
                 <select id="profile" name="profile">
                   <option value="pi5">pi5</option>
                   <option value="pibplus">pibplus</option>
+                </select>
+              </div>
+              <div>
+                <label for="distribution">Distribution</label>
+                <select id="distribution" name="distribution">
+                  <option value="standard">standard</option>
+                  <option value="k3s">k3s</option>
                 </select>
               </div>
               <div>
@@ -1015,11 +1110,27 @@
               <button type="button" id="sd-options-load">Load Selected Template</button>
               <button type="button" id="sd-options-save">Save Current As Template</button>
               <button type="button" id="sd-options-reset" class="secondary">Reset Optional Fields</button>
+              <button type="button" id="sd-options-security-defaults" class="secondary">Apply Security Starter Defaults 🔐</button>
               <button type="button" id="sd-options-delete" class="danger-btn">Delete Selected Template</button>
             </div>
             <div class="option-profile-status" id="sd-options-profile-status">Templates let you reuse optional cloud-init settings across nodes. <span class="option-count" id="sd-options-config-count">0 fields set</span></div>
 
             <div class="segment-list" style="margin-top: 0.8rem;">
+              <details id="k3s-distribution-section" class="segment">
+                <summary>K3s Distribution</summary>
+                <p class="segment-hint">This section opens automatically for k3s images and defaults to a valid config block used by the later bootstrap step.</p>
+                <div class="form-grid">
+                  <div class="grid-span-full">
+                    <label for="opt_k3s_config">K3s config (required for k3s distribution)</label>
+                    <textarea id="opt_k3s_config" data-option-key="k3s_config" placeholder="# pragma: k3s-config-v1
+server: https://control-plane.example:6443
+"># pragma: k3s-config-v1
+server: https://control-plane.example:6443
+</textarea>
+                  </div>
+                </div>
+              </details>
+
               <details class="segment" open>
                 <summary>Identity and Locale</summary>
                 <p class="segment-hint">Set identity details for first boot user defaults.</p>
@@ -1088,6 +1199,10 @@
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_disable_ssh_password" data-option-key="disable_ssh_password_auth" data-option-type="checkbox" type="checkbox">
                     <label for="opt_disable_ssh_password" style="margin: 0;">Disable SSH password auth</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_disable_root_ssh" data-option-key="disable_root_ssh" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_disable_root_ssh" style="margin: 0;">Disable direct root SSH login</label>
                   </div>
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_reboot_after_bootstrap" data-option-key="reboot_after_bootstrap" data-option-type="checkbox" type="checkbox">
@@ -1236,6 +1351,32 @@
         <div class="job-log" id="job-log"></div>
       </div>
 
+      <div class="panel activity-dock" id="activity-dock">
+        <div class="section-head">
+          <h1>Operator Activity Dock 🐣✨</h1>
+          <span class="status-chip"><span class="status-dot"></span> Cute live wait states</span>
+        </div>
+        <p class="small-note">Waiting on long-running tasks should feel clear, friendly, and a little silly.</p>
+        <div class="activity-grid">
+          <article class="activity-card waiting" id="activity-sd-card">
+            <p class="k">SD Imager 🧰</p>
+            <p class="v" id="activity-sd-state">😴 Idle</p>
+            <p class="d" id="activity-sd-detail">No SD write is running right now.</p>
+          </article>
+          <article class="activity-card waiting" id="activity-callback-card">
+            <p class="k">Callback Radar 📡</p>
+            <p class="v" id="activity-callback-state">🫥 Quiet</p>
+            <p class="d" id="activity-callback-detail">Waiting for nodes to check in.</p>
+          </article>
+          <article class="activity-card waiting" id="activity-device-card">
+            <p class="k">Device Watcher 🔌</p>
+            <p class="v" id="activity-device-state">🛰️ Connecting</p>
+            <p class="d" id="activity-device-detail">Linking to SD/USB monitor stream.</p>
+          </article>
+        </div>
+        <div class="activity-banner waiting" id="activity-banner">⏳ Queue vibe: all systems calm. Kick off a job and I will cheer every milestone.</div>
+      </div>
+
 
 
       <div class="panel" id="callback-dashboard">
@@ -1290,7 +1431,7 @@
         <table class="events-table">
           <thead>
             <tr>
-              <th>Received (UTC)</th>
+              <th>Received</th>
               <th>Hostname</th>
               <th>Instance</th>
               <th>FQDN</th>
@@ -1337,6 +1478,7 @@
       const sdOptionsLoadBtn = document.getElementById("sd-options-load");
       const sdOptionsSaveBtn = document.getElementById("sd-options-save");
       const sdOptionsResetBtn = document.getElementById("sd-options-reset");
+      const sdOptionsSecurityDefaultsBtn = document.getElementById("sd-options-security-defaults");
       const sdOptionsDeleteBtn = document.getElementById("sd-options-delete");
       const sdOptionsInputEls = Array.from(document.querySelectorAll("[data-option-key]"));
       const sshKeySelectEl = document.getElementById("ssh_key_select");
@@ -1349,6 +1491,16 @@
       const statTotalEl = document.getElementById("stat-total");
       const stat24hEl = document.getElementById("stat-24h");
       const statHostsEl = document.getElementById("stat-hosts");
+      const activitySdCardEl = document.getElementById("activity-sd-card");
+      const activitySdStateEl = document.getElementById("activity-sd-state");
+      const activitySdDetailEl = document.getElementById("activity-sd-detail");
+      const activityCallbackCardEl = document.getElementById("activity-callback-card");
+      const activityCallbackStateEl = document.getElementById("activity-callback-state");
+      const activityCallbackDetailEl = document.getElementById("activity-callback-detail");
+      const activityDeviceCardEl = document.getElementById("activity-device-card");
+      const activityDeviceStateEl = document.getElementById("activity-device-state");
+      const activityDeviceDetailEl = document.getElementById("activity-device-detail");
+      const activityBannerEl = document.getElementById("activity-banner");
       const imageCatalog = {{ image_catalog | tojson }};
       const initialSdOptionProfiles = {{ sd_option_profiles | tojson }};
       const SD_ACTIVE_JOB_KEY = "sd-active-job-id";
@@ -1357,12 +1509,173 @@
       let deviceFallbackPollTimer = null;
       let allEvents = [];
       let sdOptionProfiles = initialSdOptionProfiles || {};
+      let activityMood = {
+        sd: "idle",
+        callback: "quiet",
+        device: "connecting",
+      };
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
         if (saved === "1") {
           body.classList.add("sidebar-collapsed");
         }
+      }
+
+      function setActivityCard(cardEl, stateEl, detailEl, tone, stateText, detailText) {
+        if (!cardEl || !stateEl || !detailEl) {
+          return;
+        }
+        cardEl.classList.remove("waiting", "ok", "warn", "bad");
+        cardEl.classList.add(tone);
+        stateEl.textContent = stateText;
+        detailEl.textContent = detailText;
+      }
+
+      function refreshActivityBanner() {
+        if (!activityBannerEl) {
+          return;
+        }
+        if (activityMood.sd === "running") {
+          activityBannerEl.className = "activity-banner waiting";
+          activityBannerEl.textContent = "⏳ SD write in progress. Byte parade marching, please keep cable wiggles to a minimum. 🧃";
+          return;
+        }
+        if (activityMood.sd === "failed") {
+          activityBannerEl.className = "activity-banner bad";
+          activityBannerEl.textContent = "🔥 SD flow needs attention. Check logs below for the exact wobble point.";
+          return;
+        }
+        if (activityMood.callback === "active") {
+          activityBannerEl.className = "activity-banner ok";
+          activityBannerEl.textContent = "📡 Fresh callbacks are landing. Fleet heartbeat looks alive and chatty. 💚";
+          return;
+        }
+        if (activityMood.device === "offline") {
+          activityBannerEl.className = "activity-banner warn";
+          activityBannerEl.textContent = "🔌 Device watcher is reconnecting. Snapshot polling will keep watch meanwhile.";
+          return;
+        }
+        activityBannerEl.className = "activity-banner waiting";
+        activityBannerEl.textContent = "🌼 Queue vibe: calm and ready. Kick off a task and this dock will narrate the waiting game.";
+      }
+
+      function updateSdActivityFromJob(job) {
+        const status = String(job?.status || "").toLowerCase();
+        if (status === "queued" || status === "running") {
+          activityMood.sd = "running";
+          setActivityCard(
+            activitySdCardEl,
+            activitySdStateEl,
+            activitySdDetailEl,
+            "waiting",
+            "⏳ Cooking",
+            deriveRunningHint(job)
+          );
+        } else if (job && Number(job.exit_code) === 0) {
+          activityMood.sd = "done";
+          setActivityCard(
+            activitySdCardEl,
+            activitySdStateEl,
+            activitySdDetailEl,
+            "ok",
+            "✅ Complete",
+            "Image write finished. This card is ready for victory lap duty. 🥳"
+          );
+        } else if (job) {
+          activityMood.sd = "failed";
+          setActivityCard(
+            activitySdCardEl,
+            activitySdStateEl,
+            activitySdDetailEl,
+            "bad",
+            "🔥 Needs Fix",
+            "Job ended with issues. Scroll logs for clues and rerun when ready."
+          );
+        } else {
+          activityMood.sd = "idle";
+          setActivityCard(
+            activitySdCardEl,
+            activitySdStateEl,
+            activitySdDetailEl,
+            "waiting",
+            "😴 Idle",
+            "No SD write is running right now."
+          );
+        }
+        refreshActivityBanner();
+      }
+
+      function updateDeviceActivity(devicesCount, connected) {
+        if (connected) {
+          activityMood.device = "online";
+          setActivityCard(
+            activityDeviceCardEl,
+            activityDeviceStateEl,
+            activityDeviceDetailEl,
+            "ok",
+            `🔌 Online (${devicesCount})`,
+            devicesCount > 0
+              ? "Removable target(s) detected and ready."
+              : "Connected but no removable target detected yet."
+          );
+        } else {
+          activityMood.device = "offline";
+          setActivityCard(
+            activityDeviceCardEl,
+            activityDeviceStateEl,
+            activityDeviceDetailEl,
+            "warn",
+            "🛰️ Reconnecting",
+            "Live device stream dropped. Fallback polling remains active."
+          );
+        }
+        refreshActivityBanner();
+      }
+
+      function formatAgeFromMs(ageMs) {
+        if (!Number.isFinite(ageMs) || ageMs < 0) {
+          return "just now";
+        }
+        const sec = Math.floor(ageMs / 1000);
+        if (sec < 60) return `${sec}s ago`;
+        const min = Math.floor(sec / 60);
+        if (min < 60) return `${min}m ago`;
+        const hour = Math.floor(min / 60);
+        return `${hour}h ${min % 60}m ago`;
+      }
+
+      function updateCallbackActivity(events) {
+        const list = Array.isArray(events) ? events : [];
+        if (!list.length) {
+          activityMood.callback = "quiet";
+          setActivityCard(
+            activityCallbackCardEl,
+            activityCallbackStateEl,
+            activityCallbackDetailEl,
+            "waiting",
+            "🫥 Quiet",
+            "Waiting for nodes to check in."
+          );
+          refreshActivityBanner();
+          return;
+        }
+
+        const latest = list[0] || {};
+        const ts = eventReceivedTs(latest);
+        const age = ts === null ? "time unknown" : formatAgeFromMs(Date.now() - ts);
+        const host = String(latest.hostname || latest.fqdn || "unknown-node");
+        const stage = String(latest.stage || "phone_home");
+        activityMood.callback = "active";
+        setActivityCard(
+          activityCallbackCardEl,
+          activityCallbackStateEl,
+          activityCallbackDetailEl,
+          "ok",
+          `📡 Live (${age})`,
+          `${host} reported stage '${stage}'.`
+        );
+        refreshActivityBanner();
       }
 
       toggleBtn.addEventListener("click", () => {
@@ -1422,6 +1735,7 @@
           shownErr,
         ].join("\n");
         logEl.innerHTML = highlightLogText(body);
+        updateSdActivityFromJob(job);
       }
 
       function formatJobTiming(job) {
@@ -1752,6 +2066,26 @@
         return Number.isNaN(ts) ? null : ts;
       }
 
+      function formatEventTimestamp(value) {
+        const raw = String(value || "").trim();
+        if (!raw) return "-";
+        const normalized = raw.replace(" UTC", "Z").replace(" ", "T");
+        const dt = new Date(normalized);
+        if (Number.isNaN(dt.getTime())) {
+          return raw;
+        }
+        return dt.toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          timeZoneName: "short",
+        });
+      }
+
       function updateEventFilterOptions(events) {
         const currentProfile = eventProfileEl.value;
         const currentStage = eventStageEl.value;
@@ -1867,7 +2201,7 @@
         statHostsEl.textContent = String(uniqueHosts);
 
         const first = visible.length ? visible[0] : null;
-        const latestAt = first && first.received_at ? first.received_at : "n/a";
+        const latestAt = first && first.received_at ? formatEventTimestamp(first.received_at) : "n/a";
         eventMetaEl.textContent = `Showing ${visible.length} of ${all.length} events. Latest callback: ${latestAt}. Auto-refresh every 5s.`;
       }
 
@@ -1943,7 +2277,7 @@
             ? `via ${e.source_ip_source}${e.forwarded_for ? ` (${e.forwarded_for})` : ""}`
             : (e.remote_addr ? `via remote_addr (${e.remote_addr})` : "");
           const values = [
-            e.received_at || "-",
+            formatEventTimestamp(e.received_at),
             e.hostname || "-",
             e.instance_id || "-",
             e.fqdn || "-",
@@ -2008,6 +2342,7 @@
             return;
           }
           allEvents = Array.isArray(data.events) ? data.events : [];
+          updateCallbackActivity(allEvents);
           updateEventFilterOptions(allEvents);
           const visibleEvents = filterEvents(allEvents);
           updateEventStats(allEvents, visibleEvents);
@@ -2487,10 +2822,12 @@
           }
           const devices = Array.isArray(payload.devices) ? payload.devices : [];
           replaceDeviceOptions(devices);
+          updateDeviceActivity(devices.length, true);
         } catch (err) {
           if (!String(deviceWebhookStatusEl.textContent || "").startsWith("Live device monitor disconnected")) {
             deviceWebhookStatusEl.textContent = `Device refresh error: ${String(err.message || err)}`;
           }
+          updateDeviceActivity(0, false);
         }
       }
 
@@ -2508,8 +2845,10 @@
             replaceDeviceOptions(devices);
             const updated = payload.updated_at ? payload.updated_at.replace("T", " ").replace("+00:00", " UTC") : "just now";
             deviceWebhookStatusEl.textContent = `Live device monitor: ${devices.length} device(s), updated ${updated}`;
+            updateDeviceActivity(devices.length, true);
           } catch (err) {
             deviceWebhookStatusEl.textContent = "Live device monitor: invalid update payload.";
+            updateDeviceActivity(0, false);
           }
         });
 
@@ -2522,6 +2861,7 @@
         es.onerror = () => {
           es.close();
           deviceWebhookStatusEl.textContent = "Live device monitor disconnected. Retrying...";
+          updateDeviceActivity(0, false);
           if (deviceWebhookRetry) {
             clearTimeout(deviceWebhookRetry);
           }
@@ -2545,6 +2885,22 @@
             pollDevicesSnapshot();
           }
         });
+      }
+
+      const DEFAULT_K3S_CONFIG = "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n";
+
+      function ensureK3sConfigDefaults() {
+        const textarea = document.getElementById("opt_k3s_config");
+        const section = document.getElementById("k3s-distribution-section");
+        const isK3sSelected = String(form.distribution.value || "standard").trim().toLowerCase() === "k3s";
+        if (section) {
+          section.open = isK3sSelected;
+        }
+        if (!textarea) return;
+        const value = String(textarea.value || "").trim();
+        if (isK3sSelected && !value) {
+          textarea.value = DEFAULT_K3S_CONFIG.trimEnd();
+        }
       }
 
       function gatherCloudInitOptions() {
@@ -2571,6 +2927,14 @@
             continue;
           }
           options[key] = raw;
+        }
+        if (String(form.distribution.value || "standard").trim().toLowerCase() === "k3s") {
+          const k3sValue = String(document.getElementById("opt_k3s_config")?.value || "").trim();
+          if (!k3sValue) {
+            options.k3s_config = DEFAULT_K3S_CONFIG.trimEnd();
+          } else {
+            options.k3s_config = k3sValue;
+          }
         }
         return options;
       }
@@ -2615,6 +2979,26 @@
         sdOptionsProfileSelectEl.value = "";
         updateSdOptionActions();
         sdOptionsProfileStatusEl.textContent = "Optional cloud-init fields reset. Fill manually or load a template.";
+      }
+
+      function applySecurityStarterDefaults() {
+        const defaults = {
+          disable_ssh_password_auth: true,
+          disable_root_ssh: true,
+          enable_fail2ban: true,
+          enable_unattended_upgrades: true,
+        };
+        applyCloudInitOptions({
+          ...gatherCloudInitOptions(),
+          ...defaults,
+        });
+
+        const allowGroupsEl = document.getElementById("opt_ssh_allow_groups");
+        if (allowGroupsEl && !String(allowGroupsEl.value || "").trim()) {
+          allowGroupsEl.value = "sudo";
+        }
+        updateSdOptionsConfiguredCount();
+        sdOptionsProfileStatusEl.textContent = "Security starter defaults applied: SSH password off, root SSH off, fail2ban on, unattended upgrades on. 🔐✨";
       }
 
       function renderSdOptionProfiles() {
@@ -2743,6 +3127,7 @@
         const data = await res.json();
         if (!data.ok) {
           statusEl.textContent = data.error || "Failed to load job status";
+          updateSdActivityFromJob({ status: "failed", exit_code: 1, stdout: "", stderr: data.error || "poll failed" });
           return;
         }
         renderJob(data.job);
@@ -2775,8 +3160,11 @@
         statusEl.textContent = "Submitting...";
         logEl.textContent = "";
         flashMascotEl.classList.add("active");
+        updateSdActivityFromJob({ status: "queued", stdout: "", stderr: "" });
+        ensureK3sConfigDefaults();
         const payload = {
           profile: form.profile.value,
+          distribution: form.distribution.value,
           hostname: form.hostname.value,
           device: form.device.value,
           callback_url: form.callback_url.value,
@@ -2841,6 +3229,7 @@
       sdOptionsLoadBtn.addEventListener("click", loadSelectedSdOptionProfile);
       sdOptionsSaveBtn.addEventListener("click", saveCurrentSdOptionProfile);
       sdOptionsResetBtn.addEventListener("click", resetCloudInitOptions);
+      sdOptionsSecurityDefaultsBtn.addEventListener("click", applySecurityStarterDefaults);
       sdOptionsDeleteBtn.addEventListener("click", deleteSelectedSdOptionProfile);
 
       sdOptionsProfileSelectEl.addEventListener("change", () => {
@@ -2864,6 +3253,7 @@
         rebuildCatalogFilters();
       });
 
+      form.distribution.addEventListener("change", ensureK3sConfigDefaults);
       form.distro_family.addEventListener("change", rebuildCatalogFilters);
       form.distro_release.addEventListener("change", rebuildPresetOptions);
       form.image_search.addEventListener("input", rebuildPresetOptions);
@@ -2889,10 +3279,14 @@
       });
 
       initSidebar();
+      ensureK3sConfigDefaults();
       rebuildCatalogFilters();
       refreshKeyLinks();
       renderSdOptionProfiles();
       resumeActiveJobIfAny();
+      updateSdActivityFromJob(null);
+      updateCallbackActivity([]);
+      updateDeviceActivity(0, false);
       updateSdOptionsConfiguredCount();
       refreshSshKeyChoices();
       loadSdOptionProfiles();

@@ -223,8 +223,10 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn("Profile Selection", text)
         self.assertIn("Save Current As Template", text)
         self.assertIn("Delete Selected Template", text)
+        self.assertIn("Apply Security Starter Defaults", text)
         self.assertIn("Reset Optional Fields", text)
         self.assertIn("User Password (optional)", text)
+        self.assertIn("Disable direct root SSH login", text)
         self.assertIn("fields set", text)
         self.assertNotIn("This operation erases the target device", text)
 
@@ -310,7 +312,113 @@ class CallbackSiteTests(unittest.TestCase):
         text = response.get_data(as_text=True)
         self.assertIn('id="monitor-node-select"', text)
         self.assertIn('id="monitor-run-check"', text)
+        self.assertIn('id="summary-run-ping"', text)
+        self.assertIn('id="monitor-run-ping"', text)
+        self.assertIn('id="node-form-ping"', text)
+        self.assertIn("Single Source of Truth", text)
+        self.assertIn('id="sot-kpis"', text)
+        self.assertIn('id="sot-body"', text)
         self.assertIn("Discovered node", text)
+
+    def test_source_of_truth_endpoint_unifies_image_monitor_and_provision_state(self) -> None:
+        cache_path = TEST_DATA_DIR / "image_cache" / "pi5-latest.img.xz"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text("image-bytes-placeholder", encoding="utf-8")
+
+        callback_core._append_image_history(
+            {
+                "recorded_at": "2026-07-12T00:00:00+00:00",
+                "profile": "pi5",
+                "label": "Pi5 Base",
+                "source": "image_url",
+                "source_value": "https://example.invalid/pi5.img.xz",
+                "download_path": str(cache_path),
+                "job_status": "completed",
+                "hash_status": "verified",
+            }
+        )
+
+        self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "truth-node-01",
+                "profile": "pi5",
+                "stage": "hardware-check",
+                "raw": {
+                    "hardware": {
+                        "model": "Raspberry Pi 5",
+                        "ram_mb": 8192,
+                    }
+                },
+            },
+            headers={"X-Forwarded-For": "198.51.100.20"},
+        )
+
+        state = callback_core._load_node_provisioning()
+        state.setdefault("node_configs", {})["truth-node-01"] = ["baseline", "telegraf"]
+        callback_core._save_node_provisioning(state)
+
+        response = self.client.get("/api/state/source-of-truth")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+
+        unified = payload.get("state", {})
+        self.assertIn("counts", unified)
+        self.assertIn("images", unified)
+        self.assertIn("nodes", unified)
+
+        nodes = unified.get("nodes", [])
+        match = next((node for node in nodes if node.get("name") == "truth-node-01"), None)
+        self.assertIsNotNone(match)
+        self.assertIn("baseline", match.get("selected_profiles", []))
+
+        image = (match or {}).get("image", {})
+        self.assertEqual(image.get("source"), "image_url")
+        self.assertTrue(image.get("local_available"))
+
+        counts = unified.get("counts", {})
+        self.assertGreaterEqual(int(counts.get("nodes_in_monitor", 0) or 0), 1)
+        self.assertGreaterEqual(int(counts.get("nodes_with_hardware", 0) or 0), 1)
+
+    def test_nodes_summary_uses_canonical_source_of_truth(self) -> None:
+        fake_state = {
+            "nodes": [{"name": "node-a", "selected_profiles": ["baseline"], "latest_check": {"ok": True}, "in_node_ops_view": True}],
+            "provisioning": {
+                "config": {"username": "ops", "password_set": True, "webhook_url": "https://example.invalid", "verify_tls": True},
+                "node_inputs": {"node-a": {"baseline": {"timezone": "UTC"}}},
+                "manual_nodes": {"node-a": {"address": "192.0.2.20"}},
+            },
+            "images": {"summary": {"total_records": 2}},
+        }
+
+        with patch("app._single_source_of_truth_summary", return_value=fake_state):
+            response = self.client.get("/api/nodes/summary")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload.get("nodes", [])[0].get("name"), "node-a")
+        self.assertEqual(payload.get("config", {}).get("username"), "ops")
+        self.assertEqual(payload.get("image_summary", {}).get("total_records"), 2)
+
+    def test_monitor_summary_uses_canonical_source_of_truth(self) -> None:
+        fake_state = {
+            "nodes": [{"name": "mon-a", "in_monitor_view": True, "hardware": {"received_at": "2026-07-12T00:00:00+00:00"}}],
+            "monitor": {
+                "cloud_init_options": [{"id": "base", "label": "Base"}],
+                "node_cloud_init": {"mon-a": ["base"]},
+            }
+        }
+
+        with patch("app._single_source_of_truth_summary", return_value=fake_state):
+            response = self.client.get("/api/monitor/summary")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload.get("nodes", [])[0].get("name"), "mon-a")
+        self.assertEqual(payload.get("cloud_init_options", [])[0].get("id"), "base")
 
     def test_monitor_node_and_cloud_init_options(self) -> None:
         summary = self.client.get("/api/monitor/summary")
@@ -434,6 +542,60 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertTrue(cert_payload["ok"])
         self.assertEqual(cert_payload["certificate"]["cert_subject"], "CN=fresh-node-01")
 
+    def test_source_of_truth_preserves_callback_source_for_discovered_node(self) -> None:
+        callback = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "source-node-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={"X-Forwarded-For": "203.0.113.61"},
+        )
+        self.assertEqual(callback.status_code, 200)
+
+        response = self.client.get("/api/state/source-of-truth")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+
+        nodes = payload.get("state", {}).get("nodes", [])
+        node = next((item for item in nodes if item.get("name") == "source-node-01"), None)
+        self.assertIsNotNone(node)
+        self.assertTrue(bool(node.get("in_node_ops_view")))
+        self.assertTrue(bool(node.get("in_monitor_view")))
+        self.assertEqual(node.get("source"), "callback")
+
+    def test_monitor_node_simple_ping_endpoint(self) -> None:
+        callback = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "ping-node-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            headers={"X-Forwarded-For": "203.0.113.88"},
+        )
+        self.assertEqual(callback.status_code, 200)
+
+        with patch("app._ping_status", return_value={"reachable": True, "latency_ms": 2.4, "error": ""}) as ping_status:
+            ping = self.client.get("/api/monitor/nodes/ping-node-01/ping")
+
+        self.assertEqual(ping.status_code, 200)
+        payload = ping.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["node"], "ping-node-01")
+        self.assertEqual(payload["address"], "203.0.113.88")
+        self.assertTrue(payload["reachable"])
+        self.assertEqual(payload["latency_ms"], 2.4)
+        ping_status.assert_called_once_with("203.0.113.88")
+
+    def test_monitor_node_simple_ping_endpoint_missing_node(self) -> None:
+        response = self.client.get("/api/monitor/nodes/not-there/ping")
+        self.assertEqual(response.status_code, 404)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+
     def test_catalog_availability_endpoint(self) -> None:
         response = self.client.get("/api/sd/catalog")
         self.assertEqual(response.status_code, 200)
@@ -444,6 +606,26 @@ class CallbackSiteTests(unittest.TestCase):
         first = entries[0]
         self.assertIn("local_available", first)
         self.assertIn("cache_path", first)
+
+    def test_image_catalog_endpoint_uses_yaml_source_of_truth(self) -> None:
+        response = self.client.get("/api/sd/image-catalog")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        ids = {str(entry.get("id", "")) for entry in (payload.get("entries") or [])}
+        self.assertIn("k3s-ubuntu-24.04-pi-arm64", ids)
+        self.assertIn("ubuntu-24.04-pi-arm64", ids)
+
+    def test_k3s_catalog_entry_is_presented_as_k3s_only(self) -> None:
+        response = self.client.get("/api/sd/image-catalog")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        entries = payload.get("entries") or []
+        k3s_entry = next((entry for entry in entries if entry.get("id") == "k3s-ubuntu-24.04-pi-arm64"), None)
+        self.assertIsNotNone(k3s_entry)
+        self.assertEqual(str(k3s_entry.get("label", "")), "K3s")
+        self.assertEqual(str(k3s_entry.get("distro", "")), "K3s")
 
     def test_image_state_summary_prefers_recent_available_state_entry(self) -> None:
         history = [
@@ -964,6 +1146,25 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(cleaned["sd_options_profile"], "base-template")
         self.assertEqual(cleaned["cloud_init_options"]["timezone"], "UTC")
 
+    def test_sanitize_sd_prepare_payload_supports_k3s_distribution(self) -> None:
+        cleaned = callback_app._sanitize_sd_prepare_payload(
+            {
+                "profile": "pi5",
+                "hostname": "rack-node-k3s",
+                "device": "/dev/sdb",
+                "ssh_public_key": "ssh-ed25519 AAAA",
+                "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                "distribution": "k3s",
+                "cloud_init_options": {
+                    "k3s_config": "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n",
+                },
+                "ignored": "value",
+            }
+        )
+        self.assertNotIn("ignored", cleaned)
+        self.assertEqual(cleaned["distribution"], "k3s")
+        self.assertIn("pragma: k3s-config-v1", cleaned["cloud_init_options"]["k3s_config"])
+
     def test_nodes_summary_prefers_callback_ip_over_placeholder_inventory_address(self) -> None:
         self.client.post(
             "/api/cloud-init/callback",
@@ -1246,10 +1447,12 @@ class CallbackSiteTests(unittest.TestCase):
                     "device": "/dev/sdb",
                     "ssh_public_key": "ssh-ed25519 AAAA test",
                     "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "distribution": "k3s",
                     "sd_options_profile": "base-profile",
                     "cloud_init_options": {
                         "timezone": "UTC",
                         "packages": ["git", "curl"],
+                        "k3s_config": "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n",
                     },
                 },
             )
@@ -1266,8 +1469,10 @@ class CallbackSiteTests(unittest.TestCase):
             request_payload = dict(job.get("request", {})) if job else {}
 
         self.assertEqual(request_payload.get("sd_options_profile"), "base-profile")
+        self.assertEqual(request_payload.get("distribution"), "k3s")
         self.assertEqual(request_payload.get("cloud_init_options", {}).get("timezone"), "UTC")
         self.assertEqual(request_payload.get("cloud_init_options", {}).get("packages"), ["git", "curl"])
+        self.assertIn("pragma: k3s-config-v1", request_payload.get("cloud_init_options", {}).get("k3s_config", ""))
 
         thread_cls.assert_called_once()
         _, kwargs = thread_cls.call_args
@@ -1277,6 +1482,76 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(args_tuple[0], job_id)
 
         with callback_app.JOBS_LOCK:
+            callback_app.JOBS.pop(job_id, None)
+
+    def test_run_prepare_job_maps_security_cloud_init_options_to_env(self) -> None:
+        class FakePopen:
+            def __init__(self, *args, **kwargs) -> None:
+                self.returncode = 0
+                self.stdout = iter(())
+
+            def wait(self) -> int:
+                return self.returncode
+
+        job_id = "job-security-env"
+        form = {
+            "profile": "pi5",
+            "hostname": "rack-sec-01",
+            "device": "/dev/sdb",
+            "ssh_public_key": "ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABAQC test",
+            "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+            "distribution": "standard",
+            "cloud_init_options": {
+                "disable_ssh_password_auth": True,
+                "disable_root_ssh": True,
+                "enable_fail2ban": True,
+                "enable_unattended_upgrades": True,
+                "reboot_after_bootstrap": True,
+                "ssh_port": "2222",
+                "ssh_allow_groups": ["sudo", "wheel"],
+                "extra_ssh_keys": [
+                    "ssh-ed25519 AAAA111 extra1",
+                    "ssh-ed25519 AAAA222 extra2",
+                ],
+            },
+        }
+
+        with callback_app.JOBS_LOCK:
+            callback_app.JOBS[job_id] = {
+                "status": "queued",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "request": dict(form),
+                "stdout": "",
+                "stderr": "",
+                "exit_code": None,
+            }
+
+        popen_call = {}
+
+        def fake_popen(*args, **kwargs):
+            popen_call.update(kwargs)
+            return FakePopen()
+
+        with patch("core.os.geteuid", return_value=0), patch(
+            "core._archive_ssh_public_key", return_value={"archive_path": "test-archive"}
+        ), patch("core.subprocess.Popen", side_effect=fake_popen), patch("core._record_image_history"):
+            callback_core._run_prepare_job(job_id, form)
+
+        env = popen_call.get("env") or {}
+        self.assertEqual(env.get("CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_DISABLE_ROOT_SSH"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_ENABLE_FAIL2BAN"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_SSH_PORT"), "2222")
+        self.assertEqual(env.get("CLOUD_INIT_SSH_ALLOW_GROUPS"), "sudo,wheel")
+        self.assertEqual(
+            env.get("CLOUD_INIT_EXTRA_SSH_KEYS"),
+            "ssh-ed25519 AAAA111 extra1\nssh-ed25519 AAAA222 extra2",
+        )
+
+        with callback_app.JOBS_LOCK:
+            self.assertEqual(callback_app.JOBS[job_id]["status"], "completed")
             callback_app.JOBS.pop(job_id, None)
 
     def test_settings_reset_node_ops(self) -> None:
@@ -1363,6 +1638,20 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(reloaded.status_code, 200)
         self.assertEqual(reloaded.get_json().get("settings", {}).get("rack_name"), "rack-alpha-01")
 
+    def test_logging_tail_works_with_default_lines(self) -> None:
+        response = self.client.get("/api/logging/tail")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("lines", payload)
+
+    def test_logging_tail_rejects_invalid_lines_value(self) -> None:
+        response = self.client.get("/api/logging/tail?lines=not-a-number")
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+        self.assertIn("lines must be an integer", payload.get("error", ""))
+
     def test_fragment_endpoints_render(self) -> None:
         for path in (
             "/fragments/cloud-init/event-rows",
@@ -1394,6 +1683,7 @@ class CallbackSiteTests(unittest.TestCase):
             "raspios-bookworm-armhf-lite": "2026-06-18-raspios-bookworm-armhf-lite.img.xz",
             "ubuntu-24.04-pi-arm64": "ubuntu-24.04.2-preinstalled-server-arm64+raspi.img.xz",
             "ubuntu-22.04-pi-arm64": "ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz",
+            "k3s-ubuntu-24.04-pi-arm64": "ubuntu-24.04.2-preinstalled-server-arm64+raspi.img.xz",
         }
 
         for entry_id, expected_suffix in expected_files.items():
@@ -1862,6 +2152,83 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertGreaterEqual(len(matching), 2)
         self.assertTrue(all(e.get("source_ip") == "192.168.174.88" for e in matching[:2]))
 
+    def test_callback_dedupes_near_identical_repeat(self) -> None:
+        first = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "dup-node-01",
+                "instance_id": "iid-dup-01",
+                "profile": "pi5",
+                "stage": "runcmd",
+            },
+            headers={"X-Forwarded-For": "192.168.174.111"},
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertFalse(first.get_json().get("deduped", False))
+
+        second = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "dup-node-01",
+                "instance_id": "iid-dup-01",
+                "profile": "pi5",
+                "stage": "runcmd",
+            },
+            headers={"X-Forwarded-For": "192.168.174.111"},
+        )
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.get_json().get("deduped", False))
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [
+            e
+            for e in events
+            if e.get("hostname") == "dup-node-01" and e.get("instance_id") == "iid-dup-01" and e.get("stage") == "runcmd"
+        ]
+        self.assertEqual(len(matching), 1)
+
+    def test_callback_harmonizes_missing_identity_and_cert_fields(self) -> None:
+        first = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "harm-node-01",
+                "instance_id": "iid-harm-01",
+            },
+            environ_overrides={"REMOTE_ADDR": "10.255.45.243"},
+        )
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "harm-node-01",
+                "instance_id": "iid-harm-01",
+                "fqdn": "harm-node-01.lab.local",
+                "profile": "pi5",
+                "stage": "runcmd",
+            },
+            headers={
+                "X-Forwarded-For": "192.168.174.120",
+                "X-SSL-Client-Subject": "CN=harm-node-01",
+                "X-SSL-Client-Fingerprint": "AA:12:34:56",
+            },
+        )
+        self.assertEqual(second.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [e for e in events if e.get("instance_id") == "iid-harm-01"]
+        self.assertGreaterEqual(len(matching), 2)
+        self.assertTrue(all(e.get("source_ip") == "192.168.174.120" for e in matching[:2]))
+        self.assertTrue(all(e.get("fqdn") == "harm-node-01.lab.local" for e in matching[:2]))
+        self.assertTrue(all(e.get("profile") == "pi5" for e in matching[:2]))
+        self.assertTrue(all(e.get("stage") == "runcmd" for e in matching[:2]))
+        self.assertTrue(all(e.get("cert_subject") == "CN=harm-node-01" for e in matching[:2]))
+        self.assertTrue(all(bool(e.get("cert_present", False)) for e in matching[:2]))
+
     def test_test_terminal_targets_include_labeled_source_ips(self) -> None:
         self.client.post(
             "/api/cloud-init/events/clear",
@@ -2148,6 +2515,30 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(latest_check.get("status"), "planned")
         self.assertEqual(latest_check.get("mode"), "check")
 
+    def test_node_provision_check_mode_uses_background_job_when_ansible_enabled(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.get_json()
+        nodes = payload.get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes in inventory for async provision job test")
+
+        node_name = nodes[0]["name"]
+        response = self.client.post(
+            "/api/nodes/provision",
+            json={"node": node_name, "mode": "check", "run_ansible": True},
+        )
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("job_id", payload)
+        self.assertEqual(payload["mode"], "check")
+
+        status_response = self.client.get(f"/api/nodes/provision/jobs/{payload['job_id']}")
+        self.assertEqual(status_response.status_code, 200)
+        job = status_response.get_json()["job"]
+        self.assertIn(job["status"], {"queued", "running", "completed", "failed"})
+
     def test_node_provision_apply_mode_persists_plan_only_results(self) -> None:
         summary = self.client.get("/api/nodes/summary")
         self.assertEqual(summary.status_code, 200)
@@ -2330,6 +2721,44 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(missing_payload["mode"], "check")
         self.assertEqual(missing_payload["results"][0]["mode"], "check")
 
+    def test_apply_node_provisioning_includes_hardware_trigger_in_check_mode(self) -> None:
+        fake_state = {"results": {}}
+        with patch.object(callback_core, "_profile_map", return_value={"baseline": {"id": "baseline", "tags": ["baseline"]}}), patch.object(
+            callback_core,
+            "_load_node_provisioning",
+            return_value=fake_state,
+        ), patch.object(callback_core, "_node_profile_inputs", return_value={}), patch.object(
+            callback_core,
+            "_node_ops_inventory_view",
+            return_value=[{"name": "node-01", "group": "rpi5_active", "address": "192.0.2.10"}],
+        ), patch.object(
+            callback_core,
+            "_run_node_profile",
+            return_value={
+                "profile_id": "baseline",
+                "status": "ok",
+                "mode": "check",
+                "checked_at": "2026-01-01T00:00:00+00:00",
+                "output": "ok",
+            },
+        ), patch.object(
+            callback_core,
+            "_run_hardware_check_callback",
+            return_value={
+                "profile_id": "hardware_check_trigger",
+                "status": "ok",
+                "mode": "check",
+                "checked_at": "2026-01-01T00:00:01+00:00",
+                "output": "triggered",
+            },
+        ) as trigger_mock, patch.object(callback_core, "_save_node_provisioning"):
+            result = callback_core._apply_node_provisioning("node-01", ["baseline"], mode="check", run_ansible=True)
+
+        self.assertEqual(result["node"], "node-01")
+        self.assertEqual(result["mode"], "check")
+        self.assertTrue(any(item.get("profile_id") == "hardware_check_trigger" for item in result["results"]))
+        trigger_mock.assert_called_once()
+
     def test_nodes_telegraf_test_uses_current_profile_inputs(self) -> None:
         summary = self.client.get("/api/nodes/summary")
         self.assertEqual(summary.status_code, 200)
@@ -2431,6 +2860,13 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('INFLUX_URL="\\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"', script_text)
         self.assertIn('CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"', script_text)
         self.assertIn('CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"', script_text)
+        self.assertIn('CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH="${CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH:-false}"', script_text)
+        self.assertIn('CLOUD_INIT_DISABLE_ROOT_SSH="${CLOUD_INIT_DISABLE_ROOT_SSH:-false}"', script_text)
+        self.assertIn('CLOUD_INIT_ENABLE_FAIL2BAN="${CLOUD_INIT_ENABLE_FAIL2BAN:-false}"', script_text)
+        self.assertIn('CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES="${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES:-false}"', script_text)
+        self.assertIn('PermitRootLogin no', script_text)
+        self.assertIn('PasswordAuthentication no', script_text)
+        self.assertIn("if [ -f /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys.d/rack-extra.keys ]", script_text)
         self.assertIn('require_cmd openssl', script_text)
         self.assertIn("openssl passwd -6 -stdin", script_text)
         self.assertIn('cat >> "$USER_DATA_OUT" <<RUNCMD_EOF', script_text)

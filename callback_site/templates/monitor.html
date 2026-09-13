@@ -342,6 +342,7 @@
           <p>Per-node hardware configuration state from callback reports. Rows appear after a node's first <code>hardware-check</code> or <code>runcmd</code> callback.</p>
           <div class="actions-row controls-inline">
             <button id="refresh-summary" type="button">Refresh</button>
+            <button id="prune-stale-monitor" type="button" class="secondary">Prune Stale Nodes</button>
             <label for="monitor-ping-node-select" style="margin: 0; min-width: 220px;">
               Node
               <select id="monitor-ping-node-select"></select>
@@ -475,6 +476,7 @@
       const body = document.body;
       const toggleBtn = document.getElementById("sidebar-toggle");
       const monitorStatus = document.getElementById("monitor-status");
+      const pruneStaleMonitorBtn = document.getElementById("prune-stale-monitor");
       const nodeFormStatusEl = document.getElementById("node-form-status");
       const certNodeEl = document.getElementById("cert-node");
       const certStatusEl = document.getElementById("cert-status");
@@ -748,6 +750,39 @@
         monitorStatus.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"} loaded, ${hwCount} with hardware data.`;
       }
 
+      async function pruneStaleMonitorNodes() {
+        const hoursRaw = window.prompt("Remove nodes with callbacks older than how many hours?", "168");
+        if (hoursRaw == null) {
+          return;
+        }
+        const hours = Number.parseInt(String(hoursRaw).trim(), 10);
+        if (!Number.isFinite(hours) || hours < 1 || hours > 8760) {
+          monitorStatus.textContent = "Stale threshold must be an integer between 1 and 8760 hours.";
+          return;
+        }
+        if (!window.confirm(`Prune stale nodes older than ${hours} hour(s)? This also removes saved node state for those entries.`)) {
+          return;
+        }
+
+        monitorStatus.textContent = "Pruning stale nodes...";
+        try {
+          const res = await fetch("/api/nodes/stale/prune", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ max_age_hours: hours, dry_run: false }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || "Failed to prune stale nodes");
+          }
+          const staleNodes = Array.isArray(data.stale_nodes) ? data.stale_nodes : [];
+          monitorStatus.textContent = `Pruned ${staleNodes.length} stale node${staleNodes.length === 1 ? "" : "s"}.`;
+          await loadSummary();
+        } catch (err) {
+          monitorStatus.textContent = `Stale prune failed: ${String(err && err.message ? err.message : err)}`;
+        }
+      }
+
       async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 20000) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -942,6 +977,9 @@
       }
 
       document.getElementById("refresh-summary").addEventListener("click", loadSummary);
+      if (pruneStaleMonitorBtn) {
+        pruneStaleMonitorBtn.addEventListener("click", pruneStaleMonitorNodes);
+      }
       monitorRunCheckBtn.addEventListener("click", runMonitorCloserCheck);
       summaryRunPingBtn.addEventListener("click", () =>
         runSimplePing(monitorPingNodeSelectEl.value, summaryPingStatusEl, summaryRunPingBtn, "Simple ping:")

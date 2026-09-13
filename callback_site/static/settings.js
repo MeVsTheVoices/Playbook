@@ -16,6 +16,10 @@ const loggingOutput = document.getElementById("logging-output");
 const refreshModuleSyncBtn = document.getElementById("refresh-module-sync");
 const moduleSyncStatus = document.getElementById("module-sync-status");
 const moduleSyncGrid = document.getElementById("module-sync-grid");
+const staleMaxAgeHoursInput = document.getElementById("stale-max-age-hours");
+const previewStalePruneBtn = document.getElementById("preview-stale-prune");
+const runStalePruneBtn = document.getElementById("run-stale-prune");
+const stalePruneStatus = document.getElementById("stale-prune-status");
 
 function initSidebar() {
   const saved = localStorage.getItem("sidebar-collapsed");
@@ -252,6 +256,69 @@ async function viewRecentLogs() {
   loggingStatus.textContent = `Loaded from: ${data.log_file}`;
 }
 
+function parseStaleHours() {
+  const raw = String(staleMaxAgeHoursInput && staleMaxAgeHoursInput.value ? staleMaxAgeHoursInput.value : "168").trim();
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 8760) {
+    return null;
+  }
+  return parsed;
+}
+
+function formatPruneSummary(result) {
+  const removed = result && typeof result === "object" ? (result.removed || {}) : {};
+  const staleNodes = Array.isArray(result && result.stale_nodes) ? result.stale_nodes : [];
+  const nodeNames = staleNodes.slice(0, 12).map((item) => item.name).filter(Boolean).join(", ");
+  return [
+    `Stale nodes: ${staleNodes.length}`,
+    `Callbacks removed: ${removed.callbacks || 0}`,
+    `Managed nodes removed: ${removed.managed_nodes || 0}`,
+    `Node cloud-init links removed: ${removed.node_cloud_init || 0}`,
+    `Node configs removed: ${removed.node_configs || 0}`,
+    `Node inputs removed: ${removed.node_inputs || 0}`,
+    `Node results removed: ${removed.node_results || 0}`,
+    `Manual nodes removed: ${removed.manual_nodes || 0}`,
+    nodeNames ? `Sample nodes: ${nodeNames}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+async function runStalePrune(dryRun) {
+  if (!stalePruneStatus) {
+    return;
+  }
+  const hours = parseStaleHours();
+  if (hours == null) {
+    stalePruneStatus.textContent = "Stale threshold must be an integer between 1 and 8760 hours.";
+    return;
+  }
+
+  if (!dryRun) {
+    const confirmed = window.confirm(`Prune nodes with last callback older than ${hours} hour(s)? This also removes their saved monitor and node ops state.`);
+    if (!confirmed) {
+      return;
+    }
+  }
+
+  stalePruneStatus.textContent = dryRun ? "Scanning stale nodes..." : "Pruning stale nodes...";
+  try {
+    const res = await fetch("/api/nodes/stale/prune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_age_hours: hours, dry_run: dryRun }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      stalePruneStatus.textContent = data.error || "Stale node operation failed.";
+      return;
+    }
+
+    const modeText = dryRun ? "Preview" : "Prune complete";
+    stalePruneStatus.textContent = `${modeText} (cutoff ${data.cutoff}):\n${formatPruneSummary(data)}`;
+  } catch (err) {
+    stalePruneStatus.textContent = `Stale node operation failed: ${String(err && err.message ? err.message : err)}`;
+  }
+}
+
 resetNodeOpsBtn.addEventListener("click", resetNodeOps);
 clearCallbackBtn.addEventListener("click", clearCallbackBacklog);
 saveRackNameBtn.addEventListener("click", saveRackSettings);
@@ -261,6 +328,12 @@ disableVerboseBtn.addEventListener("click", () => toggleVerboseLogging(false));
 document.getElementById("view-recent-logs").addEventListener("click", viewRecentLogs);
 if (refreshModuleSyncBtn) {
   refreshModuleSyncBtn.addEventListener("click", refreshModuleSync);
+}
+if (previewStalePruneBtn) {
+  previewStalePruneBtn.addEventListener("click", () => runStalePrune(true));
+}
+if (runStalePruneBtn) {
+  runStalePruneBtn.addEventListener("click", () => runStalePrune(false));
 }
 
 initSidebar();

@@ -17,7 +17,7 @@ import uuid
 from urllib import parse as urlparse
 from urllib import error as urlerror
 from urllib import request as urlrequest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
@@ -689,6 +689,161 @@ def _read_events(limit: int = 200) -> List[Dict[str, Any]]:
             continue
     events.reverse()
     return events
+
+
+def _event_matches_node_aliases(event: Dict[str, Any], aliases: set[str]) -> bool:
+    host = str(event.get("hostname", "")).strip().lower()
+    fqdn = str(event.get("fqdn", "")).strip().lower()
+    event_aliases: set[str] = set()
+    event_aliases.update(_node_aliases(host))
+    event_aliases.update(_node_aliases(fqdn))
+    return bool(event_aliases.intersection(aliases))
+
+
+def _keys_matching_aliases(mapping: Dict[str, Any], aliases: set[str]) -> List[str]:
+    matched: List[str] = []
+    for key in mapping.keys():
+        key_aliases = _node_aliases(str(key or ""))
+        if key_aliases.intersection(aliases):
+            matched.append(str(key))
+    return matched
+
+
+def _prune_stale_nodes(max_age_hours: int = 168, dry_run: bool = False) -> Dict[str, Any]:
+    hours = max(1, int(max_age_hours))
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    node_inventory = _node_ops_inventory_view()
+    stale_nodes: List[Dict[str, Any]] = []
+    stale_aliases: set[str] = set()
+
+    for node in node_inventory:
+        if not isinstance(node, dict):
+            continue
+        node_name = str(node.get("name", "")).strip()
+        last_callback = _parse_event_time(str(node.get("last_callback", "")))
+        if not node_name or last_callback is None:
+            continue
+        if last_callback >= cutoff:
+            continue
+
+        stale_aliases.update(_node_aliases(node_name.lower()))
+        stale_nodes.append(
+            {
+                "name": node_name,
+                "group": str(node.get("group", "")).strip(),
+                "address": str(node.get("address", "")).strip(),
+                "last_callback": str(node.get("last_callback", "")).strip(),
+                "address_source": str(node.get("address_source", "")).strip(),
+            }
+        )
+
+    stale_nodes.sort(key=lambda item: str(item.get("name", "")).lower())
+
+    if not stale_nodes:
+        return {
+            "ok": True,
+            "dry_run": bool(dry_run),
+            "cutoff": cutoff.isoformat(),
+            "max_age_hours": hours,
+            "stale_nodes": [],
+            "removed": {
+                "callbacks": 0,
+                "managed_nodes": 0,
+                "node_cloud_init": 0,
+                "node_configs": 0,
+                "node_inputs": 0,
+                "node_results": 0,
+                "manual_nodes": 0,
+            },
+        }
+
+    removed_counts = {
+        "callbacks": 0,
+        "managed_nodes": 0,
+        "node_cloud_init": 0,
+        "node_configs": 0,
+        "node_inputs": 0,
+        "node_results": 0,
+        "manual_nodes": 0,
+    }
+
+    # Plan callback event removals.
+    _ensure_data_file()
+    existing_lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
+    kept_lines: List[str] = []
+    for line in existing_lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            kept_lines.append(line)
+            continue
+        if _event_matches_node_aliases(event, stale_aliases):
+            removed_counts["callbacks"] += 1
+            continue
+        kept_lines.append(line)
+
+    # Plan monitor-state removals.
+    monitor_state = _load_monitor_state()
+    managed_nodes = monitor_state.get("managed_nodes", {}) if isinstance(monitor_state.get("managed_nodes"), dict) else {}
+    node_cloud_init = monitor_state.get("node_cloud_init", {}) if isinstance(monitor_state.get("node_cloud_init"), dict) else {}
+
+    # Plan provisioning-state removals.
+    node_prov = _load_node_provisioning()
+    node_configs = node_prov.get("node_configs", {}) if isinstance(node_prov.get("node_configs"), dict) else {}
+    node_inputs = node_prov.get("node_inputs", {}) if isinstance(node_prov.get("node_inputs"), dict) else {}
+    node_results = node_prov.get("results", {}) if isinstance(node_prov.get("results"), dict) else {}
+    manual_nodes = node_prov.get("manual_nodes", {}) if isinstance(node_prov.get("manual_nodes"), dict) else {}
+
+    managed_keys = _keys_matching_aliases(managed_nodes, stale_aliases)
+    cloud_init_keys = _keys_matching_aliases(node_cloud_init, stale_aliases)
+    node_config_keys = _keys_matching_aliases(node_configs, stale_aliases)
+    node_input_keys = _keys_matching_aliases(node_inputs, stale_aliases)
+    node_result_keys = _keys_matching_aliases(node_results, stale_aliases)
+    manual_node_keys = _keys_matching_aliases(manual_nodes, stale_aliases)
+
+    removed_counts["managed_nodes"] = len(managed_keys)
+    removed_counts["node_cloud_init"] = len(cloud_init_keys)
+    removed_counts["node_configs"] = len(node_config_keys)
+    removed_counts["node_inputs"] = len(node_input_keys)
+    removed_counts["node_results"] = len(node_result_keys)
+    removed_counts["manual_nodes"] = len(manual_node_keys)
+
+    if not dry_run:
+        rendered = "\n".join(kept_lines)
+        DATA_FILE.write_text((rendered + "\n") if kept_lines else "", encoding="utf-8")
+
+        for key in managed_keys:
+            managed_nodes.pop(key, None)
+        for key in cloud_init_keys:
+            node_cloud_init.pop(key, None)
+        for key in node_config_keys:
+            node_configs.pop(key, None)
+        for key in node_input_keys:
+            node_inputs.pop(key, None)
+        for key in node_result_keys:
+            node_results.pop(key, None)
+        for key in manual_node_keys:
+            manual_nodes.pop(key, None)
+
+        monitor_state["managed_nodes"] = managed_nodes
+        monitor_state["node_cloud_init"] = node_cloud_init
+        _save_monitor_state(monitor_state)
+
+        node_prov["node_configs"] = node_configs
+        node_prov["node_inputs"] = node_inputs
+        node_prov["results"] = node_results
+        node_prov["manual_nodes"] = manual_nodes
+        _save_node_provisioning(node_prov)
+
+    return {
+        "ok": True,
+        "dry_run": bool(dry_run),
+        "cutoff": cutoff.isoformat(),
+        "max_age_hours": hours,
+        "stale_nodes": stale_nodes,
+        "removed": removed_counts,
+    }
 
 
 def _backfill_event_profile(hostname: str, instance_id: str, fqdn: str, profile: str) -> int:

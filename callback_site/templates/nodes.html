@@ -725,6 +725,7 @@
           <div class="monitor-actions">
             <button id="refresh-monitor">Refresh Node Status</button>
             <button id="refresh-monitor-webhook" class="secondary">Refresh + Send Webhook</button>
+            <button id="prune-stale-nodes" class="secondary">Prune Stale Nodes</button>
           </div>
           <p id="monitor-status" class="note">No state yet. Monitoring data appears after callback or provisioning activity.</p>
           <table>
@@ -782,6 +783,7 @@
       const manualNodePasswordEl = document.getElementById("manual-node-password");
       const manualNodeShellEl = document.getElementById("manual-node-shell");
       const manualNodeCertificateEl = document.getElementById("manual-node-certificate");
+      const pruneStaleNodesBtn = document.getElementById("prune-stale-nodes");
       const profileSegmentProfileEl = document.getElementById("profile-segment-profile");
       const profileSegmentNameEl = document.getElementById("profile-segment-name");
       const profileSegmentConfigEl = document.getElementById("profile-segment-config");
@@ -1349,6 +1351,39 @@
         }
       }
 
+      async function pruneStaleNodes() {
+        const hoursRaw = window.prompt("Remove nodes with callbacks older than how many hours?", "168");
+        if (hoursRaw == null) {
+          return;
+        }
+        const hours = Number.parseInt(String(hoursRaw).trim(), 10);
+        if (!Number.isFinite(hours) || hours < 1 || hours > 8760) {
+          monitorStatus.textContent = "Stale threshold must be an integer between 1 and 8760 hours.";
+          return;
+        }
+        if (!window.confirm(`Prune stale nodes older than ${hours} hour(s)? This removes callback and saved node state for those nodes.`)) {
+          return;
+        }
+
+        monitorStatus.textContent = "Pruning stale nodes...";
+        try {
+          const res = await fetch("/api/nodes/stale/prune", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ max_age_hours: hours, dry_run: false }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || "Failed to prune stale nodes");
+          }
+          const staleNodes = Array.isArray(data.stale_nodes) ? data.stale_nodes : [];
+          monitorStatus.textContent = `Pruned ${staleNodes.length} stale node${staleNodes.length === 1 ? "" : "s"}.`;
+          await loadSummary();
+        } catch (err) {
+          monitorStatus.textContent = `Stale prune error: ${String(err.message || err)}`;
+        }
+      }
+
       async function loadSummary() {
         const res = await fetch("/api/nodes/summary");
         const data = await res.json();
@@ -1658,6 +1693,9 @@
       document.getElementById("refresh-certificates").addEventListener("click", refreshCertificates);
       document.getElementById("refresh-monitor").addEventListener("click", () => refreshMonitor(false));
       document.getElementById("refresh-monitor-webhook").addEventListener("click", () => refreshMonitor(true));
+      if (pruneStaleNodesBtn) {
+        pruneStaleNodesBtn.addEventListener("click", pruneStaleNodes);
+      }
       document.getElementById("save-node-profiles").addEventListener("click", saveNodeProfiles);
       document.getElementById("save-node-inputs").addEventListener("click", saveNodeInputs);
       document.getElementById("test-telegraf").addEventListener("click", testTelegrafInputs);

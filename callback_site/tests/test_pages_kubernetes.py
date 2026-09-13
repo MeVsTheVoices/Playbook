@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 try:
@@ -55,3 +56,9 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         payload = response.get_json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["nodes_total"], 3)
+
+    def test_kubernetes_page_refreshes_summary_without_cache(self) -> None:
+        text = (Path(__file__).resolve().parents[1] / "templates" / "kubernetes.html").read_text(encoding="utf-8")
+        self.assertIn('fetch("/api/kubernetes/summary", { cache: "no-store" })', text)
+        self.assertIn('window.addEventListener("focus", loadKubernetesSummary);', text)
+        self.assertIn('document.addEventListener("visibilitychange"', text)

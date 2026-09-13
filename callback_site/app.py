@@ -975,6 +975,29 @@ def source_of_truth_summary() -> Any:
     return jsonify({"ok": True, "state": _single_source_of_truth_summary()})
 
 
+@app.post("/api/nodes/stale/prune")
+def prune_stale_nodes() -> Any:
+    payload = request.get_json(silent=True) or {}
+    if payload and not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+
+    raw_hours = payload.get("max_age_hours", 168)
+    raw_dry_run = payload.get("dry_run", False)
+    if isinstance(raw_dry_run, str):
+        dry_run = raw_dry_run.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        dry_run = bool(raw_dry_run)
+    try:
+        max_age_hours = int(raw_hours)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "max_age_hours must be an integer"}), 400
+    if max_age_hours < 1 or max_age_hours > 24 * 365:
+        return jsonify({"ok": False, "error": "max_age_hours must be between 1 and 8760"}), 400
+
+    result = _prune_stale_nodes(max_age_hours=max_age_hours, dry_run=dry_run)
+    return jsonify(result)
+
+
 @app.post("/api/monitor/nodes")
 def monitor_node_upsert() -> Any:
     payload = request.get_json(silent=True) or {}

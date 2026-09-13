@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -280,6 +281,7 @@ class CallbackSiteTests(unittest.TestCase):
         text = response.get_data(as_text=True)
         self.assertIn('id="manual-node-selector"', text)
         self.assertIn("Add / Update Manual Node", text)
+        self.assertIn('id="prune-stale-nodes"', text)
 
     def test_node_ops_page_guides_manual_node_edit_flow(self) -> None:
         response = self.client.get("/nodes")
@@ -311,6 +313,7 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
         self.assertIn('id="monitor-node-select"', text)
+        self.assertIn('id="prune-stale-monitor"', text)
         self.assertIn('id="monitor-run-check"', text)
         self.assertIn('id="summary-run-ping"', text)
         self.assertIn('id="monitor-run-ping"', text)
@@ -319,6 +322,15 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertIn('id="sot-kpis"', text)
         self.assertIn('id="sot-body"', text)
         self.assertIn("Discovered node", text)
+
+    def test_settings_page_exposes_stale_prune_controls(self) -> None:
+        response = self.client.get("/settings")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Prune Stale Nodes", text)
+        self.assertIn('id="stale-max-age-hours"', text)
+        self.assertIn('id="preview-stale-prune"', text)
+        self.assertIn('id="run-stale-prune"', text)
 
     def test_source_of_truth_endpoint_unifies_image_monitor_and_provision_state(self) -> None:
         cache_path = TEST_DATA_DIR / "image_cache" / "pi5-latest.img.xz"
@@ -1436,6 +1448,169 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertTrue(match)
         self.assertEqual(match[0].get("address_source"), "callback")
         self.assertTrue(match[0].get("last_callback"))
+
+    def test_prune_stale_nodes_rejects_invalid_hours(self) -> None:
+        response = self.client.post(
+            "/api/nodes/stale/prune",
+            json={"max_age_hours": "abc", "dry_run": True},
+        )
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+
+    def test_prune_stale_nodes_parses_string_dry_run_false(self) -> None:
+        stale_ts = "2020-01-01T00:00:00+00:00"
+        callback_core._append_event(
+            {
+                "received_at": stale_ts,
+                "hostname": "string-dryrun-node",
+                "fqdn": "string-dryrun-node.lab.local",
+                "instance_id": "iid-string-dryrun",
+                "profile": "pi5",
+                "stage": "phone_home",
+                "source_ip": "198.51.100.77",
+                "source_ip_source": "x-forwarded-for",
+            }
+        )
+
+        execute = self.client.post(
+            "/api/nodes/stale/prune",
+            json={"max_age_hours": 24, "dry_run": "false"},
+        )
+        self.assertEqual(execute.status_code, 200)
+        payload = execute.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["dry_run"])
+        names = {row.get("name") for row in payload.get("stale_nodes", [])}
+        self.assertIn("string-dryrun-node", names)
+
+    def test_prune_stale_nodes_propagates_across_all_state(self) -> None:
+        stale_ts = "2020-01-01T00:00:00+00:00"
+        fresh_ts = datetime.now(timezone.utc).isoformat()
+
+        callback_core._append_event(
+            {
+                "received_at": stale_ts,
+                "hostname": "stale-node-01",
+                "fqdn": "stale-node-01.lab.local",
+                "instance_id": "iid-stale-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+                "source_ip": "198.51.100.11",
+                "source_ip_source": "x-forwarded-for",
+            }
+        )
+        callback_core._append_event(
+            {
+                "received_at": fresh_ts,
+                "hostname": "fresh-node-01",
+                "fqdn": "fresh-node-01.lab.local",
+                "instance_id": "iid-fresh-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+                "source_ip": "198.51.100.12",
+                "source_ip_source": "x-forwarded-for",
+            }
+        )
+
+        monitor_state = callback_core._load_monitor_state()
+        monitor_state["managed_nodes"] = {
+            "stale-node-01": {
+                "name": "stale-node-01",
+                "group": "rpi5_active",
+                "address": "198.51.100.11",
+                "notes": "stale",
+                "enabled": True,
+            },
+            "fresh-node-01": {
+                "name": "fresh-node-01",
+                "group": "rpi5_active",
+                "address": "198.51.100.12",
+                "notes": "fresh",
+                "enabled": True,
+            },
+        }
+        monitor_state["node_cloud_init"] = {
+            "stale-node-01.lab.local": ["base"],
+            "fresh-node-01": ["base"],
+        }
+        callback_core._save_monitor_state(monitor_state)
+
+        provision_state = callback_core._load_node_provisioning()
+        provision_state["node_configs"] = {
+            "stale-node-01.lab.local": ["baseline"],
+            "fresh-node-01": ["baseline"],
+        }
+        provision_state["node_inputs"] = {
+            "stale-node-01.lab.local": {"baseline": {"timezone": "UTC"}},
+            "fresh-node-01": {"baseline": {"timezone": "UTC"}},
+        }
+        provision_state["results"] = {
+            "stale-node-01.lab.local": {"checked_at": stale_ts},
+            "fresh-node-01": {"checked_at": fresh_ts},
+        }
+        provision_state["manual_nodes"] = {
+            "stale-node-01.lab.local": {
+                "name": "stale-node-01",
+                "group": "manual",
+                "address": "198.51.100.11",
+            },
+            "fresh-node-01": {"name": "fresh-node-01", "group": "manual", "address": "198.51.100.12"},
+        }
+        callback_core._save_node_provisioning(provision_state)
+
+        preview = self.client.post(
+            "/api/nodes/stale/prune",
+            json={"max_age_hours": 24, "dry_run": True},
+        )
+        self.assertEqual(preview.status_code, 200)
+        preview_payload = preview.get_json()
+        self.assertTrue(preview_payload["ok"])
+        self.assertTrue(preview_payload["dry_run"])
+        preview_names = {row.get("name") for row in preview_payload.get("stale_nodes", [])}
+        self.assertIn("stale-node-01", preview_names)
+
+        dry_run_summary = self.client.get("/api/nodes/summary").get_json()
+        dry_run_names = {row.get("name") for row in dry_run_summary.get("nodes", [])}
+        self.assertIn("stale-node-01", dry_run_names)
+
+        execute = self.client.post(
+            "/api/nodes/stale/prune",
+            json={"max_age_hours": 24, "dry_run": False},
+        )
+        self.assertEqual(execute.status_code, 200)
+        execute_payload = execute.get_json()
+        self.assertTrue(execute_payload["ok"])
+        self.assertFalse(execute_payload["dry_run"])
+        self.assertGreaterEqual(int(execute_payload.get("removed", {}).get("callbacks", 0) or 0), 1)
+        self.assertEqual(int(execute_payload.get("removed", {}).get("node_cloud_init", 0) or 0), 1)
+        self.assertEqual(int(execute_payload.get("removed", {}).get("node_configs", 0) or 0), 1)
+        self.assertEqual(int(execute_payload.get("removed", {}).get("node_inputs", 0) or 0), 1)
+        self.assertEqual(int(execute_payload.get("removed", {}).get("node_results", 0) or 0), 1)
+        self.assertEqual(int(execute_payload.get("removed", {}).get("manual_nodes", 0) or 0), 1)
+
+        nodes_summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(nodes_summary.status_code, 200)
+        nodes_payload = nodes_summary.get_json()
+        nodes_names = {row.get("name") for row in nodes_payload.get("nodes", [])}
+        self.assertNotIn("stale-node-01", nodes_names)
+        self.assertIn("fresh-node-01", nodes_names)
+
+        monitor_summary = self.client.get("/api/monitor/summary")
+        self.assertEqual(monitor_summary.status_code, 200)
+        monitor_payload = monitor_summary.get_json()
+        monitor_names = {row.get("name") for row in monitor_payload.get("nodes", [])}
+        self.assertNotIn("stale-node-01", monitor_names)
+        self.assertIn("fresh-node-01", monitor_names)
+
+        monitor_state_after = callback_core._load_monitor_state()
+        self.assertNotIn("stale-node-01.lab.local", monitor_state_after.get("node_cloud_init", {}))
+
+        provision_after = callback_core._load_node_provisioning()
+        self.assertNotIn("stale-node-01.lab.local", provision_after.get("node_configs", {}))
+        self.assertNotIn("stale-node-01.lab.local", provision_after.get("node_inputs", {}))
+        self.assertNotIn("stale-node-01.lab.local", provision_after.get("results", {}))
+        self.assertNotIn("stale-node-01.lab.local", provision_after.get("manual_nodes", {}))
 
     def test_sd_prepare_queues_cloud_init_options_metadata(self) -> None:
         with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch("app.threading.Thread") as thread_cls:

@@ -14,6 +14,11 @@
         --ink: #16202d;
         --muted: #4f6070;
         --accent: #0b8b6e;
+        --accent-2: #0284c7;
+        --accent-3: #f59e0b;
+        --ok-bg: #dcfce7;
+        --bad-bg: #fee2e2;
+        --checking-bg: #fef3c7;
         --line: #d3dbe5;
         --side: #0f172a;
         --side-ink: #cbd5e1;
@@ -26,6 +31,27 @@
           radial-gradient(circle at 89% 9%, rgba(19, 119, 176, 0.14), transparent 42%),
           linear-gradient(165deg, #deefe7, var(--bg));
         color: var(--ink);
+      }
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        width: 320px;
+        height: 320px;
+        border-radius: 999px;
+        pointer-events: none;
+        filter: blur(14px);
+        z-index: -1;
+      }
+      body::before {
+        top: -90px;
+        right: -100px;
+        background: radial-gradient(circle, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0) 70%);
+      }
+      body::after {
+        bottom: -120px;
+        left: -120px;
+        background: radial-gradient(circle, rgba(251, 191, 36, 0.2) 0%, rgba(251, 191, 36, 0) 72%);
       }
       .sidebar {
         position: fixed;
@@ -104,6 +130,15 @@
         box-shadow: 0 20px 48px rgba(14, 42, 71, 0.08);
         margin-bottom: 1rem;
         backdrop-filter: blur(8px);
+        position: relative;
+        overflow: hidden;
+      }
+      .panel::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(115deg, rgba(255, 255, 255, 0.08), rgba(11, 139, 110, 0.02) 45%, rgba(2, 132, 199, 0.06));
+        pointer-events: none;
       }
       .split {
         display: grid;
@@ -131,13 +166,19 @@
         box-sizing: border-box;
       }
       button {
-        background: var(--accent);
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
         color: white;
         border: none;
         cursor: pointer;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 9px 20px rgba(2, 132, 199, 0.24);
+        filter: saturate(1.08);
       }
       button.secondary {
-        background: #475569;
+        background: linear-gradient(135deg, #475569 0%, #334155 100%);
       }
       table {
         width: 100%;
@@ -153,6 +194,32 @@
       .bad { color: #991b1b; font-weight: 700; }
       .checking { color: #92400e; font-weight: 700; }
       .note { color: var(--muted); font-size: 0.85rem; }
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border-radius: 999px;
+        padding: 0.2rem 0.58rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+      }
+      .status-chip.ok {
+        background: var(--ok-bg);
+        color: #166534;
+        border: 1px solid #86efac;
+      }
+      .status-chip.bad {
+        background: var(--bad-bg);
+        color: #991b1b;
+        border: 1px solid #fca5a5;
+      }
+      .status-chip.checking {
+        background: var(--checking-bg);
+        color: #92400e;
+        border: 1px solid #fcd34d;
+        animation: pulse-chip 1.8s ease-in-out infinite;
+      }
       .hero-shell {
         display: flex;
         justify-content: space-between;
@@ -363,11 +430,27 @@
         color: #115e59;
         font-size: 0.78rem;
         font-weight: 700;
+        animation: badge-float 3.2s ease-in-out infinite;
       }
+      .hero-badge:nth-child(2) { animation-delay: 0.25s; }
+      .hero-badge:nth-child(3) { animation-delay: 0.45s; }
       .hero-badge.secondary {
         border-color: #e2e8f0;
         background: #f8fafc;
         color: #475569;
+      }
+      .hero-vibe {
+        margin-top: 0.65rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        border-radius: 999px;
+        padding: 0.36rem 0.74rem;
+        border: 1px solid #fed7aa;
+        background: linear-gradient(90deg, #fff7ed 0%, #ffedd5 100%);
+        color: #9a3412;
+        font-size: 0.78rem;
+        font-weight: 700;
       }
       .hero-callout {
         margin-top: 0.75rem;
@@ -381,8 +464,20 @@
       .segment-card {
         border: 1px solid var(--line);
         border-radius: 10px;
-        padding: 0.7rem;
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         background: #f8fafc;
+        position: relative;
+        overflow: hidden;
+      }
+      .stat-card::before {
+        content: "";
+        position: absolute;
+        top: -26px;
+        right: -26px;
+        width: 70px;
+        height: 70px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(2, 132, 199, 0.22) 0%, rgba(2, 132, 199, 0) 70%);
         margin-top: 0.6rem;
       }
       .segment-card h4 {
@@ -396,6 +491,9 @@
       }
       .segment-block {
         background: #fff;
+      .stat-card .emoji {
+        margin-right: 0.25rem;
+      }
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 0.6rem;
@@ -478,6 +576,16 @@
         60% { transform: scale(1.01); box-shadow: 0 6px 16px rgba(15, 118, 110, 0.16); }
         100% { transform: scale(1); box-shadow: 0 0 0 rgba(15, 118, 110, 0); }
       }
+      @keyframes badge-float {
+        0% { transform: translateY(0); }
+        50% { transform: translateY(-2px); }
+        100% { transform: translateY(0); }
+      }
+      @keyframes pulse-chip {
+        0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35); }
+        65% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+      }
       @media (max-width: 1050px) {
         .split { grid-template-columns: 1fr; }
       }
@@ -520,6 +628,9 @@
       <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span class="label">Dashboard</span></a>
       <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span class="label">Node Ops</span></a>
       <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span class="label">Monitor</span></a>
+      {% if kubernetes_available %}
+      <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" href="/kubernetes"><span class="label">Kubernetes</span></a>
+      {% endif %}
       <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span class="label">Image Library</span></a>
       <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
       <a class="{% if request.path.startswith('/openwrt') %}active{% endif %}" href="/openwrt"><span class="label">OpenWrt</span></a>
@@ -538,6 +649,7 @@
                 <span class="hero-badge secondary">🌐 IP-first targeting</span>
                 <span class="hero-badge secondary">🔐 Bootstrap SSH ready</span>
               </div>
+              <div class="hero-vibe">🎉 Node vibes: colorful, focused, and launch-ready</div>
             </div>
           </div>
           <p class="note">This stage picks up after callback registration. Choose per-node configuration sets, run closer checks, and optionally apply provisioning through Ansible.</p>
@@ -706,19 +818,19 @@
           <h2>Monitoring + Provisioning State 📈</h2>
           <div class="stats-grid">
             <div class="stat-card">
-              <div class="k">Nodes In View</div>
+              <div class="k"><span class="emoji">🧠</span>Nodes In View</div>
               <div class="v" id="stat-node-count">0</div>
             </div>
             <div class="stat-card">
-              <div class="k">Reachable</div>
+              <div class="k"><span class="emoji">🟢</span>Reachable</div>
               <div class="v" id="stat-reachable-count">0</div>
             </div>
             <div class="stat-card">
-              <div class="k">Using Callback IP</div>
+              <div class="k"><span class="emoji">📡</span>Using Callback IP</div>
               <div class="v" id="stat-callback-address-count">0</div>
             </div>
             <div class="stat-card">
-              <div class="k">Recent Callbacks</div>
+              <div class="k"><span class="emoji">🧾</span>Recent Callbacks</div>
               <div class="v" id="stat-callback-count">0</div>
             </div>
           </div>
@@ -1037,7 +1149,7 @@
               }).join("")
             : "-";
           const reachableClass = status.reachable === true ? "ok" : status.reachable === false ? "bad" : "checking";
-          const reachableLabel = status.reachable === true ? "UP" : status.reachable === false ? "DOWN" : "CHECKING";
+          const reachableLabel = status.reachable === true ? "🟢 UP" : status.reachable === false ? "🔴 DOWN" : "🟡 CHECKING";
 
           const tr = document.createElement("tr");
           const removeBtn = node.manual_node
@@ -1048,7 +1160,7 @@
             <td>${node.group}</td>
             <td class="mono">${node.address || ""}</td>
             <td>${node.address_source || "inventory"}</td>
-            <td class="${reachableClass}">${reachableLabel}</td>
+            <td><span class="status-chip ${reachableClass}">${reachableLabel}</span></td>
             <td>${status.latency_ms ?? "-"}</td>
             <td>${callbackLabel(status.last_callback || node.last_callback)}</td>
             <td>${selectedHtml}</td>

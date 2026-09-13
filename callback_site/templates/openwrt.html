@@ -220,6 +220,9 @@
       <a href="/">Home</a>
       <a href="/nodes">Nodes</a>
       <a href="/monitor">Monitor</a>
+      {% if kubernetes_available %}
+      <a href="/kubernetes">Kubernetes</a>
+      {% endif %}
       <a href="/images">Images</a>
       <a href="/tailscale-acl">Tailscale ACL</a>
       <a href="/openwrt" class="active">OpenWrt</a>

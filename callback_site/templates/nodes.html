@@ -718,9 +718,9 @@
                 <input id="manual-node-shell" placeholder="/bin/bash">
               </div>
               <div>
-                <label for="manual-node-certificate">Certificate / SSH Key</label>
-                <select id="manual-node-certificate">
-                  <option value="">None selected</option>
+                <label for="manual-node-certificate">Certificate / SSH Key (required)</label>
+                <select id="manual-node-certificate" required>
+                  <option value="">Select a certificate</option>
                 </select>
               </div>
             </div>
@@ -1397,6 +1397,7 @@
 
       async function addManualNode() {
         const selectedNode = manualNodeSelectorEl.value.trim();
+        const selectedCertificate = manualNodeCertificateEl.value.trim();
         const payload = {
           name: manualNodeNameEl.value.trim() || selectedNode,
           group: manualNodeGroupEl.value.trim() || "manual",
@@ -1404,11 +1405,16 @@
           username: manualNodeUsernameEl.value.trim(),
           password: manualNodePasswordEl.value,
           default_shell: manualNodeShellEl.value.trim(),
-          certificate: manualNodeCertificateEl.value,
+          certificate: selectedCertificate,
         };
         if (!payload.name) {
           manualNodeStatus.textContent = "Node name is required.";
           manualNodeNameEl.focus();
+          return;
+        }
+        if (!selectedCertificate) {
+          manualNodeStatus.textContent = "Select a certificate / SSH key before saving the manual node.";
+          manualNodeCertificateEl.focus();
           return;
         }
 

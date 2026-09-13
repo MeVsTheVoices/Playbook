@@ -8,7 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from test_support import APP_DIR, TEST_DATA_DIR, BaseCallbackSiteTest, callback_app, callback_core
+try:
+    from .test_support import APP_DIR, TEST_DATA_DIR, BaseCallbackSiteTest, callback_app, callback_core
+except ImportError:
+    from test_support import APP_DIR, TEST_DATA_DIR, BaseCallbackSiteTest, callback_app, callback_core
 
 
 class CallbackSiteTests(BaseCallbackSiteTest):
@@ -109,8 +112,25 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("Reset Optional Fields", text)
         self.assertIn("User Password (optional)", text)
         self.assertIn("Disable direct root SSH login", text)
+        self.assertIn("User-facing k3s template", text)
         self.assertIn("fields set", text)
         self.assertNotIn("This operation erases the target device", text)
+
+    def test_home_page_collapses_cloud_init_optional_settings_by_default(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('<details class="fieldset" id="cloud-init-optional-settings">', text)
+        self.assertIn("Saved templates, k3s config, identity, network, and bootstrap toggles", text)
+        self.assertNotIn('<details class="fieldset" open id="cloud-init-optional-settings">', text)
+
+    def test_home_page_places_activity_dock_before_sd_form(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        dock_index = text.index("Operator Activity Dock 🐣✨")
+        form_index = text.index("SD Card Imager 🧰")
+        self.assertLess(dock_index, form_index)
 
     def test_home_page_embeds_cached_catalog_metadata(self) -> None:
         entry = next(item for item in callback_app.IMAGE_CATALOG if str(item.get("image_url", "")).strip())
@@ -1096,6 +1116,24 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         delete = self.client.delete("/api/nodes/manual-nodes/manual-node-01")
         self.assertEqual(delete.status_code, 200)
         self.assertTrue(delete.get_json()["ok"])
+
+    def test_manual_node_requires_certificate(self) -> None:
+        create = self.client.post(
+            "/api/nodes/manual-nodes",
+            json={
+                "name": "manual-node-no-cert",
+                "group": "manual",
+                "address": "192.168.174.239",
+                "username": "jdizzle",
+                "password": "not-empty",
+                "default_shell": "/bin/bash",
+                "certificate": "",
+            },
+        )
+        self.assertEqual(create.status_code, 400)
+        payload = create.get_json()
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"], "certificate is required")
 
     def test_manual_node_password_persists_to_provisioning_state(self) -> None:
         response = self.client.post(

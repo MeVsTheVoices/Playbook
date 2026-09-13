@@ -231,6 +231,14 @@ def _read_node_report(report_id: str) -> Dict[str, Any] | None:
 app = Flask(__name__)
 
 
+@app.context_processor
+def inject_runtime_flags() -> Dict[str, Any]:
+    kube_state = _detect_kubernetes_runtime(force_refresh=False)
+    return {
+        "kubernetes_available": bool(kube_state.get("available", False)),
+    }
+
+
 def _catalog_entries_for_ui() -> List[Dict[str, Any]]:
     available_urls = _available_image_urls_from_history(limit=5000)
     return [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
@@ -259,11 +267,15 @@ def sd_options_profiles_save() -> Any:
 
     options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
     description = str(payload.get("description", "")).strip()
+    distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
+    if distribution not in {"standard", "k3s"}:
+        distribution = "standard"
 
     profiles = _load_sd_option_profiles()
     profiles[name] = {
         "name": name,
         "description": description,
+        "distribution": distribution,
         "options": options,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -973,6 +985,11 @@ def monitor_summary() -> Any:
 @app.get("/api/state/source-of-truth")
 def source_of_truth_summary() -> Any:
     return jsonify({"ok": True, "state": _single_source_of_truth_summary()})
+
+
+@app.get("/api/kubernetes/summary")
+def kubernetes_summary() -> Any:
+    return jsonify(_kubernetes_local_summary())
 
 
 @app.post("/api/nodes/stale/prune")

@@ -51,6 +51,18 @@ DEVICE_SUBSCRIBERS: List[queue.Queue[str]] = []
 DEVICE_SUBSCRIBERS_LOCK = threading.Lock()
 DEVICE_MONITOR_STARTED = False
 DEVICE_MONITOR_LOCK = threading.Lock()
+DEFAULT_K3S_CONFIG = "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n"
+KUBERNETES_STATUS_LOCK = threading.Lock()
+KUBERNETES_STATUS_CACHE: Dict[str, Any] = {
+    "checked_at": 0.0,
+    "state": {
+        "available": False,
+        "active_service": "",
+        "k3s_binary": "",
+        "has_kubeconfig": False,
+        "reason": "not checked",
+    },
+}
 from domain_defaults import IMAGE_CATALOG, IMAGE_CATALOG_FILE, NODE_PROVISION_PROFILES, TAILSCALE_POLICY_DEFAULTS
 
 
@@ -429,9 +441,13 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
         if not profile_name or not isinstance(profile, dict):
             continue
         options = profile.get("options") if isinstance(profile.get("options"), dict) else {}
+        distribution = str(profile.get("distribution", "standard")).strip().lower() or "standard"
+        if distribution not in {"standard", "k3s"}:
+            distribution = "standard"
         out[profile_name] = {
             "name": profile_name,
             "description": str(profile.get("description", "")).strip(),
+            "distribution": distribution,
             "options": options,
             "updated_at": str(profile.get("updated_at", "")).strip(),
         }
@@ -2163,6 +2179,8 @@ def _run_node_profile(
     profile_inputs: Dict[str, str],
     node_group: str | None = None,
     node_address: str | None = None,
+    node_username: str | None = None,
+    node_certificate: str | None = None,
 ) -> Dict[str, Any]:
     checked_at = datetime.now(timezone.utc).isoformat()
     profile_id = str(profile.get("id", ""))
@@ -2194,6 +2212,13 @@ def _run_node_profile(
         if venv_ansible.exists() and venv_ansible.is_file():
             ansible_cmd = str(venv_ansible)
 
+    node_config = _load_node_config()
+    ssh_user = str(node_username or "").strip() or str(node_config.get("username", "") or "").strip() or "jdizzle"
+    cert_name = str(node_certificate or "").strip()
+    ssh_key_path = str(KEYS_DIR / "rack-bootstrap-ed25519")
+    if cert_name and _is_safe_key_name(cert_name):
+        ssh_key_path = str(KEYS_DIR / cert_name)
+
     inventory_path = str(INVENTORY_FILE)
     limit_target = node_name
     temporary_inventory_path = None
@@ -2207,8 +2232,8 @@ def _run_node_profile(
         temp_inventory.write("      hosts:\n")
         temp_inventory.write(f"        {node_name}:\n")
         temp_inventory.write(f"          ansible_host: {host_target}\n")
-        temp_inventory.write("          ansible_user: jdizzle\n")
-        temp_inventory.write(f"          ansible_ssh_private_key_file: {KEYS_DIR / 'rack-bootstrap-ed25519'}\n")
+        temp_inventory.write(f"          ansible_user: {ssh_user}\n")
+        temp_inventory.write(f"          ansible_ssh_private_key_file: {ssh_key_path}\n")
         temp_inventory.write("          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=publickey'\n")
         temp_inventory.write("          ansible_connection: ssh\n")
         temp_inventory.write("          ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
@@ -2340,6 +2365,17 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
             "output": "Cannot trigger hardware-check callback because node address is empty.",
         }
 
+    node_entry = next(
+        (item for item in _node_ops_inventory_view() if isinstance(item, dict) and str(item.get("name", "")).strip() == node_name),
+        {},
+    )
+    node_config = _load_node_config()
+    ssh_user = str(node_entry.get("node_username", "") or "").strip() or str(node_config.get("username", "") or "").strip() or "jdizzle"
+    cert_name = str(node_entry.get("certificate", "") or "").strip()
+    ssh_key_path = str(KEYS_DIR / "rack-bootstrap-ed25519")
+    if cert_name and _is_safe_key_name(cert_name):
+        ssh_key_path = str(KEYS_DIR / cert_name)
+
     ansible_cmd = shutil.which("ansible")
     if not ansible_cmd:
         venv_ansible = BASE_DIR.parent / ".venv" / "bin" / "ansible"
@@ -2353,8 +2389,8 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
     temp_inventory.write("      hosts:\n")
     temp_inventory.write(f"        {node_name}:\n")
     temp_inventory.write(f"          ansible_host: {host_target}\n")
-    temp_inventory.write("          ansible_user: jdizzle\n")
-    temp_inventory.write(f"          ansible_ssh_private_key_file: {KEYS_DIR / 'rack-bootstrap-ed25519'}\n")
+    temp_inventory.write(f"          ansible_user: {ssh_user}\n")
+    temp_inventory.write(f"          ansible_ssh_private_key_file: {ssh_key_path}\n")
     temp_inventory.write("          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=publickey'\n")
     temp_inventory.write("          ansible_connection: ssh\n")
     temp_inventory.write("          ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
@@ -2439,6 +2475,8 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
     node_entry = node_view.get(node_name, {})
     node_group = str(node_entry.get("group", "") or "").strip()
     node_address = str(node_entry.get("address", "") or "").strip()
+    node_username = str(node_entry.get("node_username", "") or "").strip()
+    node_certificate = str(node_entry.get("certificate", "") or "").strip()
     node_results: Dict[str, Any] = {}
     for pid in valid_profile_ids:
         profile_inputs = inputs_by_profile.get(pid, {})
@@ -2450,6 +2488,8 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
             profile_inputs=profile_inputs,
             node_group=node_group or None,
             node_address=node_address or None,
+            node_username=node_username or None,
+            node_certificate=node_certificate or None,
         )
         node_results[pid] = result
 
@@ -3294,7 +3334,203 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(cleaned.get("cloud_init_options"), dict):
         cleaned["cloud_init_options"] = {}
     cleaned["sd_options_profile"] = str(cleaned.get("sd_options_profile", "")).strip()
+    cloud_options = cleaned["cloud_init_options"]
+    distribution = str(cleaned.get("distribution", "standard")).strip().lower() or "standard"
+    k3s_config = str(cloud_options.get("k3s_config", "") or "").strip()
+    if distribution != "k3s" and k3s_config:
+        # If the UI sent an explicit k3s config block, treat this as k3s intent
+        # even if the distribution select was left on standard.
+        distribution = "k3s"
+    cleaned["distribution"] = distribution
+    if distribution == "k3s" and not k3s_config:
+        cloud_options["k3s_config"] = DEFAULT_K3S_CONFIG.strip()
     return cleaned
+
+
+def _service_is_active(service_name: str) -> bool:
+    try:
+        proc = subprocess.run(
+            ["systemctl", "is-active", service_name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+    except Exception:
+        return False
+    return proc.returncode == 0 and str(proc.stdout or "").strip() == "active"
+
+
+def _detect_kubernetes_runtime(force_refresh: bool = False) -> Dict[str, Any]:
+    now = time.time()
+    with KUBERNETES_STATUS_LOCK:
+        cached_at = float(KUBERNETES_STATUS_CACHE.get("checked_at", 0.0) or 0.0)
+        if not force_refresh and now - cached_at < 8.0:
+            cached = KUBERNETES_STATUS_CACHE.get("state", {})
+            return dict(cached) if isinstance(cached, dict) else {
+                "available": False,
+                "active_service": "",
+                "k3s_binary": "",
+                "has_kubeconfig": False,
+                "reason": "invalid cache",
+            }
+
+    k3s_binary = shutil.which("k3s") or ""
+    if not k3s_binary:
+        candidate = Path("/usr/local/bin/k3s")
+        if candidate.exists() and candidate.is_file():
+            k3s_binary = str(candidate)
+
+    has_kubeconfig = Path("/etc/rancher/k3s/k3s.yaml").exists()
+    active_service = ""
+    if _service_is_active("k3s"):
+        active_service = "k3s"
+    elif _service_is_active("k3s-agent"):
+        active_service = "k3s-agent"
+
+    reason = ""
+    if active_service:
+        reason = f"{active_service} service is active"
+    elif k3s_binary:
+        reason = "k3s binary found but service is inactive"
+    else:
+        reason = "k3s service and binary not found"
+
+    state = {
+        "available": bool(active_service),
+        "active_service": active_service,
+        "k3s_binary": k3s_binary,
+        "has_kubeconfig": bool(has_kubeconfig),
+        "reason": reason,
+    }
+
+    with KUBERNETES_STATUS_LOCK:
+        KUBERNETES_STATUS_CACHE["checked_at"] = now
+        KUBERNETES_STATUS_CACHE["state"] = state
+
+    return dict(state)
+
+
+def _run_kubectl_json(args: List[str]) -> tuple[Any | None, str]:
+    runtime = _detect_kubernetes_runtime(force_refresh=False)
+    k3s_binary = str(runtime.get("k3s_binary", "") or "")
+    kubeconfig = "/etc/rancher/k3s/k3s.yaml"
+    attempts: List[List[str]] = []
+
+    if k3s_binary:
+        attempts.append([k3s_binary, "kubectl", *args, "-o", "json"])
+    kubectl_binary = shutil.which("kubectl") or ""
+    if kubectl_binary:
+        attempts.append([kubectl_binary, "--kubeconfig", kubeconfig, *args, "-o", "json"])
+    if os.geteuid() != 0 and k3s_binary:
+        attempts.append(["sudo", "-n", k3s_binary, "kubectl", *args, "-o", "json"])
+
+    if not attempts:
+        return None, "No kubectl command available"
+
+    errors: List[str] = []
+    for cmd in attempts:
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=8,
+            )
+        except Exception as exc:
+            errors.append(f"{' '.join(cmd[:2])}: {exc}")
+            continue
+
+        if proc.returncode != 0:
+            stderr = str(proc.stderr or proc.stdout or "").strip()
+            errors.append(stderr or f"command failed ({proc.returncode})")
+            continue
+
+        try:
+            return json.loads(proc.stdout or "{}"), ""
+        except json.JSONDecodeError:
+            errors.append("kubectl returned non-JSON output")
+
+    return None, " | ".join(e for e in errors if e)[:1000] or "kubectl command failed"
+
+
+def _kubernetes_local_summary() -> Dict[str, Any]:
+    runtime = _detect_kubernetes_runtime(force_refresh=False)
+    summary: Dict[str, Any] = {
+        "ok": True,
+        "available": bool(runtime.get("available", False)),
+        "runtime": runtime,
+        "nodes_total": 0,
+        "nodes_ready": 0,
+        "control_plane_nodes": 0,
+        "pods_total": 0,
+        "pods_running": 0,
+        "namespaces_total": 0,
+        "last_error": "",
+    }
+
+    if not summary["available"]:
+        return summary
+
+    nodes_doc, nodes_err = _run_kubectl_json(["get", "nodes"])
+    pods_doc, pods_err = _run_kubectl_json(["get", "pods", "-A"])
+    ns_doc, ns_err = _run_kubectl_json(["get", "namespaces"])
+
+    if nodes_doc is None:
+        summary["last_error"] = nodes_err
+        return summary
+
+    node_items = nodes_doc.get("items", []) if isinstance(nodes_doc, dict) else []
+    if not isinstance(node_items, list):
+        node_items = []
+    summary["nodes_total"] = len(node_items)
+
+    nodes_ready = 0
+    control_plane_nodes = 0
+    for item in node_items:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
+        labels = metadata.get("labels", {}) if isinstance(metadata.get("labels"), dict) else {}
+        if "node-role.kubernetes.io/control-plane" in labels or str(labels.get("role", "")) == "control-plane":
+            control_plane_nodes += 1
+
+        status = item.get("status", {}) if isinstance(item.get("status"), dict) else {}
+        conditions = status.get("conditions", []) if isinstance(status.get("conditions"), list) else []
+        is_ready = any(
+            isinstance(cond, dict)
+            and str(cond.get("type", "")) == "Ready"
+            and str(cond.get("status", "")) == "True"
+            for cond in conditions
+        )
+        if is_ready:
+            nodes_ready += 1
+
+    summary["nodes_ready"] = nodes_ready
+    summary["control_plane_nodes"] = control_plane_nodes
+
+    if isinstance(pods_doc, dict):
+        pod_items = pods_doc.get("items", []) if isinstance(pods_doc.get("items"), list) else []
+        summary["pods_total"] = len(pod_items)
+        summary["pods_running"] = len(
+            [
+                pod
+                for pod in pod_items
+                if isinstance(pod, dict)
+                and isinstance(pod.get("status"), dict)
+                and str(pod.get("status", {}).get("phase", "")) == "Running"
+            ]
+        )
+
+    if isinstance(ns_doc, dict):
+        ns_items = ns_doc.get("items", []) if isinstance(ns_doc.get("items"), list) else []
+        summary["namespaces_total"] = len(ns_items)
+
+    if not summary["last_error"] and (pods_err or ns_err):
+        summary["last_error"] = pods_err or ns_err
+
+    return summary
 
 
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
@@ -3379,7 +3615,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             if distribution == "k3s":
                 k3s_config = str(cloud_init_options.get("k3s_config", "") or "").strip()
                 if not k3s_config:
-                    k3s_config = "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n"
+                    k3s_config = DEFAULT_K3S_CONFIG.strip()
                 env["CLOUD_INIT_K3S_CONFIG"] = k3s_config
                 enabled_options.append("k3s_config")
             if cloud_init_options.get("enable_hardware_checks"):

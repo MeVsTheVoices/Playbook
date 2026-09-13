@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kubernetes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
+    <style>
+      .kube-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.7rem;
+      }
+      .kube-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        padding: 0.75rem;
+      }
+      .kube-card .k {
+        color: var(--muted);
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .kube-card .v {
+        margin-top: 0.28rem;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .kube-status {
+        margin-top: 0.8rem;
+        white-space: pre-wrap;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-title">Callback Site</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops</div>
+      </div>
+      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
+      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span class="label">Dashboard</span></a>
+      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span class="label">Node Ops</span></a>
+      <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span class="label">Monitor</span></a>
+      {% if kubernetes_available %}
+      <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" href="/kubernetes"><span class="label">Kubernetes</span></a>
+      {% endif %}
+      <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span class="label">Image Library</span></a>
+      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path.startswith('/openwrt') %}active{% endif %}" href="/openwrt"><span class="label">OpenWrt</span></a>
+      <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span class="label">Terminal</span></a>
+      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span class="label">Settings</span></a>
+    </aside>
+
+    <main class="content">
+      <div class="wrap">
+        <div class="panel">
+          <h1>Kubernetes (Local)</h1>
+          <p class="note">Detected local runtime and basic cluster health counters. Configuration controls can be added here next.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Cluster Snapshot</h2>
+          <div class="kube-grid">
+            <div class="kube-card">
+              <div class="k">Nodes Total</div>
+              <div class="v" id="kube-nodes-total">0</div>
+            </div>
+            <div class="kube-card">
+              <div class="k">Nodes Ready</div>
+              <div class="v" id="kube-nodes-ready">0</div>
+            </div>
+            <div class="kube-card">
+              <div class="k">Control-plane Nodes</div>
+              <div class="v" id="kube-control-plane">0</div>
+            </div>
+            <div class="kube-card">
+              <div class="k">Pods Running / Total</div>
+              <div class="v" id="kube-pods">0 / 0</div>
+            </div>
+            <div class="kube-card">
+              <div class="k">Namespaces</div>
+              <div class="v" id="kube-namespaces">0</div>
+            </div>
+          </div>
+          <div id="kube-status" class="status kube-status">Loading Kubernetes status...</div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const body = document.body;
+      const toggleBtn = document.getElementById("sidebar-toggle");
+      const nodesTotalEl = document.getElementById("kube-nodes-total");
+      const nodesReadyEl = document.getElementById("kube-nodes-ready");
+      const controlPlaneEl = document.getElementById("kube-control-plane");
+      const podsEl = document.getElementById("kube-pods");
+      const namespacesEl = document.getElementById("kube-namespaces");
+      const statusEl = document.getElementById("kube-status");
+
+      function initSidebar() {
+        const saved = localStorage.getItem("sidebar-collapsed");
+        if (saved === "1") body.classList.add("sidebar-collapsed");
+      }
+
+      toggleBtn.addEventListener("click", () => {
+        body.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
+      });
+
+      async function loadKubernetesSummary() {
+        statusEl.textContent = "Refreshing Kubernetes status...";
+        try {
+          const res = await fetch("/api/kubernetes/summary");
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            statusEl.textContent = data.error || "Failed to load Kubernetes summary.";
+            return;
+          }
+
+          nodesTotalEl.textContent = String(data.nodes_total || 0);
+          nodesReadyEl.textContent = String(data.nodes_ready || 0);
+          controlPlaneEl.textContent = String(data.control_plane_nodes || 0);
+          podsEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
+          namespacesEl.textContent = String(data.namespaces_total || 0);
+
+          const runtime = data.runtime && typeof data.runtime === "object" ? data.runtime : {};
+          const activeService = String(runtime.active_service || "none");
+          const reason = String(runtime.reason || "");
+          const hasKubeconfig = runtime.has_kubeconfig === true ? "yes" : "no";
+
+          if (!data.available) {
+            statusEl.textContent = `Kubernetes runtime is not currently active.\nReason: ${reason}`;
+            return;
+          }
+
+          let statusText = `Runtime service: ${activeService}\nKubeconfig present: ${hasKubeconfig}`;
+          if (data.last_error) {
+            statusText += `\nWarning: ${data.last_error}`;
+          }
+          statusEl.textContent = statusText;
+        } catch (err) {
+          statusEl.textContent = `Kubernetes summary error: ${String(err && err.message ? err.message : err)}`;
+        }
+      }
+
+      initSidebar();
+      loadKubernetesSummary();
+      setInterval(loadKubernetesSummary, 20000);
+    </script>
+  </body>
+</html>

@@ -62,11 +62,11 @@ Then open:
 - Additional SSH hardening options are supported through cloud-init options, including `ssh_port`, `ssh_allow_groups`, and extra authorized keys.
 - `distribution` is supported with `standard` and `k3s` values.
 - Stale node cleanup is supported through a threshold-based prune operation that removes old callback-discovered nodes across callback history, monitor state, and Node Ops saved state.
-- When `distribution` is `k3s`, the UI opens a K3s config section and populates a default config block using a pragma header:
+- When `distribution` is `k3s`, the UI opens a K3s config section and populates a default config block using a pragma header. The default points at the local machine running the portal so newly flashed nodes join that cluster by default:
 
 ```yaml
 # pragma: k3s-config-v1
-server: https://control-plane.example:6443
+server: https://<local-machine-ip>:6443
 ```
 
 This config is carried forward in the cloud-init payload and later used by the post-boot K3s bootstrap path.

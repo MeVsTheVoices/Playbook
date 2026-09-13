@@ -230,6 +230,16 @@
         color: var(--muted);
         text-align: right;
       }
+      .fieldset-disclosure {
+        display: inline-block;
+        margin-left: 0.25rem;
+        font-size: 0.95rem;
+        color: #0f766e;
+        transition: transform 0.18s ease;
+      }
+      .fieldset[open] > summary .fieldset-disclosure {
+        transform: rotate(180deg);
+      }
       .segment-list {
         display: grid;
         gap: 0.7rem;
@@ -301,6 +311,7 @@
       #opt_k3s_config {
         resize: vertical;
         max-width: 100%;
+        min-height: 180px;
       }
       button {
         background: var(--accent);
@@ -1142,7 +1153,7 @@
 
           <details class="fieldset" id="cloud-init-optional-settings">
             <summary>
-              <span class="fieldset-title">Cloud-Init Optional Settings</span>
+              <span class="fieldset-title">Cloud-Init Optional Settings <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
               <span class="fieldset-summary-note">Saved templates, k3s config, identity, network, and bootstrap toggles</span>
             </summary>
             <div class="form-grid">
@@ -1177,11 +1188,12 @@
                 <div class="form-grid">
                   <div class="grid-span-full">
                     <label for="opt_k3s_config">K3s config (required for k3s distribution)</label>
-                    <textarea id="opt_k3s_config" data-option-key="k3s_config" placeholder="# User-facing k3s template
-# Update this to your real control-plane endpoint.
+                    <textarea id="opt_k3s_config" data-option-key="k3s_config" rows="8" placeholder="# User-facing k3s template
+# Update this if you need a non-default control-plane target.
 # pragma: k3s-config-v1
-server: https://control-plane.example:6443
+server: https://local-machine-ip:6443
 "></textarea>
+                    <p class="segment-hint">Most users only need the server endpoint here; it tells K3s where the control-plane API lives.</p>
                   </div>
                 </div>
               </details>
@@ -2914,7 +2926,7 @@ server: https://control-plane.example:6443
         });
       }
 
-      const DEFAULT_K3S_CONFIG = "# User-facing k3s template\n# Update this to your real control-plane endpoint.\n# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n";
+      const DEFAULT_K3S_CONFIG = {{ k3s_config_default|tojson }};
 
       function ensureK3sConfigDefaults() {
         const textarea = document.getElementById("opt_k3s_config");

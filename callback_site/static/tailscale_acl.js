@@ -1,5 +1,6 @@
 const body = document.body;
 const toggleBtn = document.getElementById("sidebar-toggle");
+const ACL_DRAFT_STORAGE_KEY = "tailscale-acl-last-used-v1";
 
 function initSidebar() {
   const saved = localStorage.getItem("sidebar-collapsed");
@@ -20,6 +21,86 @@ function parseSubnets(text) {
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function readAclDraft() {
+  try {
+    const raw = localStorage.getItem(ACL_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveAclDraft() {
+  const rackNameEl = document.getElementById("rack_name");
+  const tailnetEl = document.getElementById("tailnet");
+  const adminEl = document.getElementById("admin_group");
+  const rpi5El = document.getElementById("rpi5_tag");
+  const bplusEl = document.getElementById("rpi_bplus_tag");
+  const homelabEl = document.getElementById("homelab_tag");
+  const subnetEl = document.getElementById("pi5_subnets");
+
+  if (!rackNameEl || !tailnetEl || !adminEl || !rpi5El || !bplusEl || !homelabEl || !subnetEl) {
+    return;
+  }
+
+  const draft = {
+    rack_name: rackNameEl.value,
+    tailnet: tailnetEl.value,
+    admin_group: adminEl.value,
+    rpi5_tag: rpi5El.value,
+    rpi_bplus_tag: bplusEl.value,
+    homelab_tag: homelabEl.value,
+    pi5_subnets: subnetEl.value,
+  };
+
+  try {
+    localStorage.setItem(ACL_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  } catch (_) {
+    // Ignore storage quota or privacy mode failures.
+  }
+}
+
+function applyAclDraft(draft) {
+  if (!draft || typeof draft !== "object") {
+    return false;
+  }
+
+  const fields = [
+    ["rack_name", document.getElementById("rack_name")],
+    ["tailnet", document.getElementById("tailnet")],
+    ["admin_group", document.getElementById("admin_group")],
+    ["rpi5_tag", document.getElementById("rpi5_tag")],
+    ["rpi_bplus_tag", document.getElementById("rpi_bplus_tag")],
+    ["homelab_tag", document.getElementById("homelab_tag")],
+    ["pi5_subnets", document.getElementById("pi5_subnets")],
+  ];
+
+  let applied = false;
+  for (const [key, element] of fields) {
+    if (!element || draft[key] === undefined || draft[key] === null) continue;
+    element.value = String(draft[key]);
+    applied = true;
+  }
+  return applied;
+}
+
+function restoreAclDraft() {
+  const status = document.getElementById("acl-draft-status");
+  const draft = readAclDraft();
+  if (applyAclDraft(draft)) {
+    if (status) {
+      status.textContent = "Restored your last-used Tailscale ACL configuration.";
+    }
+    return true;
+  }
+  if (status) {
+    status.textContent = "Using the default ACL suggestions until you generate a new draft.";
+  }
+  return false;
 }
 
 function generatePolicy() {
@@ -91,6 +172,8 @@ function generatePolicy() {
     const stamp = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     status.textContent = `Updated ${stamp} - ${subnets.length} route${subnets.length === 1 ? "" : "s"}`;
   }
+
+  saveAclDraft();
 
   syncOverview({
     rack: rackNameEl.value.trim() || "Not set",
@@ -211,6 +294,7 @@ function bindAclInputEvents() {
     inputsSection.dataset.bound = "1";
   }
 
+  restoreAclDraft();
   generatePolicy();
 }
 

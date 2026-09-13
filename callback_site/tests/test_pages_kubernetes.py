@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from test_support import BaseCallbackSiteTest, callback_app
+try:
+    from .test_support import BaseCallbackSiteTest, callback_app
+except ImportError:
+    from test_support import BaseCallbackSiteTest, callback_app
 
 
 class KubernetesPageTests(BaseCallbackSiteTest):

@@ -3,7 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from test_support import BaseCallbackSiteTest, callback_core
+try:
+    from .test_support import BaseCallbackSiteTest, callback_core
+except ImportError:
+    from test_support import BaseCallbackSiteTest, callback_core
 
 
 class OpenWrtProbeTests(BaseCallbackSiteTest):

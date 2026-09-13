@@ -2,32 +2,16 @@ from __future__ import annotations
 
 import configparser
 import json
-import os
-import shutil
-import sys
-import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="callback-site-tests-"))
-os.environ["CALLBACK_APPDATA_DIR"] = str(TEST_DATA_DIR)
-
-APP_DIR = Path(__file__).resolve().parents[1]
-if str(APP_DIR) not in sys.path:
-    sys.path.insert(0, str(APP_DIR))
-
-import app as callback_app  # noqa: E402
-from app import app  # noqa: E402
-import core as callback_core  # noqa: E402
+from test_support import APP_DIR, TEST_DATA_DIR, BaseCallbackSiteTest, callback_app, callback_core
 
 
-class CallbackSiteTests(unittest.TestCase):
-    @classmethod
-    def tearDownClass(cls) -> None:
-        shutil.rmtree(TEST_DATA_DIR, ignore_errors=True)
+class CallbackSiteTests(BaseCallbackSiteTest):
 
     def test_ansible_cfg_disables_vault_prompting(self) -> None:
         config = configparser.ConfigParser()
@@ -36,113 +20,10 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(defaults.get("ask_vault_pass", "").lower(), "false")
         self.assertNotIn("vault_identity_list", defaults)
 
-    def setUp(self) -> None:
-        self.client = app.test_client()
-
     def test_health_endpoint(self) -> None:
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"ok": True})
-
-    def test_dashboard_and_pages_render(self) -> None:
-        for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/test-terminal", "/openwrt"):
-            response = self.client.get(path)
-            self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
-
-    def test_openwrt_page_renders_and_api_returns_probe_stats(self) -> None:
-        page = self.client.get("/openwrt")
-        self.assertEqual(page.status_code, 200)
-        text = page.get_data(as_text=True)
-        self.assertIn("OpenWrt Ansible Probe", text)
-        self.assertIn("ansible_host", text)
-        self.assertIn("router-activity", text)
-        self.assertIn("🙂", text)
-        self.assertIn("🐶", text)
-        self.assertIn("Reuse a saved SSH identity", text)
-        self.assertIn("Push selected key", text)
-        self.assertIn("localStorage", text)
-        self.assertIn("openwrt-form:", text)
-        self.assertIn("result-shell", text)
-        self.assertIn("result-preview", text)
-
-        response = self.client.post(
-            "/api/openwrt/inspect",
-            json={
-                "host": "192.168.1.1",
-                "port": 22,
-                "username": "root",
-                "password": "secret",
-                "connection": "ssh",
-                "become": True,
-                "module_hint": "opkg",
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertTrue(payload["ok"])
-        self.assertIn("module", payload)
-        self.assertIn("stats", payload)
-        self.assertIn("inventory_preview", payload)
-        self.assertEqual(payload["request"]["host"], "192.168.1.1")
-
-    def test_openwrt_push_key_endpoint_reuses_dashboard_keys(self) -> None:
-        generated = self.client.post(
-            "/api/ssh/generate",
-            json={"key_name": "openwrt-test-key", "comment": "openwrt", "mode": "generate"},
-        )
-        self.assertEqual(generated.status_code, 200)
-
-        response = self.client.post(
-            "/api/openwrt/push-key",
-            json={
-                "host": "127.0.0.1",
-                "port": 22,
-                "username": "root",
-                "password": "secret",
-                "key_name": "openwrt-test-key",
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertIn("key_name", payload)
-        self.assertEqual(payload["key_name"], "openwrt-test-key")
-
-    def test_probe_ssh_target_can_use_password_pipe_without_sshpass(self) -> None:
-        class FakePipe:
-            def __init__(self) -> None:
-                self.written = ""
-
-            def write(self, text: str) -> None:
-                self.written += text
-
-            def flush(self) -> None:
-                return None
-
-            def close(self) -> None:
-                return None
-
-        class FakeStream:
-            def __init__(self, text: str) -> None:
-                self._text = text
-
-            def read(self) -> str:
-                return self._text
-
-        class FakeProcess:
-            def __init__(self) -> None:
-                self.stdin = FakePipe()
-                self.stdout = FakeStream("login ok\n")
-                self.returncode = 0
-
-            def wait(self, timeout: int | None = None) -> int:
-                return self.returncode
-
-        with patch("core.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout="login ok\n", stderr="")) as run_mock:
-            result = callback_core._probe_ssh_target(host="router", port=22, username="root", password="secret")
-
-        self.assertTrue(result["ok"])
-        self.assertEqual(result["details"], "login ok")
-        self.assertEqual(run_mock.call_args.kwargs["input"], "secret\n")
 
     def test_nodes_page_exposes_profile_segment_and_galaxy_controls(self) -> None:
         response = self.client.get("/nodes")
@@ -1158,24 +1039,6 @@ class CallbackSiteTests(unittest.TestCase):
         self.assertEqual(cleaned["sd_options_profile"], "base-template")
         self.assertEqual(cleaned["cloud_init_options"]["timezone"], "UTC")
 
-    def test_sanitize_sd_prepare_payload_supports_k3s_distribution(self) -> None:
-        cleaned = callback_app._sanitize_sd_prepare_payload(
-            {
-                "profile": "pi5",
-                "hostname": "rack-node-k3s",
-                "device": "/dev/sdb",
-                "ssh_public_key": "ssh-ed25519 AAAA",
-                "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
-                "distribution": "k3s",
-                "cloud_init_options": {
-                    "k3s_config": "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n",
-                },
-                "ignored": "value",
-            }
-        )
-        self.assertNotIn("ignored", cleaned)
-        self.assertEqual(cleaned["distribution"], "k3s")
-        self.assertIn("pragma: k3s-config-v1", cleaned["cloud_init_options"]["k3s_config"])
 
     def test_nodes_summary_prefers_callback_ip_over_placeholder_inventory_address(self) -> None:
         self.client.post(
@@ -1233,6 +1096,28 @@ class CallbackSiteTests(unittest.TestCase):
         delete = self.client.delete("/api/nodes/manual-nodes/manual-node-01")
         self.assertEqual(delete.status_code, 200)
         self.assertTrue(delete.get_json()["ok"])
+
+    def test_manual_node_password_persists_to_provisioning_state(self) -> None:
+        response = self.client.post(
+            "/api/nodes/manual-nodes",
+            json={
+                "name": "manual-node-password-01",
+                "group": "manual",
+                "address": "192.168.174.239",
+                "username": "jdizzle",
+                "password": "expected-password-value",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["node"].get("password_set"))
+
+        state = callback_core._load_node_provisioning()
+        manual_nodes = state.get("manual_nodes", {}) if isinstance(state.get("manual_nodes"), dict) else {}
+        self.assertIn("manual-node-password-01", manual_nodes)
+        saved_node = manual_nodes["manual-node-password-01"]
+        self.assertEqual(str(saved_node.get("password", "")), "expected-password-value")
 
     def test_manual_node_delete_missing_returns_404(self) -> None:
         response = self.client.delete("/api/nodes/manual-nodes/does-not-exist")

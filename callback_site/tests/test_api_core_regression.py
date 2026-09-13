@@ -114,7 +114,16 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("Disable direct root SSH login", text)
         self.assertIn("User-facing k3s template", text)
         self.assertIn("fields set", text)
+        self.assertIn("fieldset-disclosure", text)
+        self.assertIn("▾", text)
         self.assertNotIn("This operation erases the target device", text)
+
+    def test_home_page_explains_required_k3s_fields(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Most users only need the server endpoint here; it tells K3s where the control-plane API lives.", text)
+        self.assertIn("server: https://local-machine-ip:6443", text)
 
     def test_home_page_collapses_cloud_init_optional_settings_by_default(self) -> None:
         response = self.client.get("/")
@@ -1771,6 +1780,13 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('hx-get="/fragments/tailscale-acl/inputs"', text)
         self.assertIn('hx-get="/fragments/tailscale-acl/output"', text)
         self.assertIn('hx-get="/fragments/tailscale-acl/apply-guide"', text)
+
+    def test_tailscale_acl_inputs_show_last_used_draft_hint(self) -> None:
+        response = self.client.get("/fragments/tailscale-acl/inputs")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("acl-draft-status", text)
+        self.assertIn("Using the default ACL suggestions", text)
 
     def test_image_catalog_is_yaml_backed_and_has_intended_urls(self) -> None:
         entries = {entry.get("id"): entry for entry in callback_core.IMAGE_CATALOG}

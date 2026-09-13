@@ -9,34 +9,191 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
     <style>
+      :root {
+        color-scheme: light;
+      }
+      .kube-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+        gap: 1rem;
+        align-items: stretch;
+      }
+      .kube-hero-copy {
+        display: grid;
+        gap: 0.8rem;
+      }
+      .kube-hero-title {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.75rem;
+      }
+      .kube-hero-title h1 {
+        margin: 0;
+      }
+      .kube-hero-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .kube-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.78);
+        font-size: 0.78rem;
+        color: #334155;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+      }
+      .kube-badge strong {
+        color: #0f172a;
+      }
+      .kube-hero-panel {
+        display: grid;
+        gap: 0.7rem;
+      }
+      .kube-hero-panel .mini-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.55rem;
+      }
+      .kube-mini {
+        padding: 0.7rem;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      }
+      .kube-mini .k {
+        color: var(--muted);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .kube-mini .v {
+        margin-top: 0.25rem;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.9rem;
+        color: #0f172a;
+        word-break: break-word;
+      }
+      .kube-section {
+        margin-top: 1rem;
+      }
       .kube-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 0.7rem;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 0.65rem;
       }
       .kube-card {
         border: 1px solid var(--line);
         border-radius: 12px;
         background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         padding: 0.75rem;
+        min-height: 92px;
       }
       .kube-card .k {
         color: var(--muted);
-        font-size: 0.76rem;
+        font-size: 0.72rem;
         text-transform: uppercase;
         letter-spacing: 0.03em;
       }
       .kube-card .v {
         margin-top: 0.28rem;
-        font-size: 1.2rem;
+        font-size: 1.12rem;
         font-weight: 700;
         color: #0f172a;
+      }
+      .kube-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+        gap: 1rem;
+        align-items: start;
+      }
+      .kube-table-wrap {
+        overflow: hidden;
+      }
+      .kube-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.83rem;
+      }
+      .kube-table th,
+      .kube-table td {
+        text-align: left;
+        padding: 0.45rem 0.5rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+        vertical-align: top;
+      }
+      .kube-table th {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--muted);
+        background: rgba(248, 250, 252, 0.92);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      .kube-table tr:hover td {
+        background: rgba(241, 245, 249, 0.7);
+      }
+      .kube-table .kube-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.16rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        background: rgba(255, 255, 255, 0.88);
+      }
+      .kube-table .ok {
+        color: #166534;
+        border-color: rgba(34, 197, 94, 0.35);
+      }
+      .kube-table .warn {
+        color: #92400e;
+        border-color: rgba(245, 158, 11, 0.35);
+      }
+      .kube-detail-columns {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.85rem;
+      }
+      .kube-list {
+        margin: 0;
+        padding-left: 1.1rem;
+        display: grid;
+        gap: 0.4rem;
+      }
+      .kube-list li {
+        color: #334155;
       }
       .kube-status {
         margin-top: 0.8rem;
         white-space: pre-wrap;
         font-family: "IBM Plex Mono", monospace;
         font-size: 0.8rem;
+        line-height: 1.45;
+      }
+      .kube-raw {
+        margin: 0;
+        max-height: 24rem;
+        overflow: auto;
+        padding: 0.9rem;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #0f172a;
+        color: #e2e8f0;
+        font-size: 0.75rem;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+      .kube-subtle {
+        color: var(--muted);
+        font-size: 0.84rem;
       }
     </style>
   </head>
@@ -62,37 +219,145 @@
 
     <main class="content">
       <div class="wrap">
-        <div class="panel">
-          <h1>Kubernetes (Local)</h1>
-          <p class="note">Detected local runtime and basic cluster health counters. Configuration controls can be added here next.</p>
-        </div>
-
-        <div class="panel">
-          <h2>Cluster Snapshot</h2>
-          <div class="kube-grid">
-            <div class="kube-card">
-              <div class="k">Nodes Total</div>
-              <div class="v" id="kube-nodes-total">0</div>
+        <section class="panel kube-hero">
+          <div class="kube-hero-copy">
+            <div class="kube-hero-title">
+              <h1>Kubernetes (Local)</h1>
+              <span class="kube-badge"><strong id="kube-runtime-service">waiting</strong> runtime</span>
+              <span class="kube-badge">Observed <strong id="kube-observed-at">--</strong></span>
             </div>
-            <div class="kube-card">
-              <div class="k">Nodes Ready</div>
-              <div class="v" id="kube-nodes-ready">0</div>
+            <p class="note">Dense live snapshot of the local cluster, tuned to occupy the first desktop screen with useful state instead of empty chrome.</p>
+            <div class="kube-hero-badges">
+              <span class="kube-badge">Nodes <strong id="kube-nodes-total-hero">0</strong></span>
+              <span class="kube-badge">Ready <strong id="kube-nodes-ready-hero">0</strong></span>
+              <span class="kube-badge">Control-plane <strong id="kube-control-plane-hero">0</strong></span>
+              <span class="kube-badge">Pods <strong id="kube-pods-hero">0 / 0</strong></span>
+              <span class="kube-badge">Namespaces <strong id="kube-namespaces-hero">0</strong></span>
             </div>
-            <div class="kube-card">
-              <div class="k">Control-plane Nodes</div>
-              <div class="v" id="kube-control-plane">0</div>
-            </div>
-            <div class="kube-card">
-              <div class="k">Pods Running / Total</div>
-              <div class="v" id="kube-pods">0 / 0</div>
-            </div>
-            <div class="kube-card">
-              <div class="k">Namespaces</div>
-              <div class="v" id="kube-namespaces">0</div>
+            <div id="kube-status" class="status kube-status">Loading Kubernetes status...</div>
+          </div>
+          <div class="kube-hero-panel panel" style="margin: 0;">
+            <h2 style="margin-top: 0;">Runtime Details</h2>
+            <div class="mini-grid">
+              <div class="kube-mini">
+                <div class="k">Service</div>
+                <div class="v" id="kube-runtime-service-detail">--</div>
+              </div>
+              <div class="kube-mini">
+                <div class="k">Kubeconfig</div>
+                <div class="v" id="kube-has-kubeconfig">--</div>
+              </div>
+              <div class="kube-mini">
+                <div class="k">Binary</div>
+                <div class="v" id="kube-binary">--</div>
+              </div>
+              <div class="kube-mini">
+                <div class="k">Reason</div>
+                <div class="v" id="kube-reason">--</div>
+              </div>
             </div>
           </div>
-          <div id="kube-status" class="status kube-status">Loading Kubernetes status...</div>
-        </div>
+        </section>
+
+        <section class="panel kube-section">
+          <h2>Cluster Snapshot</h2>
+          <div class="kube-grid">
+            <div class="kube-card"><div class="k">Nodes Total</div><div class="v" id="kube-nodes-total">0</div></div>
+            <div class="kube-card"><div class="k">Nodes Ready</div><div class="v" id="kube-nodes-ready">0</div></div>
+            <div class="kube-card"><div class="k">Control-plane Nodes</div><div class="v" id="kube-control-plane">0</div></div>
+            <div class="kube-card"><div class="k">Pods Running / Total</div><div class="v" id="kube-pods">0 / 0</div></div>
+            <div class="kube-card"><div class="k">Namespaces</div><div class="v" id="kube-namespaces">0</div></div>
+            <div class="kube-card"><div class="k">Ready %</div><div class="v" id="kube-ready-percent">0%</div></div>
+            <div class="kube-card"><div class="k">Running %</div><div class="v" id="kube-running-percent">0%</div></div>
+            <div class="kube-card"><div class="k">Last Error</div><div class="v" id="kube-last-error">none</div></div>
+          </div>
+        </section>
+
+        <section class="kube-layout kube-section">
+          <div class="panel kube-table-wrap">
+            <h2>Nodes</h2>
+            <p class="kube-subtle">Ready state, role, addresses, and runtime details for each node currently visible to the cluster.</p>
+            <div style="max-height: 22rem; overflow: auto;">
+              <table class="kube-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Ready</th>
+                    <th>Role</th>
+                    <th>Internal IP</th>
+                    <th>External IP</th>
+                    <th>OS</th>
+                    <th>Kernel</th>
+                    <th>Runtime</th>
+                  </tr>
+                </thead>
+                <tbody id="kube-node-rows">
+                  <tr><td colspan="8">Loading nodes...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel kube-table-wrap">
+            <h2>Namespaces</h2>
+            <p class="kube-subtle">Namespace inventory with pod counts so the dashboard shows workload density at a glance.</p>
+            <div style="max-height: 22rem; overflow: auto;">
+              <table class="kube-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Phase</th>
+                    <th>Running Pods</th>
+                    <th>Total Pods</th>
+                  </tr>
+                </thead>
+                <tbody id="kube-namespace-rows">
+                  <tr><td colspan="4">Loading namespaces...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="kube-layout kube-section">
+          <div class="panel kube-table-wrap">
+            <h2>Pods</h2>
+            <p class="kube-subtle">A live workload view with phase, node placement, readiness, and restart pressure.</p>
+            <div style="max-height: 24rem; overflow: auto;">
+              <table class="kube-table">
+                <thead>
+                  <tr>
+                    <th>Namespace</th>
+                    <th>Name</th>
+                    <th>Phase</th>
+                    <th>Node</th>
+                    <th>Ready</th>
+                    <th>Restarts</th>
+                  </tr>
+                </thead>
+                <tbody id="kube-pod-rows">
+                  <tr><td colspan="6">Loading pods...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>Snapshot Notes</h2>
+            <div class="kube-detail-columns">
+              <div>
+                <p class="kube-subtle">Quick facts from the current fetch</p>
+                <ul class="kube-list" id="kube-facts-list">
+                  <li>Loading facts...</li>
+                </ul>
+              </div>
+              <div>
+                <p class="kube-subtle">Raw JSON snapshot</p>
+                <pre class="kube-raw" id="kube-raw-json">Loading Kubernetes status...</pre>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
 
@@ -104,11 +369,102 @@
       const controlPlaneEl = document.getElementById("kube-control-plane");
       const podsEl = document.getElementById("kube-pods");
       const namespacesEl = document.getElementById("kube-namespaces");
+      const nodesTotalHeroEl = document.getElementById("kube-nodes-total-hero");
+      const nodesReadyHeroEl = document.getElementById("kube-nodes-ready-hero");
+      const controlPlaneHeroEl = document.getElementById("kube-control-plane-hero");
+      const podsHeroEl = document.getElementById("kube-pods-hero");
+      const namespacesHeroEl = document.getElementById("kube-namespaces-hero");
+      const runtimeServiceEl = document.getElementById("kube-runtime-service");
+      const runtimeServiceDetailEl = document.getElementById("kube-runtime-service-detail");
+      const kubeconfigEl = document.getElementById("kube-has-kubeconfig");
+      const binaryEl = document.getElementById("kube-binary");
+      const reasonEl = document.getElementById("kube-reason");
+      const observedAtEl = document.getElementById("kube-observed-at");
+      const readyPercentEl = document.getElementById("kube-ready-percent");
+      const runningPercentEl = document.getElementById("kube-running-percent");
+      const lastErrorEl = document.getElementById("kube-last-error");
+      const nodeRowsEl = document.getElementById("kube-node-rows");
+      const podRowsEl = document.getElementById("kube-pod-rows");
+      const namespaceRowsEl = document.getElementById("kube-namespace-rows");
+      const factsListEl = document.getElementById("kube-facts-list");
+      const rawJsonEl = document.getElementById("kube-raw-json");
       const statusEl = document.getElementById("kube-status");
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
         if (saved === "1") body.classList.add("sidebar-collapsed");
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function renderPill(value, kind) {
+        const className = kind ? `kube-pill ${kind}` : "kube-pill";
+        return `<span class="${className}">${escapeHtml(value)}</span>`;
+      }
+
+      function renderRows(items, columns) {
+        if (!Array.isArray(items) || !items.length) {
+          return `<tr><td colspan="${columns}">No rows returned.</td></tr>`;
+        }
+        return items.map((item) => item).join("");
+      }
+
+      function renderNodeRows(rows) {
+        if (!Array.isArray(rows) || !rows.length) {
+          return `<tr><td colspan="8">No nodes returned.</td></tr>`;
+        }
+        return rows.map((row) => {
+          const ready = row.ready ? renderPill("Ready", "ok") : renderPill("Not Ready", "warn");
+          return `<tr>
+            <td>${escapeHtml(row.name || "")}</td>
+            <td>${ready}</td>
+            <td>${escapeHtml(row.role || "")}</td>
+            <td>${escapeHtml(row.internal_ip || "")}</td>
+            <td>${escapeHtml(row.external_ip || "")}</td>
+            <td>${escapeHtml(row.os_image || "")}</td>
+            <td>${escapeHtml(row.kernel || "")}</td>
+            <td>${escapeHtml(row.container_runtime || "")}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      function renderPodRows(rows) {
+        if (!Array.isArray(rows) || !rows.length) {
+          return `<tr><td colspan="6">No pods returned.</td></tr>`;
+        }
+        return rows.map((row) => {
+          const phaseKind = row.phase === "Running" ? "ok" : "warn";
+          return `<tr>
+            <td>${escapeHtml(row.namespace || "")}</td>
+            <td>${escapeHtml(row.name || "")}</td>
+            <td>${renderPill(row.phase || "", phaseKind)}</td>
+            <td>${escapeHtml(row.node || "")}</td>
+            <td>${escapeHtml(row.ready_containers || 0)}</td>
+            <td>${escapeHtml(row.restart_count || 0)}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      function renderNamespaceRows(rows) {
+        if (!Array.isArray(rows) || !rows.length) {
+          return `<tr><td colspan="4">No namespaces returned.</td></tr>`;
+        }
+        return rows.map((row) => {
+          const phaseKind = row.phase === "Active" ? "ok" : "warn";
+          return `<tr>
+            <td>${escapeHtml(row.name || "")}</td>
+            <td>${renderPill(row.phase || "", phaseKind)}</td>
+            <td>${escapeHtml(row.running_pods || 0)}</td>
+            <td>${escapeHtml(row.total_pods || 0)}</td>
+          </tr>`;
+        }).join("");
       }
 
       toggleBtn.addEventListener("click", () => {
@@ -131,14 +487,34 @@
           controlPlaneEl.textContent = String(data.control_plane_nodes || 0);
           podsEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
           namespacesEl.textContent = String(data.namespaces_total || 0);
+          nodesTotalHeroEl.textContent = String(data.nodes_total || 0);
+          nodesReadyHeroEl.textContent = String(data.nodes_ready || 0);
+          controlPlaneHeroEl.textContent = String(data.control_plane_nodes || 0);
+          podsHeroEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
+          namespacesHeroEl.textContent = String(data.namespaces_total || 0);
+
+          readyPercentEl.textContent = `${data.nodes_total ? Math.round((Number(data.nodes_ready || 0) / Number(data.nodes_total || 1)) * 100) : 0}%`;
+          runningPercentEl.textContent = `${data.pods_total ? Math.round((Number(data.pods_running || 0) / Number(data.pods_total || 1)) * 100) : 0}%`;
+          lastErrorEl.textContent = data.last_error ? String(data.last_error) : "none";
+          observedAtEl.textContent = data.observed_at ? String(data.observed_at) : "--";
 
           const runtime = data.runtime && typeof data.runtime === "object" ? data.runtime : {};
           const activeService = String(runtime.active_service || "none");
           const reason = String(runtime.reason || "");
           const hasKubeconfig = runtime.has_kubeconfig === true ? "yes" : "no";
+          runtimeServiceEl.textContent = activeService;
+          runtimeServiceDetailEl.textContent = activeService;
+          kubeconfigEl.textContent = hasKubeconfig;
+          binaryEl.textContent = String(runtime.k3s_binary || "none");
+          reasonEl.textContent = reason || "--";
 
           if (!data.available) {
             statusEl.textContent = `Kubernetes runtime is not currently active.\nReason: ${reason}`;
+            nodeRowsEl.innerHTML = `<tr><td colspan="8">Runtime inactive.</td></tr>`;
+            podRowsEl.innerHTML = `<tr><td colspan="6">Runtime inactive.</td></tr>`;
+            namespaceRowsEl.innerHTML = `<tr><td colspan="4">Runtime inactive.</td></tr>`;
+            factsListEl.innerHTML = `<li>Runtime service: ${escapeHtml(activeService)}</li><li>Reason: ${escapeHtml(reason)}</li><li>Kubeconfig present: ${escapeHtml(hasKubeconfig)}</li>`;
+            rawJsonEl.textContent = JSON.stringify(data, null, 2);
             return;
           }
 
@@ -147,8 +523,20 @@
             statusText += `\nWarning: ${data.last_error}`;
           }
           statusEl.textContent = statusText;
+          nodeRowsEl.innerHTML = renderNodeRows(Array.isArray(data.node_rows) ? data.node_rows : []);
+          podRowsEl.innerHTML = renderPodRows(Array.isArray(data.pod_rows) ? data.pod_rows : []);
+          namespaceRowsEl.innerHTML = renderNamespaceRows(Array.isArray(data.namespace_rows) ? data.namespace_rows : []);
+          factsListEl.innerHTML = [
+            `Observed at ${escapeHtml(data.observed_at || "")}`,
+            `Runtime service ${escapeHtml(activeService)}`,
+            `Nodes ready ${escapeHtml(data.nodes_ready || 0)} of ${escapeHtml(data.nodes_total || 0)}`,
+            `Pods running ${escapeHtml(data.pods_running || 0)} of ${escapeHtml(data.pods_total || 0)}`,
+            `Namespaces tracked ${escapeHtml(data.namespaces_total || 0)}`,
+          ].map((line) => `<li>${line}</li>`).join("");
+          rawJsonEl.textContent = JSON.stringify(data, null, 2);
         } catch (err) {
           statusEl.textContent = `Kubernetes summary error: ${String(err && err.message ? err.message : err)}`;
+          rawJsonEl.textContent = statusEl.textContent;
         }
       }
 

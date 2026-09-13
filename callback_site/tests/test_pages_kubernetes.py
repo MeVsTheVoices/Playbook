@@ -57,6 +57,18 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["nodes_total"], 3)
 
+    def test_kubernetes_page_renders_dense_dashboard_sections(self) -> None:
+        response = self.client.get("/kubernetes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Runtime Details", text)
+        self.assertIn("Cluster Snapshot", text)
+        self.assertIn("Nodes", text)
+        self.assertIn("Namespaces", text)
+        self.assertIn("Pods", text)
+        self.assertIn("Snapshot Notes", text)
+        self.assertIn("Raw JSON snapshot", text)
+
     def test_kubernetes_page_refreshes_summary_without_cache(self) -> None:
         text = (Path(__file__).resolve().parents[1] / "templates" / "kubernetes.html").read_text(encoding="utf-8")
         self.assertIn('fetch("/api/kubernetes/summary", { cache: "no-store" })', text)

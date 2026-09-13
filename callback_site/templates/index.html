@@ -207,9 +207,28 @@
         padding: 0.9rem;
         margin-top: 0.9rem;
       }
-      .fieldset h2 {
-        margin: 0 0 0.7rem;
+      .fieldset > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.8rem;
+        margin: 0;
+        font-weight: 800;
+        color: #0f172a;
+      }
+      .fieldset > summary::marker {
+        color: #0f766e;
+      }
+      .fieldset-title {
         font-size: 1rem;
+      }
+      .fieldset-summary-note {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+        text-align: right;
       }
       .segment-list {
         display: grid;
@@ -956,6 +975,32 @@
     <div class="wrap">
       <a class="top-link" href="/tailscale-acl">Open Tailscale ACL Planner</a>
 
+      <div class="panel activity-dock" id="activity-dock">
+        <div class="section-head">
+          <h1>Operator Activity Dock 🐣✨</h1>
+          <span class="status-chip"><span class="status-dot"></span> Cute live wait states</span>
+        </div>
+        <p class="small-note">Waiting on long-running tasks should feel clear, friendly, and a little silly.</p>
+        <div class="activity-grid">
+          <article class="activity-card waiting" id="activity-sd-card">
+            <p class="k">SD Imager 🧰</p>
+            <p class="v" id="activity-sd-state">😴 Idle</p>
+            <p class="d" id="activity-sd-detail">No SD write is running right now.</p>
+          </article>
+          <article class="activity-card waiting" id="activity-callback-card">
+            <p class="k">Callback Radar 📡</p>
+            <p class="v" id="activity-callback-state">🫥 Quiet</p>
+            <p class="d" id="activity-callback-detail">Waiting for nodes to check in.</p>
+          </article>
+          <article class="activity-card waiting" id="activity-device-card">
+            <p class="k">Device Watcher 🔌</p>
+            <p class="v" id="activity-device-state">🛰️ Connecting</p>
+            <p class="d" id="activity-device-detail">Linking to SD/USB monitor stream.</p>
+          </article>
+        </div>
+        <div class="activity-banner waiting" id="activity-banner">⏳ Queue vibe: all systems calm. Kick off a job and I will cheer every milestone.</div>
+      </div>
+
       <div class="panel">
         <div class="hero">
           <div class="hero-row">
@@ -1095,8 +1140,11 @@
             </div>
           </div>
 
-          <div class="fieldset">
-            <h2>Cloud-Init Optional Settings</h2>
+          <details class="fieldset" id="cloud-init-optional-settings">
+            <summary>
+              <span class="fieldset-title">Cloud-Init Optional Settings</span>
+              <span class="fieldset-summary-note">Saved templates, k3s config, identity, network, and bootstrap toggles</span>
+            </summary>
             <div class="form-grid">
               <div>
                 <label for="sd_options_profile_select">Profile Selection</label>
@@ -1129,7 +1177,9 @@
                 <div class="form-grid">
                   <div class="grid-span-full">
                     <label for="opt_k3s_config">K3s config (required for k3s distribution)</label>
-                    <textarea id="opt_k3s_config" data-option-key="k3s_config" placeholder="# pragma: k3s-config-v1
+                    <textarea id="opt_k3s_config" data-option-key="k3s_config" placeholder="# User-facing k3s template
+# Update this to your real control-plane endpoint.
+# pragma: k3s-config-v1
 server: https://control-plane.example:6443
 "></textarea>
                   </div>
@@ -1337,7 +1387,7 @@ server: https://control-plane.example:6443
                 </div>
               </details>
             </div>
-          </div>
+          </details>
 
           <div class="checkbox-row">
             <input id="confirm_overwrite" name="confirm_overwrite" type="checkbox" required>
@@ -1355,34 +1405,6 @@ server: https://control-plane.example:6443
         <div id="job-status"></div>
         <div class="job-log" id="job-log"></div>
       </div>
-
-      <div class="panel activity-dock" id="activity-dock">
-        <div class="section-head">
-          <h1>Operator Activity Dock 🐣✨</h1>
-          <span class="status-chip"><span class="status-dot"></span> Cute live wait states</span>
-        </div>
-        <p class="small-note">Waiting on long-running tasks should feel clear, friendly, and a little silly.</p>
-        <div class="activity-grid">
-          <article class="activity-card waiting" id="activity-sd-card">
-            <p class="k">SD Imager 🧰</p>
-            <p class="v" id="activity-sd-state">😴 Idle</p>
-            <p class="d" id="activity-sd-detail">No SD write is running right now.</p>
-          </article>
-          <article class="activity-card waiting" id="activity-callback-card">
-            <p class="k">Callback Radar 📡</p>
-            <p class="v" id="activity-callback-state">🫥 Quiet</p>
-            <p class="d" id="activity-callback-detail">Waiting for nodes to check in.</p>
-          </article>
-          <article class="activity-card waiting" id="activity-device-card">
-            <p class="k">Device Watcher 🔌</p>
-            <p class="v" id="activity-device-state">🛰️ Connecting</p>
-            <p class="d" id="activity-device-detail">Linking to SD/USB monitor stream.</p>
-          </article>
-        </div>
-        <div class="activity-banner waiting" id="activity-banner">⏳ Queue vibe: all systems calm. Kick off a job and I will cheer every milestone.</div>
-      </div>
-
-
 
       <div class="panel" id="callback-dashboard">
         <div class="section-head">
@@ -2892,7 +2914,7 @@ server: https://control-plane.example:6443
         });
       }
 
-      const DEFAULT_K3S_CONFIG = "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n";
+      const DEFAULT_K3S_CONFIG = "# User-facing k3s template\n# Update this to your real control-plane endpoint.\n# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n";
 
       function ensureK3sConfigDefaults() {
         const textarea = document.getElementById("opt_k3s_config");

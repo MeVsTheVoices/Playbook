@@ -1697,12 +1697,12 @@ class CallbackSiteTests(unittest.TestCase):
             )
 
     def test_images_page_has_cache_path_color_hooks(self) -> None:
-        response = self.client.get("/images")
-        self.assertEqual(response.status_code, 200)
-        text = response.get_data(as_text=True)
-        assets = self.client.get("/static/images.js")
-        self.assertEqual(assets.status_code, 200)
-        script = assets.get_data(as_text=True)
+        with self.client.get("/images") as response:
+            self.assertEqual(response.status_code, 200)
+            text = response.get_data(as_text=True)
+        with self.client.get("/static/images.js") as assets:
+            self.assertEqual(assets.status_code, 200)
+            script = assets.get_data(as_text=True)
         self.assertIn("cache-path-ok", script)
         self.assertIn("cache-path-missing", script)
         self.assertIn("source-panel", text)

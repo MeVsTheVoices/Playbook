@@ -51,7 +51,6 @@ DEVICE_SUBSCRIBERS: List[queue.Queue[str]] = []
 DEVICE_SUBSCRIBERS_LOCK = threading.Lock()
 DEVICE_MONITOR_STARTED = False
 DEVICE_MONITOR_LOCK = threading.Lock()
-DEFAULT_K3S_CONFIG = "# pragma: k3s-config-v1\nserver: https://control-plane.example:6443\n"
 KUBERNETES_STATUS_LOCK = threading.Lock()
 KUBERNETES_STATUS_CACHE: Dict[str, Any] = {
     "checked_at": 0.0,
@@ -3199,6 +3198,13 @@ def _first_forwarded_ip(value: str) -> str:
     return parts[0] if parts else ""
 
 
+def _default_k3s_config() -> str:
+    host = os.getenv("K3S_SERVER_HOST", "").strip()
+    if not host:
+        host = _detect_local_ip()
+    return f"# pragma: k3s-config-v1\nserver: https://{host}:6443\n"
+
+
 def _normalize_ip(value: str) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -3343,7 +3349,7 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         distribution = "k3s"
     cleaned["distribution"] = distribution
     if distribution == "k3s" and not k3s_config:
-        cloud_options["k3s_config"] = DEFAULT_K3S_CONFIG.strip()
+        cloud_options["k3s_config"] = _default_k3s_config().strip()
     return cleaned
 
 
@@ -3615,7 +3621,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             if distribution == "k3s":
                 k3s_config = str(cloud_init_options.get("k3s_config", "") or "").strip()
                 if not k3s_config:
-                    k3s_config = DEFAULT_K3S_CONFIG.strip()
+                    k3s_config = _default_k3s_config().strip()
                 env["CLOUD_INIT_K3S_CONFIG"] = k3s_config
                 enabled_options.append("k3s_config")
             if cloud_init_options.get("enable_hardware_checks"):

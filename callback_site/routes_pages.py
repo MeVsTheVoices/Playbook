@@ -26,6 +26,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
             sd_option_profiles=option_profiles,
             devices=_list_sd_devices(),
             callback_url_default=_default_callback_url(),
+            k3s_config_default=_default_k3s_config(),
             image_catalog=image_catalog,
         )
 

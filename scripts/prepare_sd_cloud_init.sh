@@ -481,8 +481,45 @@ cat >> "$USER_DATA_OUT" <<EOF
       [[ -f /sys/class/pwm/pwmchip0/device/dtoverlay ]] && POE_ENABLED="true"
       SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
       NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
+        PAYLOAD_JSON="\$(PI_MODEL=\"\$PI_MODEL\" RAM_MB=\"\$RAM_MB\" SD_CAPACITY=\"\$SD_CAPACITY\" NVME_PRESENT=\"\$NVME_PRESENT\" HAT_PRESENT=\"\$HAT_PRESENT\" POE_ENABLED=\"\$POE_ENABLED\" SOURCE_IP=\"\$SOURCE_IP\" NODE_REPORT_B64=\"\$NODE_REPORT_B64\" PROFILE='${PROFILE}' python3 <<'PY'
+    import json
+    import os
+    import socket
+
+
+    def as_int(value: str) -> int:
+      try:
+        return int(float(str(value or "0").strip()))
+      except (TypeError, ValueError):
+        return 0
+
+
+    def as_bool(value: str) -> bool:
+      return str(value or "").strip().lower() == "true"
+
+
+    payload = {
+      "instance_id": f"{socket.gethostname()}-hw",
+      "hostname": socket.gethostname(),
+      "profile": os.getenv("PROFILE", "pi5"),
+      "source_ip": os.getenv("SOURCE_IP", ""),
+      "stage": "hardware-check",
+      "node_report_b64": os.getenv("NODE_REPORT_B64", ""),
+      "hardware": {
+        "model": os.getenv("PI_MODEL", "unknown"),
+        "ram_mb": as_int(os.getenv("RAM_MB", "0")),
+        "sd_capacity_gb": as_int(os.getenv("SD_CAPACITY", "0")),
+        "nvme": as_bool(os.getenv("NVME_PRESENT", "false")),
+        "hat": as_bool(os.getenv("HAT_PRESENT", "false")),
+        "poe": as_bool(os.getenv("POE_ENABLED", "false")),
+      },
+    }
+
+    print(json.dumps(payload, separators=(",", ":")))
+    PY
+        )"
       curl -fsS -X POST -H 'Content-Type: application/json' \\
-        -d "{\"instance_id\":\"\$(hostname)-hw\",\"hostname\":\"\$(hostname)\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\$SOURCE_IP\",\"stage\":\"hardware-check\",\"node_report_b64\":\"\$NODE_REPORT_B64\",\"hardware\":{\"model\":\"\$PI_MODEL\",\"ram_mb\":\$RAM_MB,\"sd_capacity_gb\":\$SD_CAPACITY,\"nvme\":\$NVME_PRESENT,\"hat\":\$HAT_PRESENT,\"poe\":\$POE_ENABLED}}" \
+        --data-binary "\$PAYLOAD_JSON" \
         '${CALLBACK_URL}' || true
   - path: /usr/local/bin/rack-node-report
     permissions: "0755"

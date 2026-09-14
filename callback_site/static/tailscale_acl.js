@@ -23,6 +23,20 @@ function parseSubnets(text) {
     .filter(Boolean);
 }
 
+function setTailscaleSettingsStatus(message) {
+  const status = document.getElementById("tailscale_settings_status");
+  if (status) {
+    status.textContent = message;
+  }
+}
+
+function setTailscaleApiKeyHint(message) {
+  const hint = document.getElementById("tailscale_api_key_hint");
+  if (hint) {
+    hint.textContent = message;
+  }
+}
+
 function readAclDraft() {
   try {
     const raw = localStorage.getItem(ACL_DRAFT_STORAGE_KEY);
@@ -61,6 +75,79 @@ function saveAclDraft() {
     localStorage.setItem(ACL_DRAFT_STORAGE_KEY, JSON.stringify(draft));
   } catch (_) {
     // Ignore storage quota or privacy mode failures.
+  }
+}
+
+function applySettingsDefault(element, value, hasLocalDraft) {
+  if (!element || !value || hasLocalDraft) {
+    return;
+  }
+  if (!String(element.value || "").trim()) {
+    element.value = value;
+  }
+}
+
+async function loadTailscaleSettings(hasLocalDraft = false) {
+  const tailnetEl = document.getElementById("tailnet");
+  const rackNameEl = document.getElementById("rack_name");
+  if (!tailnetEl) {
+    return;
+  }
+
+  setTailscaleSettingsStatus("Loading Tailscale settings...");
+  try {
+    const res = await fetch("/api/settings");
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      setTailscaleSettingsStatus(data.error || "Failed to load Tailscale settings.");
+      return;
+    }
+
+    const settings = data.settings || {};
+    const tailnet = String(settings.tailscale_tailnet || "").trim();
+    const rackName = String(settings.rack_name || "").trim();
+    const apiKeySet = Boolean(settings.tailscale_api_key_set);
+    applySettingsDefault(rackNameEl, rackName, hasLocalDraft);
+    applySettingsDefault(tailnetEl, tailnet, hasLocalDraft);
+    setTailscaleApiKeyHint(apiKeySet ? "API key saved in settings." : "No API key saved yet.");
+    setTailscaleSettingsStatus("Tailscale settings loaded.");
+  } catch (_) {
+    setTailscaleSettingsStatus("Failed to load Tailscale settings.");
+  }
+}
+
+async function saveTailscaleSettings() {
+  const tailnetEl = document.getElementById("tailnet");
+  const apiKeyEl = document.getElementById("tailscale_api_key");
+  if (!tailnetEl || !apiKeyEl) {
+    return;
+  }
+
+  setTailscaleSettingsStatus("Saving Tailscale settings...");
+  try {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tailscale_tailnet: tailnetEl.value.trim(),
+        tailscale_api_key: apiKeyEl.value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      setTailscaleSettingsStatus(data.error || "Failed to save Tailscale settings.");
+      return;
+    }
+
+    const saved = data.settings || {};
+    tailnetEl.value = String(saved.tailscale_tailnet || tailnetEl.value || "").trim();
+    const apiKeySet = Boolean(saved.tailscale_api_key_set) || Boolean(String(saved.tailscale_api_key || "").trim());
+    apiKeyEl.value = "";
+    setTailscaleApiKeyHint(apiKeySet ? "API key saved in settings." : "No API key saved yet.");
+    setTailscaleSettingsStatus("Tailscale settings saved.");
+    generatePolicy();
+  } catch (_) {
+    setTailscaleSettingsStatus("Failed to save Tailscale settings.");
   }
 }
 
@@ -278,6 +365,7 @@ function bindOutputActions() {
 function bindAclInputEvents() {
   const generateBtn = document.getElementById("generate");
   const inputsSection = document.getElementById("acl-inputs-section");
+  const saveTailscaleSettingsBtn = document.getElementById("save_tailscale_settings");
 
   if (generateBtn && !generateBtn.dataset.bound) {
     generateBtn.addEventListener("click", generatePolicy);
@@ -294,8 +382,17 @@ function bindAclInputEvents() {
     inputsSection.dataset.bound = "1";
   }
 
-  restoreAclDraft();
-  generatePolicy();
+  if (saveTailscaleSettingsBtn && !saveTailscaleSettingsBtn.dataset.bound) {
+    saveTailscaleSettingsBtn.addEventListener("click", () => {
+      saveTailscaleSettings();
+    });
+    saveTailscaleSettingsBtn.dataset.bound = "1";
+  }
+
+  const hasLocalDraft = restoreAclDraft();
+  loadTailscaleSettings(hasLocalDraft).finally(() => {
+    generatePolicy();
+  });
 }
 
 document.body.addEventListener("htmx:afterSwap", (event) => {

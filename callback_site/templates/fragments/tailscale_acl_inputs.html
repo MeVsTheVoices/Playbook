@@ -20,6 +20,13 @@
     <p class="field-hint">Reference-only label for your workspace context.</p>
   </div>
   <div class="field-card">
+    <label for="tailscale_api_key">Tailscale API Key</label>
+    <input id="tailscale_api_key" type="password" autocomplete="off" placeholder="tskey-api-...">
+    <p id="tailscale_api_key_hint" class="field-hint">
+      {% if defaults.tailscale_api_key_set %}API key saved in settings.{% else %}No API key saved yet.{% endif %}
+    </p>
+  </div>
+  <div class="field-card">
     <label for="admin_group">Admin Group/User</label>
     <input id="admin_group" value="{{ defaults.admin_group }}">
     <p class="field-hint">Source principal used in tag ownership and SSH rules.</p>
@@ -52,4 +59,7 @@
 
 <div class="button-row">
   <button id="generate" type="button">Generate ACL Snippets</button>
+  <button id="save_tailscale_settings" type="button">Save Tailscale API Settings</button>
 </div>
+
+<p id="tailscale_settings_status" class="field-hint">Tailscale settings not loaded yet.</p>

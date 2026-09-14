@@ -209,7 +209,11 @@ def _store_node_report(report_payload: Any, event: Dict[str, Any]) -> str:
         "report": report_payload,
     }
     report_file = NODE_REPORTS_DIR / f"{report_id}.json"
-    report_file.write_text(json.dumps(report_record, indent=2), encoding="utf-8")
+    try:
+        report_file.write_text(json.dumps(report_record, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Unable to store node report for hostname=%s: %s", event.get("hostname", ""), exc)
+        return ""
     return report_id
 
 
@@ -501,7 +505,11 @@ def callback() -> Any:
     }
 
     node_report_payload = _decode_node_report_payload(payload)
-    node_report_id = _store_node_report(node_report_payload, event)
+    try:
+        node_report_id = _store_node_report(node_report_payload, event)
+    except OSError as exc:
+        logger.warning("Node report storage raised unexpectedly for hostname=%s: %s", hostname, exc)
+        node_report_id = ""
     event["node_report_id"] = node_report_id
     event["node_report_present"] = bool(node_report_id)
     
@@ -882,6 +890,12 @@ def test_terminal_start() -> Any:
     if not key_path.exists():
         return jsonify({"ok": False, "error": f"key not found: {key_name}"}), 404
 
+    _seed_known_host(resolved_host, port)
+
+    key_preflight_error = _ssh_private_key_preflight(str(key_path))
+    if key_preflight_error:
+        return jsonify({"ok": False, "error": key_preflight_error}), 400
+
     selected_check = TERMINAL_CHECKS[check_id]
     remote_command = selected_check["command"]
 
@@ -890,7 +904,9 @@ def test_terminal_start() -> Any:
         "-o",
         "BatchMode=yes",
         "-o",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
         "-o",
         "ConnectTimeout=8",
         "-i",

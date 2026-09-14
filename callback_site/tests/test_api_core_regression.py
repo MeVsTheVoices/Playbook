@@ -425,6 +425,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
     def test_monitor_empty_by_default_then_callback_discovery(self) -> None:
         clear_resp = self.client.post("/api/cloud-init/events/clear", json={})
         self.assertEqual(clear_resp.status_code, 200)
+        callback_core._save_monitor_state(callback_core._default_monitor_state())
 
         initial = self.client.get("/api/monitor/summary")
         self.assertEqual(initial.status_code, 200)
@@ -586,6 +587,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
 
     def test_ssh_key_generate_and_kload_modes(self) -> None:
         key_name = "test-mode-key"
+        private_key_path = callback_core.KEYS_DIR / key_name
+        public_key_path = callback_core.KEYS_DIR / f"{key_name}.pub"
 
         generated = self.client.post(
             "/api/ssh/generate",
@@ -596,6 +599,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertTrue(generated_payload["ok"])
         self.assertTrue(generated_payload["created"])
         self.assertEqual(generated_payload["mode"], "generate")
+        self.assertEqual(oct(private_key_path.stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct(public_key_path.stat().st_mode & 0o777), "0o644")
 
         generate_again = self.client.post(
             "/api/ssh/generate",
@@ -688,6 +693,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "group": "manual",
                 "address": "10.255.45.84",
                 "username": "jdizzle",
+                "certificate": "rack-bootstrap-ed25519",
             },
         )
         self.client.post(
@@ -722,6 +728,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "group": "manual",
                 "address": "192.168.174.238",
                 "username": "jdizzle",
+                "certificate": "rack-bootstrap-ed25519",
             },
         )
 
@@ -757,7 +764,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         )
         self.assertIn(create_key.status_code, (200, 409))
 
-        with patch("app.threading.Thread") as thread_cls:
+        with patch("app.threading.Thread") as thread_cls, patch("app._seed_known_host"):
             response = self.client.post(
                 "/api/test-terminal/start",
                 json={
@@ -782,6 +789,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             self.assertTrue(command)
             self.assertEqual(job.get("check_id"), "identity")
             self.assertIn("hostname && whoami && uname -a", command)
+            self.assertIn("StrictHostKeyChecking=yes", command)
+            self.assertIn(f"UserKnownHostsFile={callback_core.KNOWN_HOSTS_FILE}", command)
 
         thread_cls.assert_called_once()
         _, kwargs = thread_cls.call_args
@@ -804,6 +813,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "group": "manual",
                 "address": "10.255.45.243",
                 "username": "jdizzle",
+                "certificate": "rack-bootstrap-ed25519",
             },
         )
         self.client.post(
@@ -905,6 +915,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "group": "manual",
                 "address": "192.168.174.240",
                 "username": "jdizzle",
+                "certificate": "rack-bootstrap-ed25519",
             },
         )
         self.client.post(
@@ -1007,6 +1018,30 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             command = list(job.get("command") or []) if job else []
             self.assertIn("jdizzle@10.0.0.10", command)
             callback_app.TEST_TERMINAL_JOBS.pop(job_id, None)
+
+    def test_test_terminal_start_returns_400_when_private_key_is_unreadable(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertIn(create_key.status_code, (200, 409))
+
+        with patch("app._ssh_private_key_preflight", return_value="SSH private key is not readable"):
+            response = self.client.post(
+                "/api/test-terminal/start",
+                json={
+                    "host": "10.0.0.10",
+                    "username": "jdizzle",
+                    "key_name": "rack-bootstrap-ed25519",
+                    "check_id": "identity",
+                    "port": 22,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+        self.assertIn("not readable", payload.get("error", ""))
 
     def test_sd_option_profiles_crud(self) -> None:
         initial = self.client.get("/api/sd/options-profiles")
@@ -1153,6 +1188,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "address": "192.168.174.239",
                 "username": "jdizzle",
                 "password": "expected-password-value",
+                "certificate": "rack-bootstrap-ed25519",
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -1745,6 +1781,39 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(reloaded.status_code, 200)
         self.assertEqual(reloaded.get_json().get("settings", {}).get("rack_name"), "rack-alpha-01")
 
+    def test_settings_tailscale_framework_roundtrip_and_redaction(self) -> None:
+        updated = self.client.post(
+            "/api/settings",
+            json={
+                "tailscale_tailnet": "LabTailNet.ts.net",
+                "tailscale_api_key": "tskey-api-example",
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+        updated_payload = updated.get_json()
+        self.assertTrue(updated_payload["ok"])
+        self.assertEqual(updated_payload.get("settings", {}).get("tailscale_tailnet"), "labtailnet.ts.net")
+        self.assertEqual(updated_payload.get("settings", {}).get("tailscale_api_key"), "")
+        self.assertTrue(updated_payload.get("settings", {}).get("tailscale_api_key_set"))
+
+        reloaded = self.client.get("/api/settings")
+        self.assertEqual(reloaded.status_code, 200)
+        reloaded_payload = reloaded.get_json()
+        self.assertEqual(reloaded_payload.get("settings", {}).get("tailscale_tailnet"), "labtailnet.ts.net")
+        self.assertEqual(reloaded_payload.get("settings", {}).get("tailscale_api_key"), "")
+        self.assertTrue(reloaded_payload.get("settings", {}).get("tailscale_api_key_set"))
+
+    def test_tailscale_framework_status_endpoint(self) -> None:
+        response = self.client.get("/api/tailscale/framework-status")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        status = payload.get("status", {})
+        self.assertIn("library_available", status)
+        self.assertIn("tailnet", status)
+        self.assertIn("api_key_set", status)
+        self.assertIn("client_ready", status)
+
     def test_logging_tail_works_with_default_lines(self) -> None:
         response = self.client.get("/api/logging/tail")
         self.assertEqual(response.status_code, 200)
@@ -1780,6 +1849,19 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('hx-get="/fragments/tailscale-acl/inputs"', text)
         self.assertIn('hx-get="/fragments/tailscale-acl/output"', text)
         self.assertIn('hx-get="/fragments/tailscale-acl/apply-guide"', text)
+
+    def test_tailscale_acl_inputs_use_dashboard_settings_defaults(self) -> None:
+        updated = self.client.post(
+            "/api/settings",
+            json={"rack_name": "Rack Prime", "tailscale_tailnet": "LabTailNet.ts.net"},
+        )
+        self.assertEqual(updated.status_code, 200)
+
+        response = self.client.get("/fragments/tailscale-acl/inputs")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="rack_name" value="rack-prime"', text)
+        self.assertIn('id="tailnet" value="labtailnet.ts.net"', text)
 
     def test_tailscale_acl_inputs_show_last_used_draft_hint(self) -> None:
         response = self.client.get("/fragments/tailscale-acl/inputs")
@@ -2472,6 +2554,23 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(apply_mock.call_args.kwargs["mode"], "check")
         self.assertTrue(apply_mock.call_args.kwargs["run_ansible"])
 
+    def test_initial_callback_triggers_auto_closer_check_for_runcmd(self) -> None:
+        with patch("core._apply_node_provisioning", return_value={"node": "auto-check-node", "results": []}) as apply_mock:
+            response = self.client.post(
+                "/api/cloud-init/callback",
+                json={
+                    "hostname": "auto-check-runcmd-node",
+                    "instance_id": "iid-auto-check-runcmd",
+                    "profile": "pi5",
+                    "stage": "runcmd",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(apply_mock.called)
+        self.assertEqual(apply_mock.call_args.kwargs["mode"], "check")
+        self.assertTrue(apply_mock.call_args.kwargs["run_ansible"])
+
     def test_callback_node_report_is_stored_and_retrievable(self) -> None:
         response = self.client.post(
             "/api/cloud-init/callback",
@@ -2503,6 +2602,33 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertTrue(report_payload["ok"])
         self.assertEqual(report_payload["report"].get("hostname"), "rpi5-report-01")
         self.assertEqual(report_payload["report"].get("report", {}).get("cpu"), "A72")
+
+    def test_callback_node_report_storage_failure_does_not_break_callback(self) -> None:
+        with patch("app._store_node_report", side_effect=PermissionError("readonly node reports")):
+            response = self.client.post(
+                "/api/cloud-init/callback",
+                json={
+                    "hostname": "rpi5-report-fallback-01",
+                    "instance_id": "iid-report-fallback-01",
+                    "profile": "pi5",
+                    "stage": "hardware-check",
+                    "node_report": {
+                        "kernel": "Linux test",
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload.get("ok"))
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        match = next((e for e in events if e.get("instance_id") == "iid-report-fallback-01"), None)
+        self.assertIsNotNone(match)
+        self.assertFalse(bool(match.get("node_report_present", False)))
+        self.assertEqual(str(match.get("node_report_id", "")), "")
 
     def test_callback_cert_presence_from_alt_header(self) -> None:
         response = self.client.post(
@@ -2697,7 +2823,11 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             callback_core.subprocess,
             "run",
             return_value=SimpleNamespace(returncode=0, stdout="ok\n", stderr=""),
-        ) as run_mock:
+        ) as run_mock, patch.object(
+            callback_core,
+            "_ssh_private_key_preflight",
+            return_value="",
+        ):
             result = callback_core._run_node_profile(
                 "he-test-node-1-aug-7",
                 {"id": "docker", "tags": ["docker"]},
@@ -2728,7 +2858,11 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             callback_core.subprocess,
             "run",
             return_value=SimpleNamespace(returncode=0, stdout="ok\n", stderr=""),
-        ) as run_mock:
+        ) as run_mock, patch.object(
+            callback_core,
+            "_ssh_private_key_preflight",
+            return_value="",
+        ):
             callback_core._run_node_profile(
                 "node-01",
                 {"id": "docker", "tags": ["docker"]},
@@ -2752,7 +2886,11 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             callback_core.subprocess,
             "run",
             return_value=SimpleNamespace(returncode=0, stdout="ok\n", stderr=""),
-        ) as run_mock:
+        ) as run_mock, patch.object(
+            callback_core,
+            "_ssh_private_key_preflight",
+            return_value="",
+        ):
             result = callback_core._run_node_profile(
                 "node-01",
                 {"id": "docker", "tags": ["docker"]},
@@ -2873,6 +3011,60 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertTrue(any(item.get("profile_id") == "hardware_check_trigger" for item in result["results"]))
         trigger_mock.assert_called_once()
 
+    def test_run_hardware_check_callback_fails_fast_when_private_key_unreadable(self) -> None:
+        with patch.object(
+            callback_core,
+            "_node_ops_inventory_view",
+            return_value=[
+                {
+                    "name": "node-01",
+                    "group": "rpi5_active",
+                    "address": "192.0.2.10",
+                    "node_username": "jdizzle",
+                    "certificate": "rack-bootstrap-ed25519",
+                }
+            ],
+        ), patch.object(callback_core, "_ssh_private_key_preflight", return_value="SSH private key is not readable"):
+            result = callback_core._run_hardware_check_callback("node-01", node_group="rpi5_active", node_address="192.0.2.10")
+
+        self.assertEqual(result.get("profile_id"), "hardware_check_trigger")
+        self.assertEqual(result.get("status"), "failed")
+        self.assertIn("not readable", str(result.get("output", "")))
+
+    def test_run_hardware_check_callback_uses_inline_json_safe_command(self) -> None:
+        with patch.object(
+            callback_core,
+            "_node_ops_inventory_view",
+            return_value=[
+                {
+                    "name": "node-01",
+                    "group": "rpi5_active",
+                    "address": "192.0.2.10",
+                    "node_username": "jdizzle",
+                    "certificate": "rack-bootstrap-ed25519",
+                }
+            ],
+        ), patch.object(callback_core, "_ssh_private_key_preflight", return_value=""), patch.object(
+            callback_core,
+            "_seed_known_host",
+        ), patch.object(
+            callback_core,
+            "_default_callback_url",
+            return_value="http://10.255.45.164:8088/api/cloud-init/callback",
+        ), patch.object(
+            callback_core.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout='{"ok":true}', stderr=""),
+        ) as run_mock:
+            result = callback_core._run_hardware_check_callback("node-01", node_group="rpi5_active", node_address="192.0.2.10")
+
+        self.assertEqual(result.get("status"), "ok")
+        cmd = run_mock.call_args.args[0]
+        cmd_text = " ".join(str(part) for part in cmd)
+        self.assertIn("python3 - <<'PY'", cmd_text)
+        self.assertIn("api/cloud-init/callback", cmd_text)
+        self.assertNotIn("/usr/local/bin/rack-hardware-check", cmd_text)
+
     def test_nodes_telegraf_test_uses_current_profile_inputs(self) -> None:
         summary = self.client.get("/api/nodes/summary")
         self.assertEqual(summary.status_code, 200)
@@ -2971,6 +3163,10 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         script_text = (APP_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh").read_text(encoding="utf-8")
         self.assertIn('\\$PI_MODEL', script_text)
         self.assertIn('\\$RAM_MB', script_text)
+        self.assertIn('PAYLOAD_JSON="\\$(PI_MODEL=\\"\\$PI_MODEL\\"', script_text)
+        self.assertIn("python3 <<'PY'", script_text)
+        self.assertIn('print(json.dumps(payload, separators=(",", ":")))', script_text)
+        self.assertIn('--data-binary "\\$PAYLOAD_JSON"', script_text)
         self.assertIn('INFLUX_URL="\\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"', script_text)
         self.assertIn('CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"', script_text)
         self.assertIn('CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"', script_text)

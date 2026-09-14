@@ -33,6 +33,7 @@ DATA_FILE = DATA_DIR / "callbacks.jsonl"
 IMAGE_HISTORY_FILE = DATA_DIR / "image_download_catalog.jsonl"
 IMAGE_CACHE_DIR = DATA_DIR / "image_cache"
 KEYS_DIR = DATA_DIR / "ssh_keys"
+KNOWN_HOSTS_FILE = DATA_DIR / "known_hosts"
 KEY_ARCHIVE_DIR = DATA_DIR / "ssh_key_archive"
 KEY_ARCHIVE_INDEX_FILE = DATA_DIR / "ssh_key_archive.jsonl"
 NODE_CONFIG_FILE = DATA_DIR / "node_monitor_config.json"
@@ -106,6 +107,8 @@ def _atomic_write_text(path: Path, text: str) -> None:
 def _default_app_settings() -> Dict[str, Any]:
     return {
         "rack_name": "homelab",
+        "tailscale_tailnet": str(TAILSCALE_POLICY_DEFAULTS.get("tailnet", "")).strip(),
+        "tailscale_api_key": "",
     }
 
 
@@ -113,6 +116,14 @@ def _sanitize_rack_name(value: str) -> str:
     raw = str(value or "").strip().lower()
     cleaned = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-")
     return cleaned[:40] or "homelab"
+
+
+def _sanitize_tailscale_tailnet(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def _sanitize_tailscale_api_key(value: str) -> str:
+    return str(value or "").strip()
 
 
 def _load_app_settings() -> Dict[str, Any]:
@@ -130,13 +141,23 @@ def _load_app_settings() -> Dict[str, Any]:
         return defaults
 
     rack_name = _sanitize_rack_name(str(loaded.get("rack_name", defaults["rack_name"])))
-    return {"rack_name": rack_name}
+    tailscale_tailnet = _sanitize_tailscale_tailnet(str(loaded.get("tailscale_tailnet", defaults["tailscale_tailnet"])))
+    tailscale_api_key = _sanitize_tailscale_api_key(str(loaded.get("tailscale_api_key", defaults["tailscale_api_key"])))
+    return {
+        "rack_name": rack_name,
+        "tailscale_tailnet": tailscale_tailnet,
+        "tailscale_api_key": tailscale_api_key,
+    }
 
 
 def _save_app_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     settings = _load_app_settings()
     if "rack_name" in payload:
         settings["rack_name"] = _sanitize_rack_name(str(payload.get("rack_name", "")))
+    if "tailscale_tailnet" in payload:
+        settings["tailscale_tailnet"] = _sanitize_tailscale_tailnet(str(payload.get("tailscale_tailnet", "")))
+    if "tailscale_api_key" in payload:
+        settings["tailscale_api_key"] = _sanitize_tailscale_api_key(str(payload.get("tailscale_api_key", "")))
     _ensure_data_file()
     _atomic_write_text(APP_SETTINGS_FILE, json.dumps(settings, indent=2))
     return settings
@@ -246,12 +267,15 @@ def _resolve_openwrt_ssh_key(key_name: str) -> Dict[str, str]:
 
 
 def _probe_ssh_target(*, host: str, port: int, username: str, password: str, private_key_path: str | None = None) -> Dict[str, Any]:
+    _seed_known_host(host, port)
     cmd = [
         "ssh",
         "-o",
         "BatchMode=no",
         "-o",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
         "-o",
         "ConnectTimeout=5",
         "-o",
@@ -262,6 +286,9 @@ def _probe_ssh_target(*, host: str, port: int, username: str, password: str, pri
         str(port),
     ]
     if private_key_path:
+        key_preflight_error = _ssh_private_key_preflight(private_key_path)
+        if key_preflight_error:
+            return {"ok": False, "error": key_preflight_error, "details": key_preflight_error, "timed_out": False}
         cmd.extend(["-i", private_key_path])
     cmd.extend([f"{username}@{host}", "true"])
 
@@ -281,11 +308,14 @@ def _probe_ssh_target(*, host: str, port: int, username: str, password: str, pri
 
 def _push_ssh_key_to_target(*, host: str, port: int, username: str, password: str, public_key: str, public_key_path: str, key_name: str) -> Dict[str, Any]:
     target = f"{username}@{host}"
+    _seed_known_host(host, port)
     ssh_opts = [
         "-o",
         "BatchMode=no",
         "-o",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
         "-o",
         "ConnectTimeout=6",
         "-o",
@@ -420,6 +450,8 @@ def _tailscale_policy_defaults() -> Dict[str, Any]:
     defaults = dict(TAILSCALE_POLICY_DEFAULTS)
     defaults["rack_name"] = rack_name
     defaults["homelab_tag"] = f"tag:{rack_name}"
+    defaults["tailnet"] = _sanitize_tailscale_tailnet(str(settings.get("tailscale_tailnet", defaults.get("tailnet", "")))) or str(defaults.get("tailnet", "")).strip()
+    defaults["tailscale_api_key_set"] = bool(str(settings.get("tailscale_api_key", "")).strip())
     return defaults
 
 
@@ -558,6 +590,111 @@ def _ensure_keys_dir() -> None:
     except PermissionError:
         # Best effort; keep running on filesystems that ignore chmod semantics.
         pass
+    _normalize_ssh_key_artifacts()
+
+
+def _data_dir_owner() -> tuple[int, int] | None:
+    try:
+        stat_result = DATA_DIR.stat()
+        return stat_result.st_uid, stat_result.st_gid
+    except OSError:
+        return None
+
+
+def _chown_to_data_owner(path: Path) -> None:
+    if os.geteuid() != 0:
+        return
+    owner = _data_dir_owner()
+    if owner is None:
+        return
+    uid, gid = owner
+    try:
+        os.chown(path, uid, gid)
+    except OSError:
+        pass
+
+
+def _normalize_ssh_key_artifacts() -> None:
+    try:
+        key_files = list(KEYS_DIR.iterdir())
+    except OSError:
+        return
+
+    for key_file in key_files:
+        if not key_file.is_file():
+            continue
+        _chown_to_data_owner(key_file)
+        target_mode = 0o644 if key_file.name.endswith(".pub") else 0o600
+        try:
+            os.chmod(key_file, target_mode)
+        except PermissionError:
+            pass
+
+
+def _ensure_known_hosts_file() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not KNOWN_HOSTS_FILE.exists():
+        KNOWN_HOSTS_FILE.touch()
+    _chown_to_data_owner(KNOWN_HOSTS_FILE)
+    try:
+        os.chmod(KNOWN_HOSTS_FILE, 0o600)
+    except PermissionError:
+        pass
+
+
+def _seed_known_host(host: str, port: int = 22) -> None:
+    host_text = str(host or "").strip()
+    if not host_text:
+        return
+
+    _ensure_known_hosts_file()
+    known_hosts_path = str(KNOWN_HOSTS_FILE)
+    match_tokens = [host_text]
+    if int(port or 22) != 22:
+        match_tokens.insert(0, f"[{host_text}]:{int(port)}")
+
+    try:
+        for token in match_tokens:
+            match_proc = subprocess.run(
+                ["ssh-keygen", "-F", token, "-f", known_hosts_path],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if match_proc.returncode == 0:
+                return
+
+        scan_cmd = ["ssh-keyscan", "-T", "5"]
+        if int(port or 22) != 22:
+            scan_cmd.extend(["-p", str(int(port))])
+        scan_cmd.append(host_text)
+        scan_proc = subprocess.run(scan_cmd, check=False, capture_output=True, text=True)
+        scanned = str(scan_proc.stdout or "").strip()
+        if scan_proc.returncode != 0 or not scanned:
+            return
+
+        with KNOWN_HOSTS_FILE.open("a", encoding="utf-8") as kh:
+            kh.write(scanned + "\n")
+        _ensure_known_hosts_file()
+    except (FileNotFoundError, OSError, ValueError):
+        return
+
+
+def _ansible_known_hosts_args() -> str:
+    _ensure_known_hosts_file()
+    return f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={KNOWN_HOSTS_FILE} -o PreferredAuthentications=publickey"
+
+
+def _ssh_private_key_preflight(private_key_path: str) -> str:
+    path = Path(str(private_key_path or "").strip())
+    if not path.exists() or not path.is_file():
+        return f"SSH private key not found: {path}"
+    if not os.access(path, os.R_OK):
+        return (
+            f"SSH private key is not readable by user '{os.getenv('USER', 'current user')}': {path}. "
+            f"Run: sudo chown $USER:$USER {path} {path}.pub && sudo chmod 600 {path} && sudo chmod 644 {path}.pub"
+        )
+    return ""
 
 
 def _ensure_key_archive_dir() -> None:
@@ -1946,10 +2083,6 @@ def _trigger_initial_callback_closer(event: Dict[str, Any]) -> None:
     if not hostname:
         return
 
-    stage = str(event.get("stage", "") or "").strip().lower()
-    if stage not in {"phone_home", "runcmd", "hardware-check"}:
-        return
-
     prior_events = _read_events(limit=2000)
     has_prior_event = any(
         str(prior.get("hostname", "") or "").strip() == hostname
@@ -1979,7 +2112,7 @@ def _trigger_initial_callback_closer(event: Dict[str, Any]) -> None:
         "Auto-triggering initial closer check for hostname=%s profiles=%s stage=%s",
         hostname,
         profile_ids,
-        stage,
+        str(event.get("stage", "") or "").strip().lower() or "unknown",
     )
     _apply_node_provisioning(hostname, profile_ids, mode="check", run_ansible=True)
 
@@ -2222,8 +2355,25 @@ def _run_node_profile(
     limit_target = node_name
     temporary_inventory_path = None
     host_target = str(node_address or "").strip()
+    if host_target:
+        _seed_known_host(host_target)
+
+    key_preflight_error = _ssh_private_key_preflight(ssh_key_path)
+    if key_preflight_error:
+        return {
+            "profile_id": profile_id,
+            "status": "failed",
+            "mode": mode,
+            "checked_at": checked_at,
+            "command": [],
+            "exit_code": None,
+            "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+            "output": key_preflight_error,
+        }
+
     resolved_group = str(node_group or "").strip()
     if host_target:
+        known_hosts_args = _ansible_known_hosts_args()
         temp_inventory = tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8")
         temp_inventory.write("all:\n")
         temp_inventory.write("  children:\n")
@@ -2233,7 +2383,7 @@ def _run_node_profile(
         temp_inventory.write(f"          ansible_host: {host_target}\n")
         temp_inventory.write(f"          ansible_user: {ssh_user}\n")
         temp_inventory.write(f"          ansible_ssh_private_key_file: {ssh_key_path}\n")
-        temp_inventory.write("          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=publickey'\n")
+        temp_inventory.write(f"          ansible_ssh_common_args: '{known_hosts_args}'\n")
         temp_inventory.write("          ansible_connection: ssh\n")
         temp_inventory.write("          ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
         temp_inventory.flush()
@@ -2375,6 +2525,23 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
     if cert_name and _is_safe_key_name(cert_name):
         ssh_key_path = str(KEYS_DIR / cert_name)
 
+    _seed_known_host(host_target)
+
+    key_preflight_error = _ssh_private_key_preflight(ssh_key_path)
+    if key_preflight_error:
+        return {
+            "profile_id": "hardware_check_trigger",
+            "status": "failed",
+            "mode": "check",
+            "checked_at": checked_at,
+            "command": [],
+            "exit_code": None,
+            "inputs": {},
+            "output": key_preflight_error,
+        }
+
+    known_hosts_args = _ansible_known_hosts_args()
+
     ansible_cmd = shutil.which("ansible")
     if not ansible_cmd:
         venv_ansible = BASE_DIR.parent / ".venv" / "bin" / "ansible"
@@ -2390,11 +2557,75 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
     temp_inventory.write(f"          ansible_host: {host_target}\n")
     temp_inventory.write(f"          ansible_user: {ssh_user}\n")
     temp_inventory.write(f"          ansible_ssh_private_key_file: {ssh_key_path}\n")
-    temp_inventory.write("          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=publickey'\n")
+    temp_inventory.write(f"          ansible_ssh_common_args: '{known_hosts_args}'\n")
     temp_inventory.write("          ansible_connection: ssh\n")
     temp_inventory.write("          ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
     temp_inventory.flush()
     temp_inventory.close()
+
+    profile_value = "pibplus" if "bplus" in str(node_group or "").lower() else "pi5"
+    callback_url = _default_callback_url()
+    remote_cmd = (
+        "python3 - <<'PY'\n"
+        "import base64\n"
+        "import json\n"
+        "import os\n"
+        "import socket\n"
+        "import subprocess\n"
+        "from urllib import request as urlrequest\n"
+        "\n"
+        "CALLBACK_URL = " + repr(callback_url) + "\n"
+        "PROFILE = " + repr(profile_value) + "\n"
+        "\n"
+        "def run_text(cmd):\n"
+        "    try:\n"
+        "        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()\n"
+        "    except Exception:\n"
+        "        return ''\n"
+        "\n"
+        "def as_int(value):\n"
+        "    try:\n"
+        "        return int(float(str(value or '0').strip()))\n"
+        "    except Exception:\n"
+        "        return 0\n"
+        "\n"
+        "def as_bool(value):\n"
+        "    return str(value or '').strip().lower() == 'true'\n"
+        "\n"
+        "pi_model = run_text(['bash', '-lc', \"cat /proc/device-tree/model 2>/dev/null | tr -d '\\\\0' || echo unknown\"]) or 'unknown'\n"
+        "ram_mb = as_int(run_text(['bash', '-lc', \"awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0\"]))\n"
+        "sd_capacity = as_int(run_text(['bash', '-lc', \"lsblk -b --output SIZE -n /dev/mmcblk0 2>/dev/null | awk '{print int($1/1024/1024/1024)}' || echo 0\"]))\n"
+        "nvme_present = os.path.exists('/dev/nvme0n1')\n"
+        "hat_present = as_bool(run_text(['bash', '-lc', \"i2cdetect -y 1 2>/dev/null | grep -q '50\\\\|51' && echo true || echo false\"]))\n"
+        "poe_enabled = os.path.exists('/sys/class/pwm/pwmchip0/device/dtoverlay')\n"
+        "source_ip = run_text(['/usr/local/bin/rack-local-ip']) or run_text(['bash', '-lc', \"hostname -I 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i !~ /^127\\\\./ && $i !~ /^169\\\\.254\\\\./) {print $i; exit}}'\"])\n"
+        "report_text = run_text(['/usr/local/bin/rack-node-report'])\n"
+        "node_report_b64 = base64.b64encode(report_text.encode('utf-8')).decode('ascii') if report_text else ''\n"
+        "payload = {\n"
+        "    'instance_id': f\"{socket.gethostname()}-hw\",\n"
+        "    'hostname': socket.gethostname(),\n"
+        "    'profile': PROFILE,\n"
+        "    'source_ip': source_ip,\n"
+        "    'stage': 'hardware-check',\n"
+        "    'node_report_b64': node_report_b64,\n"
+        "    'hardware': {\n"
+        "        'model': pi_model,\n"
+        "        'ram_mb': ram_mb,\n"
+        "        'sd_capacity_gb': sd_capacity,\n"
+        "        'nvme': nvme_present,\n"
+        "        'hat': hat_present,\n"
+        "        'poe': poe_enabled,\n"
+        "    },\n"
+        "}\n"
+        "body = json.dumps(payload, separators=(',', ':')).encode('utf-8')\n"
+        "req = urlrequest.Request(CALLBACK_URL, data=body, headers={'Content-Type': 'application/json'})\n"
+        "try:\n"
+        "    with urlrequest.urlopen(req, timeout=12) as resp:\n"
+        "        print(resp.read().decode('utf-8', errors='replace').strip())\n"
+        "except Exception as exc:\n"
+        "    print(json.dumps({'ok': False, 'error': str(exc)}))\n"
+        "PY"
+    )
 
     cmd = [
         ansible_cmd or "ansible",
@@ -2404,7 +2635,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
         "-m",
         "ansible.builtin.shell",
         "-a",
-        "/usr/local/bin/rack-hardware-check",
+        remote_cmd,
         "-o",
     ]
     env = os.environ.copy()
@@ -3005,6 +3236,17 @@ def _is_safe_key_name(name: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9._-]+", name))
 
 
+def _ensure_ssh_key_permissions(private_key: Path, public_key: Path) -> None:
+    try:
+        os.chmod(private_key, 0o600)
+    except (FileNotFoundError, PermissionError):
+        pass
+    try:
+        os.chmod(public_key, 0o644)
+    except (FileNotFoundError, PermissionError):
+        pass
+
+
 def _generate_or_load_ssh_key(key_name: str, comment: str = "rack-bootstrap", mode: str = "kload") -> Dict[str, Any]:
     _ensure_keys_dir()
     private_key = KEYS_DIR / key_name
@@ -3040,6 +3282,8 @@ def _generate_or_load_ssh_key(key_name: str, comment: str = "rack-bootstrap", mo
             text=True,
         )
         created = True
+
+    _ensure_ssh_key_permissions(private_key, public_key)
 
     pub = public_key.read_text(encoding="utf-8").strip()
     return {

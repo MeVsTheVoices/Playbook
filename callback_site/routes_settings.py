@@ -7,6 +7,7 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 from core import *
+from tailscale_client import get_tailscale_framework_status
 
 
 def register_settings_routes(app: Any, *, log_file: Path, root_logger: logging.Logger, logger: logging.Logger) -> None:
@@ -15,6 +16,8 @@ def register_settings_routes(app: Any, *, log_file: Path, root_logger: logging.L
     @settings_api.get("/api/settings")
     def settings_get() -> Any:
         settings = _load_app_settings()
+        settings["tailscale_api_key_set"] = bool(str(settings.get("tailscale_api_key", "")).strip())
+        settings["tailscale_api_key"] = ""
         settings["log_file"] = str(log_file)
         settings["verbose_logging"] = root_logger.level == logging.DEBUG
         settings["appdata_dir"] = str(APPDATA_DIR)
@@ -57,10 +60,18 @@ def register_settings_routes(app: Any, *, log_file: Path, root_logger: logging.L
         if not isinstance(payload, dict):
             return jsonify({"ok": False, "error": "invalid payload"}), 400
         settings = _save_app_settings(payload)
-        return jsonify({"ok": True, "settings": settings})
+        response_settings = dict(settings)
+        response_settings["tailscale_api_key_set"] = bool(str(settings.get("tailscale_api_key", "")).strip())
+        response_settings["tailscale_api_key"] = ""
+        return jsonify({"ok": True, "settings": response_settings})
 
     @settings_api.get("/health")
     def health() -> Any:
         return jsonify({"ok": True})
+
+    @settings_api.get("/api/tailscale/framework-status")
+    def tailscale_framework_status() -> Any:
+        status = get_tailscale_framework_status()
+        return jsonify({"ok": True, "status": status})
 
     app.register_blueprint(settings_api)

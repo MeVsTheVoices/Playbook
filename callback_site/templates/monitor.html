@@ -197,6 +197,45 @@
       button.secondary { background: #475569; }
       button.danger { background: #b42318; }
       button:disabled { opacity: 0.6; cursor: not-allowed; }
+      button.ping-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.45rem;
+        min-width: 138px;
+      }
+      button.ping-action::after {
+        content: "";
+        width: 0.68rem;
+        height: 0.68rem;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.55);
+        background: transparent;
+      }
+      button.ping-action.ping-pending::after {
+        border-color: rgba(255, 255, 255, 0.4);
+        border-top-color: #fef08a;
+        animation: ping-spin 0.72s linear infinite;
+      }
+      button.ping-action.ping-good::after {
+        border-color: #22c55e;
+        background: #22c55e;
+        box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.2);
+      }
+      button.ping-action.ping-warn::after {
+        border-color: #f59e0b;
+        background: #f59e0b;
+        box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.2);
+      }
+      button.ping-action.ping-bad::after {
+        border-color: #ef4444;
+        background: #ef4444;
+        box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.2);
+      }
+      @keyframes ping-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
       .actions-row {
         display: flex;
         gap: 0.55rem;
@@ -265,6 +304,50 @@
       .table-wrap {
         overflow-x: auto;
       }
+      .expander-btn {
+        width: auto;
+        min-width: 0;
+        padding: 0.2rem 0.32rem;
+        border-radius: 8px;
+        border: 1px solid #c8d3df;
+        background: #f8fafc;
+        color: #0f172a;
+        font-weight: 700;
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+      .expander-btn:hover {
+        background: #edf2f7;
+      }
+      .hw-detail-row > td {
+        background: #f8fafc;
+        border-bottom: 1px dashed #c8d3df;
+      }
+      .hw-detail-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.65rem;
+      }
+      .hw-detail-card {
+        border: 1px solid #d3dbe5;
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 0.55rem;
+      }
+      .hw-detail-card h4 {
+        margin: 0 0 0.4rem;
+        font-size: 0.84rem;
+        color: #334155;
+      }
+      .hw-pre {
+        margin: 0;
+        background: #0f172a;
+        color: #dbe7ff;
+        border-radius: 8px;
+        padding: 0.52rem;
+        max-height: 240px;
+        overflow: auto;
+      }
       .card {
         border: 1px solid var(--line);
         border-radius: 10px;
@@ -289,6 +372,7 @@
       }
       @media (max-width: 1100px) {
         .split { grid-template-columns: 1fr; }
+        .hw-detail-grid { grid-template-columns: 1fr; }
       }
       @media (max-width: 980px) {
         .sidebar { width: 196px; }
@@ -350,10 +434,9 @@
               Node
               <select id="monitor-ping-node-select"></select>
             </label>
-            <button id="summary-run-ping" type="button" class="secondary">Simple Ping</button>
+            <button id="summary-run-ping" type="button" class="secondary ping-action" data-default-label="Simple Ping">Simple Ping</button>
             <span class="note" id="monitor-status">Idle.</span>
           </div>
-          <p class="note" id="summary-ping-status"></p>
         </div>
 
         <div class="panel">
@@ -386,22 +469,22 @@
         </div>
 
         <div class="panel">
-          <h2>Run Closer Check</h2>
-          <p class="note">Select a discovered node and trigger a closer check so the hardware monitor refreshes with the latest callback data.</p>
+          <h2>Get Hardware Profile</h2>
+          <p class="note">Select a discovered node and trigger a hardware profile run so the hardware monitor refreshes with the latest callback data.</p>
           <div class="actions-row controls-inline">
             <label for="monitor-node-select" style="margin: 0; min-width: 240px;">
               Discovered node
               <select id="monitor-node-select"></select>
             </label>
-            <button id="monitor-run-check" type="button">Check Closer</button>
-            <button id="monitor-run-ping" type="button" class="secondary">Simple Ping</button>
+            <button id="monitor-run-check" type="button" class="ping-action" data-default-label="Get Hardware Profile">Get Hardware Profile</button>
+            <button id="monitor-run-ping" type="button" class="secondary ping-action" data-default-label="Simple Ping">Simple Ping</button>
           </div>
-          <p class="note" id="monitor-check-status">Select a discovered node to trigger a closer check.</p>
+          <p class="note" id="monitor-check-status">Select a discovered node to trigger a hardware profile run.</p>
         </div>
 
         <div class="panel">
           <h2>Hardware Status</h2>
-          <p class="note">Populated from hardware-check callbacks. Trigger a fresh check from this page or Node Ops → Check Closer to update any row.</p>
+          <p class="note">Populated from hardware-check callbacks. Trigger a fresh run from this page or Node Ops → Get Hardware Profile to update any row.</p>
           <table>
             <thead>
               <tr>
@@ -418,7 +501,7 @@
               </tr>
             </thead>
             <tbody id="hw-body">
-              <tr><td colspan="10">No hardware data yet. Run a hardware-check from Node Ops.</td></tr>
+              <tr><td colspan="10">No hardware data yet. Run Get Hardware Profile from Node Ops.</td></tr>
             </tbody>
           </table>
         </div>
@@ -454,7 +537,7 @@
             </div>
             <div class="actions-row" style="margin-top: 0.7rem;">
               <button id="save-node" type="button">Save Node</button>
-              <button id="node-form-ping" type="button" class="secondary">Simple Ping</button>
+              <button id="node-form-ping" type="button" class="secondary ping-action" data-default-label="Simple Ping">Simple Ping</button>
               <button id="clear-node-form" type="button" class="secondary">Clear</button>
             </div>
             <p class="note" id="node-form-status"></p>
@@ -466,7 +549,7 @@
             <div class="actions-row">
               <label for="cert-node" style="margin:0;">Node</label>
               <select id="cert-node" style="max-width: 230px;"></select>
-              <button id="pull-cert" type="button">Pull Certificate</button>
+              <button id="pull-cert" type="button" class="ping-action" data-default-label="Pull Certificate">Pull Certificate</button>
             </div>
             <p class="note" id="cert-status"></p>
             <div class="cert-box" id="cert-output">No certificate details loaded yet.</div>
@@ -492,13 +575,13 @@
       const monitorRunPingBtn = document.getElementById("monitor-run-ping");
       const nodeFormPingBtn = document.getElementById("node-form-ping");
       const monitorCheckStatusEl = document.getElementById("monitor-check-status");
-      const summaryPingStatusEl = document.getElementById("summary-ping-status");
       const sotKpisEl = document.getElementById("sot-kpis");
       const sotBodyEl = document.getElementById("sot-body");
       const sotMetaEl = document.getElementById("sot-meta");
 
       let nodes = [];
       let sourceOfTruthState = null;
+      const pingResetTimers = new WeakMap();
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -628,14 +711,144 @@
         monitorCheckStatusEl.textContent = message;
       }
 
+      function setPingVisualState(button, state, label) {
+        if (!button) {
+          return;
+        }
+        button.classList.remove("ping-pending", "ping-good", "ping-warn", "ping-bad");
+        if (state) {
+          button.classList.add(state);
+        }
+        if (label) {
+          button.textContent = label;
+        }
+      }
+
+      function resetPingButton(button) {
+        if (!button) {
+          return;
+        }
+        const pendingTimer = pingResetTimers.get(button);
+        if (pendingTimer) {
+          clearTimeout(pendingTimer);
+          pingResetTimers.delete(button);
+        }
+        button.disabled = false;
+        setPingVisualState(button, "", button.dataset.defaultLabel || "Simple Ping");
+      }
+
+      function finishPingButton(button, outcomeClass, label) {
+        setPingVisualState(button, outcomeClass, label);
+        const timerId = setTimeout(() => {
+          resetPingButton(button);
+        }, 1000);
+        pingResetTimers.set(button, timerId);
+      }
+
+      function classifyPingOutcome(data) {
+        if (!data || !data.reachable) {
+          return { state: "ping-bad", label: "Bad" };
+        }
+
+        const rawLatency = Number(data.latency_ms);
+        if (!Number.isFinite(rawLatency)) {
+          return { state: "ping-good", label: "Good" };
+        }
+
+        const latency = Math.max(0, rawLatency);
+        if (latency <= 25) {
+          return { state: "ping-good", label: latency < 1 ? "<1ms" : `${Math.round(latency)}ms` };
+        }
+        if (latency <= 90) {
+          return { state: "ping-warn", label: `${Math.round(latency)}ms` };
+        }
+        return { state: "ping-bad", label: `${Math.round(latency)}ms` };
+      }
+
+      function toPrettyJson(value) {
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (_) {
+          return String(value ?? "");
+        }
+      }
+
+      function parsedHardwareProfile(node) {
+        const hw = node.hardware || {};
+        const cert = node.cert || {};
+        const ramMb = Number(hw.ram_mb);
+        const ramGb = Number.isFinite(ramMb) ? Math.round((ramMb / 1024) * 10) / 10 : null;
+        return {
+          node: {
+            name: node.name || "",
+            group: node.group || "",
+            address: node.address || "",
+            address_source: node.address_source || "",
+            source: node.source || "",
+          },
+          hardware_profile: {
+            model: hw.model || "",
+            ram_mb: hw.ram_mb ?? null,
+            ram_gb_approx: ramGb,
+            sd_capacity_gb: hw.sd_capacity_gb ?? null,
+            nvme: hw.nvme ?? null,
+            hat: hw.hat ?? null,
+            poe: hw.poe ?? null,
+          },
+          callback_context: {
+            stage: "hardware-check",
+            received_at: hw.received_at || "",
+            source_ip: hw.source_ip || "",
+            callback_profile: node.callback_profile || "",
+            callback_instance_id: node.callback_instance_id || "",
+            last_callback: node.last_callback || "",
+            node_report_id: hw.node_report_id || "",
+            node_report_present: Boolean(hw.node_report_id),
+          },
+          certificate: {
+            cert_present: Boolean(cert.cert_present),
+            cert_subject: cert.cert_subject || "",
+            cert_issuer: cert.cert_issuer || "",
+            cert_fingerprint: cert.cert_fingerprint || "",
+          },
+          latest_check: node.latest_check || {},
+        };
+      }
+
+      function rawHardwareView(node) {
+        const hw = node.hardware || {};
+        return {
+          hardware: {
+            received_at: hw.received_at || "",
+            source_ip: hw.source_ip || "",
+            model: hw.model || "",
+            ram_mb: hw.ram_mb ?? null,
+            sd_capacity_gb: hw.sd_capacity_gb ?? null,
+            nvme: hw.nvme ?? null,
+            hat: hw.hat ?? null,
+            poe: hw.poe ?? null,
+            node_report_id: hw.node_report_id || "",
+          },
+          node_record: {
+            name: node.name || "",
+            group: node.group || "",
+            address: node.address || "",
+            address_source: node.address_source || "",
+            source: node.source || "",
+            selected_profiles: Array.isArray(node.selected_profiles) ? node.selected_profiles : [],
+          },
+          latest_check_steps: Array.isArray(node.latest_check_steps) ? node.latest_check_steps : [],
+        };
+      }
+
       function renderHardwareTable() {
         hwBodyEl.innerHTML = "";
         const hwNodes = nodes.filter((n) => n.hardware && n.hardware.received_at);
         if (!hwNodes.length) {
-          hwBodyEl.innerHTML = "<tr><td colspan='10' style='color:var(--muted)'>No hardware-check callbacks received yet. Run <em>Check Closer</em> in Node Ops to trigger one.</td></tr>";
+          hwBodyEl.innerHTML = "<tr><td colspan='10' style='color:var(--muted)'>No hardware-check callbacks received yet. Run <em>Get Hardware Profile</em> in Node Ops to trigger one.</td></tr>";
           return;
         }
-        for (const node of hwNodes) {
+        for (const [index, node] of hwNodes.entries()) {
           const hw = node.hardware || {};
           const cert = node.cert || {};
           const certTag = cert.cert_present
@@ -644,9 +857,14 @@
           const reportLink = hw.node_report_id
             ? `<a href='/cloud-init/reports/${escapeHtml(hw.node_report_id)}' target='_blank' rel='noopener'>report ↗</a>`
             : "-";
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td><strong>${escapeHtml(node.name)}</strong></td>
+          const summaryRow = document.createElement("tr");
+          const detailRowId = `hw-detail-${index}`;
+          summaryRow.innerHTML = `
+            <td>
+              <button type='button' class='expander-btn' aria-expanded='false' data-target='${escapeHtml(detailRowId)}'>
+                ▶ ${escapeHtml(node.name)}
+              </button>
+            </td>
             <td>${escapeHtml(node.group || "-")}</td>
             <td class='mono'>${escapeHtml(hw.source_ip || node.address || "-")}</td>
             <td>${escapeHtml(hw.model || "-")}</td>
@@ -657,7 +875,37 @@
             <td>${escapeHtml(hw.received_at ? hw.received_at.replace("T", " ").replace("+00:00", " UTC") : "-")}</td>
             <td>${reportLink}</td>
           `;
-          hwBodyEl.appendChild(tr);
+          hwBodyEl.appendChild(summaryRow);
+
+          const detailRow = document.createElement("tr");
+          detailRow.className = "hw-detail-row";
+          detailRow.id = detailRowId;
+          detailRow.hidden = true;
+          detailRow.innerHTML = `
+            <td colspan='10'>
+              <div class='hw-detail-grid'>
+                <div class='hw-detail-card'>
+                  <h4>Parsed Hardware Profile</h4>
+                  <pre class='mono hw-pre'>${escapeHtml(toPrettyJson(parsedHardwareProfile(node)))}</pre>
+                </div>
+                <div class='hw-detail-card'>
+                  <h4>Raw-ish Callback Data</h4>
+                  <pre class='mono hw-pre'>${escapeHtml(toPrettyJson(rawHardwareView(node)))}</pre>
+                </div>
+              </div>
+            </td>
+          `;
+          hwBodyEl.appendChild(detailRow);
+
+          const expander = summaryRow.querySelector(".expander-btn");
+          if (expander) {
+            expander.addEventListener("click", () => {
+              const isOpen = !detailRow.hidden;
+              detailRow.hidden = isOpen;
+              expander.setAttribute("aria-expanded", isOpen ? "false" : "true");
+              expander.textContent = `${isOpen ? "▶" : "▼"} ${node.name || "node"}`;
+            });
+          }
         }
       }
 
@@ -796,14 +1044,15 @@
         }
       }
 
-      async function pollMonitorProvisionJob(jobId, nodeName, previouslySeenHardwareAt) {
+      async function pollMonitorProvisionJob(jobId, nodeName, previouslySeenHardwareAt, triggerButton) {
         const deadline = Date.now() + 120000;
         while (Date.now() < deadline) {
           try {
             const res = await fetch(`/api/nodes/provision/jobs/${encodeURIComponent(jobId)}`);
             const data = await res.json();
             if (!res.ok || !data.ok) {
-              setMonitorCheckState("error", data.error || "Closer check job lookup failed.");
+              setMonitorCheckState("error", data.error || "Hardware profile job lookup failed.");
+              finishPingButton(triggerButton, "ping-bad", "Bad");
               return;
             }
             const job = data.job || {};
@@ -813,6 +1062,7 @@
               const currentHardwareAt = currentNode && currentNode.hardware ? currentNode.hardware.received_at : "";
               if (currentHardwareAt && currentHardwareAt !== previouslySeenHardwareAt) {
                 setMonitorCheckState("ok", `Hardware callback refreshed for ${nodeName}.`);
+                finishPingButton(triggerButton, "ping-good", "Good");
                 return;
               }
               const resultEntry = Array.isArray(job.results)
@@ -824,38 +1074,51 @@
               if (hardwareTrigger && hardwareTrigger.status && hardwareTrigger.status !== "ok") {
                 const details = String(hardwareTrigger.output || "").trim();
                 const shortDetails = details ? ` ${details.slice(0, 220)}` : "";
-                setMonitorCheckState("error", `Closer check completed for ${nodeName}, but hardware-check trigger failed (${hardwareTrigger.status}).${shortDetails}`);
+                setMonitorCheckState("error", `Hardware profile run completed for ${nodeName}, but hardware-check trigger failed (${hardwareTrigger.status}).${shortDetails}`);
+                finishPingButton(triggerButton, "ping-bad", "Bad");
                 return;
               }
-              setMonitorCheckState("error", `Closer check completed for ${nodeName}, but no fresh hardware callback has been seen yet.`);
+              setMonitorCheckState("error", `Hardware profile run completed for ${nodeName}, but no fresh hardware callback has been seen yet.`);
+              finishPingButton(triggerButton, "ping-warn", "Slow");
               return;
             }
             if (job.status === "failed") {
-              setMonitorCheckState("error", job.error || `Closer check failed for ${nodeName}.`);
+              setMonitorCheckState("error", job.error || `Hardware profile run failed for ${nodeName}.`);
+              finishPingButton(triggerButton, "ping-bad", "Bad");
               return;
             }
-            setMonitorCheckState("busy", `Triggering closer check for ${nodeName}...`);
+            setMonitorCheckState("busy", `Triggering hardware profile run for ${nodeName}...`);
             await new Promise((resolve) => setTimeout(resolve, 1500));
           } catch (err) {
-            setMonitorCheckState("error", `Closer check request failed: ${String(err && err.message ? err.message : err)}`);
+            setMonitorCheckState("error", `Hardware profile request failed: ${String(err && err.message ? err.message : err)}`);
+            finishPingButton(triggerButton, "ping-bad", "Bad");
             return;
           }
         }
-        setMonitorCheckState("error", `The closer check is still running for ${nodeName}; refresh the summary to see if a hardware callback arrives.`);
+        setMonitorCheckState("error", `The hardware profile run is still running for ${nodeName}; refresh the summary to see if a hardware callback arrives.`);
+        finishPingButton(triggerButton, "ping-warn", "Slow");
       }
 
       async function runMonitorCloserCheck() {
         const nodeName = monitorNodeSelectEl.value;
         if (!nodeName) {
           setMonitorCheckState("error", "No discovered node is available yet.");
+          finishPingButton(monitorRunCheckBtn, "ping-warn", "Pick Node");
           return;
+        }
+
+        const existingTimer = pingResetTimers.get(monitorRunCheckBtn);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          pingResetTimers.delete(monitorRunCheckBtn);
         }
 
         const currentNode = nodes.find((item) => item.name === nodeName);
         const previouslySeenHardwareAt = currentNode && currentNode.hardware ? currentNode.hardware.received_at : "";
 
         monitorRunCheckBtn.disabled = true;
-        setMonitorCheckState("busy", `Triggering closer check for ${nodeName}...`);
+        setPingVisualState(monitorRunCheckBtn, "ping-pending", "Checking");
+        setMonitorCheckState("busy", `Triggering hardware profile run for ${nodeName}...`);
         try {
           const res = await fetchJsonWithTimeout("/api/nodes/provision", {
             method: "POST",
@@ -865,68 +1128,77 @@
           const data = await res.json();
 
           if (!res.ok || !data.ok) {
-            setMonitorCheckState("error", data.error || "Closer check request failed.");
+            setMonitorCheckState("error", data.error || "Hardware profile request failed.");
+            finishPingButton(monitorRunCheckBtn, "ping-bad", "Bad");
             return;
           }
 
           if (data.job_id) {
-            await pollMonitorProvisionJob(data.job_id, nodeName, previouslySeenHardwareAt);
+            await pollMonitorProvisionJob(data.job_id, nodeName, previouslySeenHardwareAt, monitorRunCheckBtn);
             return;
           }
 
           await loadSummary();
           const refreshedNode = nodes.find((item) => item.name === nodeName);
           const refreshedHardwareAt = refreshedNode && refreshedNode.hardware ? refreshedNode.hardware.received_at : "";
+          const hasFreshHardware = refreshedHardwareAt && refreshedHardwareAt !== previouslySeenHardwareAt;
           setMonitorCheckState(
-            refreshedHardwareAt && refreshedHardwareAt !== previouslySeenHardwareAt ? "ok" : "error",
-            refreshedHardwareAt && refreshedHardwareAt !== previouslySeenHardwareAt
-              ? `Closer check triggered for ${nodeName}; a fresh hardware callback is visible.`
-              : `Closer check submitted for ${nodeName}, but no new hardware callback has been observed yet.`
+            hasFreshHardware ? "ok" : "error",
+            hasFreshHardware
+              ? `Hardware profile run triggered for ${nodeName}; a fresh hardware callback is visible.`
+              : `Hardware profile run submitted for ${nodeName}, but no new hardware callback has been observed yet.`
           );
+          finishPingButton(monitorRunCheckBtn, hasFreshHardware ? "ping-good" : "ping-warn", hasFreshHardware ? "Good" : "Slow");
         } catch (err) {
           if (err && err.name === "AbortError") {
-            setMonitorCheckState("error", `The closer check is still running for ${nodeName}; refresh the summary to see if a hardware callback arrives.`);
+            setMonitorCheckState("error", `The hardware profile run is still running for ${nodeName}; refresh the summary to see if a hardware callback arrives.`);
+            finishPingButton(monitorRunCheckBtn, "ping-warn", "Slow");
             return;
           }
-          setMonitorCheckState("error", `Closer check request failed: ${String(err && err.message ? err.message : err)}`);
+          setMonitorCheckState("error", `Hardware profile request failed: ${String(err && err.message ? err.message : err)}`);
+          finishPingButton(monitorRunCheckBtn, "ping-bad", "Bad");
         } finally {
-          monitorRunCheckBtn.disabled = false;
+          if (!pingResetTimers.has(monitorRunCheckBtn)) {
+            resetPingButton(monitorRunCheckBtn);
+          }
         }
       }
 
-      async function runSimplePing(nodeName, statusEl, triggerButton, prefixMessage) {
+      async function runSimplePing(nodeName, triggerButton) {
         const selected = String(nodeName || "").trim();
+        if (!triggerButton) {
+          return;
+        }
+
+        const existingTimer = pingResetTimers.get(triggerButton);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          pingResetTimers.delete(triggerButton);
+        }
+
         if (!selected) {
-          statusEl.textContent = "Choose a node first.";
+          finishPingButton(triggerButton, "ping-warn", "Pick Node");
           return;
         }
 
         triggerButton.disabled = true;
-        statusEl.textContent = `Pinging ${selected}...`;
+        setPingVisualState(triggerButton, "ping-pending", "Pinging");
         try {
           const res = await fetchJsonWithTimeout(`/api/monitor/nodes/${encodeURIComponent(selected)}/ping`, {}, 12000);
           const data = await res.json();
           if (!res.ok || !data.ok) {
-            statusEl.textContent = data.error || "Ping failed.";
+            finishPingButton(triggerButton, "ping-bad", "Bad");
             return;
           }
 
-          if (data.reachable) {
-            const latencyText = data.latency_ms != null ? `${data.latency_ms} ms` : "reachable";
-            statusEl.textContent = `${prefixMessage} ${selected} is reachable (${latencyText}).`;
-            return;
-          }
-
-          const reason = data.error ? ` ${data.error}` : "";
-          statusEl.textContent = `${prefixMessage} ${selected} is unreachable.${reason}`;
+          const outcome = classifyPingOutcome(data);
+          finishPingButton(triggerButton, outcome.state, outcome.label);
         } catch (err) {
           if (err && err.name === "AbortError") {
-            statusEl.textContent = `Ping timed out for ${selected}.`;
+            finishPingButton(triggerButton, "ping-warn", "Slow");
           } else {
-            statusEl.textContent = `Ping request failed: ${String(err && err.message ? err.message : err)}`;
+            finishPingButton(triggerButton, "ping-bad", "Bad");
           }
-        } finally {
-          triggerButton.disabled = false;
         }
       }
 
@@ -955,28 +1227,53 @@
 
       async function pullCertificate() {
         const nodeName = certNodeEl.value;
+        const pullCertBtn = document.getElementById("pull-cert");
+        if (!pullCertBtn) {
+          return;
+        }
+
+        const existingTimer = pingResetTimers.get(pullCertBtn);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          pingResetTimers.delete(pullCertBtn);
+        }
+
         if (!nodeName) {
           certStatusEl.textContent = "Choose a node first.";
+          finishPingButton(pullCertBtn, "ping-warn", "Pick Node");
           return;
         }
+        pullCertBtn.disabled = true;
+        setPingVisualState(pullCertBtn, "ping-pending", "Pulling");
         certStatusEl.textContent = `Pulling certificate for ${nodeName}...`;
-        const res = await fetch(`/api/monitor/nodes/${encodeURIComponent(nodeName)}/certificate`);
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          certStatusEl.textContent = data.error || "Failed to pull certificate.";
-          return;
+        try {
+          const res = await fetch(`/api/monitor/nodes/${encodeURIComponent(nodeName)}/certificate`);
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            certStatusEl.textContent = data.error || "Failed to pull certificate.";
+            finishPingButton(pullCertBtn, "ping-bad", "Bad");
+            return;
+          }
+          const cert = data.certificate || {};
+          certOutputEl.textContent = [
+            `node: ${nodeName}`,
+            `received_at: ${cert.received_at || "-"}`,
+            `cert_present: ${cert.cert_present ? "true" : "false"}`,
+            `cert_subject: ${cert.cert_subject || "-"}`,
+            `cert_issuer: ${cert.cert_issuer || "-"}`,
+            `cert_fingerprint: ${cert.cert_fingerprint || "-"}`,
+            `source_ip: ${cert.source_ip || "-"}`,
+          ].join("\n");
+          certStatusEl.textContent = `Certificate info loaded for ${nodeName}.`;
+          finishPingButton(pullCertBtn, cert.cert_present ? "ping-good" : "ping-warn", cert.cert_present ? "Good" : "Slow");
+        } catch (err) {
+          certStatusEl.textContent = `Failed to pull certificate: ${String(err && err.message ? err.message : err)}`;
+          finishPingButton(pullCertBtn, "ping-bad", "Bad");
+        } finally {
+          if (!pingResetTimers.has(pullCertBtn)) {
+            resetPingButton(pullCertBtn);
+          }
         }
-        const cert = data.certificate || {};
-        certOutputEl.textContent = [
-          `node: ${nodeName}`,
-          `received_at: ${cert.received_at || "-"}`,
-          `cert_present: ${cert.cert_present ? "true" : "false"}`,
-          `cert_subject: ${cert.cert_subject || "-"}`,
-          `cert_issuer: ${cert.cert_issuer || "-"}`,
-          `cert_fingerprint: ${cert.cert_fingerprint || "-"}`,
-          `source_ip: ${cert.source_ip || "-"}`,
-        ].join("\n");
-        certStatusEl.textContent = `Certificate info loaded for ${nodeName}.`;
       }
 
       document.getElementById("refresh-summary").addEventListener("click", loadSummary);
@@ -985,15 +1282,15 @@
       }
       monitorRunCheckBtn.addEventListener("click", runMonitorCloserCheck);
       summaryRunPingBtn.addEventListener("click", () =>
-        runSimplePing(monitorPingNodeSelectEl.value, summaryPingStatusEl, summaryRunPingBtn, "Simple ping:")
+        runSimplePing(monitorPingNodeSelectEl.value, summaryRunPingBtn)
       );
       monitorRunPingBtn.addEventListener("click", () =>
-        runSimplePing(monitorNodeSelectEl.value, monitorCheckStatusEl, monitorRunPingBtn, "Simple ping:")
+        runSimplePing(monitorNodeSelectEl.value, monitorRunPingBtn)
       );
       document.getElementById("save-node").addEventListener("click", saveNode);
       nodeFormPingBtn.addEventListener("click", () => {
         const requested = document.getElementById("node-name").value.trim();
-        runSimplePing(requested, nodeFormStatusEl, nodeFormPingBtn, "Simple ping:");
+        runSimplePing(requested, nodeFormPingBtn);
       });
       document.getElementById("clear-node-form").addEventListener("click", clearNodeForm);
       document.getElementById("pull-cert").addEventListener("click", pullCertificate);

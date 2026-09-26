@@ -46,6 +46,12 @@
    - `curl -s http://127.0.0.1:8088/health`
    - `curl -s http://127.0.0.1:8088/api/cloud-init/events`
 
+## Shared State Model
+- Hardware Monitor and Node Ops both read from `/api/state/source-of-truth` so callback data, monitor state, and node provisioning state stay aligned.
+- Hardware callbacks populate the monitor view, and Node Ops reuses the same callback-derived fields for live inventory and provisioning context.
+- Use the Hardware Monitor page when you want the freshest callback-driven hardware snapshot; use Node Ops when you want the same data plus profile and apply controls.
+- The remote inventory / terminal checks are for one-off verification and should not replace the shared state views.
+
 ## Preflight Before Flashing
 1. Run the full callback-site validation script from the repo root:
    - `./scripts/validate_callback_site.sh`

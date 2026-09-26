@@ -14,6 +14,7 @@ from typing import Any, Dict
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
 
 from core import *
+from launch import maybe_reexec_with_sudo
 from routes_openwrt import register_openwrt_routes
 from routes_pages import register_page_routes
 from routes_settings import register_settings_routes
@@ -74,6 +75,20 @@ TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
         "label": "Service Baseline",
         "description": "Quick system health and networking status",
         "command": "systemctl is-system-running || true; systemctl --failed --no-legend || true; ip -brief address",
+    },
+    "remote_inventory": {
+        "label": "Remote Inventory",
+        "description": "Collect hostname, OS, cloud-init, services, network, and storage state",
+        "command": (
+            'printf "=== identity ===\\n"; '
+            'hostname; whoami; id; uname -a; hostnamectl || true; '
+            'printf "\\n=== os-release ===\\n"; cat /etc/os-release || true; '
+            'printf "\\n=== cloud-init ===\\n"; cloud-init status --long || cloud-init status || true; '
+            'printf "\\n=== network ===\\n"; ip -brief address || true; ip route || true; '
+            'printf "\\n=== storage ===\\n"; lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL || true; df -h || true; '
+            'printf "\\n=== services ===\\n"; systemctl is-active ssh || true; systemctl is-active cloud-init-local cloud-init cloud-config cloud-final k3s || true; '
+            'printf "\\n=== k3s-config ===\\n"; sudo -n cat /etc/rancher/k3s/config.yaml || true'
+        ),
     },
 }
 
@@ -253,10 +268,47 @@ register_openwrt_routes(app)
 register_settings_routes(app, log_file=LOG_FILE, root_logger=root_logger, logger=logger)
 
 
+def _generated_sd_option_profile_name(hostname: str) -> str:
+    host = re.sub(r"[^a-z0-9-]+", "-", str(hostname or "").strip().lower()).strip("-")
+    host = host[:32] or "node"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"generated-{host}-{stamp}"
+
+
+def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
+    existing_name = str(payload.get("sd_options_profile", "")).strip()
+    if existing_name:
+        _set_preferred_sd_option_profile(existing_name)
+        return existing_name
+
+    distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
+    options = payload.get("cloud_init_options") if isinstance(payload.get("cloud_init_options"), dict) else {}
+    hostname = str(payload.get("hostname", "")).strip() or "node"
+    base_name = _generated_sd_option_profile_name(hostname)
+
+    profiles = _load_sd_option_profiles()
+    next_name = base_name
+    suffix = 2
+    while next_name in profiles:
+        next_name = f"{base_name}-{suffix}"
+        suffix += 1
+
+    profiles[next_name] = {
+        "name": next_name,
+        "description": f"Auto-generated from SD prep request for {hostname}",
+        "distribution": distribution if distribution in {"standard", "k3s"} else "standard",
+        "options": options,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_sd_option_profiles(profiles)
+    _set_preferred_sd_option_profile(next_name)
+    return next_name
+
+
 @app.get("/api/sd/options-profiles")
 def sd_options_profiles_get() -> Any:
     profiles = _load_sd_option_profiles()
-    ordered = [profiles[name] for name in sorted(profiles)]
+    ordered = _ordered_sd_option_profiles(profiles)
     return jsonify({"ok": True, "profiles": ordered})
 
 
@@ -284,6 +336,8 @@ def sd_options_profiles_save() -> Any:
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     _save_sd_option_profiles(profiles)
+    if bool(payload.get("set_preferred", False)):
+        _set_preferred_sd_option_profile(name)
     return jsonify({"ok": True, "profile": profiles[name]})
 
 
@@ -599,6 +653,7 @@ def sd_prepare() -> Any:
     if distribution not in {"standard", "k3s"}:
         return jsonify({"ok": False, "errors": ["distribution must be standard or k3s"]}), 400
     payload["distribution"] = distribution
+    payload["sd_options_profile"] = _auto_generate_sd_option_profile(payload)
 
     job_id = uuid.uuid4().hex
     with JOBS_LOCK:
@@ -1629,6 +1684,7 @@ def sd_images_delete(record_id: str) -> Any:
 
 
 if __name__ == "__main__":
+    maybe_reexec_with_sudo()
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8088"))
     app.run(host=host, port=port, debug=False, threaded=True)

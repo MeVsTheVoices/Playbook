@@ -41,6 +41,7 @@ NODE_PROVISION_FILE = DATA_DIR / "node_provisioning.json"
 MONITOR_STATE_FILE = DATA_DIR / "node_monitor_state.json"
 APP_SETTINGS_FILE = DATA_DIR / "app_settings.json"
 SD_OPTION_PROFILES_FILE = DATA_DIR / "sd_option_profiles.json"
+SD_OPTION_PROFILE_STATE_FILE = DATA_DIR / "sd_option_profile_state.json"
 PROFILE_SEGMENTS_FILE = DATA_DIR / "profile_segments.json"
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 SCRIPT_PATH = BASE_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh"
@@ -488,6 +489,55 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
 def _save_sd_option_profiles(profiles: Dict[str, Dict[str, Any]]) -> None:
     _ensure_data_file()
     _atomic_write_text(SD_OPTION_PROFILES_FILE, json.dumps(profiles, indent=2))
+
+
+def _load_sd_option_profile_state() -> Dict[str, Any]:
+    _ensure_data_file()
+    if not SD_OPTION_PROFILE_STATE_FILE.exists():
+        return {}
+    try:
+        loaded = json.loads(SD_OPTION_PROFILE_STATE_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    preferred_profile = str(loaded.get("preferred_profile", "")).strip()
+    return {"preferred_profile": preferred_profile}
+
+
+def _save_sd_option_profile_state(state: Dict[str, Any]) -> None:
+    _ensure_data_file()
+    preferred_profile = str(state.get("preferred_profile", "")).strip()
+    payload = {"preferred_profile": preferred_profile}
+    _atomic_write_text(SD_OPTION_PROFILE_STATE_FILE, json.dumps(payload, indent=2))
+
+
+def _set_preferred_sd_option_profile(profile_name: str) -> None:
+    preferred = str(profile_name or "").strip()
+    _save_sd_option_profile_state({"preferred_profile": preferred})
+
+
+def _ordered_sd_option_profile_names(profiles: Dict[str, Dict[str, Any]]) -> List[str]:
+    preferred = str(_load_sd_option_profile_state().get("preferred_profile", "")).strip()
+
+    def _updated_ts(name: str) -> float:
+        updated_at = str((profiles.get(name) or {}).get("updated_at", "")).strip()
+        if not updated_at:
+            return 0.0
+        try:
+            return datetime.fromisoformat(updated_at).timestamp()
+        except ValueError:
+            return 0.0
+
+    names = list(profiles.keys())
+    names.sort(key=lambda name: (-_updated_ts(name), name.lower()))
+    if preferred and preferred in profiles:
+        return [preferred] + [name for name in names if name != preferred]
+    return names
+
+
+def _ordered_sd_option_profiles(profiles: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [profiles[name] for name in _ordered_sd_option_profile_names(profiles)]
 
 
 def _load_profile_segments() -> Dict[str, List[Dict[str, Any]]]:
@@ -3961,6 +4011,9 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
                 if bool(cloud_init_options.get(option_key, False)):
                     env[env_key] = "true"
                     enabled_options.append(option_key)
+            if "boot_summary" in cloud_init_options:
+                env["CLOUD_INIT_BOOT_SUMMARY"] = "true" if bool(cloud_init_options.get("boot_summary", False)) else "false"
+                enabled_options.append("boot_summary")
             if distribution == "k3s":
                 k3s_config = str(cloud_init_options.get("k3s_config", "") or "").strip()
                 if not k3s_config:

@@ -626,7 +626,7 @@ cat >> "$USER_DATA_OUT" <<EOF
       print_row "$green" "Fancy MOTD" "${CLOUD_INIT_FANCY_MOTD:-false}"
       print_row "$cyan" "Telegraf" "${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
       k3s_config_state="not set"
-      if [[ -n "${CLOUD_INIT_K3S_CONFIG}" ]]; then
+      if [[ -n "${CLOUD_INIT_K3S_CONFIG:-}" ]]; then
         k3s_config_state="present"
       fi
       print_row "$magenta" "K3s config" "${k3s_config_state}"

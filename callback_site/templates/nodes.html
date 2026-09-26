@@ -1098,6 +1098,30 @@
         return `${latest.status || "unknown"} (${latest.mode || ""}) ${formatTimestamp(latest.checked_at)}`;
       }
 
+      function nodeDetailSummary(node) {
+        const callbackIp = String(node.callback_source_ip || node.address || "").trim();
+        const callbackStage = String(node.callback_stage || "").trim();
+        const hardware = node.hardware || {};
+        const cert = node.cert || {};
+        const parts = [];
+        if (callbackIp) {
+          parts.push(`callback ${callbackIp}`);
+        }
+        if (callbackStage) {
+          parts.push(callbackStage);
+        }
+        if (hardware.received_at) {
+          const hardwareBits = [];
+          if (hardware.model) hardwareBits.push(hardware.model);
+          if (hardware.source_ip) hardwareBits.push(hardware.source_ip);
+          parts.push(`hardware ${hardwareBits.join(" • ") || "present"}`);
+        }
+        if (cert.cert_present) {
+          parts.push(`cert ${cert.cert_subject || cert.cert_fingerprint || "present"}`);
+        }
+        return parts.join(" | ");
+      }
+
       function formatTimestamp(raw) {
         const value = String(raw || "").trim();
         if (!value) return "-";
@@ -1150,6 +1174,7 @@
             : "-";
           const reachableClass = status.reachable === true ? "ok" : status.reachable === false ? "bad" : "checking";
           const reachableLabel = status.reachable === true ? "🟢 UP" : status.reachable === false ? "🔴 DOWN" : "🟡 CHECKING";
+          const detailSummary = nodeDetailSummary(node);
 
           const tr = document.createElement("tr");
           const removeBtn = node.manual_node
@@ -1166,6 +1191,7 @@
             <td>${selectedHtml}</td>
             <td>${statusBadge(node)}</td>
             <td>
+              <div class="note" style="margin-bottom:0.35rem;">${escapeHtml(detailSummary || "No callback details yet.")}</div>
               <div class="inline-actions">
                 <button type="button" data-node="${node.name}" data-action="check" class="node-action-btn">Get Hardware Profile</button>
                 <button type="button" data-node="${node.name}" data-action="apply" class="node-action-btn">Apply</button>
@@ -1503,18 +1529,19 @@
       }
 
       async function loadSummary() {
-        const res = await fetch("/api/nodes/summary");
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
+        const sotRes = await fetch("/api/state/source-of-truth");
+        const sotData = await sotRes.json();
+        if (!sotRes.ok || !sotData.ok) {
           monitorStatus.textContent = "Failed to load node summary.";
           return;
         }
 
-        nodes = Array.isArray(data.nodes) ? data.nodes : [];
-        profiles = Array.isArray(data.profiles) ? data.profiles : [];
-        nodeInputs = (data.node_inputs && typeof data.node_inputs === "object") ? data.node_inputs : {};
+        const state = sotData.state || {};
+        nodes = Array.isArray(state.nodes) ? state.nodes : [];
+        profiles = Array.isArray(state.profiles) ? state.profiles : [];
+        nodeInputs = (state.provisioning && typeof state.provisioning.node_inputs === "object") ? state.provisioning.node_inputs : {};
         renderProfileSegmentOptions();
-        manualNodes = (data.manual_nodes && typeof data.manual_nodes === "object") ? data.manual_nodes : {};
+        manualNodes = (state.provisioning && typeof state.provisioning.manual_nodes === "object") ? state.provisioning.manual_nodes : {};
         renderManualNodeSelector();
 
         statusByNode = {};
@@ -1530,10 +1557,11 @@
           };
         }
 
-        document.getElementById("username").value = data.config.username || "";
-        document.getElementById("webhook_url").value = data.config.webhook_url || "";
-        document.getElementById("verify_tls").value = data.config.verify_tls ? "true" : "false";
-        if (data.config.password_set) {
+        const config = (state.provisioning && state.provisioning.config) || {};
+        document.getElementById("username").value = config.username || "";
+        document.getElementById("webhook_url").value = config.webhook_url || "";
+        document.getElementById("verify_tls").value = config.verify_tls ? "true" : "false";
+        if (config.password_set) {
           document.getElementById("password").placeholder = "already configured";
         }
 

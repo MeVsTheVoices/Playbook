@@ -169,6 +169,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="manual-node-selector"', text)
         self.assertIn("Add / Update Manual Node", text)
         self.assertIn('id="prune-stale-nodes"', text)
+        self.assertIn('/api/state/source-of-truth', text)
 
     def test_node_ops_page_guides_manual_node_edit_flow(self) -> None:
         response = self.client.get("/nodes")
@@ -271,6 +272,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         match = next((node for node in nodes if node.get("name") == "truth-node-01"), None)
         self.assertIsNotNone(match)
         self.assertIn("baseline", match.get("selected_profiles", []))
+        self.assertEqual(match.get("callback_source_ip"), "198.51.100.20")
+        self.assertIn("hardware", match)
 
         image = (match or {}).get("image", {})
         self.assertEqual(image.get("source"), "image_url")
@@ -629,6 +632,18 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         check_ids = [c.get("id") for c in checks]
         self.assertIn("identity", check_ids)
         self.assertIn("cloud_init", check_ids)
+        self.assertIn("remote_inventory", check_ids)
+
+    def test_remote_inventory_check_command_covers_remote_attributes(self) -> None:
+        check = callback_app.TERMINAL_CHECKS.get("remote_inventory")
+        self.assertIsNotNone(check)
+        command = str(check.get("command", ""))
+        self.assertIn("hostnamectl", command)
+        self.assertIn("cloud-init status --long", command)
+        self.assertIn("ip -brief address", command)
+        self.assertIn("lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL", command)
+        self.assertIn("systemctl is-active ssh", command)
+        self.assertIn("sudo -n cat /etc/rancher/k3s/config.yaml", command)
 
     def test_test_terminal_targets_include_callback_hosts(self) -> None:
         self.client.post(
@@ -1037,6 +1052,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             json={
                 "name": "pi5-baseline",
                 "description": "base bootstrap",
+                "set_preferred": True,
                 "options": {
                     "timezone": "UTC",
                     "packages": ["git", "curl"],
@@ -1054,6 +1070,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         listed_payload = listed.get_json()
         names = [p.get("name") for p in listed_payload.get("profiles", [])]
         self.assertIn("pi5-baseline", names)
+        self.assertEqual(names[0], "pi5-baseline")
 
         deleted = self.client.delete("/api/sd/options-profiles/pi5-baseline")
         self.assertEqual(deleted.status_code, 200)
@@ -1062,6 +1079,47 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         missing_delete = self.client.delete("/api/sd/options-profiles/pi5-baseline")
         self.assertEqual(missing_delete.status_code, 404)
         self.assertFalse(missing_delete.get_json()["ok"])
+
+    def test_sd_prepare_auto_generates_sd_options_profile_when_missing(self) -> None:
+        with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch("app.threading.Thread"):
+            response = self.client.post(
+                "/api/sd/prepare",
+                json={
+                    "profile": "pi5",
+                    "hostname": "rack-node-auto",
+                    "device": "/dev/sdb",
+                    "ssh_public_key": "ssh-ed25519 AAAA test",
+                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "distribution": "k3s",
+                    "cloud_init_options": {
+                        "timezone": "UTC",
+                        "enable_fail2ban": True,
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+
+        with callback_app.JOBS_LOCK:
+            job = callback_app.JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            request_payload = dict(job.get("request", {})) if job else {}
+
+        generated_name = str(request_payload.get("sd_options_profile", ""))
+        self.assertTrue(generated_name.startswith("generated-rack-node-auto-"))
+
+        listing = self.client.get("/api/sd/options-profiles")
+        self.assertEqual(listing.status_code, 200)
+        profiles = listing.get_json().get("profiles", [])
+        self.assertTrue(profiles)
+        self.assertEqual(profiles[0].get("name"), generated_name)
+
+        with callback_app.JOBS_LOCK:
+            callback_app.JOBS.pop(job_id, None)
 
     def test_sanitize_sd_prepare_payload_includes_cloud_init_options(self) -> None:
         cleaned = callback_app._sanitize_sd_prepare_payload(
@@ -3124,13 +3182,20 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"', script_text)
         self.assertIn('CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH="${CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH:-false}"', script_text)
         self.assertIn('CLOUD_INIT_DISABLE_ROOT_SSH="${CLOUD_INIT_DISABLE_ROOT_SSH:-false}"', script_text)
+        self.assertIn('CLOUD_INIT_BOOT_SUMMARY="${CLOUD_INIT_BOOT_SUMMARY:-true}"', script_text)
         self.assertIn('CLOUD_INIT_ENABLE_FAIL2BAN="${CLOUD_INIT_ENABLE_FAIL2BAN:-false}"', script_text)
         self.assertIn('CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES="${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES:-false}"', script_text)
+        self.assertIn('role=worker', script_text)
+        self.assertIn('/etc/fail2ban/jail.d/rack-sshd.local', script_text)
+        self.assertIn('systemctl enable --now fail2ban || true', script_text)
         self.assertIn('PermitRootLogin no', script_text)
         self.assertIn('PasswordAuthentication no', script_text)
         self.assertIn("if [ -f /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys.d/rack-extra.keys ]", script_text)
         self.assertIn('require_cmd openssl', script_text)
         self.assertIn("openssl passwd -6 -stdin", script_text)
+        self.assertIn('--retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20', script_text)
+        self.assertIn('rack callback POST failed after retries to ${CALLBACK_URL}', script_text)
+        self.assertIn('/usr/local/bin/rack-bootstrap-summary', script_text)
         self.assertIn('cat >> "$USER_DATA_OUT" <<RUNCMD_EOF', script_text)
         self.assertIn('final_message: "Cloud-init finished for ${HOSTNAME}"', script_text)
 

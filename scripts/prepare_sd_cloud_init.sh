@@ -312,6 +312,7 @@ CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"
 CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"
 CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH="${CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH:-false}"
 CLOUD_INIT_DISABLE_ROOT_SSH="${CLOUD_INIT_DISABLE_ROOT_SSH:-false}"
+CLOUD_INIT_BOOT_SUMMARY="${CLOUD_INIT_BOOT_SUMMARY:-true}"
 CLOUD_INIT_ENABLE_FAIL2BAN="${CLOUD_INIT_ENABLE_FAIL2BAN:-false}"
 CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES="${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES:-false}"
 CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"
@@ -437,6 +438,21 @@ SSH_HARDEN_FILE
   fi
 fi
 
+if [[ "$CLOUD_INIT_ENABLE_FAIL2BAN" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<FAIL2BAN_CONF
+  - path: /etc/fail2ban/jail.d/rack-sshd.local
+    permissions: "0644"
+    content: |
+      [sshd]
+      enabled = true
+      backend = systemd
+      port = ${CLOUD_INIT_SSH_PORT:-ssh}
+      maxretry = 6
+      findtime = 10m
+      bantime = 1h
+FAIL2BAN_CONF
+fi
+
 if [[ -n "$CLOUD_INIT_EXTRA_SSH_KEYS" ]]; then
   cat >> "$USER_DATA_OUT" <<EXTRA_KEYS
   - path: /home/${CLOUD_INIT_USERNAME}/.ssh/authorized_keys.d/rack-extra.keys
@@ -481,43 +497,43 @@ cat >> "$USER_DATA_OUT" <<EOF
       [[ -f /sys/class/pwm/pwmchip0/device/dtoverlay ]] && POE_ENABLED="true"
       SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
       NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
-        PAYLOAD_JSON="\$(PI_MODEL=\"\$PI_MODEL\" RAM_MB=\"\$RAM_MB\" SD_CAPACITY=\"\$SD_CAPACITY\" NVME_PRESENT=\"\$NVME_PRESENT\" HAT_PRESENT=\"\$HAT_PRESENT\" POE_ENABLED=\"\$POE_ENABLED\" SOURCE_IP=\"\$SOURCE_IP\" NODE_REPORT_B64=\"\$NODE_REPORT_B64\" PROFILE='${PROFILE}' python3 <<'PY'
-    import json
-    import os
-    import socket
+      PAYLOAD_JSON="\$(PI_MODEL=\"\$PI_MODEL\" RAM_MB=\"\$RAM_MB\" SD_CAPACITY=\"\$SD_CAPACITY\" NVME_PRESENT=\"\$NVME_PRESENT\" HAT_PRESENT=\"\$HAT_PRESENT\" POE_ENABLED=\"\$POE_ENABLED\" SOURCE_IP=\"\$SOURCE_IP\" NODE_REPORT_B64=\"\$NODE_REPORT_B64\" PROFILE='${PROFILE}' python3 <<'PY'
+      import json
+      import os
+      import socket
 
 
-    def as_int(value: str) -> int:
-      try:
-        return int(float(str(value or "0").strip()))
-      except (TypeError, ValueError):
-        return 0
+      def as_int(value: str) -> int:
+        try:
+          return int(float(str(value or "0").strip()))
+        except (TypeError, ValueError):
+          return 0
 
 
-    def as_bool(value: str) -> bool:
-      return str(value or "").strip().lower() == "true"
+      def as_bool(value: str) -> bool:
+        return str(value or "").strip().lower() == "true"
 
 
-    payload = {
-      "instance_id": f"{socket.gethostname()}-hw",
-      "hostname": socket.gethostname(),
-      "profile": os.getenv("PROFILE", "pi5"),
-      "source_ip": os.getenv("SOURCE_IP", ""),
-      "stage": "hardware-check",
-      "node_report_b64": os.getenv("NODE_REPORT_B64", ""),
-      "hardware": {
-        "model": os.getenv("PI_MODEL", "unknown"),
-        "ram_mb": as_int(os.getenv("RAM_MB", "0")),
-        "sd_capacity_gb": as_int(os.getenv("SD_CAPACITY", "0")),
-        "nvme": as_bool(os.getenv("NVME_PRESENT", "false")),
-        "hat": as_bool(os.getenv("HAT_PRESENT", "false")),
-        "poe": as_bool(os.getenv("POE_ENABLED", "false")),
-      },
-    }
+      payload = {
+        "instance_id": f"{socket.gethostname()}-hw",
+        "hostname": socket.gethostname(),
+        "profile": os.getenv("PROFILE", "pi5"),
+        "source_ip": os.getenv("SOURCE_IP", ""),
+        "stage": "hardware-check",
+        "node_report_b64": os.getenv("NODE_REPORT_B64", ""),
+        "hardware": {
+          "model": os.getenv("PI_MODEL", "unknown"),
+          "ram_mb": as_int(os.getenv("RAM_MB", "0")),
+          "sd_capacity_gb": as_int(os.getenv("SD_CAPACITY", "0")),
+          "nvme": as_bool(os.getenv("NVME_PRESENT", "false")),
+          "hat": as_bool(os.getenv("HAT_PRESENT", "false")),
+          "poe": as_bool(os.getenv("POE_ENABLED", "false")),
+        },
+      }
 
-    print(json.dumps(payload, separators=(",", ":")))
-    PY
-        )"
+      print(json.dumps(payload, separators=(",", ":")))
+      PY
+      )"
       curl -fsS -X POST -H 'Content-Type: application/json' \\
         --data-binary "\$PAYLOAD_JSON" \
         '${CALLBACK_URL}' || true
@@ -563,6 +579,63 @@ cat >> "$USER_DATA_OUT" <<EOF
       }
       print(json.dumps(report, separators=(",", ":")))
       PY
+  - path: /usr/local/bin/rack-bootstrap-summary
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      if [[ "${CLOUD_INIT_BOOT_SUMMARY}" != "true" ]]; then
+        exit 0
+      fi
+
+      reset=$'\033[0m'
+      bold=$'\033[1m'
+      red=$'\033[31m'
+      yellow=$'\033[33m'
+      green=$'\033[32m'
+      cyan=$'\033[36m'
+      magenta=$'\033[35m'
+
+      print_border() {
+        printf '%s+--------------------------------------------------------------+%s\n' "$cyan" "$reset"
+      }
+
+      print_row() {
+        local color=$1
+        local key=$2
+        local value=$3
+        printf '%s|%s %-24s %s| %s%-28s%s %s|%s\n' "$color" "$reset" "$key" "$color" "$bold" "$value" "$reset" "$color" "$reset"
+      }
+
+      print_border
+      printf '%s|%s %-58s %s|%s\n' "$red" "$reset" "$bold RACK BOOT COMPLETE$reset" "$red" "$reset"
+      print_border
+      print_row "$red" "Hostname" "$(hostname)"
+      print_row "$yellow" "Profile" "${PROFILE}"
+      print_row "$green" "Role" "${PROFILE_ROLE}"
+      print_row "$cyan" "Storage" "${PROFILE_STORAGE}"
+      print_row "$magenta" "Distribution" "${DISTRIBUTION}"
+      print_row "$red" "User" "${CLOUD_INIT_USERNAME}"
+      print_row "$yellow" "SSH password auth" "${CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH}"
+      print_row "$green" "Root SSH login" "${CLOUD_INIT_DISABLE_ROOT_SSH}"
+      print_row "$cyan" "Boot summary" "${CLOUD_INIT_BOOT_SUMMARY}"
+      print_row "$magenta" "Fail2ban" "${CLOUD_INIT_ENABLE_FAIL2BAN}"
+      print_row "$red" "Unattended upgrades" "${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES}"
+      print_row "$yellow" "Hardware checks" "${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}"
+      print_row "$green" "Fancy MOTD" "${CLOUD_INIT_FANCY_MOTD:-false}"
+      print_row "$cyan" "Telegraf" "${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
+      k3s_config_state="not set"
+      if [[ -n "${CLOUD_INIT_K3S_CONFIG}" ]]; then
+        k3s_config_state="present"
+      fi
+      print_row "$magenta" "K3s config" "${k3s_config_state}"
+      print_row "$red" "SSH port" "${CLOUD_INIT_SSH_PORT:-22}"
+      print_row "$yellow" "SSH allow groups" "${CLOUD_INIT_SSH_ALLOW_GROUPS:-default}"
+      print_row "$green" "Callback URL" "${CALLBACK_URL}"
+      print_border
+      printf '%s%sAll configured steps finished.%s\n' "$bold" "$green" "$reset"
+      printf '%s%sYou can now continue from the portal.%s\n' "$bold" "$cyan" "$reset"
   - path: /etc/update-motd.d/10-fancy
     permissions: "0755"
     content: |
@@ -645,9 +718,20 @@ runcmd:
 EOF
 
 if [[ "$DISTRIBUTION" == "k3s" ]]; then
+  K3S_INSTALL_MODE="server"
+  if printf '%s\n' "$DEFAULT_K3S_CONFIG" | grep -Eq 'role:\s*"?worker"?|role=worker|node-role\.kubernetes\.io/worker'; then
+    K3S_INSTALL_MODE="agent"
+  fi
+
+  if [[ "$K3S_INSTALL_MODE" == "agent" ]]; then
+    cat >> "$USER_DATA_OUT" <<'K3S_RUNCMD'
+  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="agent --config /etc/rancher/k3s/config.yaml" sh -' ]
+K3S_RUNCMD
+  else
   cat >> "$USER_DATA_OUT" <<'K3S_RUNCMD'
   - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="server --config /etc/rancher/k3s/config.yaml" sh -' ]
 K3S_RUNCMD
+  fi
 fi
 
 # Conditionally append runcmd items based on cloud-init options
@@ -665,14 +749,19 @@ fi
 
 if [[ "$CLOUD_INIT_ENABLE_FAIL2BAN" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ systemctl, enable, fail2ban ]
-  - [ systemctl, restart, fail2ban ]
+  - [ sh, -c, 'if systemctl list-unit-files | grep -q "^fail2ban.service"; then systemctl enable --now fail2ban || true; fi' ]
 RUNCMD_EOF
 fi
 
 if [[ "$CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
   - [ sh, -c, 'DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive unattended-upgrades || true' ]
+RUNCMD_EOF
+fi
+
+if [[ "$CLOUD_INIT_BOOT_SUMMARY" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ /usr/local/bin/rack-bootstrap-summary ]
 RUNCMD_EOF
 fi
 
@@ -684,7 +773,7 @@ fi
 
 # Append final runcmd callback
 cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
-  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; curl -fsS -X POST -H "Content-Type: application/json" -d "{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\${SOURCE_IP}\",\"stage\":\"runcmd\",\"node_report_b64\":\"\${NODE_REPORT_B64}\"}" "${CALLBACK_URL}" || true' ]
+  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD="{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\${SOURCE_IP}\",\"stage\":\"runcmd\",\"node_report_b64\":\"\${NODE_REPORT_B64}\"}"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "${PAYLOAD}" "${CALLBACK_URL}"; then echo "rack callback POST failed after retries to ${CALLBACK_URL}" >&2; fi' ]
 
 RUNCMD_EOF
 

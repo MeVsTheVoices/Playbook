@@ -1,19 +1,26 @@
 # Callback Site Operator Portal
 
-A small Flask app for Raspberry Pi and homelab provisioning: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, and post-boot node provisioning.
+Callback Site is the control plane for the rack workflow: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, post-boot node provisioning, and the shared monitoring views that tie those steps together.
 
-## What it does
+## At A Glance
 
-- SD-card imaging workflow for `pi5` and `pibplus` profiles.
+- SD-card imaging for `pi5` and `pibplus` profiles.
 - Cloud-init authoring with reusable optional-setting templates.
-- Distribution-aware imaging: standard and `k3s` flows, including a defaulted K3s config block that opens automatically when `distribution=k3s` is selected.
-- Catalog image management with local cache checks and bulk pulls.
-- Callback dashboard for first-boot cloud-init events.
-- Post-boot Node Ops workflow with saved node inputs and Ansible provisioning.
-- OpenWrt inspection helpers and SSH key management.
-- Tailscale ACL planning support.
+- Distribution-aware imaging for `standard` and `k3s` flows.
+- Catalog management with cache checks and bulk pulls.
+- Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
+- OpenWrt inspection helpers, SSH key management, and Tailscale ACL planning.
 
-## Quick start
+## Runtime Contract
+
+Everything that should survive restarts or container recreation lives under `CALLBACK_APPDATA_DIR`.
+
+- Default path: `callback_site/data/`
+- Override path with `CALLBACK_APPDATA_DIR`
+- The app can re-exec through `sudo` only when `CALLBACK_SITE_REQUIRE_ROOT=1` is set.
+- The app stays normal-user friendly by default; elevated startup is opt-in.
+
+## Quick Start
 
 From the repo root:
 
@@ -22,54 +29,59 @@ cd /home/jdizzle/Playbook
 .venv/bin/python3 callback_site/app.py
 ```
 
-For SD flashing, prefer running as root:
+For SD flashing or other root-required paths:
 
 ```bash
 sudo -E /home/jdizzle/Playbook/.venv/bin/python3 callback_site/app.py
 ```
 
-Then open:
+Open:
 
 - http://127.0.0.1:9821/
 - http://127.0.0.1:9821/images
 - http://127.0.0.1:9821/nodes
 - http://127.0.0.1:9821/monitor
 
-## Main pages
+## Pages
 
 - `/` — SD image prep, SSH keys, optional cloud-init settings, and saved templates.
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
-- `/monitor` — callback event feed and operational status.
+- `/monitor` — callback event feed, hardware snapshots, and certificate pull helpers.
 - `/nodes` — node inventory, saved inputs, and provisioning check/apply.
 - `/openwrt` — router inspection helper for Ansible access.
 - `/tailscale-acl` — ACL planning and generation.
 
-## Backend layout
+## Architecture
 
-- `callback_site/app.py` remains the Flask entrypoint and shared runtime/job state owner.
+- `callback_site/app.py` remains the Flask entrypoint and shared runtime/job-state owner.
+- `callback_site/core.py` owns persistence, source-of-truth aggregation, and most business logic.
 - Route registration is split into focused modules:
   - `callback_site/routes_pages.py` for page and fragment rendering routes.
   - `callback_site/routes_openwrt.py` for OpenWrt helper API routes.
   - `callback_site/routes_settings.py` for settings, logging, and health routes.
-- Core business logic and persistence helpers remain in `callback_site/core.py`.
 
-## Current SD and cloud-init flow
+## SD and Cloud-Init Flow
 
 - The imaging script is `scripts/prepare_sd_cloud_init.sh`.
 - Required inputs: `profile`, `hostname`, `device`, `ssh_public_key`, `callback_url`.
 - Optional metadata is passed via `cloud_init_options` and saved template profiles.
-- The optional settings panel includes an integrated security starter action (`Apply Security Starter Defaults`) that sets conservative defaults in-place (disable SSH password auth, disable root SSH login, enable fail2ban, enable unattended upgrades).
+- The optional settings panel includes an integrated security starter action (`Apply Security Starter Defaults`) that disables SSH password auth, disables root SSH login, enables fail2ban, and enables unattended upgrades.
 - Additional SSH hardening options are supported through cloud-init options, including `ssh_port`, `ssh_allow_groups`, and extra authorized keys.
-- `distribution` is supported with `standard` and `k3s` values.
-- Stale node cleanup is supported through a threshold-based prune operation that removes old callback-discovered nodes across callback history, monitor state, and Node Ops saved state.
-- When `distribution` is `k3s`, the UI opens a K3s config section and populates a default config block using a pragma header. The default points at the local machine running the portal so newly flashed nodes join that cluster by default:
+- `distribution` supports `standard` and `k3s`.
+- When `distribution` is `k3s`, the UI opens a K3s config section and populates a default block using a pragma header:
 
 ```yaml
 # pragma: k3s-config-v1
 server: https://<local-machine-ip>:6443
 ```
 
-This config is carried forward in the cloud-init payload and later used by the post-boot K3s bootstrap path.
+That config is carried forward in the cloud-init payload and used by the post-boot K3s bootstrap path.
+
+## Source of Truth
+
+- Hardware Monitor reads the shared source-of-truth payload and surfaces callback hardware, certificate, and monitor state.
+- Node Ops reads the same source-of-truth payload and renders callback/hardware/cert context alongside provisioning state.
+- The shared payload is exposed at `GET /api/state/source-of-truth`.
 
 ## Key APIs
 
@@ -78,6 +90,7 @@ This config is carried forward in the cloud-init payload and later used by the p
 - `GET /api/sd/jobs/<job_id>`
 - `GET /api/cloud-init/events`
 - `POST /api/cloud-init/callback`
+- `GET /api/state/source-of-truth`
 - `GET /api/sd/options-profiles`
 - `POST /api/sd/options-profiles`
 - `DELETE /api/sd/options-profiles/<name>`
@@ -87,7 +100,7 @@ This config is carried forward in the cloud-init payload and later used by the p
 - `POST /api/ssh/generate`
 - `GET /api/ssh/keys`
 
-## Data files
+## Data Files
 
 - `callback_site/data/callbacks.jsonl` — callback event log
 - `callback_site/data/image_cache/` — local image cache
@@ -95,6 +108,7 @@ This config is carried forward in the cloud-init payload and later used by the p
 - `callback_site/data/node_provisioning.json` — node profiles and saved inputs
 - `callback_site/data/sd_option_profiles.json` — reusable cloud-init option templates
 - `callback_site/data/ssh_keys/` — generated SSH key material
+- `callback_site/data/node_reports/` — stored hardware-report payloads
 
 ## Testing
 
@@ -105,43 +119,13 @@ cd /home/jdizzle/Playbook
 .venv/bin/python -m unittest callback_site/tests/test_app.py
 ```
 
-## Notes
-
-- SD writes are destructive; only target the intended device.
-- The app expects a working local environment and is meant to be run on a trusted machine.
-- The repository-root venv and the app-local venv are not interchangeable; prefer the repo-root venv for the tests and the callback-site app run if that’s the environment you configured.
-2026-07-01 13:02:09,788 - core - INFO - Catalog pull job started: job_id=job-test, entries=5, skip_existing=False
-2026-07-01 13:02:09,789 - core - INFO - Catalog pull job completed: job_id=job-test, ok=5, failed=0, skipped=0
-```
-
-### Troubleshooting
-
-**Logs not appearing**:
-- Verify app is running as root or has write permission to `CALLBACK_APPDATA_DIR/logs/`
-- Check stderr for startup errors
-
-**Logs fill disk quickly**:
-- Verbose logging (DEBUG) produces ~10x more output
-- Review production deployments for DEBUG mode accidentally left enabled
-- Adjust rotation settings in `app.py` if needed (maxBytes and backupCount)
-
-**Recovering logs after rotation**:
-- All rotated files are retained with `.1`, `.2`, etc. suffixes
-- Search across all logs: `grep "pattern" callback_site/data/logs/callback_site.log*`
-
-## Local Persistence (AppData Style)
-
-This app persists state to a local appdata directory.
-
-- Default path: `callback_site/data/`
-- Override path with environment variable: `CALLBACK_APPDATA_DIR`
-- Everything that should survive restarts or container recreation lives under this directory, including logs, callback state, image history, SSH key material, node provisioning state, and SD option templates.
-
-Example (local custom path):
+For a broader validation pass, use:
 
 ```bash
-CALLBACK_APPDATA_DIR=/home/jdizzle/appdata/callback_site sudo PORT=9821 .venv/bin/python3 app.py
+./scripts/validate_callback_site.sh
 ```
+
+## Deployment Notes
 
 Example Docker-style mount:
 
@@ -155,6 +139,25 @@ docker run -d \
   your-image:latest
 ```
 
-This mirrors a simple Docker volume pattern (host path mounted as appdata) without requiring any other changes.
+That keeps the runtime state outside the image so catalog pulls, callbacks, node reports, and operator edits survive rebuilds.
 
-For containerized deployments, map your host Docker volume to `CALLBACK_APPDATA_DIR` so background catalog pulls persist downloaded images across restarts and operator-edited state remains available after upgrades or container rebuilds.
+## Release / Recreate
+
+The repo is intended to recreate from source plus an empty appdata directory. Runtime state and generated artifacts stay out of version control, including callback events, node provisioning state, SD option profile state, node reports, SSH archives, and SSH known-host caches.
+
+Minimal recreate steps:
+
+```bash
+cd /home/jdizzle/Playbook
+python -m venv .venv
+.venv/bin/pip install -r callback_site/requirements.txt
+CALLBACK_APPDATA_DIR=/home/jdizzle/Playbook/callback_site/data .venv/bin/python callback_site/app.py
+```
+
+If a deployment needs elevated startup only in specific contexts, set `CALLBACK_SITE_REQUIRE_ROOT=1`. Otherwise run normally as the unprivileged user.
+
+## Notes
+
+- SD writes are destructive; only target the intended device.
+- The app expects a working local environment and is meant to be run on a trusted machine.
+- The repository-root venv and the app-local venv are not interchangeable; prefer the repo-root venv for tests and the callback-site app run if that’s the environment you configured.

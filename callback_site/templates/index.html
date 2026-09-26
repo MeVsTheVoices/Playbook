@@ -1361,6 +1361,10 @@ server: https://local-machine-ip:6443
                     <label for="opt_fancy_motd" style="margin: 0;">Fancy MOTD (fortune → cowsay → lolcat)</label>
                   </div>
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_boot_summary" data-option-key="boot_summary" data-option-type="checkbox" data-option-default="true" type="checkbox" checked>
+                    <label for="opt_boot_summary" style="margin: 0;">Show rainbow boot summary table at completion</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_enable_fail2ban" data-option-key="enable_fail2ban" data-option-type="checkbox" type="checkbox">
                     <label for="opt_enable_fail2ban" style="margin: 0;">Install and enable fail2ban</label>
                   </div>
@@ -1548,6 +1552,7 @@ server: https://local-machine-ip:6443
       let deviceFallbackPollTimer = null;
       let allEvents = [];
       let sdOptionProfiles = initialSdOptionProfiles || {};
+      let sdOptionProfileOrder = Object.keys(sdOptionProfiles || {});
       let activityMood = {
         sd: "idle",
         callback: "quiet",
@@ -2949,7 +2954,11 @@ server: https://local-machine-ip:6443
           if (!key) continue;
           const kind = String(el.dataset.optionType || "").trim();
           if (kind === "checkbox") {
-            if (el.checked) options[key] = true;
+            if (el.checked) {
+              options[key] = true;
+            } else if (String(el.dataset.optionDefault || "").trim().toLowerCase() === "true") {
+              options[key] = false;
+            }
             continue;
           }
 
@@ -2997,7 +3006,8 @@ server: https://local-machine-ip:6443
           const kind = String(el.dataset.optionType || "").trim();
           const value = data[key];
           if (kind === "checkbox") {
-            el.checked = Boolean(value);
+            const defaultChecked = String(el.dataset.optionDefault || "").trim().toLowerCase() === "true";
+            el.checked = value === undefined || value === null ? defaultChecked : Boolean(value);
             continue;
           }
           if (kind === "csv") {
@@ -3024,6 +3034,7 @@ server: https://local-machine-ip:6443
         const defaults = {
           disable_ssh_password_auth: true,
           disable_root_ssh: true,
+          boot_summary: true,
           enable_fail2ban: true,
           enable_unattended_upgrades: true,
         };
@@ -3042,7 +3053,14 @@ server: https://local-machine-ip:6443
 
       function renderSdOptionProfiles() {
         const selected = sdOptionsProfileSelectEl.value;
-        const names = Object.keys(sdOptionProfiles).sort((a, b) => a.localeCompare(b));
+        const known = new Set(Object.keys(sdOptionProfiles));
+        const ordered = [];
+        for (const name of sdOptionProfileOrder) {
+          if (known.has(name) && !ordered.includes(name)) {
+            ordered.push(name);
+          }
+        }
+        const names = ordered.concat(Object.keys(sdOptionProfiles).filter((name) => !ordered.includes(name)).sort((a, b) => a.localeCompare(b)));
         sdOptionsProfileSelectEl.innerHTML = "";
 
         const empty = document.createElement("option");
@@ -3074,12 +3092,15 @@ server: https://local-machine-ip:6443
         }
 
         const next = {};
+        const nextOrder = [];
         for (const profile of Array.isArray(data.profiles) ? data.profiles : []) {
           const name = String(profile.name || "").trim();
           if (!name) continue;
           next[name] = profile;
+          nextOrder.push(name);
         }
         sdOptionProfiles = next;
+        sdOptionProfileOrder = nextOrder;
         renderSdOptionProfiles();
       }
 
@@ -3132,6 +3153,7 @@ server: https://local-machine-ip:6443
         const savedName = String((data.profile || {}).name || name).trim();
         if (savedName) {
           sdOptionProfiles[savedName] = data.profile;
+          sdOptionProfileOrder = [savedName].concat(sdOptionProfileOrder.filter((name) => name !== savedName));
           renderSdOptionProfiles();
           sdOptionsProfileSelectEl.value = savedName;
           sdOptionsProfileNameEl.value = savedName;
@@ -3159,6 +3181,7 @@ server: https://local-machine-ip:6443
         }
 
         delete sdOptionProfiles[name];
+        sdOptionProfileOrder = sdOptionProfileOrder.filter((item) => item !== name);
         renderSdOptionProfiles();
         sdOptionsProfileNameEl.value = "";
         sdOptionsProfileDescriptionEl.value = "";

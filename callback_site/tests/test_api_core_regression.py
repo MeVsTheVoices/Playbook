@@ -3078,7 +3078,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(result.get("status"), "failed")
         self.assertIn("not readable", str(result.get("output", "")))
 
-    def test_run_hardware_check_callback_uses_inline_json_safe_command(self) -> None:
+    def test_run_hardware_check_callback_uses_ansible_setup_facts(self) -> None:
         with patch.object(
             callback_core,
             "_node_ops_inventory_view",
@@ -3101,16 +3101,36 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         ), patch.object(
             callback_core.subprocess,
             "run",
-            return_value=SimpleNamespace(returncode=0, stdout='{"ok":true}', stderr=""),
+            return_value=SimpleNamespace(returncode=0, stdout='{"ansible_facts": {"ansible_memtotal_mb": 2048, "ansible_product_name": "RPi 5"}}', stderr=""),
         ) as run_mock:
             result = callback_core._run_hardware_check_callback("node-01", node_group="rpi5_active", node_address="192.0.2.10")
 
         self.assertEqual(result.get("status"), "ok")
         cmd = run_mock.call_args.args[0]
         cmd_text = " ".join(str(part) for part in cmd)
-        self.assertIn("python3 - <<'PY'", cmd_text)
-        self.assertIn("api/cloud-init/callback", cmd_text)
-        self.assertNotIn("/usr/local/bin/rack-hardware-check", cmd_text)
+        self.assertIn("ansible.builtin.setup", cmd_text)
+        self.assertNotIn("ansible.builtin.shell", cmd_text)
+        self.assertNotIn("python3 - <<'PY'", cmd_text)
+
+    def test_latest_hardware_by_host_keeps_most_recent_event(self) -> None:
+        older = {
+            "stage": "hardware-check",
+            "received_at": "2025-01-01T00:00:00+00:00",
+            "hostname": "node-01",
+            "fqdn": "node-01.example",
+            "raw": {"hardware": {"model": "old", "ram_mb": 512}},
+        }
+        newer = {
+            "stage": "hardware-check",
+            "received_at": "2025-01-01T00:05:00+00:00",
+            "hostname": "node-01",
+            "fqdn": "node-01.example",
+            "raw": {"hardware": {"model": "new", "ram_mb": 2048}},
+        }
+        with patch.object(callback_core, "_read_events", return_value=[older, newer]):
+            result = callback_core._latest_hardware_by_host(limit=10)
+        self.assertEqual(result["node-01"]["model"], "new")
+        self.assertEqual(result["node-01"]["ram_mb"], 2048)
 
     def test_nodes_telegraf_test_uses_current_profile_inputs(self) -> None:
         summary = self.client.get("/api/nodes/summary")

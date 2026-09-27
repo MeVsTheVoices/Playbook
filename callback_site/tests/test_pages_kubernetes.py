@@ -48,6 +48,9 @@ class KubernetesPageTests(BaseCallbackSiteTest):
             "pods_total": 18,
             "pods_running": 16,
             "namespaces_total": 6,
+            "jobs_total": 2,
+            "jobs_running": 1,
+            "job_rows": [{"namespace": "default", "name": "refresh-secrets", "status": "Running", "active": 1, "succeeded": 0, "failed": 0}],
             "last_error": "",
         }
         with patch.object(callback_app, "_kubernetes_local_summary", return_value=fake_summary):
@@ -56,6 +59,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         payload = response.get_json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["nodes_total"], 3)
+        self.assertEqual(payload["jobs_running"], 1)
 
     def test_kubernetes_page_renders_dense_dashboard_sections(self) -> None:
         response = self.client.get("/kubernetes")
@@ -66,6 +70,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         self.assertIn("Nodes", text)
         self.assertIn("Namespaces", text)
         self.assertIn("Pods", text)
+        self.assertIn("Active Jobs", text)
         self.assertIn("Snapshot Notes", text)
         self.assertIn("Raw JSON snapshot", text)
 

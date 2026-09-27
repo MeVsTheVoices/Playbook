@@ -215,6 +215,16 @@
         background: linear-gradient(180deg, rgba(236, 253, 245, 0.9), rgba(248, 250, 252, 0.95));
         border: 1px solid rgba(16, 185, 129, 0.18);
       }
+      .kube-status {
+        position: relative;
+        border-left: 3px solid rgba(14, 165, 233, 0.7);
+        background: linear-gradient(180deg, rgba(239, 246, 255, 0.95), rgba(248, 250, 252, 0.96));
+        animation: kubePulse 2.8s ease-in-out infinite;
+      }
+      @keyframes kubePulse {
+        0%, 100% { box-shadow: 0 0 0 rgba(14, 165, 233, 0.06); }
+        50% { box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.08); }
+      }
       .kube-list {
         margin: 0;
         padding-left: 1.1rem;
@@ -286,8 +296,9 @@
               <span class="kube-badge">Control-plane <strong id="kube-control-plane-hero">0</strong></span>
               <span class="kube-badge">Pods <strong id="kube-pods-hero">0 / 0</strong></span>
               <span class="kube-badge">Namespaces <strong id="kube-namespaces-hero">0</strong></span>
+              <span class="kube-badge">Jobs <strong id="kube-jobs-hero">0 / 0</strong></span>
             </div>
-            <div id="kube-status" class="status kube-status">Loading Kubernetes status...</div>
+            <div id="kube-status" class="status kube-status">⏳ Loading Kubernetes status...</div>
           </div>
           <div class="kube-hero-panel panel" style="margin: 0;">
             <h2 style="margin-top: 0;">Runtime Details</h2>
@@ -320,6 +331,7 @@
             <div class="kube-card"><div class="k">Control-plane Nodes</div><div class="v" id="kube-control-plane">0</div></div>
             <div class="kube-card"><div class="k">Pods Running / Total</div><div class="v" id="kube-pods">0 / 0</div></div>
             <div class="kube-card"><div class="k">Namespaces</div><div class="v" id="kube-namespaces">0</div></div>
+            <div class="kube-card"><div class="k">Jobs Running / Total</div><div class="v" id="kube-jobs">0 / 0</div></div>
             <div class="kube-card"><div class="k">Ready %</div><div class="v" id="kube-ready-percent">0%</div></div>
             <div class="kube-card"><div class="k">Running %</div><div class="v" id="kube-running-percent">0%</div></div>
             <div class="kube-card"><div class="k">Last Error</div><div class="v" id="kube-last-error">none</div></div>
@@ -395,6 +407,30 @@
             </div>
           </div>
 
+          <div class="panel kube-table-wrap">
+            <h2>Active Jobs <span class="kube-badge">work in flight</span></h2>
+            <p class="kube-subtle">Jobs currently active or recently finished, with their namespace and completion signal so you can tell what is still running.</p>
+            <div style="max-height: 24rem; overflow: auto;">
+              <table class="kube-table">
+                <thead>
+                  <tr>
+                    <th>Namespace</th>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Active</th>
+                    <th>Succeeded</th>
+                    <th>Failed</th>
+                  </tr>
+                </thead>
+                <tbody id="kube-job-rows">
+                  <tr><td colspan="6">Loading jobs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="kube-section">
           <div class="panel">
             <h2>Snapshot Notes <span class="kube-badge">raw feed</span></h2>
             <div class="kube-detail-columns">
@@ -422,11 +458,13 @@
       const controlPlaneEl = document.getElementById("kube-control-plane");
       const podsEl = document.getElementById("kube-pods");
       const namespacesEl = document.getElementById("kube-namespaces");
+      const jobsEl = document.getElementById("kube-jobs");
       const nodesTotalHeroEl = document.getElementById("kube-nodes-total-hero");
       const nodesReadyHeroEl = document.getElementById("kube-nodes-ready-hero");
       const controlPlaneHeroEl = document.getElementById("kube-control-plane-hero");
       const podsHeroEl = document.getElementById("kube-pods-hero");
       const namespacesHeroEl = document.getElementById("kube-namespaces-hero");
+      const jobsHeroEl = document.getElementById("kube-jobs-hero");
       const runtimeServiceEl = document.getElementById("kube-runtime-service");
       const runtimeServiceDetailEl = document.getElementById("kube-runtime-service-detail");
       const kubeconfigEl = document.getElementById("kube-has-kubeconfig");
@@ -439,6 +477,7 @@
       const nodeRowsEl = document.getElementById("kube-node-rows");
       const podRowsEl = document.getElementById("kube-pod-rows");
       const namespaceRowsEl = document.getElementById("kube-namespace-rows");
+      const jobRowsEl = document.getElementById("kube-job-rows");
       const factsListEl = document.getElementById("kube-facts-list");
       const rawJsonEl = document.getElementById("kube-raw-json");
       const statusEl = document.getElementById("kube-status");
@@ -520,6 +559,24 @@
         }).join("");
       }
 
+      function renderJobRows(rows) {
+        if (!Array.isArray(rows) || !rows.length) {
+          return `<tr><td colspan="6">No jobs returned.</td></tr>`;
+        }
+        return rows.map((row) => {
+          const status = String(row.status || "Unknown");
+          const kind = status === "Running" ? "ok" : status === "Failed" ? "warn" : "";
+          return `<tr>
+            <td>${escapeHtml(row.namespace || "default")}</td>
+            <td>${escapeHtml(row.name || "")}</td>
+            <td>${renderPill(status, kind)}</td>
+            <td>${escapeHtml(row.active || 0)}</td>
+            <td>${escapeHtml(row.succeeded || 0)}</td>
+            <td>${escapeHtml(row.failed || 0)}</td>
+          </tr>`;
+        }).join("");
+      }
+
       toggleBtn.addEventListener("click", () => {
         body.classList.toggle("sidebar-collapsed");
         localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
@@ -540,11 +597,13 @@
           controlPlaneEl.textContent = String(data.control_plane_nodes || 0);
           podsEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
           namespacesEl.textContent = String(data.namespaces_total || 0);
+          jobsEl.textContent = `${Number(data.jobs_running || 0)} / ${Number(data.jobs_total || 0)}`;
           nodesTotalHeroEl.textContent = String(data.nodes_total || 0);
           nodesReadyHeroEl.textContent = String(data.nodes_ready || 0);
           controlPlaneHeroEl.textContent = String(data.control_plane_nodes || 0);
           podsHeroEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
           namespacesHeroEl.textContent = String(data.namespaces_total || 0);
+          jobsHeroEl.textContent = `${Number(data.jobs_running || 0)} / ${Number(data.jobs_total || 0)}`;
 
           readyPercentEl.textContent = `${data.nodes_total ? Math.round((Number(data.nodes_ready || 0) / Number(data.nodes_total || 1)) * 100) : 0}%`;
           runningPercentEl.textContent = `${data.pods_total ? Math.round((Number(data.pods_running || 0) / Number(data.pods_total || 1)) * 100) : 0}%`;
@@ -566,6 +625,7 @@
             nodeRowsEl.innerHTML = `<tr><td colspan="8">Runtime inactive.</td></tr>`;
             podRowsEl.innerHTML = `<tr><td colspan="6">Runtime inactive.</td></tr>`;
             namespaceRowsEl.innerHTML = `<tr><td colspan="4">Runtime inactive.</td></tr>`;
+            jobRowsEl.innerHTML = `<tr><td colspan="6">Runtime inactive.</td></tr>`;
             factsListEl.innerHTML = `<li>Runtime service: ${escapeHtml(activeService)}</li><li>Reason: ${escapeHtml(reason)}</li><li>Kubeconfig present: ${escapeHtml(hasKubeconfig)}</li>`;
             rawJsonEl.textContent = JSON.stringify(data, null, 2);
             return;
@@ -579,11 +639,13 @@
           nodeRowsEl.innerHTML = renderNodeRows(Array.isArray(data.node_rows) ? data.node_rows : []);
           podRowsEl.innerHTML = renderPodRows(Array.isArray(data.pod_rows) ? data.pod_rows : []);
           namespaceRowsEl.innerHTML = renderNamespaceRows(Array.isArray(data.namespace_rows) ? data.namespace_rows : []);
+          jobRowsEl.innerHTML = renderJobRows(Array.isArray(data.job_rows) ? data.job_rows : []);
           factsListEl.innerHTML = [
             `Observed at ${escapeHtml(data.observed_at || "")}`,
             `Runtime service ${escapeHtml(activeService)}`,
             `Nodes ready ${escapeHtml(data.nodes_ready || 0)} of ${escapeHtml(data.nodes_total || 0)}`,
             `Pods running ${escapeHtml(data.pods_running || 0)} of ${escapeHtml(data.pods_total || 0)}`,
+            `Jobs running ${escapeHtml(data.jobs_running || 0)} of ${escapeHtml(data.jobs_total || 0)}`,
             `Namespaces tracked ${escapeHtml(data.namespaces_total || 0)}`,
           ].map((line) => `<li>${line}</li>`).join("");
           rawJsonEl.textContent = JSON.stringify(data, null, 2);

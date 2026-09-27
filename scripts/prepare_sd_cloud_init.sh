@@ -32,6 +32,41 @@ require_cmd() {
   fi
 }
 
+validate_http_url() {
+  local name="$1"
+  local value="$2"
+  if ! python3 - "$value" <<'PY'
+import re
+import sys
+from urllib.parse import urlparse
+
+value = sys.argv[1]
+if not value or re.search(r"[\x00-\x1f\x7f\s'\"]", value):
+    raise SystemExit(1)
+parts = urlparse(value)
+if parts.scheme not in {"http", "https"}:
+    raise SystemExit(1)
+if not parts.netloc:
+    raise SystemExit(1)
+PY
+  then
+    echo "Invalid ${name}: ${value}" >&2
+    exit 1
+  fi
+}
+
+validate_ssh_public_key_lines() {
+  local name="$1"
+  local input="$2"
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    if [[ ! "$line" =~ ^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)[[:space:]]+[A-Za-z0-9+/=]+([[:space:]].*)?$ ]]; then
+      echo "Invalid SSH public key line in ${name}: ${line}" >&2
+      exit 1
+    fi
+  done <<< "$input"
+}
+
 PROFILE=""
 HOSTNAME=""
 DEVICE=""
@@ -43,6 +78,7 @@ IMAGE_SHA256=""
 WORKSPACE="${PWD}/.build"
 AUTO_CONFIRM="false"
 DISTRIBUTION="${CLOUD_INIT_DISTRIBUTION:-standard}"
+VALIDATE_CLOUD_INIT_SCHEMA="${CLOUD_INIT_VALIDATE_SCHEMA:-true}"
 DEFAULT_K3S_SERVER_HOST="${CLOUD_INIT_K3S_SERVER_HOST:-}"
 if [[ -z "$DEFAULT_K3S_SERVER_HOST" ]]; then
   DEFAULT_K3S_SERVER_HOST="$(hostname -I | awk '{print $1}')"
@@ -52,6 +88,7 @@ if [[ -z "$DEFAULT_K3S_SERVER_HOST" ]]; then
 fi
 DEFAULT_K3S_CONFIG="${CLOUD_INIT_K3S_CONFIG:-# pragma: k3s-config-v1
 server: https://${DEFAULT_K3S_SERVER_HOST}:6443
+node-name: ${HOSTNAME:-$(hostname)}
 }"
 
 while [[ $# -gt 0 ]]; do
@@ -119,6 +156,14 @@ if [[ "$PROFILE" != "pi5" && "$PROFILE" != "pibplus" ]]; then
   exit 1
 fi
 
+if [[ ! "$HOSTNAME" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then
+  echo "Invalid --hostname value: ${HOSTNAME}" >&2
+  echo "Allowed: letters, numbers, and '-' (max 63 chars; cannot start or end with '-')." >&2
+  exit 1
+fi
+
+validate_http_url "--callback-url" "$CALLBACK_URL"
+
 case "$DISTRIBUTION" in
   standard|k3s)
     ;;
@@ -139,6 +184,7 @@ if [[ ! -f "$SSH_KEY_FILE" ]]; then
 fi
 
 SSH_KEY_CONTENT="$(cat "$SSH_KEY_FILE")"
+validate_ssh_public_key_lines "--ssh-key-file" "$SSH_KEY_CONTENT"
 
 require_cmd curl
 require_cmd lsblk
@@ -162,6 +208,7 @@ if [[ -z "$IMAGE_FILE" ]]; then
     echo "Provide --image-url or --image-file for profile: $PROFILE" >&2
     exit 1
   fi
+  validate_http_url "--image-url" "$IMAGE_URL"
 fi
 
 mkdir -p "$WORKSPACE"
@@ -319,6 +366,31 @@ CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"
 CLOUD_INIT_SSH_PORT="${CLOUD_INIT_SSH_PORT:-}"
 CLOUD_INIT_SSH_ALLOW_GROUPS="${CLOUD_INIT_SSH_ALLOW_GROUPS:-}"
 CLOUD_INIT_EXTRA_SSH_KEYS="${CLOUD_INIT_EXTRA_SSH_KEYS:-}"
+
+if [[ ! "$CLOUD_INIT_USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+  echo "Invalid CLOUD_INIT_USERNAME value: ${CLOUD_INIT_USERNAME}" >&2
+  echo "Allowed: lowercase letters, numbers, '_' or '-' (must start with a letter or underscore)." >&2
+  exit 1
+fi
+
+if [[ -n "$CLOUD_INIT_SSH_PORT" ]]; then
+  if [[ ! "$CLOUD_INIT_SSH_PORT" =~ ^[0-9]+$ ]] || (( CLOUD_INIT_SSH_PORT < 1 || CLOUD_INIT_SSH_PORT > 65535 )); then
+    echo "Invalid CLOUD_INIT_SSH_PORT value: ${CLOUD_INIT_SSH_PORT}" >&2
+    exit 1
+  fi
+fi
+
+if [[ -n "$CLOUD_INIT_SSH_ALLOW_GROUPS" ]]; then
+  if [[ ! "$CLOUD_INIT_SSH_ALLOW_GROUPS" =~ ^[A-Za-z0-9_,.-]+([[:space:]]*[A-Za-z0-9_,.-]+)*$ ]]; then
+    echo "Invalid CLOUD_INIT_SSH_ALLOW_GROUPS value: ${CLOUD_INIT_SSH_ALLOW_GROUPS}" >&2
+    exit 1
+  fi
+fi
+
+if [[ -n "$CLOUD_INIT_EXTRA_SSH_KEYS" ]]; then
+  validate_ssh_public_key_lines "CLOUD_INIT_EXTRA_SSH_KEYS" "$CLOUD_INIT_EXTRA_SSH_KEYS"
+fi
+
 USER_PASSWORD_HASH=""
 if [[ -n "$CLOUD_INIT_USER_PASSWORD" ]]; then
   USER_PASSWORD_HASH="$(printf '%s' "$CLOUD_INIT_USER_PASSWORD" | openssl passwd -6 -stdin)"
@@ -408,11 +480,24 @@ write_files:
 EOF
 
 if [[ "$DISTRIBUTION" == "k3s" ]]; then
+  SANITIZED_K3S_CONFIG="$(printf '%s\n' "$DEFAULT_K3S_CONFIG" | awk -v hostname="${HOSTNAME}" '
+    BEGIN { seen_node_name = 0 }
+    /^[[:space:]]*#/ { print; next }
+    tolower($0) ~ /^[[:space:]]*node-name[[:space:]]*:/ {
+      if (!seen_node_name) {
+        printf "node-name: %s\n", hostname
+        seen_node_name = 1
+      }
+      next
+    }
+    tolower($0) ~ /^[[:space:]]*node-ip[[:space:]]*:/ { next }
+    { print }
+  ' )"
   cat >> "$USER_DATA_OUT" <<K3S_FILE
   - path: /etc/rancher/k3s/config.yaml
     permissions: "0644"
     content: |
-$(printf '%s\n' "$DEFAULT_K3S_CONFIG" | sed 's/^/      /')
+$(printf '%s\n' "$SANITIZED_K3S_CONFIG" | sed 's/^/      /')
 K3S_FILE
 fi
 
@@ -537,6 +622,25 @@ cat >> "$USER_DATA_OUT" <<EOF
       curl -fsS -X POST -H 'Content-Type: application/json' \\
         --data-binary "\$PAYLOAD_JSON" \
         '${CALLBACK_URL}' || true
+  - path: /usr/local/bin/rack-callback-payload
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      python3 - <<'PY'
+      import json
+      import os
+
+      payload = {
+        "instance_id": os.environ.get("INSTANCE_ID", ""),
+        "hostname": os.environ.get("HOSTNAME", ""),
+        "profile": os.environ.get("PROFILE", ""),
+        "source_ip": os.environ.get("SOURCE_IP", ""),
+        "stage": "runcmd",
+        "node_report_b64": os.environ.get("NODE_REPORT_B64", ""),
+      }
+      print(json.dumps(payload, separators=(",", ":")))
+      PY
   - path: /usr/local/bin/rack-node-report
     permissions: "0755"
     content: |
@@ -718,6 +822,13 @@ runcmd:
 EOF
 
 if [[ "$DISTRIBUTION" == "k3s" ]]; then
+  if [[ -z "${CLOUD_INIT_K3S_CONFIG:-}" ]]; then
+    DEFAULT_K3S_CONFIG="# pragma: k3s-config-v1
+server: https://${DEFAULT_K3S_SERVER_HOST}:6443
+node-name: ${HOSTNAME}
+"
+  fi
+
   K3S_INSTALL_MODE="server"
   if printf '%s\n' "$DEFAULT_K3S_CONFIG" | grep -Eq 'role:\s*"?worker"?|role=worker|node-role\.kubernetes\.io/worker'; then
     K3S_INSTALL_MODE="agent"
@@ -725,11 +836,11 @@ if [[ "$DISTRIBUTION" == "k3s" ]]; then
 
   if [[ "$K3S_INSTALL_MODE" == "agent" ]]; then
     cat >> "$USER_DATA_OUT" <<'K3S_RUNCMD'
-  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="agent --config /etc/rancher/k3s/config.yaml" sh -' ]
+  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="agent --with-node-id --config /etc/rancher/k3s/config.yaml" sh -' ]
 K3S_RUNCMD
   else
   cat >> "$USER_DATA_OUT" <<'K3S_RUNCMD'
-  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="server --config /etc/rancher/k3s/config.yaml" sh -' ]
+  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="server --with-node-id --config /etc/rancher/k3s/config.yaml" sh -' ]
 K3S_RUNCMD
   fi
 fi
@@ -771,9 +882,9 @@ if [[ -n "$CLOUD_INIT_EXTRA_SSH_KEYS" ]]; then
 EXTRA_KEYS_RUNCMD
 fi
 
-# Append final runcmd callback
+# Append final runcmd callback using a runtime payload generator so all values are expanded on the node, not during host-side template generation.
 cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
-  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD="{\"instance_id\":\"${INSTANCE_ID}\",\"hostname\":\"${HOSTNAME}\",\"profile\":\"${PROFILE}\",\"source_ip\":\"\${SOURCE_IP}\",\"stage\":\"runcmd\",\"node_report_b64\":\"\${NODE_REPORT_B64}\"}"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "${PAYLOAD}" "${CALLBACK_URL}"; then echo "rack callback POST failed after retries to ${CALLBACK_URL}" >&2; fi' ]
+  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD_JSON="$(INSTANCE_ID="\${INSTANCE_ID}" HOSTNAME="\${HOSTNAME}" PROFILE="\${PROFILE}" SOURCE_IP="\${SOURCE_IP}" NODE_REPORT_B64="\${NODE_REPORT_B64}" /usr/local/bin/rack-callback-payload)"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "${CALLBACK_URL}"; then echo "rack callback POST failed after retries to ${CALLBACK_URL}" >&2; fi' ]
 
 RUNCMD_EOF
 
@@ -792,6 +903,23 @@ cat > "$META_DATA_OUT" <<EOF
 instance-id: ${INSTANCE_ID}
 local-hostname: ${HOSTNAME}
 EOF
+
+if [[ "$VALIDATE_CLOUD_INIT_SCHEMA" == "true" ]]; then
+  if ! command -v cloud-init >/dev/null 2>&1; then
+    echo "cloud-init CLI is required for schema validation but was not found on this host." >&2
+    echo "Install cloud-init or rerun with CLOUD_INIT_VALIDATE_SCHEMA=false to bypass validation." >&2
+    exit 1
+  fi
+
+  echo "Validating generated cloud-init user-data schema"
+  if ! cloud-init schema --config-file "$USER_DATA_OUT"; then
+    echo "cloud-init schema command failed; trying legacy 'cloud-init devel schema'" >&2
+    if ! cloud-init devel schema --config-file "$USER_DATA_OUT"; then
+      echo "cloud-init schema validation failed for generated user-data: $USER_DATA_OUT" >&2
+      exit 1
+    fi
+  fi
+fi
 
 echo "Injecting cloud-init files into boot partition"
 cp "$USER_DATA_OUT" "$TMP_DIR/boot/user-data"

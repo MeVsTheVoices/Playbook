@@ -1712,6 +1712,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "disable_root_ssh": True,
                 "enable_fail2ban": True,
                 "enable_unattended_upgrades": True,
+                "enable_power_restore_callback": True,
                 "reboot_after_bootstrap": True,
                 "ssh_port": "2222",
                 "ssh_allow_groups": ["sudo", "wheel"],
@@ -1748,6 +1749,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(env.get("CLOUD_INIT_DISABLE_ROOT_SSH"), "true")
         self.assertEqual(env.get("CLOUD_INIT_ENABLE_FAIL2BAN"), "true")
         self.assertEqual(env.get("CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK"), "true")
         self.assertEqual(env.get("CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP"), "true")
         self.assertEqual(env.get("CLOUD_INIT_SSH_PORT"), "2222")
         self.assertEqual(env.get("CLOUD_INIT_SSH_ALLOW_GROUPS"), "sudo,wheel")
@@ -3278,6 +3280,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('CLOUD_INIT_BOOT_SUMMARY="${CLOUD_INIT_BOOT_SUMMARY:-true}"', script_text)
         self.assertIn('CLOUD_INIT_ENABLE_FAIL2BAN="${CLOUD_INIT_ENABLE_FAIL2BAN:-false}"', script_text)
         self.assertIn('CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES="${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES:-false}"', script_text)
+        self.assertIn('CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK="${CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK:-true}"', script_text)
         self.assertIn('validate_http_url "--callback-url" "$CALLBACK_URL"', script_text)
         self.assertIn('validate_ssh_public_key_lines "--ssh-key-file" "$SSH_KEY_CONTENT"', script_text)
         self.assertIn('Invalid CLOUD_INIT_USERNAME value', script_text)
@@ -3294,6 +3297,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("openssl passwd -6 -stdin", script_text)
         self.assertIn('--retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20', script_text)
         self.assertIn('rack callback POST failed after retries to ${CALLBACK_URL}', script_text)
+        self.assertIn('if [[ "$CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK" == "true" ]]; then', script_text)
         self.assertIn('/usr/local/bin/rack-bootstrap-summary', script_text)
         self.assertIn('VALIDATE_CLOUD_INIT_SCHEMA="${CLOUD_INIT_VALIDATE_SCHEMA:-true}"', script_text)
         self.assertIn('cloud-init schema --config-file "$USER_DATA_OUT"', script_text)

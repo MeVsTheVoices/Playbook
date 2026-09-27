@@ -3538,13 +3538,25 @@ def _first_forwarded_ip(value: str) -> str:
     return parts[0] if parts else ""
 
 
-def _default_k3s_config() -> str:
+def _normalize_k3s_node_name(node_name: str | None) -> str:
+    candidate = str(node_name or "").strip()
+    if not candidate:
+        candidate = socket.gethostname().strip() or "rack-node"
+    candidate = candidate.strip("._ ")
+    candidate = re.sub(r"[^A-Za-z0-9-]+", "-", candidate)
+    candidate = re.sub(r"-+", "-", candidate).strip("-")
+    if not candidate:
+        candidate = "rack-node"
+    if not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?", candidate):
+        candidate = "rack-node"
+    return candidate
+
+
+def _default_k3s_config(node_name: str | None = None) -> str:
     host = os.getenv("K3S_SERVER_HOST", "").strip()
     if not host:
         host = _detect_local_ip()
-    node_name = socket.gethostname().strip() or "rack-node"
-    if not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?", node_name):
-        node_name = "rack-node"
+    node_name = _normalize_k3s_node_name(node_name)
     return f"# pragma: k3s-config-v1\nserver: https://{host}:6443\nnode-name: {node_name}\n"
 
 
@@ -3637,13 +3649,70 @@ def _resolve_source_ip(payload: Dict[str, Any], hostname: str = "", fqdn: str = 
 
 
 def _header_or_payload(payload: Dict[str, Any], *keys: str) -> str:
+    def candidate_names(name: str) -> List[str]:
+        raw = str(name or "").strip()
+        if not raw:
+            return []
+        pool: List[str] = []
+        seen: set[str] = set()
+        for value in (raw, raw.lower(), raw.upper(), raw.replace("-", "_"), raw.replace("_", "-")):
+            for item in (value, value.upper(), value.lower()):
+                if item and item not in seen:
+                    seen.add(item)
+                    pool.append(item)
+        if raw.startswith("X-"):
+            short = raw[2:]
+            short_candidates = candidate_names(short)
+            for candidate in short_candidates:
+                if candidate not in seen:
+                    seen.add(candidate)
+                    pool.append(candidate)
+        if raw.startswith("X_"):
+            short = raw[2:]
+            for candidate in candidate_names(short):
+                if candidate not in seen:
+                    seen.add(candidate)
+                    pool.append(candidate)
+        if raw.startswith("X-SSL-Client-"):
+            suffix = raw[len("X-SSL-Client-"):]
+            env_name = f"SSL_CLIENT_{suffix.upper().replace('-', '_')}"
+            if env_name not in seen:
+                seen.add(env_name)
+                pool.append(env_name)
+        if raw.startswith("X-Client-Cert-"):
+            suffix = raw[len("X-Client-Cert-"):]
+            env_name = f"SSL_CLIENT_{suffix.upper().replace('-', '_')}"
+            if env_name not in seen:
+                seen.add(env_name)
+                pool.append(env_name)
+        if raw.startswith("X-SSL-Client") and raw not in {"X-SSL-Client-Cert", "X-SSL-Client-Subject", "X-SSL-Client-Issuer", "X-SSL-Client-Fingerprint"}:
+            env_name = f"SSL_CLIENT_{raw[len('X-SSL-Client-'):].upper().replace('-', '_')}"
+            if env_name not in seen:
+                seen.add(env_name)
+                pool.append(env_name)
+        return pool
+
     for key in keys:
-        header_val = request.headers.get(key)
-        if header_val:
-            return str(header_val).strip()
-        payload_val = payload.get(key)
-        if payload_val:
-            return str(payload_val).strip()
+        for candidate in candidate_names(key):
+            if candidate in request.headers:
+                value = request.headers.get(candidate)
+                if value:
+                    return str(value).strip()
+            if candidate in payload and payload.get(candidate) not in (None, ""):
+                return str(payload.get(candidate)).strip()
+            env_value = request.environ.get(candidate)
+            if env_value not in (None, ""):
+                return str(env_value).strip()
+            env_value = os.environ.get(candidate)
+            if env_value not in (None, ""):
+                return str(env_value).strip()
+            http_name = f"HTTP_{candidate.replace('-', '_').replace('.', '_')}"
+            env_value = request.environ.get(http_name)
+            if env_value not in (None, ""):
+                return str(env_value).strip()
+            env_value = os.environ.get(http_name)
+            if env_value not in (None, ""):
+                return str(env_value).strip()
     return ""
 
 
@@ -3691,6 +3760,12 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         # even if the distribution select was left on standard.
         distribution = "k3s"
     if distribution == "k3s":
+        canonical_name = _normalize_k3s_node_name(cleaned.get("hostname") or None)
+        if not k3s_config:
+            cloud_options["k3s_config"] = _default_k3s_config(canonical_name).strip()
+            cleaned["distribution"] = distribution
+            return cleaned
+
         lines = []
         seen_node_name = False
         for raw_line in k3s_config.splitlines():
@@ -3698,21 +3773,20 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             stripped = line.strip()
             if re.match(r"(?i)^node-name\s*:\s*.*$", stripped):
                 if not seen_node_name:
-                    lines.append(f"node-name: {str(cleaned.get('hostname', '') or socket.gethostname() or 'rack-node').strip()}")
+                    lines.append(f"node-name: {canonical_name}")
                     seen_node_name = True
                 continue
             if re.match(r"(?i)^node-ip\s*:\s*.*$", stripped):
                 continue
             if stripped:
                 lines.append(line)
-        if not lines:
-            k3s_config = _default_k3s_config().strip()
-        else:
-            k3s_config = "\n".join(lines).strip() + "\n"
+        if not seen_node_name:
+            lines.insert(0, f"node-name: {canonical_name}")
+        k3s_config = "\n".join(lines).strip() + "\n"
         cloud_options["k3s_config"] = k3s_config
     cleaned["distribution"] = distribution
     if distribution == "k3s" and not cloud_options.get("k3s_config"):
-        cloud_options["k3s_config"] = _default_k3s_config().strip()
+        cloud_options["k3s_config"] = _default_k3s_config(cleaned.get("hostname") or None).strip()
     return cleaned
 
 

@@ -242,6 +242,11 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="stale-max-age-hours"', text)
         self.assertIn('id="preview-stale-prune"', text)
         self.assertIn('id="run-stale-prune"', text)
+        self.assertIn("Data Sets and Pull Pipelines", text)
+        self.assertIn('id="refresh-data-pipelines"', text)
+        self.assertIn('id="data-pipelines-grid"', text)
+        self.assertIn('/api/state/source-of-truth', text)
+        self.assertIn('/api/sd/images', text)
 
     def test_source_of_truth_endpoint_unifies_image_monitor_and_provision_state(self) -> None:
         cache_path = TEST_DATA_DIR / "image_cache" / "pi5-latest.img.xz"

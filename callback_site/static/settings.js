@@ -16,6 +16,9 @@ const loggingOutput = document.getElementById("logging-output");
 const refreshModuleSyncBtn = document.getElementById("refresh-module-sync");
 const moduleSyncStatus = document.getElementById("module-sync-status");
 const moduleSyncGrid = document.getElementById("module-sync-grid");
+const refreshDataPipelinesBtn = document.getElementById("refresh-data-pipelines");
+const dataPipelinesStatus = document.getElementById("data-pipelines-status");
+const dataPipelinesGrid = document.getElementById("data-pipelines-grid");
 const staleMaxAgeHoursInput = document.getElementById("stale-max-age-hours");
 const previewStalePruneBtn = document.getElementById("preview-stale-prune");
 const runStalePruneBtn = document.getElementById("run-stale-prune");
@@ -98,6 +101,132 @@ function updateVerboseButtons(enabled) {
 
 function renderModuleSyncCard(title, value, detail, state) {
   return `<article class="module-card ${state}"><p class="module-k">${title}</p><p class="module-v">${value}</p><p class="module-d">${detail}</p></article>`;
+}
+
+async function fetchJsonSnapshot(url) {
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    return { ok: res.ok && Boolean(data), status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, data: { error: String(err && err.message ? err.message : err) } };
+  }
+}
+
+function countPowerRestoreEvents(events) {
+  return events.filter((event) => String(event.stage || "").trim().toLowerCase() === "power_restore").length;
+}
+
+function countUuidLikeIds(events) {
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return events.filter((event) => uuidLike.test(String(event.instance_id || "").trim())).length;
+}
+
+async function refreshDataPipelinesSnapshot() {
+  if (!refreshDataPipelinesBtn || !dataPipelinesStatus || !dataPipelinesGrid) {
+    return;
+  }
+
+  dataPipelinesStatus.textContent = "Refreshing data/pull snapshot...";
+
+  const [sotResp, imagesResp, catalogResp, profilesResp, eventsResp, k8sResp] = await Promise.all([
+    fetchJsonSnapshot("/api/state/source-of-truth"),
+    fetchJsonSnapshot("/api/sd/images"),
+    fetchJsonSnapshot("/api/sd/image-catalog"),
+    fetchJsonSnapshot("/api/sd/options-profiles"),
+    fetchJsonSnapshot("/api/cloud-init/events"),
+    fetchJsonSnapshot("/api/kubernetes/summary"),
+  ]);
+
+  const sourceState = sotResp.ok && sotResp.data && sotResp.data.state ? sotResp.data.state : {};
+  const sourceCounts = sourceState.counts || {};
+  const sourceMonitor = sourceState.monitor || {};
+  const sourcePaths = sourceState.sources || {};
+
+  const imageEntries = imagesResp.ok && Array.isArray(imagesResp.data && imagesResp.data.entries)
+    ? imagesResp.data.entries
+    : [];
+  const catalogEntries = catalogResp.ok && Array.isArray(catalogResp.data && catalogResp.data.entries)
+    ? catalogResp.data.entries
+    : [];
+  const optionProfiles = profilesResp.ok && Array.isArray(profilesResp.data && profilesResp.data.profiles)
+    ? profilesResp.data.profiles
+    : [];
+  const callbackEvents = eventsResp.ok && Array.isArray(eventsResp.data && eventsResp.data.events)
+    ? eventsResp.data.events
+    : [];
+  const k8sSummary = k8sResp.ok && k8sResp.data ? k8sResp.data : {};
+
+  const powerRestoreEvents = countPowerRestoreEvents(callbackEvents);
+  const certEvents = callbackEvents.filter((event) => Boolean(event.cert_present)).length;
+  const nodeReportEvents = callbackEvents.filter((event) => Boolean(event.node_report_present)).length;
+  const uuidLikeEvents = countUuidLikeIds(callbackEvents);
+  const catalogPullRecords = imageEntries.filter((entry) => String(entry.source || "").trim() === "catalog_pull").length;
+  const assignedNodeCloudInit = Object.keys(sourceMonitor.node_cloud_init || {}).length;
+  const cloudInitTemplateCount = Array.isArray(sourceMonitor.cloud_init_options) ? sourceMonitor.cloud_init_options.length : 0;
+  const availableCatalog = Number(sourceCounts.catalog_available || 0);
+  const totalCatalog = Number(sourceCounts.catalog_entries || catalogEntries.length || 0);
+
+  const cards = [
+    renderModuleSyncCard(
+      "Source Of Truth",
+      `${Number(sourceCounts.nodes_in_monitor || 0)}/${Number(sourceCounts.nodes_in_node_ops || 0)}`,
+      "monitor/node-ops node counts in unified state",
+      sotResp.ok ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Callback Signals",
+      `${callbackEvents.length}`,
+      `${powerRestoreEvents} power_restore, ${certEvents} cert, ${nodeReportEvents} node-report`,
+      callbackEvents.length > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Identity Signals",
+      `${uuidLikeEvents}`,
+      "callbacks with UUID-like instance IDs",
+      uuidLikeEvents > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Cloud-Init Templates",
+      String(optionProfiles.length),
+      `${cloudInitTemplateCount} option defs, ${assignedNodeCloudInit} node assignments`,
+      optionProfiles.length > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Image Pull Records",
+      String(imageEntries.length),
+      `${catalogPullRecords} records from catalog-pull jobs`,
+      imageEntries.length > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Catalog Cache",
+      `${availableCatalog}/${totalCatalog}`,
+      "catalog entries marked locally available",
+      availableCatalog > 0 ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Kubernetes Jobs",
+      `${Number(k8sSummary.jobs_running || 0)}/${Number(k8sSummary.jobs_total || 0)}`,
+      k8sSummary.available ? "running/total jobs from local summary" : "runtime unavailable on this host",
+      k8sSummary.available ? "ok" : "warn"
+    ),
+    renderModuleSyncCard(
+      "Dataset Paths",
+      String(Object.keys(sourcePaths).length),
+      Object.keys(sourcePaths).length ? "callbacks, monitor, provisioning, catalog, inventory" : "source paths unavailable",
+      Object.keys(sourcePaths).length ? "ok" : "warn"
+    ),
+  ];
+
+  dataPipelinesGrid.innerHTML = cards.join("");
+
+  const failed = [sotResp, imagesResp, catalogResp, profilesResp, eventsResp].filter((resp) => !resp.ok).length;
+  const now = new Date();
+  if (failed > 0) {
+    dataPipelinesStatus.textContent = `Snapshot refreshed with ${failed} endpoint warning${failed === 1 ? "" : "s"} at ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}.`;
+  } else {
+    dataPipelinesStatus.textContent = `Snapshot refreshed at ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}.`;
+  }
 }
 
 async function refreshModuleSync() {
@@ -329,6 +458,9 @@ document.getElementById("view-recent-logs").addEventListener("click", viewRecent
 if (refreshModuleSyncBtn) {
   refreshModuleSyncBtn.addEventListener("click", refreshModuleSync);
 }
+if (refreshDataPipelinesBtn) {
+  refreshDataPipelinesBtn.addEventListener("click", refreshDataPipelinesSnapshot);
+}
 if (previewStalePruneBtn) {
   previewStalePruneBtn.addEventListener("click", () => runStalePrune(true));
 }
@@ -339,3 +471,4 @@ if (runStalePruneBtn) {
 initSidebar();
 loadRackSettings();
 refreshModuleSync();
+refreshDataPipelinesSnapshot();

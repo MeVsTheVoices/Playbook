@@ -729,62 +729,62 @@ cat >> "$USER_DATA_OUT" <<EOF
       #!/bin/bash
       set -euo pipefail
 
-      if [[ "${CLOUD_INIT_BOOT_SUMMARY}" != "true" ]]; then
+      if [[ "\${CLOUD_INIT_BOOT_SUMMARY}" != "true" ]]; then
         exit 0
       fi
 
-      reset=$'\033[0m'
-      bold=$'\033[1m'
-      red=$'\033[31m'
-      yellow=$'\033[33m'
-      green=$'\033[32m'
-      cyan=$'\033[36m'
-      magenta=$'\033[35m'
+      reset=\$'\033[0m'
+      bold=\$'\033[1m'
+      red=\$'\033[31m'
+      yellow=\$'\033[33m'
+      green=\$'\033[32m'
+      cyan=\$'\033[36m'
+      magenta=\$'\033[35m'
 
       print_border() {
-        printf '%s+--------------------------------------------------------------+%s\n' "$cyan" "$reset"
+        printf '%s+--------------------------------------------------------------+%s\n' "\$cyan" "\$reset"
       }
 
       print_row() {
-        local color=$1
-        local key=$2
-        local value=$3
-        printf '%s|%s %-24s %s| %s%-28s%s %s|%s\n' "$color" "$reset" "$key" "$color" "$bold" "$value" "$reset" "$color" "$reset"
+        local color=\$1
+        local key=\$2
+        local value=\$3
+        printf '%s|%s %-24s %s| %s%-28s%s %s|%s\n' "\$color" "\$reset" "\$key" "\$color" "\$bold" "\$value" "\$reset" "\$color" "\$reset"
       }
 
       print_border
-      printf '%s|%s %-58s %s|%s\n' "$red" "$reset" "$bold RACK BOOT COMPLETE$reset" "$red" "$reset"
+      printf '%s|%s %-58s %s|%s\n' "\$red" "\$reset" "\$bold RACK BOOT COMPLETE\$reset" "\$red" "\$reset"
       print_border
-      print_row "$red" "Hostname" "$(hostname)"
-      print_row "$yellow" "Profile" "${PROFILE}"
-      print_row "$green" "Role" "${PROFILE_ROLE}"
-      print_row "$cyan" "Storage" "${PROFILE_STORAGE}"
-      print_row "$magenta" "Distribution" "${DISTRIBUTION}"
-      print_row "$red" "User" "${CLOUD_INIT_USERNAME}"
-      print_row "$yellow" "SSH password auth" "${CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH}"
-      print_row "$green" "Root SSH login" "${CLOUD_INIT_DISABLE_ROOT_SSH}"
-      print_row "$cyan" "Boot summary" "${CLOUD_INIT_BOOT_SUMMARY}"
-      print_row "$magenta" "Fail2ban" "${CLOUD_INIT_ENABLE_FAIL2BAN}"
-      print_row "$red" "Unattended upgrades" "${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES}"
-      print_row "$yellow" "Hardware checks" "${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}"
-      print_row "$green" "Fancy MOTD" "${CLOUD_INIT_FANCY_MOTD:-false}"
-      print_row "$cyan" "Telegraf" "${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
+      print_row "\$red" "Hostname" "\$(hostname)"
+      print_row "\$yellow" "Profile" "\${PROFILE}"
+      print_row "\$green" "Role" "\${PROFILE_ROLE}"
+      print_row "\$cyan" "Storage" "\${PROFILE_STORAGE}"
+      print_row "\$magenta" "Distribution" "\${DISTRIBUTION}"
+      print_row "\$red" "User" "\${CLOUD_INIT_USERNAME}"
+      print_row "\$yellow" "SSH password auth" "\${CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH}"
+      print_row "\$green" "Root SSH login" "\${CLOUD_INIT_DISABLE_ROOT_SSH}"
+      print_row "\$cyan" "Boot summary" "\${CLOUD_INIT_BOOT_SUMMARY}"
+      print_row "\$magenta" "Fail2ban" "\${CLOUD_INIT_ENABLE_FAIL2BAN}"
+      print_row "\$red" "Unattended upgrades" "\${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES}"
+      print_row "\$yellow" "Hardware checks" "\${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}"
+      print_row "\$green" "Fancy MOTD" "\${CLOUD_INIT_FANCY_MOTD:-false}"
+      print_row "\$cyan" "Telegraf" "\${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
       k3s_config_state="not set"
-      if [[ -n "${CLOUD_INIT_K3S_CONFIG:-}" ]]; then
+      if [[ -n "\${CLOUD_INIT_K3S_CONFIG:-}" ]]; then
         k3s_config_state="present"
       fi
-      print_row "$magenta" "K3s config" "${k3s_config_state}"
-      print_row "$red" "SSH port" "${CLOUD_INIT_SSH_PORT:-22}"
-      print_row "$yellow" "SSH allow groups" "${CLOUD_INIT_SSH_ALLOW_GROUPS:-default}"
-      print_row "$green" "Callback URL" "${CALLBACK_URL}"
+      print_row "\$magenta" "K3s config" "\${k3s_config_state}"
+      print_row "\$red" "SSH port" "\${CLOUD_INIT_SSH_PORT:-22}"
+      print_row "\$yellow" "SSH allow groups" "\${CLOUD_INIT_SSH_ALLOW_GROUPS:-default}"
+      print_row "\$green" "Callback URL" "\${CALLBACK_URL}"
       print_border
-      printf '%s%sAll configured steps finished.%s\n' "$bold" "$green" "$reset"
-      printf '%s%sYou can now continue from the portal.%s\n' "$bold" "$cyan" "$reset"
+      printf '%s%sAll configured steps finished.%s\n' "\$bold" "\$green" "\$reset"
+      printf '%s%sYou can now continue from the portal.%s\n' "\$bold" "\$cyan" "\$reset"
   - path: /etc/update-motd.d/10-fancy
     permissions: "0755"
     content: |
       #!/bin/bash
-      if [[ "${CLOUD_INIT_FANCY_MOTD:-false}" != "true" ]]; then
+      if [[ "\${CLOUD_INIT_FANCY_MOTD:-false}" != "true" ]]; then
         exit 0
       fi
       if command -v fortune >/dev/null 2>&1 && command -v cowsay >/dev/null 2>&1; then
@@ -794,7 +794,7 @@ cat >> "$USER_DATA_OUT" <<EOF
           fortune | cowsay
         fi
       else
-        echo "Rack node online: $(hostname)"
+        echo "Rack node online: \$(hostname)"
       fi
   - path: /usr/local/bin/rack-telegraf-bootstrap
     permissions: "0755"

@@ -4216,6 +4216,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
                 "enable_fail2ban": "CLOUD_INIT_ENABLE_FAIL2BAN",
                 "enable_unattended_upgrades": "CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES",
                 "reboot_after_bootstrap": "CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP",
+                "enable_power_restore_callback": "CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK",
             }
             for option_key, env_key in bool_env_fields.items():
                 if bool(cloud_init_options.get(option_key, False)):

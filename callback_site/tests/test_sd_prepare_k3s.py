@@ -63,6 +63,22 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         )
         self.assertEqual(cleaned["distribution"], "k3s")
 
+    def test_sanitize_sd_prepare_payload_uses_user_hostname_for_default_k3s_node_name(self) -> None:
+        cleaned = callback_app._sanitize_sd_prepare_payload(
+            {
+                "profile": "pi5",
+                "hostname": "rack-node-k3s",
+                "device": "/dev/sdb",
+                "ssh_public_key": "ssh-ed25519 AAAA",
+                "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                "distribution": "k3s",
+                "cloud_init_options": {},
+            }
+        )
+        config = cleaned["cloud_init_options"]["k3s_config"]
+        self.assertIn("node-name: rack-node-k3s", config)
+        self.assertEqual(1, sum(1 for line in config.splitlines() if line.strip().lower().startswith("node-name:")))
+
     def test_default_callback_url_respects_explicit_port_env(self) -> None:
         with patch.dict("os.environ", {"CALLBACK_PUBLIC_HOST": "callback.example", "CALLBACK_PUBLIC_PORT": "9821"}, clear=False):
             self.assertEqual(callback_app._default_callback_url(), "http://callback.example:9821/api/cloud-init/callback")

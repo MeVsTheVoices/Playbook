@@ -1080,6 +1080,52 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(missing_delete.status_code, 404)
         self.assertFalse(missing_delete.get_json()["ok"])
 
+    def test_sd_jobs_list_returns_active_jobs(self) -> None:
+        with callback_app.JOBS_LOCK:
+            callback_app.JOBS.clear()
+            callback_app.JOBS["job-queued"] = {
+                "id": "job-queued",
+                "status": "queued",
+                "created_at": "2026-07-01T00:00:00+00:00",
+                "request": {"hostname": "node-queued"},
+                "stdout": "",
+                "stderr": "",
+                "exit_code": None,
+            }
+            callback_app.JOBS["job-running"] = {
+                "id": "job-running",
+                "status": "running",
+                "created_at": "2026-07-01T00:00:30+00:00",
+                "started_at": "2026-07-01T00:00:35+00:00",
+                "request": {"hostname": "node-running"},
+                "stdout": "Flashing image",
+                "stderr": "",
+                "exit_code": None,
+            }
+            callback_app.JOBS["job-done"] = {
+                "id": "job-done",
+                "status": "completed",
+                "created_at": "2026-07-01T00:00:10+00:00",
+                "finished_at": "2026-07-01T00:00:20+00:00",
+                "request": {"hostname": "node-done"},
+                "stdout": "done",
+                "stderr": "",
+                "exit_code": 0,
+            }
+
+        response = self.client.get("/api/sd/jobs")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        jobs = payload.get("jobs", [])
+        job_ids = [job.get("id") for job in jobs]
+        self.assertIn("job-running", job_ids)
+        self.assertIn("job-queued", job_ids)
+        self.assertNotIn("job-done", job_ids)
+
+        with callback_app.JOBS_LOCK:
+            callback_app.JOBS.clear()
+
     def test_sd_prepare_auto_generates_sd_options_profile_when_missing(self) -> None:
         with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch("app.threading.Thread"):
             response = self.client.post(
@@ -2664,6 +2710,33 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertTrue(latest["cert_present"])
         self.assertTrue(latest["cert_header_present"])
 
+    def test_callback_cert_presence_from_proxy_environment(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "rpi5-cert-proxy-01",
+                "instance_id": "iid-cert-proxy-01",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+            environ_overrides={
+                "SSL_CLIENT_S_DN": "CN=rpi5-cert-proxy-01",
+                "SSL_CLIENT_CERT": "-----BEGIN CERTIFICATE-----\nproxy-cert\n-----END CERTIFICATE-----",
+                "SSL_CLIENT_SHA256": "AA:BB:CC:DD",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        events_response = self.client.get("/api/cloud-init/events")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.get_json()["events"]
+        matching = [e for e in events if e.get("instance_id") == "iid-cert-proxy-01"]
+        self.assertTrue(matching)
+        latest = matching[0]
+        self.assertTrue(latest["cert_present"])
+        self.assertEqual(latest["cert_subject"], "CN=rpi5-cert-proxy-01")
+        self.assertEqual(latest["cert_fingerprint"], "AA:BB:CC:DD")
+
     def test_callback_ignores_empty_payload_noise(self) -> None:
         response = self.client.post(
             "/api/cloud-init/callback",
@@ -3227,6 +3300,12 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("cloud-init devel schema --config-file \"$USER_DATA_OUT\"", script_text)
         self.assertIn('cat >> "$USER_DATA_OUT" <<RUNCMD_EOF', script_text)
         self.assertIn('final_message: "Cloud-init finished for ${HOSTNAME}"', script_text)
+
+    def test_prepare_script_retries_callback_on_boot_after_power_restore(self) -> None:
+        script_text = (APP_DIR.parent / "scripts" / "prepare_sd_cloud_init.sh").read_text(encoding="utf-8")
+        self.assertIn('rack-power-restored-callback', script_text)
+        self.assertIn('WantedBy=multi-user.target', script_text)
+        self.assertIn('stage": "power_restore"', script_text)
 
 
 if __name__ == "__main__":

@@ -118,6 +118,14 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         self.assertIn('SOURCE_IP="\\${SOURCE_IP}"', script_text)
         self.assertIn('NODE_REPORT_B64="\\${NODE_REPORT_B64}"', script_text)
 
+    def test_prepare_sd_script_installs_fancy_motd_packages(self) -> None:
+        script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"
+        script_text = script_path.read_text(encoding="utf-8")
+        self.assertIn('CLOUD_INIT_FANCY_MOTD="${CLOUD_INIT_FANCY_MOTD:-false}"', script_text)
+        self.assertIn('- fortune-mod', script_text)
+        self.assertIn('- cowsay', script_text)
+        self.assertIn('- lolcat', script_text)
+
     def test_sd_options_profile_save_persists_distribution(self) -> None:
         save = self.client.post(
             "/api/sd/options-profiles",

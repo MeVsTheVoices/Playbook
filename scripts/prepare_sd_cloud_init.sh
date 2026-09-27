@@ -658,11 +658,11 @@ cat >> "$USER_DATA_OUT" <<EOF
     content: |
       #!/bin/bash
       set -euo pipefail
-      SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
-      NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
-      PAYLOAD_JSON="$(INSTANCE_ID="${INSTANCE_ID:-$(hostname)}" HOSTNAME="${HOSTNAME:-$(hostname)}" PROFILE="${PROFILE:-}" SOURCE_IP="${SOURCE_IP}" NODE_REPORT_B64="${NODE_REPORT_B64}" STAGE="power_restore" /usr/local/bin/rack-callback-payload)"
-      if [[ -n "${CALLBACK_URL:-}" ]]; then
-        curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "${PAYLOAD_JSON}" "${CALLBACK_URL}" || true
+      SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
+      NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
+      PAYLOAD_JSON="\$(INSTANCE_ID="\${INSTANCE_ID:-\$(hostname)}" HOSTNAME="\${HOSTNAME:-\$(hostname)}" PROFILE="\${PROFILE:-}" SOURCE_IP="\${SOURCE_IP}" NODE_REPORT_B64="\${NODE_REPORT_B64}" STAGE="power_restore" /usr/local/bin/rack-callback-payload)"
+      if [[ -n "\${CALLBACK_URL:-}" ]]; then
+        curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "\${CALLBACK_URL}" || true
       fi
   - path: /etc/systemd/system/rack-power-restored-callback.service
     permissions: "0644"

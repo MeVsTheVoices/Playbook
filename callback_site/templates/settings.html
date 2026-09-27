@@ -54,6 +54,23 @@
         </div>
 
         <div class="panel">
+          <h2>Data Sets and Pull Pipelines</h2>
+          <p class="note">Tracks the newer source-of-truth data sets, callback payload signals, and image pull state in one place.</p>
+          <div class="button-row">
+            <button id="refresh-data-pipelines" class="primary">Refresh Data/Pull Snapshot</button>
+          </div>
+          <div id="data-pipelines-status" class="status">Loading data/pull snapshot...</div>
+          <div class="module-grid" id="data-pipelines-grid"></div>
+          <div class="status">Sources reviewed:
+- /api/state/source-of-truth
+- /api/sd/images
+- /api/sd/image-catalog
+- /api/sd/options-profiles
+- /api/cloud-init/events
+- /api/kubernetes/summary (when runtime is available)</div>
+        </div>
+
+        <div class="panel">
           <h2>Rack Identity</h2>
           <p class="note">Set the main rack name used for rack-aware defaults (for example in Tailscale ACL planner tags).</p>
           <label for="rack-name">Rack Name</label>

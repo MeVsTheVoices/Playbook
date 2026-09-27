@@ -2615,77 +2615,15 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
 
     profile_value = "pibplus" if "bplus" in str(node_group or "").lower() else "pi5"
     callback_url = _default_callback_url()
-    remote_cmd = (
-        "python3 - <<'PY'\n"
-        "import base64\n"
-        "import json\n"
-        "import os\n"
-        "import socket\n"
-        "import subprocess\n"
-        "from urllib import request as urlrequest\n"
-        "\n"
-        "CALLBACK_URL = " + repr(callback_url) + "\n"
-        "PROFILE = " + repr(profile_value) + "\n"
-        "\n"
-        "def run_text(cmd):\n"
-        "    try:\n"
-        "        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()\n"
-        "    except Exception:\n"
-        "        return ''\n"
-        "\n"
-        "def as_int(value):\n"
-        "    try:\n"
-        "        return int(float(str(value or '0').strip()))\n"
-        "    except Exception:\n"
-        "        return 0\n"
-        "\n"
-        "def as_bool(value):\n"
-        "    return str(value or '').strip().lower() == 'true'\n"
-        "\n"
-        "pi_model = run_text(['bash', '-lc', \"cat /proc/device-tree/model 2>/dev/null | tr -d '\\\\0' || echo unknown\"]) or 'unknown'\n"
-        "ram_mb = as_int(run_text(['bash', '-lc', \"awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0\"]))\n"
-        "sd_capacity = as_int(run_text(['bash', '-lc', \"lsblk -b --output SIZE -n /dev/mmcblk0 2>/dev/null | awk '{print int($1/1024/1024/1024)}' || echo 0\"]))\n"
-        "nvme_present = os.path.exists('/dev/nvme0n1')\n"
-        "hat_present = as_bool(run_text(['bash', '-lc', \"i2cdetect -y 1 2>/dev/null | grep -q '50\\\\|51' && echo true || echo false\"]))\n"
-        "poe_enabled = os.path.exists('/sys/class/pwm/pwmchip0/device/dtoverlay')\n"
-        "source_ip = run_text(['/usr/local/bin/rack-local-ip']) or run_text(['bash', '-lc', \"hostname -I 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i !~ /^127\\\\./ && $i !~ /^169\\\\.254\\\\./) {print $i; exit}}'\"])\n"
-        "report_text = run_text(['/usr/local/bin/rack-node-report'])\n"
-        "node_report_b64 = base64.b64encode(report_text.encode('utf-8')).decode('ascii') if report_text else ''\n"
-        "payload = {\n"
-        "    'instance_id': f\"{socket.gethostname()}-hw\",\n"
-        "    'hostname': socket.gethostname(),\n"
-        "    'profile': PROFILE,\n"
-        "    'source_ip': source_ip,\n"
-        "    'stage': 'hardware-check',\n"
-        "    'node_report_b64': node_report_b64,\n"
-        "    'hardware': {\n"
-        "        'model': pi_model,\n"
-        "        'ram_mb': ram_mb,\n"
-        "        'sd_capacity_gb': sd_capacity,\n"
-        "        'nvme': nvme_present,\n"
-        "        'hat': hat_present,\n"
-        "        'poe': poe_enabled,\n"
-        "    },\n"
-        "}\n"
-        "body = json.dumps(payload, separators=(',', ':')).encode('utf-8')\n"
-        "req = urlrequest.Request(CALLBACK_URL, data=body, headers={'Content-Type': 'application/json'})\n"
-        "try:\n"
-        "    with urlrequest.urlopen(req, timeout=12) as resp:\n"
-        "        print(resp.read().decode('utf-8', errors='replace').strip())\n"
-        "except Exception as exc:\n"
-        "    print(json.dumps({'ok': False, 'error': str(exc)}))\n"
-        "PY"
-    )
-
     cmd = [
         ansible_cmd or "ansible",
         "-i",
         temp_inventory.name,
         node_name,
         "-m",
-        "ansible.builtin.shell",
+        "ansible.builtin.setup",
         "-a",
-        remote_cmd,
+        "gather_subset=hardware,network",
         "-o",
     ]
     env = os.environ.copy()
@@ -2704,14 +2642,92 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
             cwd=str(BASE_DIR.parent),
             env=env,
         )
-        output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        raw_output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        fact_payload: Dict[str, Any] = {}
+        if proc.returncode == 0:
+            try:
+                parsed = json.loads(raw_output.split("=>", 1)[1].strip()) if "=>" in raw_output else json.loads(raw_output)
+                if isinstance(parsed, dict):
+                    fact_payload = parsed.get("ansible_facts", {}) if isinstance(parsed.get("ansible_facts"), dict) else parsed
+            except (ValueError, IndexError):
+                fact_payload = {}
+
+        if proc.returncode != 0 or not isinstance(fact_payload, dict):
+            return {
+                "profile_id": "hardware_check_trigger",
+                "status": "failed" if proc.returncode != 0 else "failed",
+                "mode": "check",
+                "checked_at": checked_at,
+                "command": cmd,
+                "exit_code": proc.returncode,
+                "inputs": {},
+                "output": raw_output[-12000:] or "Ansible setup failed to return hardware facts.",
+            }
+
+        model = str(
+            fact_payload.get("ansible_product_name")
+            or fact_payload.get("ansible_model")
+            or (fact_payload.get("ansible_lsb") or {}).get("description")
+            or ""
+        ).strip()
+        ram_mb = 0
+        raw_ram_value = fact_payload.get("ansible_memtotal_mb")
+        if raw_ram_value is None:
+            mem_mb = fact_payload.get("ansible_memory_mb")
+            if isinstance(mem_mb, dict):
+                real = mem_mb.get("real") if isinstance(mem_mb.get("real"), dict) else {}
+                raw_ram_value = real.get("total") if isinstance(real, dict) else mem_mb.get("total")
+        try:
+            ram_mb = int(float(str(raw_ram_value or 0).strip()))
+        except (TypeError, ValueError):
+            ram_mb = 0
+
+        device_info = fact_payload.get("ansible_devices") if isinstance(fact_payload.get("ansible_devices"), dict) else {}
+        sd_capacity_gb = 0
+        for device_name, metadata in device_info.items():
+            if not isinstance(metadata, dict):
+                continue
+            if str(device_name).startswith("mmcblk"):
+                size_txt = str(metadata.get("size") or "").strip()
+                value = re.search(r"(\d+(?:\.\d+)?)\s*(?:G|GB)", size_txt, flags=re.IGNORECASE)
+                if value:
+                    try:
+                        sd_capacity_gb = max(sd_capacity_gb, int(float(value.group(1))))
+                    except ValueError:
+                        pass
+        nvme_present = any(str(name).startswith("nvme") for name in device_info)
+        payload = {
+            "instance_id": f"{node_name}-hw",
+            "hostname": str(fact_payload.get("ansible_hostname") or node_name).strip() or node_name,
+            "profile": profile_value,
+            "source_ip": host_target,
+            "stage": "hardware-check",
+            "node_report_b64": "",
+            "hardware": {
+                "model": model or "unknown",
+                "ram_mb": ram_mb,
+                "sd_capacity_gb": sd_capacity_gb,
+                "nvme": nvme_present,
+                "hat": False,
+                "poe": False,
+            },
+        }
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        req = urlrequest.Request(callback_url, data=body, headers={"Content-Type": "application/json"})
+        try:
+            with urlrequest.urlopen(req, timeout=12) as resp:
+                callback_response = resp.read().decode("utf-8", errors="replace").strip()
+        except Exception as exc:
+            callback_response = json.dumps({"ok": False, "error": str(exc)})
+
+        output = callback_response or json.dumps({"ok": True, "facts": {"model": model, "ram_mb": ram_mb}})
         return {
             "profile_id": "hardware_check_trigger",
-            "status": "ok" if proc.returncode == 0 else "failed",
+            "status": "ok",
             "mode": "check",
             "checked_at": checked_at,
             "command": cmd,
-            "exit_code": proc.returncode,
+            "exit_code": 0,
             "inputs": {},
             "output": output[-12000:],
         }
@@ -3078,6 +3094,7 @@ def _is_placeholder_inventory_address(address: str) -> bool:
 def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
     """Return the most recent hardware-check event payload per hostname."""
     seen: Dict[str, Dict[str, Any]] = {}
+    seen_ts: Dict[str, datetime] = {}
     for event in _read_events(limit=limit):
         if str(event.get("stage", "")).strip() != "hardware-check":
             continue
@@ -3086,6 +3103,7 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
             candidates.update(_node_aliases(str(raw or "")))
         if not candidates:
             continue
+        event_ts = _parse_event_time(str(event.get("received_at", "")))
         hw = event.get("raw", {})
         if isinstance(hw, dict):
             hw_block = hw.get("hardware") or {}
@@ -3103,8 +3121,13 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
             "source_ip": str(event.get("source_ip", "")).strip(),
         }
         for host in candidates:
-            if host and host not in seen:
+            if not host:
+                continue
+            current_ts = seen_ts.get(host)
+            if current_ts is None or event_ts is None or event_ts > current_ts:
                 seen[host] = payload
+                if event_ts is not None:
+                    seen_ts[host] = event_ts
     return seen
 
 
@@ -3814,9 +3837,12 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
         "pods_total": 0,
         "pods_running": 0,
         "namespaces_total": 0,
+        "jobs_total": 0,
+        "jobs_running": 0,
         "node_rows": [],
         "pod_rows": [],
         "namespace_rows": [],
+        "job_rows": [],
         "last_error": "",
     }
 
@@ -3826,6 +3852,7 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
     nodes_doc, nodes_err = _run_kubectl_json(["get", "nodes"])
     pods_doc, pods_err = _run_kubectl_json(["get", "pods", "-A"])
     ns_doc, ns_err = _run_kubectl_json(["get", "namespaces"])
+    jobs_doc, jobs_err = _run_kubectl_json(["get", "jobs", "-A"])
 
     if nodes_doc is None:
         summary["last_error"] = nodes_err
@@ -3972,8 +3999,71 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
             )
         summary["namespace_rows"] = namespace_rows
 
-    if not summary["last_error"] and (pods_err or ns_err):
-        summary["last_error"] = pods_err or ns_err
+    if isinstance(jobs_doc, dict):
+        job_items = jobs_doc.get("items", []) if isinstance(jobs_doc.get("items"), list) else []
+        summary["jobs_total"] = len(job_items)
+        job_rows: List[Dict[str, Any]] = []
+        jobs_running = 0
+        for job in job_items:
+            if not isinstance(job, dict):
+                continue
+            metadata = job.get("metadata", {}) if isinstance(job.get("metadata"), dict) else {}
+            status = job.get("status", {}) if isinstance(job.get("status"), dict) else {}
+            active = 0
+            succeeded = 0
+            failed = 0
+            try:
+                active = int(status.get("active", 0) or 0)
+            except (TypeError, ValueError):
+                active = 0
+            try:
+                succeeded = int(status.get("succeeded", 0) or 0)
+            except (TypeError, ValueError):
+                succeeded = 0
+            try:
+                failed = int(status.get("failed", 0) or 0)
+            except (TypeError, ValueError):
+                failed = 0
+            if active > 0:
+                jobs_running += 1
+            conditions = status.get("conditions", []) if isinstance(status.get("conditions"), list) else []
+            if conditions:
+                last_condition = conditions[-1]
+                if isinstance(last_condition, dict):
+                    condition_status = str(last_condition.get("type", "")).strip()
+                    if condition_status == "Complete":
+                        status_text = "Succeeded"
+                    elif condition_status == "Failed":
+                        status_text = "Failed"
+                    elif active > 0:
+                        status_text = "Running"
+                    else:
+                        status_text = condition_status or "Unknown"
+                else:
+                    status_text = "Unknown"
+            elif active > 0:
+                status_text = "Running"
+            elif succeeded > 0:
+                status_text = "Succeeded"
+            elif failed > 0:
+                status_text = "Failed"
+            else:
+                status_text = "Pending"
+            job_rows.append(
+                {
+                    "namespace": str(metadata.get("namespace", "default")),
+                    "name": str(metadata.get("name", "")),
+                    "status": status_text,
+                    "active": active,
+                    "succeeded": succeeded,
+                    "failed": failed,
+                }
+            )
+        summary["jobs_running"] = jobs_running
+        summary["job_rows"] = job_rows[:50]
+
+    if not summary["last_error"] and (pods_err or ns_err or jobs_err):
+        summary["last_error"] = pods_err or ns_err or jobs_err
 
     return summary
 

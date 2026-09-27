@@ -491,6 +491,9 @@ def callback() -> Any:
         "X-Client-Cert-Subject",
         "TLS-Client-Subject",
         "SSL-Client-Subject",
+        "SSL_CLIENT_S_DN",
+        "SSL_CLIENT_SUBJECT_DN",
+        "SSL_CLIENT_CERT_SUBJECT",
         "cert_subject",
     )
     cert_issuer = _header_or_payload(
@@ -500,6 +503,9 @@ def callback() -> Any:
         "X-Client-Cert-Issuer",
         "TLS-Client-Issuer",
         "SSL-Client-Issuer",
+        "SSL_CLIENT_I_DN",
+        "SSL_CLIENT_ISSUER_DN",
+        "SSL_CLIENT_CERT_ISSUER",
         "cert_issuer",
     )
     cert_fingerprint = _header_or_payload(
@@ -509,6 +515,8 @@ def callback() -> Any:
         "X-Client-Cert-Fingerprint",
         "TLS-Client-Fingerprint",
         "SSL-Client-Fingerprint",
+        "SSL_CLIENT_SHA256",
+        "SSL_CLIENT_CERT_SHA256",
         "cert_fingerprint",
     )
     cert_blob = _header_or_payload(
@@ -516,6 +524,7 @@ def callback() -> Any:
         "X-SSL-Client-Cert",
         "X-Client-Cert",
         "SSL-Client-Cert",
+        "SSL_CLIENT_CERT",
         "client_cert",
     )
 
@@ -1555,6 +1564,26 @@ def settings_reset() -> Any:
 
     reset_result = _reset_node_ops_settings()
     return jsonify({"ok": True, "scope": scope, "reset": reset_result})
+
+
+@app.get("/api/sd/jobs")
+def sd_jobs() -> Any:
+    with JOBS_LOCK:
+        jobs = list(JOBS.values())
+
+    active_jobs: List[Dict[str, Any]] = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        status = str(job.get("status", "")).strip().lower()
+        if status in {"queued", "running"}:
+            active_jobs.append(job)
+
+    active_jobs.sort(
+        key=lambda job: str(job.get("created_at") or job.get("started_at") or "").lower(),
+        reverse=True,
+    )
+    return jsonify({"ok": True, "jobs": active_jobs})
 
 
 @app.get("/api/sd/jobs/<job_id>")

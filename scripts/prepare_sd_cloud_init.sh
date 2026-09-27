@@ -647,11 +647,39 @@ cat >> "$USER_DATA_OUT" <<EOF
         "hostname": os.environ.get("HOSTNAME", ""),
         "profile": os.environ.get("PROFILE", ""),
         "source_ip": os.environ.get("SOURCE_IP", ""),
-        "stage": "runcmd",
+        "stage": os.environ.get("STAGE", "runcmd"),
         "node_report_b64": os.environ.get("NODE_REPORT_B64", ""),
       }
       print(json.dumps(payload, separators=(",", ":")))
       PY
+  - path: /usr/local/bin/rack-power-restored-callback
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
+      NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
+      PAYLOAD_JSON="$(INSTANCE_ID="${INSTANCE_ID:-$(hostname)}" HOSTNAME="${HOSTNAME:-$(hostname)}" PROFILE="${PROFILE:-}" SOURCE_IP="${SOURCE_IP}" NODE_REPORT_B64="${NODE_REPORT_B64}" STAGE="power_restore" /usr/local/bin/rack-callback-payload)"
+      if [[ -n "${CALLBACK_URL:-}" ]]; then
+        curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "${PAYLOAD_JSON}" "${CALLBACK_URL}" || true
+      fi
+  - path: /etc/systemd/system/rack-power-restored-callback.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Rack node callback after power restore
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      Environment="CALLBACK_URL=${CALLBACK_URL}"
+      Environment="PROFILE=${PROFILE}"
+      Environment="INSTANCE_ID=${INSTANCE_ID}"
+      ExecStart=/usr/local/bin/rack-power-restored-callback
+
+      [Install]
+      WantedBy=multi-user.target
   - path: /usr/local/bin/rack-node-report
     permissions: "0755"
     content: |
@@ -904,6 +932,10 @@ if [[ "$CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP" == "true" ]]; then
   - [ sh, -c, 'sleep 2; reboot' ]
 RUNCMD_EOF
 fi
+
+cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
+  - [ sh, -c, 'systemctl daemon-reload && systemctl enable --now rack-power-restored-callback.service || true' ]
+RUNCMD_EOF
 
 cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
 

@@ -77,6 +77,15 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.55rem;
       }
+      .kube-hero-panel .mini-grid .kube-mini:nth-child(4n + 1) {
+        background: linear-gradient(180deg, rgba(236, 253, 245, 0.9), #ffffff 100%);
+      }
+      .kube-hero-panel .mini-grid .kube-mini:nth-child(4n + 2) {
+        background: linear-gradient(180deg, rgba(239, 246, 255, 0.9), #ffffff 100%);
+      }
+      .kube-hero-panel .mini-grid .kube-mini:nth-child(4n + 3) {
+        background: linear-gradient(180deg, rgba(250, 245, 255, 0.92), #ffffff 100%);
+      }
       .kube-mini {
         padding: 0.7rem;
         border-radius: 12px;
@@ -319,6 +328,10 @@
                 <div class="k">Reason</div>
                 <div class="v" id="kube-reason">--</div>
               </div>
+              <div class="kube-mini">
+                <div class="k">Last Error</div>
+                <div class="v" id="kube-last-error-mini">--</div>
+              </div>
             </div>
           </div>
         </section>
@@ -351,13 +364,14 @@
                     <th>Role</th>
                     <th>Internal IP</th>
                     <th>External IP</th>
+                    <th>Labels</th>
                     <th>OS</th>
                     <th>Kernel</th>
                     <th>Runtime</th>
                   </tr>
                 </thead>
                 <tbody id="kube-node-rows">
-                  <tr><td colspan="8">Loading nodes...</td></tr>
+                  <tr><td colspan="9">Loading nodes...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -398,10 +412,11 @@
                     <th>Node</th>
                     <th>Ready</th>
                     <th>Restarts</th>
+                    <th>Created</th>
                   </tr>
                 </thead>
                 <tbody id="kube-pod-rows">
-                  <tr><td colspan="6">Loading pods...</td></tr>
+                  <tr><td colspan="7">Loading pods...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -470,6 +485,7 @@
       const kubeconfigEl = document.getElementById("kube-has-kubeconfig");
       const binaryEl = document.getElementById("kube-binary");
       const reasonEl = document.getElementById("kube-reason");
+      const lastErrorMiniEl = document.getElementById("kube-last-error-mini");
       const observedAtEl = document.getElementById("kube-observed-at");
       const readyPercentEl = document.getElementById("kube-ready-percent");
       const runningPercentEl = document.getElementById("kube-running-percent");
@@ -510,7 +526,7 @@
 
       function renderNodeRows(rows) {
         if (!Array.isArray(rows) || !rows.length) {
-          return `<tr><td colspan="8">No nodes returned.</td></tr>`;
+          return `<tr><td colspan="9">No nodes returned.</td></tr>`;
         }
         return rows.map((row) => {
           const ready = row.ready ? renderPill("Ready", "ok") : renderPill("Not Ready", "warn");
@@ -520,6 +536,7 @@
             <td>${escapeHtml(row.role || "")}</td>
             <td>${escapeHtml(row.internal_ip || "")}</td>
             <td>${escapeHtml(row.external_ip || "")}</td>
+            <td>${escapeHtml(row.labels || "")}</td>
             <td>${escapeHtml(row.os_image || "")}</td>
             <td>${escapeHtml(row.kernel || "")}</td>
             <td>${escapeHtml(row.container_runtime || "")}</td>
@@ -529,10 +546,11 @@
 
       function renderPodRows(rows) {
         if (!Array.isArray(rows) || !rows.length) {
-          return `<tr><td colspan="6">No pods returned.</td></tr>`;
+          return `<tr><td colspan="7">No pods returned.</td></tr>`;
         }
         return rows.map((row) => {
           const phaseKind = row.phase === "Running" ? "ok" : "warn";
+          const created = row.created_at ? String(row.created_at).replace("T", " ").replace("Z", " UTC") : "-";
           return `<tr>
             <td>${escapeHtml(row.namespace || "")}</td>
             <td>${escapeHtml(row.name || "")}</td>
@@ -540,6 +558,7 @@
             <td>${escapeHtml(row.node || "")}</td>
             <td>${escapeHtml(row.ready_containers || 0)}</td>
             <td>${escapeHtml(row.restart_count || 0)}</td>
+            <td>${escapeHtml(created)}</td>
           </tr>`;
         }).join("");
       }
@@ -614,24 +633,32 @@
           const activeService = String(runtime.active_service || "none");
           const reason = String(runtime.reason || "");
           const hasKubeconfig = runtime.has_kubeconfig === true ? "yes" : "no";
+          const lastErrorText = data.last_error ? String(data.last_error) : "none";
           runtimeServiceEl.textContent = activeService;
           runtimeServiceDetailEl.textContent = activeService;
           kubeconfigEl.textContent = hasKubeconfig;
           binaryEl.textContent = String(runtime.k3s_binary || "none");
           reasonEl.textContent = reason || "--";
+          lastErrorMiniEl.textContent = lastErrorText;
 
           if (!data.available) {
             statusEl.textContent = `Kubernetes runtime is not currently active.\nReason: ${reason}`;
-            nodeRowsEl.innerHTML = `<tr><td colspan="8">Runtime inactive.</td></tr>`;
-            podRowsEl.innerHTML = `<tr><td colspan="6">Runtime inactive.</td></tr>`;
+            nodeRowsEl.innerHTML = `<tr><td colspan="9">Runtime inactive.</td></tr>`;
+            podRowsEl.innerHTML = `<tr><td colspan="7">Runtime inactive.</td></tr>`;
             namespaceRowsEl.innerHTML = `<tr><td colspan="4">Runtime inactive.</td></tr>`;
             jobRowsEl.innerHTML = `<tr><td colspan="6">Runtime inactive.</td></tr>`;
-            factsListEl.innerHTML = `<li>Runtime service: ${escapeHtml(activeService)}</li><li>Reason: ${escapeHtml(reason)}</li><li>Kubeconfig present: ${escapeHtml(hasKubeconfig)}</li>`;
+            factsListEl.innerHTML = [
+              `Runtime service: ${escapeHtml(activeService)}`,
+              `Reason: ${escapeHtml(reason)}`,
+              `Kubeconfig present: ${escapeHtml(hasKubeconfig)}`,
+              `Binary: ${escapeHtml(String(runtime.k3s_binary || "none"))}`,
+              `Last error: ${escapeHtml(lastErrorText)}`,
+            ].map((line) => `<li>${line}</li>`).join("");
             rawJsonEl.textContent = JSON.stringify(data, null, 2);
             return;
           }
 
-          let statusText = `Runtime service: ${activeService}\nKubeconfig present: ${hasKubeconfig}`;
+          let statusText = `Runtime service: ${activeService}\nKubeconfig present: ${hasKubeconfig}\nBinary: ${runtime.k3s_binary || "none"}`;
           if (data.last_error) {
             statusText += `\nWarning: ${data.last_error}`;
           }
@@ -643,10 +670,12 @@
           factsListEl.innerHTML = [
             `Observed at ${escapeHtml(data.observed_at || "")}`,
             `Runtime service ${escapeHtml(activeService)}`,
+            `Kubeconfig ${escapeHtml(hasKubeconfig)} · binary ${escapeHtml(String(runtime.k3s_binary || "none"))}`,
             `Nodes ready ${escapeHtml(data.nodes_ready || 0)} of ${escapeHtml(data.nodes_total || 0)}`,
             `Pods running ${escapeHtml(data.pods_running || 0)} of ${escapeHtml(data.pods_total || 0)}`,
             `Jobs running ${escapeHtml(data.jobs_running || 0)} of ${escapeHtml(data.jobs_total || 0)}`,
             `Namespaces tracked ${escapeHtml(data.namespaces_total || 0)}`,
+            `Last error ${escapeHtml(lastErrorText)}`,
           ].map((line) => `<li>${line}</li>`).join("");
           rawJsonEl.textContent = JSON.stringify(data, null, 2);
         } catch (err) {

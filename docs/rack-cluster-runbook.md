@@ -6,6 +6,11 @@
 - Raspberry Pi 5: 2 currently online, 4 target total. Pi 5 nodes include NVMe bottoms and PoE hats.
 - Raspberry Pi B+: 1 currently online, 3 target total. Pi B+ nodes have no NVMe storage.
 
+## Power-Restore / IP-Change Note
+- Every device provisioned by this workflow now tries to call home again on every boot or power restoration by enabling a persistent local systemd callback.
+- The callback is intentionally simple and unencrypted for now, so when a PoE power cycle causes a different DORA lease or a new upstream IP, we still need at least CHAP-level reauthentication before accepting that new IP as the node's canonical address.
+- In other words: DHCP can change the TCP/IP endpoint, but the identity update still needs an authenticated reauth step to avoid stale or wrong lease data.
+
 ## Repository Model
 - Active hosts are in `rpi5_active` and `rpi_bplus_active` and are targeted by `site.yml`.
 - Planned hosts are tracked in `rpi5_planned` and `rpi_bplus_planned` but not targeted by default.

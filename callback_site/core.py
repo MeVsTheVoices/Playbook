@@ -3477,11 +3477,34 @@ def _detect_local_ip() -> str:
 
 
 def _default_callback_url() -> str:
+    full_url = os.getenv("CALLBACK_PUBLIC_URL", "").strip()
+    if full_url:
+        parsed = urlparse.urlparse(full_url)
+        if parsed.scheme and parsed.netloc:
+            return parsed._replace(path="/api/cloud-init/callback", params="", query="", fragment="").geturl()
+
     host = os.getenv("CALLBACK_PUBLIC_HOST", "").strip()
     if not host:
         host = _detect_local_ip()
 
-    port = os.getenv("PORT", "8088").strip() or "8088"
+    if "://" in host:
+        parsed = urlparse.urlparse(host)
+        if parsed.hostname:
+            host = parsed.hostname or host
+            supplied_port = parsed.port
+            if supplied_port:
+                port = str(supplied_port)
+            else:
+                port = os.getenv("CALLBACK_PUBLIC_PORT", "").strip() or os.getenv("PORT", "8088").strip() or "8088"
+            if host and ":" in host and not host.startswith("["):
+                host = f"[{host}]"
+            return f"http://{host}:{port}/api/cloud-init/callback"
+
+    port = (
+        os.getenv("CALLBACK_PUBLIC_PORT", "").strip()
+        or os.getenv("PORT", "8088").strip()
+        or "8088"
+    )
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"http://{host}:{port}/api/cloud-init/callback"
@@ -3496,7 +3519,10 @@ def _default_k3s_config() -> str:
     host = os.getenv("K3S_SERVER_HOST", "").strip()
     if not host:
         host = _detect_local_ip()
-    return f"# pragma: k3s-config-v1\nserver: https://{host}:6443\n"
+    node_name = socket.gethostname().strip() or "rack-node"
+    if not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?", node_name):
+        node_name = "rack-node"
+    return f"# pragma: k3s-config-v1\nserver: https://{host}:6443\nnode-name: {node_name}\n"
 
 
 def _normalize_ip(value: str) -> str:
@@ -3641,8 +3667,28 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         # If the UI sent an explicit k3s config block, treat this as k3s intent
         # even if the distribution select was left on standard.
         distribution = "k3s"
+    if distribution == "k3s":
+        lines = []
+        seen_node_name = False
+        for raw_line in k3s_config.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if re.match(r"(?i)^node-name\s*:\s*.*$", stripped):
+                if not seen_node_name:
+                    lines.append(f"node-name: {str(cleaned.get('hostname', '') or socket.gethostname() or 'rack-node').strip()}")
+                    seen_node_name = True
+                continue
+            if re.match(r"(?i)^node-ip\s*:\s*.*$", stripped):
+                continue
+            if stripped:
+                lines.append(line)
+        if not lines:
+            k3s_config = _default_k3s_config().strip()
+        else:
+            k3s_config = "\n".join(lines).strip() + "\n"
+        cloud_options["k3s_config"] = k3s_config
     cleaned["distribution"] = distribution
-    if distribution == "k3s" and not k3s_config:
+    if distribution == "k3s" and not cloud_options.get("k3s_config"):
         cloud_options["k3s_config"] = _default_k3s_config().strip()
     return cleaned
 

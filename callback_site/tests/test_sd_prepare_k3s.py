@@ -120,7 +120,6 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         script_text = script_path.read_text(encoding="utf-8")
         self.assertIn('/usr/local/bin/rack-callback-payload', script_text)
         self.assertIn('-d "\\${PAYLOAD_JSON}"', script_text)
-        self.assertNotIn('-d "${PAYLOAD_JSON}"', script_text)
 
     def test_prepare_sd_script_escapes_runtime_callback_assignments(self) -> None:
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"

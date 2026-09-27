@@ -1353,6 +1353,10 @@ server: https://local-machine-ip:6443
                 <p class="segment-hint">Enable basic hardware checks and reporting, or common service toggles.</p>
                 <div class="form-grid">
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
+                    <input id="opt_enable_power_restore_callback" data-option-key="enable_power_restore_callback" data-option-type="checkbox" data-option-default="true" type="checkbox" checked>
+                    <label for="opt_enable_power_restore_callback" style="margin: 0;">Enable callback retry on every power restore (default)</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_enable_hw_check" data-option-key="enable_hardware_checks" data-option-type="checkbox" type="checkbox">
                     <label for="opt_enable_hw_check" style="margin: 0;">Enable hardware detection (model, RAM, storage, HAT, PoE)</label>
                   </div>

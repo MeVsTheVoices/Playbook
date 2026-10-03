@@ -1167,6 +1167,10 @@
                 <label for="sd_options_profile_name">Save As Template Name</label>
                 <input id="sd_options_profile_name" name="sd_options_profile_name" placeholder="base-pi5-lab">
               </div>
+              <div class="checkbox-row" style="margin-top: 0.2rem;">
+                <input id="sd_options_profile_pi_only" type="checkbox">
+                <label for="sd_options_profile_pi_only" style="margin: 0;">Pi-specific template</label>
+              </div>
               <div class="grid-span-full">
                 <label for="sd_options_profile_description">Template Description (optional)</label>
                 <input id="sd_options_profile_description" name="sd_options_profile_description" placeholder="baseline with wifi and package list">
@@ -1194,6 +1198,21 @@
 server: https://local-machine-ip:6443
 "></textarea>
                     <p class="segment-hint">Most users only need the server endpoint here; it tells K3s where the control-plane API lives.</p>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-os-option-wrapper="1">
+                    <input id="opt_k3s_security_baseline" data-option-key="k3s_security_baseline" data-option-type="checkbox" data-option-distribution="k3s" type="checkbox">
+                    <label for="opt_k3s_security_baseline" style="margin: 0;">Apply K3s security baseline (optional)</label>
+                  </div>
+                </div>
+              </details>
+
+              <details id="pi-specific-section" class="segment">
+                <summary>Pi-specific Bootstrap</summary>
+                <p class="segment-hint">Shown for Pi-specific templates. Use this to add board-focused boot settings such as the USB current override.</p>
+                <div class="form-grid">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1">
+                    <input id="opt_usb_max_current_enable" data-option-key="usb_max_current_enable" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_usb_max_current_enable" style="margin: 0;">Enable usb_max_current_enable=1 for Pi 5 peripherals</label>
                   </div>
                 </div>
               </details>
@@ -1350,7 +1369,7 @@ server: https://local-machine-ip:6443
 
               <details class="segment">
                 <summary>Hardware Detection and Telemetry</summary>
-                <p class="segment-hint">Enable basic hardware checks and reporting, or common service toggles.</p>
+                <p class="segment-hint">Enable basic hardware checks and reporting, or optional hardening controls by OS family.</p>
                 <div class="form-grid">
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_enable_power_restore_callback" data-option-key="enable_power_restore_callback" data-option-type="checkbox" data-option-default="true" type="checkbox" checked>
@@ -1368,13 +1387,25 @@ server: https://local-machine-ip:6443
                     <input id="opt_boot_summary" data-option-key="boot_summary" data-option-type="checkbox" data-option-default="true" type="checkbox" checked>
                     <label for="opt_boot_summary" style="margin: 0;">Show rainbow boot summary table at completion</label>
                   </div>
-                  <div class="checkbox-row" style="margin-top: 0.2rem;">
-                    <input id="opt_enable_fail2ban" data-option-key="enable_fail2ban" data-option-type="checkbox" type="checkbox">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-os-option-wrapper="1">
+                    <input id="opt_enable_fail2ban" data-option-key="enable_fail2ban" data-option-type="checkbox" data-option-os="ubuntu,debian" type="checkbox">
                     <label for="opt_enable_fail2ban" style="margin: 0;">Install and enable fail2ban</label>
                   </div>
-                  <div class="checkbox-row" style="margin-top: 0.2rem;">
-                    <input id="opt_enable_unattended_upgrades" data-option-key="enable_unattended_upgrades" data-option-type="checkbox" type="checkbox">
-                    <label for="opt_enable_unattended_upgrades" style="margin: 0;">Enable unattended upgrades</label>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-os-option-wrapper="1">
+                    <input id="opt_enable_unattended_upgrades" data-option-key="enable_unattended_upgrades" data-option-type="checkbox" data-option-os="ubuntu,debian" type="checkbox">
+                    <label for="opt_enable_unattended_upgrades" style="margin: 0;">Enable unattended upgrades (Debian/Ubuntu)</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-os-option-wrapper="1">
+                    <input id="opt_enable_sysctl_hardening" data-option-key="enable_sysctl_hardening" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_enable_sysctl_hardening" style="margin: 0;">Apply baseline kernel/sysctl hardening</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-os-option-wrapper="1">
+                    <input id="opt_enable_firewall_baseline" data-option-key="enable_firewall_baseline" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_enable_firewall_baseline" style="margin: 0;">Enable host firewall baseline (ufw/firewalld)</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-os-option-wrapper="1">
+                    <input id="opt_enable_selinux_enforcing" data-option-key="enable_selinux_enforcing" data-option-type="checkbox" data-option-os="rhel,rocky,almalinux,centos,fedora" type="checkbox">
+                    <label for="opt_enable_selinux_enforcing" style="margin: 0;">Set SELinux to enforcing (RHEL-family)</label>
                   </div>
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_install_telegraf" data-option-key="install_telegraf" data-option-type="checkbox" type="checkbox">
@@ -1551,6 +1582,11 @@ server: https://local-machine-ip:6443
       const imageCatalog = {{ image_catalog | tojson }};
       const initialSdOptionProfiles = {{ sd_option_profiles | tojson }};
       const SD_ACTIVE_JOB_KEY = "sd-active-job-id";
+      const SD_HOSTNAME_INCREMENTED_JOB_KEY = "sd-hostname-incremented-job-id";
+      const NATO_SEQUENCE = [
+        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo", "lima",
+        "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray", "yankee", "zulu",
+      ];
       let currentJob = null;
       let deviceWebhookRetry = null;
       let deviceFallbackPollTimer = null;
@@ -1693,6 +1729,108 @@ server: https://local-machine-ip:6443
         return `${hour}h ${min % 60}m ago`;
       }
 
+      function nextLetterToken(token) {
+        if (!/^[a-zA-Z]+$/.test(token)) {
+          return null;
+        }
+        const isLower = token === token.toLowerCase();
+        const isUpper = token === token.toUpperCase();
+        if (!isLower && !isUpper) {
+          return null;
+        }
+        const chars = token.toLowerCase().split("");
+        let idx = chars.length - 1;
+        while (idx >= 0 && chars[idx] === "z") {
+          chars[idx] = "a";
+          idx -= 1;
+        }
+        if (idx < 0) {
+          chars.unshift("a");
+        } else {
+          chars[idx] = String.fromCharCode(chars[idx].charCodeAt(0) + 1);
+        }
+        const next = chars.join("");
+        return isUpper ? next.toUpperCase() : next;
+      }
+
+      function nextNatoToken(token) {
+        const lowered = String(token || "").toLowerCase();
+        const index = NATO_SEQUENCE.indexOf(lowered);
+        if (index < 0 || index >= NATO_SEQUENCE.length - 1) {
+          return null;
+        }
+        const next = NATO_SEQUENCE[index + 1];
+        if (token === token.toUpperCase()) {
+          return next.toUpperCase();
+        }
+        if (/^[A-Z][a-z]+$/.test(token)) {
+          return next.charAt(0).toUpperCase() + next.slice(1);
+        }
+        return next;
+      }
+
+      function nextNumericToken(token) {
+        if (!/^\d+$/.test(token)) {
+          return null;
+        }
+        const width = token.length;
+        const nextNum = Number.parseInt(token, 10) + 1;
+        const nextRaw = String(nextNum);
+        if (width > 1 && token.startsWith("0")) {
+          return nextRaw.padStart(width, "0");
+        }
+        return nextRaw;
+      }
+
+      function nextTailToken(token) {
+        return nextNatoToken(token) || nextNumericToken(token) || nextLetterToken(token);
+      }
+
+      function computeNextHostname(hostname) {
+        const current = String(hostname || "").trim();
+        if (!current) {
+          return "";
+        }
+        const tailMatch = current.match(/^(.*?)([A-Za-z]+|\d+)$/);
+        if (!tailMatch) {
+          return "";
+        }
+        const prefix = tailMatch[1] || "";
+        const token = tailMatch[2] || "";
+        const nextToken = nextTailToken(token);
+        if (!nextToken) {
+          return "";
+        }
+        return `${prefix}${nextToken}`;
+      }
+
+      function maybeIncrementHostnameAfterSuccess(job) {
+        const finished = job && String(job.status || "") !== "queued" && String(job.status || "") !== "running";
+        if (!finished || Number(job.exit_code) !== 0) {
+          return;
+        }
+        const jobId = String(job.id || "").trim();
+        if (!jobId) {
+          return;
+        }
+        const priorJobId = String(localStorage.getItem(SD_HOSTNAME_INCREMENTED_JOB_KEY) || "").trim();
+        if (priorJobId === jobId) {
+          return;
+        }
+        localStorage.setItem(SD_HOSTNAME_INCREMENTED_JOB_KEY, jobId);
+
+        const before = String(form.hostname?.value || "").trim();
+        const after = computeNextHostname(before);
+        if (!after || after === before) {
+          return;
+        }
+        form.hostname.value = after;
+        const note = document.createElement("div");
+        note.className = "job-substatus";
+        note.textContent = `Next hostname prepared: ${before} -> ${after}`;
+        statusEl.appendChild(note);
+      }
+
       function updateCallbackActivity(events) {
         const list = Array.isArray(events) ? events : [];
         if (!list.length) {
@@ -1784,6 +1922,7 @@ server: https://local-machine-ip:6443
         ].join("\n");
         logEl.innerHTML = highlightLogText(body);
         updateSdActivityFromJob(job);
+        maybeIncrementHostnameAfterSuccess(job);
       }
 
       function formatJobTiming(job) {
@@ -2593,6 +2732,7 @@ server: https://local-machine-ip:6443
           form.os_preset.classList.remove("cached-selected", "download-needed");
           osPresetNoteEl.textContent = `No preset selected for ${profile} (${arch}). You can provide Image URL or local file manually.`;
           catalogMetaEl.textContent = "Tip: choose a distro family/release or search to narrow options.";
+          updateOsScopedOptionsVisibility();
           return;
         }
 
@@ -2633,6 +2773,47 @@ server: https://local-machine-ip:6443
           const fallback = notes || "No docs URL for this preset. Provide image details manually.";
           catalogMetaEl.innerHTML = `<div class="catalog-pills">${statusPill}</div><div>${escapeHtml(fallback)}</div>`;
         }
+        updateOsScopedOptionsVisibility();
+      }
+
+      function currentDistroFamilyForOptionScopes() {
+        const selected = form.os_preset?.selectedOptions?.[0];
+        const fromPreset = String(selected?.dataset?.distro || "").trim().toLowerCase();
+        if (fromPreset) return fromPreset;
+        return String(form.distro_family?.value || "").trim().toLowerCase();
+      }
+
+      function optionScopeMatches(el) {
+        const distroFamily = currentDistroFamilyForOptionScopes();
+        const allowedOsRaw = String(el.dataset.optionOs || "").trim().toLowerCase();
+        if (allowedOsRaw) {
+          const allowed = allowedOsRaw.split(",").map((v) => v.trim()).filter(Boolean);
+          if (!allowed.some((v) => distroFamily.includes(v))) {
+            return false;
+          }
+        }
+        const requiredDistribution = String(el.dataset.optionDistribution || "").trim().toLowerCase();
+        if (requiredDistribution) {
+          const currentDistribution = String(form.distribution?.value || "").trim().toLowerCase();
+          if (currentDistribution !== requiredDistribution) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      function updateOsScopedOptionsVisibility() {
+        for (const el of sdOptionsInputEls) {
+          const wrapper = el.closest("[data-os-option-wrapper='1']");
+          if (!wrapper) continue;
+          const visible = optionScopeMatches(el);
+          wrapper.style.display = visible ? "" : "none";
+          el.disabled = !visible;
+          if (!visible && String(el.dataset.optionType || "") === "checkbox") {
+            el.checked = false;
+          }
+        }
+        updateSdOptionsConfiguredCount();
       }
 
       function rebuildCatalogPullOptions() {
@@ -2954,6 +3135,12 @@ server: https://local-machine-ip:6443
       function gatherCloudInitOptions() {
         const options = {};
         for (const el of sdOptionsInputEls) {
+          if (el.disabled) {
+            continue;
+          }
+          if (!optionScopeMatches(el)) {
+            continue;
+          }
           const key = String(el.dataset.optionKey || "").trim();
           if (!key) continue;
           const kind = String(el.dataset.optionType || "").trim();
@@ -3003,6 +3190,29 @@ server: https://local-machine-ip:6443
         sdOptionsSaveBtn.disabled = false;
       }
 
+      function updatePiScopedOptionsVisibility() {
+        const section = document.getElementById("pi-specific-section");
+        const piOnlySelected = Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked);
+        const selectedProfile = String(sdOptionsProfileSelectEl.value || "").trim();
+        const selectedProfilePiOnly = Boolean(selectedProfile && sdOptionProfiles[selectedProfile] && sdOptionProfiles[selectedProfile].pi_only);
+        const visible = piOnlySelected || selectedProfilePiOnly;
+
+        if (section) {
+          section.style.display = visible ? "" : "none";
+          section.open = visible;
+        }
+
+        for (const el of sdOptionsInputEls) {
+          const wrapper = el.closest("[data-pi-option-wrapper='1']");
+          if (!wrapper) continue;
+          wrapper.style.display = visible ? "" : "none";
+          el.disabled = !visible;
+          if (!visible && String(el.dataset.optionType || "") === "checkbox") {
+            el.checked = false;
+          }
+        }
+      }
+
       function applyCloudInitOptions(options) {
         const data = options && typeof options === "object" ? options : {};
         for (const el of sdOptionsInputEls) {
@@ -3024,12 +3234,18 @@ server: https://local-machine-ip:6443
           }
           el.value = value === undefined || value === null ? "" : String(value);
         }
+        updateOsScopedOptionsVisibility();
+        updatePiScopedOptionsVisibility();
         updateSdOptionsConfiguredCount();
       }
 
       function resetCloudInitOptions() {
         applyCloudInitOptions({});
         sdOptionsProfileSelectEl.value = "";
+        if (sdOptionsProfilePiOnlyEl) {
+          sdOptionsProfilePiOnlyEl.checked = false;
+        }
+        updatePiScopedOptionsVisibility();
         updateSdOptionActions();
         sdOptionsProfileStatusEl.textContent = "Optional cloud-init fields reset. Fill manually or load a template.";
       }
@@ -3077,7 +3293,8 @@ server: https://local-machine-ip:6443
           const option = document.createElement("option");
           option.value = name;
           const desc = String(profile.description || "").trim();
-          option.textContent = desc ? `${name} - ${desc}` : name;
+          const piBadge = profile.pi_only ? " [Pi]" : "";
+          option.textContent = desc ? `${name}${piBadge} - ${desc}` : `${name}${piBadge}`;
           sdOptionsProfileSelectEl.appendChild(option);
         }
 
@@ -3124,6 +3341,10 @@ server: https://local-machine-ip:6443
           form.distribution.value = profileDistribution;
         }
         applyCloudInitOptions(profile.options || {});
+        if (sdOptionsProfilePiOnlyEl) {
+          sdOptionsProfilePiOnlyEl.checked = Boolean(profile.pi_only);
+        }
+        updatePiScopedOptionsVisibility();
         ensureK3sConfigDefaults();
         sdOptionsProfileNameEl.value = name;
         sdOptionsProfileDescriptionEl.value = String(profile.description || "");
@@ -3141,6 +3362,7 @@ server: https://local-machine-ip:6443
           name,
           description: String(sdOptionsProfileDescriptionEl.value || "").trim(),
           distribution: String(form.distribution.value || "standard").trim().toLowerCase() || "standard",
+          pi_only: Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked),
           options: gatherCloudInitOptions(),
         };
         const res = await fetch("/api/sd/options-profiles", {
@@ -3272,6 +3494,7 @@ server: https://local-machine-ip:6443
           workspace: form.workspace.value,
           ssh_public_key: form.ssh_public_key.value,
           sd_options_profile: sdOptionsProfileSelectEl.value,
+          pi_only: Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked),
           cloud_init_options: gatherCloudInitOptions(),
         };
 
@@ -3352,11 +3575,15 @@ server: https://local-machine-ip:6443
       });
 
       form.distribution.addEventListener("change", ensureK3sConfigDefaults);
+      form.distribution.addEventListener("change", updateOsScopedOptionsVisibility);
       form.distro_family.addEventListener("change", rebuildCatalogFilters);
       form.distro_release.addEventListener("change", rebuildPresetOptions);
       form.image_search.addEventListener("input", rebuildPresetOptions);
 
       form.os_preset.addEventListener("change", applyOsPreset);
+      if (sdOptionsProfilePiOnlyEl) {
+        sdOptionsProfilePiOnlyEl.addEventListener("change", updatePiScopedOptionsVisibility);
+      }
 
       eventSearchEl.addEventListener("input", () => {
         const visibleEvents = filterEvents(allEvents);
@@ -3379,6 +3606,8 @@ server: https://local-machine-ip:6443
       initSidebar();
       ensureK3sConfigDefaults();
       rebuildCatalogFilters();
+      updateOsScopedOptionsVisibility();
+      updatePiScopedOptionsVisibility();
       refreshKeyLinks();
       renderSdOptionProfiles();
       resumeActiveJobIfAny();

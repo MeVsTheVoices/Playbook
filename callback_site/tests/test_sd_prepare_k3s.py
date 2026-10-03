@@ -124,8 +124,8 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
     def test_prepare_sd_script_escapes_runtime_callback_assignments(self) -> None:
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"
         script_text = script_path.read_text(encoding="utf-8")
-        self.assertIn('SOURCE_IP="$(/usr/local/bin/rack-local-ip', script_text)
-        self.assertIn('NODE_REPORT_B64="$(/usr/local/bin/rack-node-report', script_text)
+        self.assertIn('SOURCE_IP="\\$(/usr/local/bin/rack-local-ip', script_text)
+        self.assertIn('NODE_REPORT_B64="\\$(/usr/local/bin/rack-node-report', script_text)
         self.assertIn('/usr/local/bin/rack-callback-payload', script_text)
         self.assertIn('INSTANCE_ID="\\${INSTANCE_ID}"', script_text)
         self.assertIn('HOSTNAME="\\${HOSTNAME}"', script_text)
@@ -148,13 +148,18 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
                 "name": "k3s-template-test",
                 "description": "k3s profile",
                 "distribution": "k3s",
-                "options": {"k3s_config": "# pragma: k3s-config-v1\nserver: https://10.255.45.164:6443"},
+                "pi_only": True,
+                "options": {
+                    "k3s_config": "# pragma: k3s-config-v1\nserver: https://10.255.45.164:6443",
+                    "usb_max_current_enable": True,
+                },
             },
         )
         self.assertEqual(save.status_code, 200)
         save_payload = save.get_json()
         self.assertTrue(save_payload["ok"])
         self.assertEqual(save_payload["profile"].get("distribution"), "k3s")
+        self.assertTrue(save_payload["profile"].get("pi_only"))
 
         listing = self.client.get("/api/sd/options-profiles")
         self.assertEqual(listing.status_code, 200)
@@ -162,3 +167,4 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         match = [p for p in profiles if p.get("name") == "k3s-template-test"]
         self.assertTrue(match)
         self.assertEqual(match[0].get("distribution"), "k3s")
+        self.assertTrue(match[0].get("pi_only"))

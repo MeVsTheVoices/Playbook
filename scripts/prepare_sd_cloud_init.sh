@@ -364,6 +364,10 @@ CLOUD_INIT_ENABLE_FAIL2BAN="${CLOUD_INIT_ENABLE_FAIL2BAN:-false}"
 CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES="${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES:-false}"
 CLOUD_INIT_ENABLE_HARDWARE_CHECKS="${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}"
 CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK="${CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK:-true}"
+CLOUD_INIT_ENABLE_SYSCTL_HARDENING="${CLOUD_INIT_ENABLE_SYSCTL_HARDENING:-false}"
+CLOUD_INIT_ENABLE_FIREWALL_BASELINE="${CLOUD_INIT_ENABLE_FIREWALL_BASELINE:-false}"
+CLOUD_INIT_ENABLE_SELINUX_ENFORCING="${CLOUD_INIT_ENABLE_SELINUX_ENFORCING:-false}"
+CLOUD_INIT_K3S_SECURITY_BASELINE="${CLOUD_INIT_K3S_SECURITY_BASELINE:-false}"
 CLOUD_INIT_FANCY_MOTD="${CLOUD_INIT_FANCY_MOTD:-false}"
 CLOUD_INIT_INSTALL_TELEGRAF="${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
 CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"
@@ -560,6 +564,28 @@ $(printf '%s\n' "$CLOUD_INIT_EXTRA_SSH_KEYS" | sed 's/^/      /')
 EXTRA_KEYS
 fi
 
+if [[ "$CLOUD_INIT_ENABLE_SYSCTL_HARDENING" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'SYSCTL_HARDEN_FILE'
+  - path: /etc/sysctl.d/99-rack-hardening.conf
+    permissions: "0644"
+    content: |
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv4.conf.default.accept_redirects = 0
+      net.ipv4.conf.all.send_redirects = 0
+      net.ipv4.conf.default.send_redirects = 0
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv4.conf.default.accept_source_route = 0
+      net.ipv4.conf.all.rp_filter = 1
+      net.ipv4.conf.default.rp_filter = 1
+      net.ipv4.tcp_syncookies = 1
+      net.ipv6.conf.all.accept_redirects = 0
+      net.ipv6.conf.default.accept_redirects = 0
+      kernel.kptr_restrict = 2
+      kernel.dmesg_restrict = 1
+      fs.suid_dumpable = 0
+SYSCTL_HARDEN_FILE
+fi
+
 cat >> "$USER_DATA_OUT" <<EOF
   - path: /usr/local/bin/rack-local-ip
     permissions: "0755"
@@ -660,6 +686,7 @@ cat >> "$USER_DATA_OUT" <<EOF
       set -euo pipefail
       SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
       NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
+      # Generated payload includes the stage field: {"stage": "power_restore"}
       PAYLOAD_JSON="\$(INSTANCE_ID="\${INSTANCE_ID:-\$(hostname)}" HOSTNAME="\${HOSTNAME:-\$(hostname)}" PROFILE="\${PROFILE:-}" SOURCE_IP="\${SOURCE_IP}" NODE_REPORT_B64="\${NODE_REPORT_B64}" STAGE="power_restore" /usr/local/bin/rack-callback-payload)"
       if [[ -n "\${CALLBACK_URL:-}" ]]; then
         curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "\${CALLBACK_URL}" || true
@@ -767,6 +794,9 @@ cat >> "$USER_DATA_OUT" <<EOF
       print_row "\$magenta" "Fail2ban" "\${CLOUD_INIT_ENABLE_FAIL2BAN}"
       print_row "\$red" "Unattended upgrades" "\${CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES}"
       print_row "\$yellow" "Hardware checks" "\${CLOUD_INIT_ENABLE_HARDWARE_CHECKS:-false}"
+      print_row "\$green" "Sysctl hardening" "\${CLOUD_INIT_ENABLE_SYSCTL_HARDENING:-false}"
+      print_row "\$cyan" "Firewall baseline" "\${CLOUD_INIT_ENABLE_FIREWALL_BASELINE:-false}"
+      print_row "\$magenta" "SELinux enforcing" "\${CLOUD_INIT_ENABLE_SELINUX_ENFORCING:-false}"
       print_row "\$green" "Fancy MOTD" "\${CLOUD_INIT_FANCY_MOTD:-false}"
       print_row "\$cyan" "Telegraf" "\${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
       k3s_config_state="not set"
@@ -874,13 +904,20 @@ node-name: ${HOSTNAME}
     K3S_INSTALL_MODE="agent"
   fi
 
+  K3S_SERVER_EXEC="server --with-node-id --config /etc/rancher/k3s/config.yaml"
+  K3S_AGENT_EXEC="agent --with-node-id --config /etc/rancher/k3s/config.yaml"
+  if [[ "${CLOUD_INIT_K3S_SECURITY_BASELINE:-false}" == "true" ]]; then
+    K3S_SERVER_EXEC="$K3S_SERVER_EXEC --secrets-encryption --kube-apiserver-arg anonymous-auth=false --kube-apiserver-arg authorization-mode=Node,RBAC --kubelet-arg read-only-port=0 --kubelet-arg protect-kernel-defaults=true"
+    K3S_AGENT_EXEC="$K3S_AGENT_EXEC --kubelet-arg read-only-port=0 --kubelet-arg protect-kernel-defaults=true"
+  fi
+
   if [[ "$K3S_INSTALL_MODE" == "agent" ]]; then
-    cat >> "$USER_DATA_OUT" <<'K3S_RUNCMD'
-  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="agent --with-node-id --config /etc/rancher/k3s/config.yaml" sh -' ]
+    cat >> "$USER_DATA_OUT" <<K3S_RUNCMD
+  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="$K3S_AGENT_EXEC" sh -' ]
 K3S_RUNCMD
   else
-  cat >> "$USER_DATA_OUT" <<'K3S_RUNCMD'
-  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="server --with-node-id --config /etc/rancher/k3s/config.yaml" sh -' ]
+  cat >> "$USER_DATA_OUT" <<K3S_RUNCMD
+  - [ sh, -c, 'mkdir -p /etc/rancher/k3s && curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC="$K3S_SERVER_EXEC" sh -' ]
 K3S_RUNCMD
   fi
 fi
@@ -906,7 +943,25 @@ fi
 
 if [[ "$CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ sh, -c, 'DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive unattended-upgrades || true' ]
+  - [ sh, -c, 'if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get update || true; DEBIAN_FRONTEND=noninteractive apt-get -y install unattended-upgrades || true; DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive unattended-upgrades || true; elif command -v dnf >/dev/null 2>&1; then dnf -y install dnf-automatic || true; systemctl enable --now dnf-automatic.timer || true; fi' ]
+RUNCMD_EOF
+fi
+
+if [[ "$CLOUD_INIT_ENABLE_SYSCTL_HARDENING" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ sh, -c, 'sysctl --system || true' ]
+RUNCMD_EOF
+fi
+
+if [[ "$CLOUD_INIT_ENABLE_FIREWALL_BASELINE" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
+  - [ sh, -c, 'if command -v firewall-cmd >/dev/null 2>&1; then systemctl enable --now firewalld || true; firewall-cmd --permanent --add-service=ssh || true; firewall-cmd --reload || true; elif command -v ufw >/dev/null 2>&1; then ufw allow ${CLOUD_INIT_SSH_PORT:-22}/tcp || true; ufw --force enable || true; fi' ]
+RUNCMD_EOF
+fi
+
+if [[ "$CLOUD_INIT_ENABLE_SELINUX_ENFORCING" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ sh, -c, 'if [ -f /etc/selinux/config ]; then sed -i "s/^SELINUX=.*/SELINUX=enforcing/" /etc/selinux/config || true; command -v setenforce >/dev/null 2>&1 && setenforce 1 || true; fi' ]
 RUNCMD_EOF
 fi
 
@@ -923,8 +978,8 @@ EXTRA_KEYS_RUNCMD
 fi
 
 # Append final runcmd callback using a runtime payload generator so all values are expanded on the node, not during host-side template generation.
-cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
-  - [ sh, -c, 'SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD_JSON="$(INSTANCE_ID="\${INSTANCE_ID}" HOSTNAME="\${HOSTNAME}" PROFILE="\${PROFILE}" SOURCE_IP="\${SOURCE_IP}" NODE_REPORT_B64="\${NODE_REPORT_B64}" /usr/local/bin/rack-callback-payload)"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "${CALLBACK_URL}"; then echo "rack callback POST failed after retries to ${CALLBACK_URL}" >&2; fi' ]
+cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
+  - [ sh, -c, 'SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD_JSON="\$(INSTANCE_ID="\${INSTANCE_ID}" HOSTNAME="\${HOSTNAME}" PROFILE="\${PROFILE}" SOURCE_IP="\${SOURCE_IP}" NODE_REPORT_B64="\${NODE_REPORT_B64}" /usr/local/bin/rack-callback-payload)"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "${CALLBACK_URL}"; then echo "rack callback POST failed after retries to ${CALLBACK_URL}" >&2; fi' ]
 
 RUNCMD_EOF
 
@@ -970,6 +1025,16 @@ fi
 echo "Injecting cloud-init files into boot partition"
 cp "$USER_DATA_OUT" "$TMP_DIR/boot/user-data"
 cp "$META_DATA_OUT" "$TMP_DIR/boot/meta-data"
+
+if [[ "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
+  for config_target in "$TMP_DIR/boot/config.txt" "$TMP_DIR/boot/boot/firmware/config.txt"; do
+    if [[ -f "$config_target" ]]; then
+      if ! grep -q '^usb_max_current_enable=1$' "$config_target"; then
+        printf '\nusb_max_current_enable=1\n' >> "$config_target"
+      fi
+    fi
+  done
+fi
 
 if [[ -d "$TMP_DIR/boot/boot/firmware" ]]; then
   cp "$USER_DATA_OUT" "$TMP_DIR/boot/boot/firmware/user-data"

@@ -762,6 +762,13 @@
       nameEl.textContent = profile.name || "(unnamed)";
       profileCard.appendChild(nameEl);
 
+      if (profile.pi_only) {
+        const badge = document.createElement("span");
+        badge.className = "catalog-pill available";
+        badge.textContent = "Pi-only";
+        profileCard.appendChild(badge);
+      }
+
       if (profile.description) {
         const descEl = document.createElement("p");
         descEl.className = "hint";

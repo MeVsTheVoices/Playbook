@@ -297,6 +297,7 @@ def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
         "name": next_name,
         "description": f"Auto-generated from SD prep request for {hostname}",
         "distribution": distribution if distribution in {"standard", "k3s"} else "standard",
+        "pi_only": bool(payload.get("pi_only", False)),
         "options": options,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -326,12 +327,14 @@ def sd_options_profiles_save() -> Any:
     distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
     if distribution not in {"standard", "k3s"}:
         distribution = "standard"
+    pi_only = bool(payload.get("pi_only", False))
 
     profiles = _load_sd_option_profiles()
     profiles[name] = {
         "name": name,
         "description": description,
         "distribution": distribution,
+        "pi_only": pi_only,
         "options": options,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1195,7 +1198,7 @@ def monitor_cloud_init_option_delete(option_id: str) -> Any:
     for node_name, selected in list(node_cloud_init.items()):
         if not isinstance(selected, list):
             continue
-        node_cloud_init[node_name] = [v for v in selected if str(v) != option_key]
+        node_cloud_init[node_name] = [v for v in selected if str(v).strip().lower() != option_key]
 
     _save_monitor_state(state)
     return jsonify({"ok": True})

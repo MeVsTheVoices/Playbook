@@ -109,6 +109,10 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("Reset Optional Fields", text)
         self.assertIn("User Password (optional)", text)
         self.assertIn("Disable direct root SSH login", text)
+        self.assertIn("Apply K3s security baseline (optional)", text)
+        self.assertIn("Enable unattended upgrades (Debian/Ubuntu)", text)
+        self.assertIn("Enable host firewall baseline (ufw/firewalld)", text)
+        self.assertIn("Set SELinux to enforcing (RHEL-family)", text)
         self.assertIn("fields set", text)
         self.assertNotIn("This operation erases the target device", text)
 
@@ -149,6 +153,9 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("Happy flasher online", text)
         self.assertIn("flashMascotEl.classList.add(\"active\")", text)
         self.assertIn('SD_ACTIVE_JOB_KEY = "sd-active-job-id"', text)
+        self.assertIn('SD_HOSTNAME_INCREMENTED_JOB_KEY = "sd-hostname-incremented-job-id"', text)
+        self.assertIn("computeNextHostname", text)
+        self.assertIn("maybeIncrementHostnameAfterSuccess", text)
         self.assertIn("resumeActiveJobIfAny", text)
         self.assertIn('href="/test-terminal"', text)
 
@@ -191,10 +198,12 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         text = response.get_data(as_text=True)
         self.assertNotIn("Cloud-init Option Templates", text)
         self.assertNotIn("Cloud-init Option Selection", text)
-        self.assertNotIn("Option ID", text)
         self.assertNotIn("No fields staged.", text)
         self.assertIn("Hardware Monitor", text)
         self.assertIn("Hardware Status", text)
+        self.assertIn("Cloud-Init Coverage And Security Profile", text)
+        self.assertIn("Latest Provision Check Outcomes", text)
+        self.assertIn('id="fleet-kpis"', text)
 
     def test_monitor_page_exposes_discovered_node_closer_controls(self) -> None:
         response = self.client.get("/monitor")
@@ -327,6 +336,44 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(payload.get("nodes", [])[0].get("name"), "mon-a")
         self.assertEqual(payload.get("cloud_init_options", [])[0].get("id"), "base")
 
+    def test_monitor_summary_resolves_node_cloud_init_by_alias(self) -> None:
+        callback_core._save_monitor_state(
+            {
+                "managed_nodes": {},
+                "cloud_init_options": {
+                    "bootstrap": {
+                        "id": "bootstrap",
+                        "label": "Bootstrap",
+                        "description": "alias test option",
+                        "fields": [],
+                    }
+                },
+                "node_cloud_init": {
+                    "lab-node-01.example.local": ["bootstrap"],
+                },
+            }
+        )
+
+        callback = self.client.post(
+            "/api/cloud-init/callback",
+            json={
+                "hostname": "lab-node-01",
+                "fqdn": "lab-node-01.example.local",
+                "profile": "pi5",
+                "stage": "phone_home",
+            },
+        )
+        self.assertEqual(callback.status_code, 200)
+
+        summary = self.client.get("/api/monitor/summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.get_json()
+        self.assertTrue(payload["ok"])
+        nodes = payload.get("nodes", [])
+        match = [node for node in nodes if node.get("name") == "lab-node-01"]
+        self.assertTrue(match)
+        self.assertEqual(match[0].get("cloud_init_option_ids"), ["bootstrap"])
+
     def test_monitor_node_and_cloud_init_options(self) -> None:
         summary = self.client.get("/api/monitor/summary")
         self.assertEqual(summary.status_code, 200)
@@ -406,6 +453,31 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         delete_node = self.client.delete("/api/monitor/nodes/lab-node-01")
         self.assertEqual(delete_node.status_code, 200)
         self.assertTrue(delete_node.get_json()["ok"])
+
+    def test_monitor_cloud_init_option_delete_clears_legacy_mixed_case_assignments(self) -> None:
+        callback_core._save_monitor_state(
+            {
+                "managed_nodes": {},
+                "cloud_init_options": {
+                    "bootstrap": {
+                        "id": "bootstrap",
+                        "label": "Bootstrap",
+                        "description": "legacy delete cleanup",
+                        "fields": [],
+                    }
+                },
+                "node_cloud_init": {
+                    "lab-node-01": ["Bootstrap", "Other"],
+                },
+            }
+        )
+
+        delete_option = self.client.delete("/api/monitor/cloud-init/options/bootstrap")
+        self.assertEqual(delete_option.status_code, 200)
+        self.assertTrue(delete_option.get_json()["ok"])
+
+        state = callback_core._load_monitor_state()
+        self.assertEqual(state.get("node_cloud_init", {}).get("lab-node-01"), ["Other"])
 
     def test_monitor_empty_by_default_then_callback_discovery(self) -> None:
         clear_resp = self.client.post("/api/cloud-init/events/clear", json={})
@@ -1058,6 +1130,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "name": "pi5-baseline",
                 "description": "base bootstrap",
                 "set_preferred": True,
+                "pi_only": True,
                 "options": {
                     "timezone": "UTC",
                     "packages": ["git", "curl"],
@@ -1069,6 +1142,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         create_payload = create.get_json()
         self.assertTrue(create_payload["ok"])
         self.assertEqual(create_payload["profile"]["name"], "pi5-baseline")
+        self.assertTrue(create_payload["profile"].get("pi_only"))
 
         listed = self.client.get("/api/sd/options-profiles")
         self.assertEqual(listed.status_code, 200)
@@ -1142,6 +1216,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                     "ssh_public_key": "ssh-ed25519 AAAA test",
                     "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
                     "distribution": "k3s",
+                    "pi_only": True,
                     "cloud_init_options": {
                         "timezone": "UTC",
                         "enable_fail2ban": True,
@@ -1168,6 +1243,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         profiles = listing.get_json().get("profiles", [])
         self.assertTrue(profiles)
         self.assertEqual(profiles[0].get("name"), generated_name)
+        self.assertTrue(profiles[0].get("pi_only"))
 
         with callback_app.JOBS_LOCK:
             callback_app.JOBS.pop(job_id, None)
@@ -1182,12 +1258,14 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
                 "cloud_init_options": {"timezone": "UTC", "packages": ["git"]},
                 "sd_options_profile": "base-template",
+                "pi_only": True,
                 "ignored": "value",
             }
         )
         self.assertNotIn("ignored", cleaned)
         self.assertEqual(cleaned["sd_options_profile"], "base-template")
         self.assertEqual(cleaned["cloud_init_options"]["timezone"], "UTC")
+        self.assertTrue(cleaned["pi_only"])
 
 
     def test_nodes_summary_prefers_callback_ip_over_placeholder_inventory_address(self) -> None:
@@ -1371,6 +1449,43 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(len(view), 1)
         self.assertEqual(view[0].get("address_source"), "callback")
 
+    def test_node_ops_inventory_view_uses_connectable_callback_ip_from_history(self) -> None:
+        with patch.object(
+            callback_core,
+            "_inventory_nodes",
+            return_value=[],
+        ), patch.object(
+            callback_core,
+            "_latest_callback_details_by_host",
+            return_value={
+                "seeded-node": {
+                    "last_callback": "2026-07-10T00:00:00+00:00",
+                    "source_ip": "10.255.45.207",
+                    "source_ips": ["10.255.45.207", "192.168.174.88"],
+                    "source_ip_source": "remote_addr_transit",
+                    "profile": "pi5",
+                }
+            },
+        ), patch.object(
+            callback_core,
+            "_load_node_provisioning",
+            return_value={"node_configs": {}, "node_inputs": {}, "results": {}, "manual_nodes": {}},
+        ):
+            view = callback_app._node_ops_inventory_view()
+
+        self.assertEqual(len(view), 1)
+        self.assertEqual(view[0].get("callback_source_ip"), "10.255.45.207")
+        self.assertEqual(view[0].get("callback_connect_ip"), "192.168.174.88")
+        self.assertEqual(view[0].get("address"), "192.168.174.88")
+        self.assertEqual(view[0].get("address_source"), "callback")
+
+    def test_preferred_connect_ip_from_history_falls_back_to_usable_private_ip(self) -> None:
+        selected = callback_core._preferred_connect_ip_from_history(
+            "10.255.45.207",
+            ["10.255.45.207", "192.168.174.88"],
+        )
+        self.assertEqual(selected, "192.168.174.88")
+
     def test_nodes_monitor_uses_enriched_address_source(self) -> None:
         with patch.object(
             callback_app,
@@ -1453,13 +1568,54 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(row.get("callback_profile"), "pi5")
         self.assertEqual(row.get("callback_stage"), "runcmd")
         self.assertEqual(row.get("callback_instance_id"), "iid-meta-01")
+        self.assertEqual(row.get("callback_fqdn"), "")
         self.assertEqual(row.get("callback_source_ip"), "198.51.100.45")
+        self.assertEqual(row.get("callback_source_ips"), ["198.51.100.45"])
         self.assertEqual(row.get("callback_source_ip_source"), "x-forwarded-for")
         self.assertTrue(row.get("callback_cert_present"))
         self.assertEqual(row.get("callback_cert_subject"), "CN=rpi5-01")
         self.assertEqual(row.get("callback_cert_fingerprint"), "AA:BB:CC:DD")
         self.assertTrue(row.get("callback_node_report_present"))
         self.assertTrue(str(row.get("callback_node_report_id", "")).strip())
+
+    def test_latest_callback_details_uses_most_recent_source_ip_and_tracks_history(self) -> None:
+        events = [
+            {
+                "received_at": "2026-01-01T00:00:02+00:00",
+                "hostname": "node-01",
+                "fqdn": "node-01.lab.local",
+                "source_ip": "10.255.45.243",
+                "source_ip_source": "remote_addr_transit",
+                "profile": "pi5",
+                "raw_profile": "pi5",
+                "profile_source": "payload",
+                "stage": "power_restore",
+                "instance_id": "iid-2",
+                "cert_present": False,
+                "node_report_present": False,
+            },
+            {
+                "received_at": "2026-01-01T00:00:01+00:00",
+                "hostname": "node-01",
+                "fqdn": "node-01.lab.local",
+                "source_ip": "192.168.174.100",
+                "source_ip_source": "payload:source_ip",
+                "profile": "pi5",
+                "raw_profile": "pi5",
+                "profile_source": "payload",
+                "stage": "hardware-check",
+                "instance_id": "iid-1",
+                "cert_present": False,
+                "node_report_present": True,
+            },
+        ]
+        with patch.object(callback_core, "_read_events", return_value=events):
+            details = callback_core._latest_callback_details_by_host(limit=10)
+
+        self.assertEqual(details["node-01"]["source_ip"], "10.255.45.243")
+        self.assertEqual(details["node-01"]["source_ip_source"], "remote_addr_transit")
+        self.assertEqual(details["node-01"]["fqdn"], "node-01.lab.local")
+        self.assertEqual(details["node-01"]["source_ips"], ["10.255.45.243", "192.168.174.100"])
 
     def test_nodes_monitor_surfaces_callback_last_seen(self) -> None:
         self.client.post(
@@ -1762,6 +1918,56 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             env.get("CLOUD_INIT_EXTRA_SSH_KEYS"),
             "ssh-ed25519 AAAA111 extra1\nssh-ed25519 AAAA222 extra2",
         )
+
+        with callback_app.JOBS_LOCK:
+            self.assertEqual(callback_app.JOBS[job_id]["status"], "completed")
+            callback_app.JOBS.pop(job_id, None)
+
+    def test_run_prepare_job_respects_disabled_power_restore_callback(self) -> None:
+        class FakePopen:
+            def __init__(self, *args, **kwargs) -> None:
+                self.returncode = 0
+                self.stdout = iter(())
+
+            def wait(self) -> int:
+                return self.returncode
+
+        job_id = "job-power-restore-disabled"
+        form = {
+            "profile": "pi5",
+            "hostname": "rack-sec-02",
+            "device": "/dev/sdb",
+            "ssh_public_key": "ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABAQC test",
+            "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+            "distribution": "standard",
+            "cloud_init_options": {
+                "enable_power_restore_callback": False,
+            },
+        }
+
+        with callback_app.JOBS_LOCK:
+            callback_app.JOBS[job_id] = {
+                "status": "queued",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "request": dict(form),
+                "stdout": "",
+                "stderr": "",
+                "exit_code": None,
+            }
+
+        popen_call = {}
+
+        def fake_popen(*args, **kwargs):
+            popen_call.update(kwargs)
+            return FakePopen()
+
+        with patch("core.os.geteuid", return_value=0), patch(
+            "core._archive_ssh_public_key", return_value={"archive_path": "test-archive"}
+        ), patch("core.subprocess.Popen", side_effect=fake_popen), patch("core._record_image_history"):
+            callback_core._run_prepare_job(job_id, form)
+
+        env = popen_call.get("env") or {}
+        self.assertEqual(env.get("CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK"), "false")
 
         with callback_app.JOBS_LOCK:
             self.assertEqual(callback_app.JOBS[job_id]["status"], "completed")
@@ -3149,11 +3355,75 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             result = callback_core._run_hardware_check_callback("node-01", node_group="rpi5_active", node_address="192.0.2.10")
 
         self.assertEqual(result.get("status"), "ok")
-        cmd = run_mock.call_args.args[0]
-        cmd_text = " ".join(str(part) for part in cmd)
-        self.assertIn("ansible.builtin.setup", cmd_text)
-        self.assertNotIn("ansible.builtin.shell", cmd_text)
-        self.assertNotIn("python3 - <<'PY'", cmd_text)
+        command_texts = [" ".join(str(part) for part in call.args[0]) for call in run_mock.call_args_list]
+        setup_cmd = next((text for text in command_texts if "ansible.builtin.setup" in text), "")
+        self.assertTrue(setup_cmd, f"Expected ansible setup command in calls: {command_texts}")
+        self.assertNotIn("ansible.builtin.shell", setup_cmd)
+        self.assertNotIn("python3 - <<'PY'", setup_cmd)
+
+    def test_preferred_node_connect_target_avoids_transit_inventory_when_callback_is_usable(self) -> None:
+        target, source = callback_core._preferred_node_connect_target(
+            "node-01",
+            "10.255.45.243",
+            "192.168.2.20",
+        )
+        self.assertEqual(target, "192.168.2.20")
+        self.assertEqual(source, "callback")
+
+    def test_preferred_node_connect_target_uses_recent_callback_over_inventory(self) -> None:
+        target, source = callback_core._preferred_node_connect_target(
+            "node-01",
+            "192.168.2.99",
+            "192.168.2.20",
+        )
+        self.assertEqual(target, "192.168.2.20")
+        self.assertEqual(source, "callback")
+
+    def test_preferred_node_connect_target_prefers_inventory_when_callback_not_usable(self) -> None:
+        target, source = callback_core._preferred_node_connect_target(
+            "node-01",
+            "192.168.2.99",
+            "8.8.8.8",
+        )
+        self.assertEqual(target, "192.168.2.99")
+        self.assertEqual(source, "inventory")
+
+    def test_run_hardware_check_callback_failed_output_includes_target_source_and_auth_hint(self) -> None:
+        failure_output = "".join(
+            [
+                "Pseudo-terminal will not be allocated because stdin is not a terminal.\n",
+                "Warning: Connection is not using a post-quantum key exchange algorithm.\n",
+                'node-01 | UNREACHABLE! => {"changed": false, "msg": "Failed to connect to the host via ssh: Permission denied (publickey,password)", "unreachable": true}',
+            ]
+        )
+        with patch.object(
+            callback_core,
+            "_node_ops_inventory_view",
+            return_value=[
+                {
+                    "name": "node-01",
+                    "group": "rpi5_active",
+                    "address": "10.255.45.243",
+                    "callback_source_ip": "192.168.2.20",
+                    "node_username": "jdizzle",
+                    "certificate": "rack-bootstrap-ed25519",
+                }
+            ],
+        ), patch.object(callback_core, "_ssh_private_key_preflight", return_value=""), patch.object(
+            callback_core,
+            "_seed_known_host",
+        ), patch.object(
+            callback_core.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=4, stdout="", stderr=failure_output),
+        ):
+            result = callback_core._run_hardware_check_callback("node-01", node_group="rpi5_active", node_address="10.255.45.243")
+
+        self.assertEqual(result.get("status"), "failed")
+        text = str(result.get("output", ""))
+        self.assertIn("SSH authentication failed", text)
+        self.assertIn("post-quantum warning is informational", text)
+        self.assertIn("Connect target source: callback", text)
 
     def test_latest_hardware_by_host_keeps_most_recent_event(self) -> None:
         older = {
@@ -3314,6 +3584,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('VALIDATE_CLOUD_INIT_SCHEMA="${CLOUD_INIT_VALIDATE_SCHEMA:-true}"', script_text)
         self.assertIn('cloud-init schema --config-file "$USER_DATA_OUT"', script_text)
         self.assertIn("cloud-init devel schema --config-file \"$USER_DATA_OUT\"", script_text)
+        self.assertIn('usb_max_current_enable=1', script_text)
         self.assertIn('cat >> "$USER_DATA_OUT" <<RUNCMD_EOF', script_text)
         self.assertIn('final_message: "Cloud-init finished for ${HOSTNAME}"', script_text)
 

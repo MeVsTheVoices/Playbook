@@ -4258,6 +4258,8 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
         "enable_selinux_enforcing": "CLOUD_INIT_ENABLE_SELINUX_ENFORCING",
         "k3s_security_baseline": "CLOUD_INIT_K3S_SECURITY_BASELINE",
         "usb_max_current_enable": "CLOUD_INIT_USB_MAX_CURRENT_ENABLE",
+        "pciex1_enable": "CLOUD_INIT_PCIEX1_ENABLE",
+        "pciex1_gen3": "CLOUD_INIT_PCIEX1_GEN3",
     }
     for option_key, env_key in bool_env_fields.items():
         if bool(cloud_init_options.get(option_key, False)):

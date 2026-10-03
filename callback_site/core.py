@@ -480,6 +480,7 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
             "name": profile_name,
             "description": str(profile.get("description", "")).strip(),
             "distribution": distribution,
+            "pi_only": bool(profile.get("pi_only", False)),
             "options": options,
             "updated_at": str(profile.get("updated_at", "")).strip(),
         }
@@ -1856,6 +1857,24 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
 
     combined: Dict[str, Dict[str, Any]] = {}
 
+    def _cloud_init_ids_for_node(node_name: str) -> List[str]:
+        if not isinstance(node_cloud_init, dict):
+            return []
+
+        # Prefer exact-name assignment first.
+        direct = node_cloud_init.get(node_name)
+        if isinstance(direct, list):
+            return [str(v) for v in direct]
+
+        # Fall back to alias match (hostname/fqdn/history variations).
+        target_aliases = _node_aliases(node_name)
+        for key, raw_value in node_cloud_init.items():
+            if not isinstance(raw_value, list):
+                continue
+            if _node_aliases(str(key or "")).intersection(target_aliases):
+                return [str(v) for v in raw_value]
+        return []
+
     # Auto-discover nodes from callback events so fresh nodes appear without manual add.
     # This keeps the monitor empty on a brand-new state until the first callback lands.
     for event in events:
@@ -1909,8 +1928,7 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
     for node in sorted(combined.values(), key=lambda n: str(n.get("name", "")).lower()):
         node_name = str(node.get("name", ""))
         cert = _latest_node_cert(node_name, events)
-        cloud_ids_raw = node_cloud_init.get(node_name, []) if isinstance(node_cloud_init, dict) else []
-        cloud_ids = [str(v) for v in cloud_ids_raw] if isinstance(cloud_ids_raw, list) else []
+        cloud_ids = _cloud_init_ids_for_node(node_name)
         enriched = dict(node)
         enriched["last_callback"] = callbacks.get(node_name, "")
         enriched["cert"] = cert
@@ -2030,6 +2048,11 @@ def _single_source_of_truth_summary() -> Dict[str, Any]:
         image_for_node = latest_image_by_profile.get(image_profile_key) if image_profile_key else {}
         cert_info = monitor_info.get("cert", {}) if isinstance(monitor_info.get("cert"), dict) else {}
         hardware_info = monitor_info.get("hardware", {}) if isinstance(monitor_info.get("hardware"), dict) else {}
+        cloud_init_option_ids = (
+            monitor_info.get("cloud_init_option_ids", [])
+            if isinstance(monitor_info.get("cloud_init_option_ids"), list)
+            else []
+        )
 
         # Keep all existing node-ops fields while adding normalized contract fields.
         node_record = dict(node)
@@ -2045,6 +2068,7 @@ def _single_source_of_truth_summary() -> Dict[str, Any]:
                 "provision_how": [profile_meta.get(pid, {"id": pid, "label": pid, "description": "", "tags": []}) for pid in selected_profiles],
                 "latest_check": latest_check,
                 "latest_check_steps": latest_check_steps,
+                "cloud_init_option_ids": [str(v) for v in cloud_init_option_ids],
                 "image": image_for_node,
                 "cert": cert_info,
                 "hardware": hardware_info,
@@ -2552,6 +2576,16 @@ def _run_node_profile(
 def _run_hardware_check_callback(node_name: str, node_group: str | None = None, node_address: str | None = None) -> Dict[str, Any]:
     checked_at = datetime.now(timezone.utc).isoformat()
     host_target = str(node_address or "").strip()
+
+    node_entry = next(
+        (item for item in _node_ops_inventory_view() if isinstance(item, dict) and str(item.get("name", "")).strip() == node_name),
+        {},
+    )
+    node_config = _load_node_config()
+    ssh_user = str(node_entry.get("node_username", "") or "").strip() or str(node_config.get("username", "") or "").strip() or "jdizzle"
+    cert_name = str(node_entry.get("certificate", "") or "").strip()
+    callback_source_ip = str(node_entry.get("callback_connect_ip", "") or node_entry.get("callback_source_ip", "") or "").strip()
+    host_target, target_source = _preferred_node_connect_target(node_name, host_target, callback_source_ip)
     if not host_target:
         return {
             "profile_id": "hardware_check_trigger",
@@ -2564,13 +2598,6 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
             "output": "Cannot trigger hardware-check callback because node address is empty.",
         }
 
-    node_entry = next(
-        (item for item in _node_ops_inventory_view() if isinstance(item, dict) and str(item.get("name", "")).strip() == node_name),
-        {},
-    )
-    node_config = _load_node_config()
-    ssh_user = str(node_entry.get("node_username", "") or "").strip() or str(node_config.get("username", "") or "").strip() or "jdizzle"
-    cert_name = str(node_entry.get("certificate", "") or "").strip()
     ssh_key_path = str(KEYS_DIR / "rack-bootstrap-ed25519")
     if cert_name and _is_safe_key_name(cert_name):
         ssh_key_path = str(KEYS_DIR / cert_name)
@@ -2653,6 +2680,12 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
                 fact_payload = {}
 
         if proc.returncode != 0 or not isinstance(fact_payload, dict):
+            extra_hint = ""
+            lowered = raw_output.lower()
+            if "permission denied" in lowered:
+                extra_hint += "\n\nSSH authentication failed (publickey/password). Verify username, key, and target host mapping."
+            if "store now, decrypt later" in lowered or "post-quantum" in lowered:
+                extra_hint += "\nThe post-quantum warning is informational; it is not the root cause of this SSH failure."
             return {
                 "profile_id": "hardware_check_trigger",
                 "status": "failed" if proc.returncode != 0 else "failed",
@@ -2661,7 +2694,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
                 "command": cmd,
                 "exit_code": proc.returncode,
                 "inputs": {},
-                "output": raw_output[-12000:] or "Ansible setup failed to return hardware facts.",
+                "output": (raw_output[-12000:] or "Ansible setup failed to return hardware facts.") + extra_hint + f"\nConnect target source: {target_source}.",
             }
 
         model = str(
@@ -2771,6 +2804,10 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
     node_entry = node_view.get(node_name, {})
     node_group = str(node_entry.get("group", "") or "").strip()
     node_address = str(node_entry.get("address", "") or "").strip()
+    callback_source_ip = str(node_entry.get("callback_connect_ip", "") or node_entry.get("callback_source_ip", "") or "").strip()
+    preferred_target, _preferred_source = _preferred_node_connect_target(node_name, node_address, callback_source_ip)
+    if preferred_target:
+        node_address = preferred_target
     node_username = str(node_entry.get("node_username", "") or "").strip()
     node_certificate = str(node_entry.get("certificate", "") or "").strip()
     node_results: Dict[str, Any] = {}
@@ -3131,23 +3168,29 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
     return seen
 
 
-def _latest_callback_details_by_host(limit: int = 2000) -> Dict[str, Dict[str, str]]:
-    seen: Dict[str, Dict[str, str]] = {}
+def _latest_callback_details_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
+    seen: Dict[str, Dict[str, Any]] = {}
+    seen_ts: Dict[str, datetime] = {}
+    seen_ips: Dict[str, List[str]] = {}
     for event in _read_events(limit=limit):
         candidates = set()
         for raw in (event.get("hostname"), event.get("fqdn")):
             candidates.update(_node_aliases(str(raw or "")))
         if not candidates:
             continue
-        payload = {
+        source_ip = str(event.get("source_ip", "")).strip()
+        event_ts = _parse_event_time(str(event.get("received_at", "")))
+        payload: Dict[str, Any] = {
             "last_callback": str(event.get("received_at", "")).strip(),
-            "source_ip": str(event.get("source_ip", "")).strip(),
+            "source_ip": source_ip,
+            "source_ips": [],
             "source_ip_source": str(event.get("source_ip_source", "")).strip(),
             "profile": str(event.get("profile", "")).strip(),
             "raw_profile": str(event.get("raw_profile", "")).strip(),
             "profile_source": str(event.get("profile_source", "")).strip(),
             "stage": str(event.get("stage", "")).strip(),
             "instance_id": str(event.get("instance_id", "")).strip(),
+            "fqdn": str(event.get("fqdn", "")).strip(),
             "cert_present": bool(event.get("cert_present", False)),
             "cert_subject": str(event.get("cert_subject", "")).strip(),
             "cert_issuer": str(event.get("cert_issuer", "")).strip(),
@@ -3156,8 +3199,21 @@ def _latest_callback_details_by_host(limit: int = 2000) -> Dict[str, Dict[str, s
             "node_report_present": bool(event.get("node_report_present", False)),
         }
         for host in candidates:
-            if host and host not in seen:
+            if not host:
+                continue
+            if source_ip:
+                ip_list = seen_ips.setdefault(host, [])
+                if source_ip not in ip_list:
+                    ip_list.append(source_ip)
+
+            current_ts = seen_ts.get(host)
+            if host not in seen or current_ts is None or event_ts is None or event_ts > current_ts:
                 seen[host] = payload
+                if event_ts is not None:
+                    seen_ts[host] = event_ts
+
+    for host, details in seen.items():
+        details["source_ips"] = list(seen_ips.get(host, []))
     return seen
 
 
@@ -3259,17 +3315,22 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
             continue
 
         callback_ip = str(callback.get("source_ip", "")).strip()
+        callback_source_ips = callback.get("source_ips", [])
+        callback_ip_history = callback_source_ips if isinstance(callback_source_ips, list) else []
+        callback_connect_ip = _preferred_connect_ip_from_history(callback_ip, callback_ip_history)
         inventory_addr = str(node.get("address", "")).strip()
+        callback_target = callback_connect_ip or callback_ip
+        callback_target_usable = bool(callback_target and _is_usable_callback_ip(callback_target))
 
         if str(node.get("address_source", "")).strip() == "callback":
-            item["address"] = inventory_addr or callback_ip
+            item["address"] = callback_target or inventory_addr or callback_ip
             item["address_source"] = "callback"
-        elif _is_usable_callback_ip(callback_ip) and _is_placeholder_inventory_address(inventory_addr):
-            item["address"] = callback_ip
+        elif callback_target_usable and callback_ip:
+            item["address"] = callback_target
             item["address_source"] = "callback"
         else:
-            item["address"] = inventory_addr
-            item["address_source"] = "inventory"
+            item["address"] = inventory_addr or callback_target or callback_ip
+            item["address_source"] = "inventory" if inventory_addr else ("callback" if callback_ip else "")
 
         item["last_callback"] = str(callback.get("last_callback", "")).strip()
         item["callback_profile"] = str(callback.get("profile", "")).strip()
@@ -3277,7 +3338,10 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
         item["callback_profile_source"] = str(callback.get("profile_source", "")).strip()
         item["callback_stage"] = str(callback.get("stage", "")).strip()
         item["callback_instance_id"] = str(callback.get("instance_id", "")).strip()
+        item["callback_fqdn"] = str(callback.get("fqdn", "")).strip()
         item["callback_source_ip"] = str(callback.get("source_ip", "")).strip()
+        item["callback_source_ips"] = callback_source_ips if isinstance(callback_source_ips, list) else []
+        item["callback_connect_ip"] = callback_connect_ip
         item["callback_source_ip_source"] = str(callback.get("source_ip_source", "")).strip()
         item["callback_cert_present"] = bool(callback.get("cert_present", False))
         item["callback_cert_subject"] = str(callback.get("cert_subject", "")).strip()
@@ -3597,6 +3661,44 @@ def _is_usable_callback_ip(ip: str) -> bool:
     return addr.is_private and not _is_transit_hop_ip(parsed) and not addr.is_loopback and not addr.is_link_local
 
 
+def _preferred_connect_ip_from_history(current_ip: str, ip_history: List[str]) -> str:
+    current_ip = str(current_ip or "").strip()
+    if _is_usable_callback_ip(current_ip):
+        return current_ip
+
+    for raw in ip_history:
+        candidate = str(raw or "").strip()
+        if _is_usable_callback_ip(candidate):
+            return candidate
+
+    return current_ip
+
+
+def _preferred_node_connect_target(node_name: str, inventory_address: str, callback_source_ip: str = "") -> tuple[str, str]:
+    node_name = str(node_name or "").strip()
+    inventory_address = str(inventory_address or "").strip()
+    callback_source_ip = str(callback_source_ip or "").strip()
+
+    if _is_usable_callback_ip(callback_source_ip):
+        return callback_source_ip, "callback"
+
+    if inventory_address and not _is_transit_hop_ip(inventory_address):
+        return inventory_address, "inventory"
+
+    if callback_source_ip:
+        return callback_source_ip, "callback_recent"
+
+    resolved_ip, resolved_source = _resolve_lan_ip_from_names(node_name)
+    if resolved_ip:
+        return resolved_ip, resolved_source or "dns"
+
+    if inventory_address:
+        return inventory_address, "inventory_transit"
+    if node_name:
+        return node_name, "hostname"
+    return "", "none"
+
+
 def _resolve_lan_ip_from_names(*names: str) -> tuple[str, str]:
     seen: set[str] = set()
     for name in names:
@@ -3743,6 +3845,7 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "image_sha256",
         "workspace",
         "sd_options_profile",
+        "pi_only",
         "cloud_init_options",
     }
     cleaned: Dict[str, Any] = {}
@@ -3752,6 +3855,7 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(cleaned.get("cloud_init_options"), dict):
         cleaned["cloud_init_options"] = {}
     cleaned["sd_options_profile"] = str(cleaned.get("sd_options_profile", "")).strip()
+    cleaned["pi_only"] = bool(cleaned.get("pi_only", False))
     cloud_options = cleaned["cloud_init_options"]
     distribution = str(cleaned.get("distribution", "standard")).strip().lower() or "standard"
     k3s_config = str(cloud_options.get("k3s_config", "") or "").strip()
@@ -3851,31 +3955,26 @@ def _detect_kubernetes_runtime(force_refresh: bool = False) -> Dict[str, Any]:
         KUBERNETES_STATUS_CACHE["checked_at"] = now
         KUBERNETES_STATUS_CACHE["state"] = state
 
-    return dict(state)
+    return state
 
 
-def _run_kubectl_json(args: List[str]) -> tuple[Any | None, str]:
-    runtime = _detect_kubernetes_runtime(force_refresh=False)
-    k3s_binary = str(runtime.get("k3s_binary", "") or "")
-    kubeconfig = "/etc/rancher/k3s/k3s.yaml"
-    attempts: List[List[str]] = []
+def _run_kubectl_json(args: List[str]) -> tuple[Dict[str, Any] | None, str]:
+    candidate_cmds: List[List[str]] = []
+    k3s_cmd = shutil.which("k3s")
+    if k3s_cmd:
+        candidate_cmds.append([k3s_cmd, "kubectl", *args])
+    kubectl_cmd = shutil.which("kubectl")
+    if kubectl_cmd:
+        candidate_cmds.append([kubectl_cmd, *args])
 
-    if k3s_binary:
-        attempts.append([k3s_binary, "kubectl", *args, "-o", "json"])
-    kubectl_binary = shutil.which("kubectl") or ""
-    if kubectl_binary:
-        attempts.append([kubectl_binary, "--kubeconfig", kubeconfig, *args, "-o", "json"])
-    if os.geteuid() != 0 and k3s_binary:
-        attempts.append(["sudo", "-n", k3s_binary, "kubectl", *args, "-o", "json"])
-
-    if not attempts:
-        return None, "No kubectl command available"
+    if not candidate_cmds:
+        return None, "k3s/kubectl command not available"
 
     errors: List[str] = []
-    for cmd in attempts:
+    for cmd in candidate_cmds:
         try:
             proc = subprocess.run(
-                cmd,
+                [*cmd, "-o", "json"],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -4142,6 +4241,106 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
     return summary
 
 
+def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud_init_options: Dict[str, Any]) -> List[str]:
+    enabled_options: List[str] = []
+
+    bool_env_fields = {
+        "disable_ssh_password_auth": "CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH",
+        "disable_root_ssh": "CLOUD_INIT_DISABLE_ROOT_SSH",
+        "enable_fail2ban": "CLOUD_INIT_ENABLE_FAIL2BAN",
+        "enable_unattended_upgrades": "CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES",
+        "reboot_after_bootstrap": "CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP",
+        "enable_sysctl_hardening": "CLOUD_INIT_ENABLE_SYSCTL_HARDENING",
+        "enable_firewall_baseline": "CLOUD_INIT_ENABLE_FIREWALL_BASELINE",
+        "enable_selinux_enforcing": "CLOUD_INIT_ENABLE_SELINUX_ENFORCING",
+        "k3s_security_baseline": "CLOUD_INIT_K3S_SECURITY_BASELINE",
+        "usb_max_current_enable": "CLOUD_INIT_USB_MAX_CURRENT_ENABLE",
+    }
+    for option_key, env_key in bool_env_fields.items():
+        if bool(cloud_init_options.get(option_key, False)):
+            env[env_key] = "true"
+            enabled_options.append(option_key)
+
+    # This option defaults true in the script, so preserve explicit false from the UI.
+    if "enable_power_restore_callback" in cloud_init_options:
+        power_restore_enabled = bool(cloud_init_options.get("enable_power_restore_callback", False))
+        env["CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK"] = "true" if power_restore_enabled else "false"
+        if power_restore_enabled:
+            enabled_options.append("enable_power_restore_callback")
+
+    if "boot_summary" in cloud_init_options:
+        env["CLOUD_INIT_BOOT_SUMMARY"] = "true" if bool(cloud_init_options.get("boot_summary", False)) else "false"
+        enabled_options.append("boot_summary")
+
+    if distribution == "k3s":
+        k3s_config = str(cloud_init_options.get("k3s_config", "") or "").strip()
+        if not k3s_config:
+            k3s_config = _default_k3s_config().strip()
+        env["CLOUD_INIT_K3S_CONFIG"] = k3s_config
+        enabled_options.append("k3s_config")
+
+    if cloud_init_options.get("enable_hardware_checks"):
+        env["CLOUD_INIT_ENABLE_HARDWARE_CHECKS"] = "true"
+        enabled_options.append("hardware_checks")
+    if cloud_init_options.get("fancy_motd"):
+        env["CLOUD_INIT_FANCY_MOTD"] = "true"
+        enabled_options.append("fancy_motd")
+    if cloud_init_options.get("install_telegraf"):
+        env["CLOUD_INIT_INSTALL_TELEGRAF"] = "true"
+        enabled_options.append("install_telegraf")
+
+    user_fields = {
+        "username": "CLOUD_INIT_USERNAME",
+        "password": "CLOUD_INIT_USER_PASSWORD",
+    }
+    for option_key, env_key in user_fields.items():
+        value = str(cloud_init_options.get(option_key, "")).strip()
+        if value:
+            env[env_key] = value
+            enabled_options.append(option_key)
+
+    telegraf_fields = {
+        "telegraf_influx_url": "CLOUD_INIT_TELEGRAF_INFLUX_URL",
+        "telegraf_influx_token": "CLOUD_INIT_TELEGRAF_INFLUX_TOKEN",
+        "telegraf_influx_org": "CLOUD_INIT_TELEGRAF_INFLUX_ORG",
+        "telegraf_influx_bucket": "CLOUD_INIT_TELEGRAF_INFLUX_BUCKET",
+        "telegraf_config_url": "CLOUD_INIT_TELEGRAF_CONFIG_URL",
+    }
+    for option_key, env_key in telegraf_fields.items():
+        value = str(cloud_init_options.get(option_key, "")).strip()
+        if value:
+            env[env_key] = value
+            enabled_options.append(option_key)
+
+    ssh_scalar_fields = {
+        "ssh_port": "CLOUD_INIT_SSH_PORT",
+    }
+    for option_key, env_key in ssh_scalar_fields.items():
+        value = str(cloud_init_options.get(option_key, "")).strip()
+        if value:
+            env[env_key] = value
+            enabled_options.append(option_key)
+
+    ssh_list_fields = {
+        "ssh_allow_groups": "CLOUD_INIT_SSH_ALLOW_GROUPS",
+        "extra_ssh_keys": "CLOUD_INIT_EXTRA_SSH_KEYS",
+    }
+    for option_key, env_key in ssh_list_fields.items():
+        raw_value = cloud_init_options.get(option_key)
+        if isinstance(raw_value, list):
+            cleaned_items = [str(item).strip() for item in raw_value if str(item).strip()]
+            if cleaned_items:
+                env[env_key] = "\n".join(cleaned_items) if option_key == "extra_ssh_keys" else ",".join(cleaned_items)
+                enabled_options.append(option_key)
+        else:
+            value = str(raw_value or "").strip()
+            if value:
+                env[env_key] = value
+                enabled_options.append(option_key)
+
+    return enabled_options
+
+
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
     hostname = form.get("hostname", "unknown")
     profile = form.get("profile", "unknown")
@@ -4208,84 +4407,11 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
 
         cloud_init_options = form.get("cloud_init_options", {})
         if isinstance(cloud_init_options, dict):
-            # Map cloud-init options to environment variables
-            enabled_options = []
-            bool_env_fields = {
-                "disable_ssh_password_auth": "CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH",
-                "disable_root_ssh": "CLOUD_INIT_DISABLE_ROOT_SSH",
-                "enable_fail2ban": "CLOUD_INIT_ENABLE_FAIL2BAN",
-                "enable_unattended_upgrades": "CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES",
-                "reboot_after_bootstrap": "CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP",
-                "enable_power_restore_callback": "CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK",
-            }
-            for option_key, env_key in bool_env_fields.items():
-                if bool(cloud_init_options.get(option_key, False)):
-                    env[env_key] = "true"
-                    enabled_options.append(option_key)
-            if "boot_summary" in cloud_init_options:
-                env["CLOUD_INIT_BOOT_SUMMARY"] = "true" if bool(cloud_init_options.get("boot_summary", False)) else "false"
-                enabled_options.append("boot_summary")
-            if distribution == "k3s":
-                k3s_config = str(cloud_init_options.get("k3s_config", "") or "").strip()
-                if not k3s_config:
-                    k3s_config = _default_k3s_config().strip()
-                env["CLOUD_INIT_K3S_CONFIG"] = k3s_config
-                enabled_options.append("k3s_config")
-            if cloud_init_options.get("enable_hardware_checks"):
-                env["CLOUD_INIT_ENABLE_HARDWARE_CHECKS"] = "true"
-                enabled_options.append("hardware_checks")
-            if cloud_init_options.get("fancy_motd"):
-                env["CLOUD_INIT_FANCY_MOTD"] = "true"
-                enabled_options.append("fancy_motd")
-            if cloud_init_options.get("install_telegraf"):
-                env["CLOUD_INIT_INSTALL_TELEGRAF"] = "true"
-                enabled_options.append("install_telegraf")
-            user_fields = {
-                "username": "CLOUD_INIT_USERNAME",
-                "password": "CLOUD_INIT_USER_PASSWORD",
-            }
-            for option_key, env_key in user_fields.items():
-                value = str(cloud_init_options.get(option_key, "")).strip()
-                if value:
-                    env[env_key] = value
-                    enabled_options.append(option_key)
-            telegraf_fields = {
-                "telegraf_influx_url": "CLOUD_INIT_TELEGRAF_INFLUX_URL",
-                "telegraf_influx_token": "CLOUD_INIT_TELEGRAF_INFLUX_TOKEN",
-                "telegraf_influx_org": "CLOUD_INIT_TELEGRAF_INFLUX_ORG",
-                "telegraf_influx_bucket": "CLOUD_INIT_TELEGRAF_INFLUX_BUCKET",
-                "telegraf_config_url": "CLOUD_INIT_TELEGRAF_CONFIG_URL",
-            }
-            for option_key, env_key in telegraf_fields.items():
-                value = str(cloud_init_options.get(option_key, "")).strip()
-                if value:
-                    env[env_key] = value
-                    enabled_options.append(option_key)
-            ssh_scalar_fields = {
-                "ssh_port": "CLOUD_INIT_SSH_PORT",
-            }
-            for option_key, env_key in ssh_scalar_fields.items():
-                value = str(cloud_init_options.get(option_key, "")).strip()
-                if value:
-                    env[env_key] = value
-                    enabled_options.append(option_key)
-
-            ssh_list_fields = {
-                "ssh_allow_groups": "CLOUD_INIT_SSH_ALLOW_GROUPS",
-                "extra_ssh_keys": "CLOUD_INIT_EXTRA_SSH_KEYS",
-            }
-            for option_key, env_key in ssh_list_fields.items():
-                raw_value = cloud_init_options.get(option_key)
-                if isinstance(raw_value, list):
-                    cleaned_items = [str(item).strip() for item in raw_value if str(item).strip()]
-                    if cleaned_items:
-                        env[env_key] = "\n".join(cleaned_items) if option_key == "extra_ssh_keys" else ",".join(cleaned_items)
-                        enabled_options.append(option_key)
-                else:
-                    value = str(raw_value or "").strip()
-                    if value:
-                        env[env_key] = value
-                        enabled_options.append(option_key)
+            enabled_options = _map_cloud_init_options_to_env(
+                env=env,
+                distribution=distribution,
+                cloud_init_options=cloud_init_options,
+            )
             if enabled_options:
                 logger.info(f"Cloud-init options enabled for {hostname}: {', '.join(enabled_options)}")
 

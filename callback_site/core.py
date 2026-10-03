@@ -3564,6 +3564,7 @@ def _detect_local_ip() -> str:
 
 
 def _default_callback_url() -> str:
+    scheme = "http"
     full_url = os.getenv("CALLBACK_PUBLIC_URL", "").strip()
     if full_url:
         parsed = urlparse.urlparse(full_url)
@@ -3577,6 +3578,8 @@ def _default_callback_url() -> str:
     if "://" in host:
         parsed = urlparse.urlparse(host)
         if parsed.hostname:
+            if parsed.scheme:
+                scheme = parsed.scheme
             host = parsed.hostname or host
             supplied_port = parsed.port
             if supplied_port:
@@ -3585,7 +3588,7 @@ def _default_callback_url() -> str:
                 port = os.getenv("CALLBACK_PUBLIC_PORT", "").strip() or os.getenv("PORT", "8088").strip() or "8088"
             if host and ":" in host and not host.startswith("["):
                 host = f"[{host}]"
-            return f"http://{host}:{port}/api/cloud-init/callback"
+            return f"{scheme}://{host}:{port}/api/cloud-init/callback"
 
     port = (
         os.getenv("CALLBACK_PUBLIC_PORT", "").strip()
@@ -3594,7 +3597,7 @@ def _default_callback_url() -> str:
     )
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
-    return f"http://{host}:{port}/api/cloud-init/callback"
+    return f"{scheme}://{host}:{port}/api/cloud-init/callback"
 
 
 def _first_forwarded_ip(value: str) -> str:

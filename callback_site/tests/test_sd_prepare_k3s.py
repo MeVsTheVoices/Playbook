@@ -90,6 +90,13 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
             with patch.object(callback_app, "_detect_local_ip", return_value="10.255.45.164"):
                 self.assertEqual(callback_app._default_callback_url(), "http://10.255.45.164:9821/api/cloud-init/callback")
 
+    def test_default_callback_url_preserves_scheme_from_public_host_url(self) -> None:
+        with patch.dict("os.environ", {"CALLBACK_PUBLIC_HOST": "https://callback.example", "CALLBACK_PUBLIC_PORT": "9821"}, clear=False):
+            self.assertEqual(callback_app._default_callback_url(), "https://callback.example:9821/api/cloud-init/callback")
+
+        with patch.dict("os.environ", {"CALLBACK_PUBLIC_HOST": "https://callback.example:9443"}, clear=False):
+            self.assertEqual(callback_app._default_callback_url(), "https://callback.example:9443/api/cloud-init/callback")
+
     def test_prepare_sd_script_uses_unique_k3s_node_ids(self) -> None:
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"
         script_text = script_path.read_text(encoding="utf-8")

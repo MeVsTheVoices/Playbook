@@ -1036,6 +1036,21 @@ if [[ "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
   done
 fi
 
+if [[ "${CLOUD_INIT_PCIEX1_ENABLE:-false}" == "true" || "${CLOUD_INIT_PCIEX1_GEN3:-false}" == "true" ]]; then
+  for config_target in "$TMP_DIR/boot/config.txt" "$TMP_DIR/boot/boot/firmware/config.txt"; do
+    if [[ -f "$config_target" ]]; then
+      if ! grep -q '^dtparam=pciex1$' "$config_target"; then
+        printf '\ndtparam=pciex1\n' >> "$config_target"
+      fi
+      if [[ "${CLOUD_INIT_PCIEX1_GEN3:-false}" == "true" ]]; then
+        if ! grep -q '^dtparam=pciex1_gen=3$' "$config_target"; then
+          printf 'dtparam=pciex1_gen=3\n' >> "$config_target"
+        fi
+      fi
+    fi
+  done
+fi
+
 if [[ -d "$TMP_DIR/boot/boot/firmware" ]]; then
   cp "$USER_DATA_OUT" "$TMP_DIR/boot/boot/firmware/user-data"
   cp "$META_DATA_OUT" "$TMP_DIR/boot/boot/firmware/meta-data"

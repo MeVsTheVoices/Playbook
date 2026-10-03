@@ -4,67 +4,156 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Node Report {{ report_id }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
       :root {
-        --bg: #f3f5f7;
+        --bg: #f6f7f9;
         --card: #ffffff;
-        --ink: #1d2939;
-        --muted: #52606d;
-        --line: #d0d7de;
+        --ink: #16202d;
+        --muted: #4f6070;
+        --line: #d3dbe5;
+        --accent: #0b8b6e;
       }
       body {
         margin: 0;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-        background: var(--bg);
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 15% 12%, rgba(11, 139, 110, 0.18), transparent 38%),
+          radial-gradient(circle at 89% 9%, rgba(19, 119, 176, 0.14), transparent 42%),
+          linear-gradient(165deg, #deefe7, var(--bg));
         color: var(--ink);
       }
       .wrap {
-        max-width: 1080px;
-        margin: 1.4rem auto;
+        max-width: 980px;
+        margin: 1.8rem auto;
         padding: 0 1rem;
       }
       .panel {
         background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 1rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        border-radius: 16px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 16px 44px rgba(14, 42, 71, 0.08);
         margin-bottom: 1rem;
+      }
+      .hero {
+        background: linear-gradient(135deg, #ecfeff 0%, #f8fafc 60%, #f0fdfa 100%);
+        border: 1px solid #ccfbf1;
+      }
+      h1 {
+        margin: 0 0 0.45rem;
       }
       .meta {
         color: var(--muted);
-        font-size: 0.9rem;
+        font-size: 0.88rem;
+        line-height: 1.5;
+      }
+      .meta-grid {
+        margin-top: 0.8rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.62rem;
+      }
+      .meta-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 0.65rem;
+      }
+      .meta-card .k {
+        color: var(--muted);
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .meta-card .v {
+        margin-top: 0.28rem;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.84rem;
+        color: #0f172a;
+        overflow-wrap: anywhere;
+      }
+      .nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        color: #0f766e;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .nav-link:hover {
+        text-decoration: underline;
+      }
+      code {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.82rem;
+      }
+      .json-shell {
+        border: 1px solid #c5d4e6;
+        border-radius: 12px;
+        background: #0b1020;
+        overflow: hidden;
+      }
+      .json-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.6rem 0.8rem;
+        background: rgba(15, 23, 42, 0.88);
+        color: #cbd5e1;
+        font-size: 0.76rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.28);
       }
       pre {
         margin: 0;
-        max-height: 72vh;
+        max-height: 68vh;
         overflow: auto;
-        background: #0b1020;
         color: #d6deeb;
-        border-radius: 10px;
         padding: 0.9rem;
         font-family: "IBM Plex Mono", monospace;
         font-size: 0.82rem;
         line-height: 1.4;
       }
-      a {
-        color: #0f766e;
+      @media (max-width: 760px) {
+        .wrap {
+          margin-top: 1rem;
+          padding: 0 0.72rem;
+        }
       }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <div class="panel">
+      <div class="panel hero">
         <h1>Node Report</h1>
-        <div class="meta">
-          report id: <code>{{ report_id }}</code>
-          {% if report.hostname %} | host: <strong>{{ report.hostname }}</strong>{% endif %}
-          {% if report.received_at %} | received: {{ report.received_at }}{% endif %}
+        <div class="meta">Structured payload snapshot for a single callback event with immutable report identity and ingestion metadata.</div>
+        <div class="meta-grid">
+          <div class="meta-card">
+            <div class="k">Report ID</div>
+            <div class="v">{{ report_id }}</div>
+          </div>
+          <div class="meta-card">
+            <div class="k">Hostname</div>
+            <div class="v">{{ report.hostname or "(unknown)" }}</div>
+          </div>
+          <div class="meta-card">
+            <div class="k">Received At</div>
+            <div class="v">{{ report.received_at or "(not recorded)" }}</div>
+          </div>
         </div>
-        <p><a href="/">Back to Callback Dashboard</a></p>
+        <p style="margin: 0.8rem 0 0;"><a class="nav-link" href="/">← Back to Callback Dashboard</a></p>
       </div>
       <div class="panel">
-        <pre>{{ report | tojson(indent=2) }}</pre>
+        <div class="json-shell">
+          <div class="json-head">
+            <span>Callback JSON payload</span>
+            <span>read-only</span>
+          </div>
+          <pre>{{ report | tojson(indent=2) }}</pre>
+        </div>
       </div>
     </div>
   </body>

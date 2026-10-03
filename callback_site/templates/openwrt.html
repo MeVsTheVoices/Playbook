@@ -21,13 +21,79 @@
       body {
         margin: 0;
         font-family: "Space Grotesk", "Segoe UI", sans-serif;
-        background: linear-gradient(165deg, #eef7f4, var(--bg));
+        background:
+          radial-gradient(circle at 15% 12%, rgba(11, 139, 110, 0.18), transparent 38%),
+          radial-gradient(circle at 89% 9%, rgba(19, 119, 176, 0.14), transparent 42%),
+          linear-gradient(165deg, #deefe7, var(--bg));
         color: var(--ink);
       }
-      .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 230px; background: #0e1a2e; color: var(--side-ink); padding: 0.8rem; box-sizing: border-box; }
-      .sidebar a { display: block; color: var(--side-ink); text-decoration: none; padding: 0.55rem; border-radius: 8px; margin-bottom: 0.25rem; }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 230px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(45, 212, 191, 0.2), transparent 42%),
+          #0e1a2e;
+        color: var(--side-ink);
+        transition: width 0.2s ease;
+        overflow: hidden;
+        padding: 0.8rem;
+        box-sizing: border-box;
+        border-right: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .sidebar-brand {
+        padding: 0.25rem 0.45rem 0.8rem;
+        margin-bottom: 0.7rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .sidebar-title {
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #f8fafc;
+        letter-spacing: 0.02em;
+      }
+      .sidebar-subtitle {
+        margin-top: 0.2rem;
+        color: #94a3b8;
+        font-size: 0.75rem;
+      }
+      .sidebar a {
+        display: block;
+        color: var(--side-ink);
+        text-decoration: none;
+        padding: 0.55rem;
+        border-radius: 8px;
+        margin-bottom: 0.25rem;
+      }
+      .sidebar a:hover {
+        background: rgba(148, 163, 184, 0.16);
+      }
       .sidebar a.active { background: rgba(20, 184, 166, 0.18); color: #ecfeff; border: 1px solid rgba(45, 212, 191, 0.2); }
-      .content { margin-left: 246px; padding: 1.2rem; }
+      .toggle-btn {
+        width: 100%;
+        margin-bottom: 0.8rem;
+        border: 1px solid #334155;
+        background: #111827;
+        color: var(--side-ink);
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+      }
+      body.sidebar-collapsed .sidebar { width: 74px; }
+      body.sidebar-collapsed .sidebar .label { display: none; }
+      body.sidebar-collapsed .sidebar .sidebar-brand { display: none; }
+      .content {
+        margin-left: 246px;
+        transition: margin-left 0.2s ease;
+      }
+      body.sidebar-collapsed .content { margin-left: 92px; }
+      .wrap {
+        max-width: 1100px;
+        margin: 1.8rem auto;
+        padding: 0 1rem;
+      }
       .panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; box-shadow: 0 16px 44px rgba(14,42,71,0.08); margin-bottom: 1rem; }
       .hero-card {
         position: relative;
@@ -208,28 +274,52 @@
         0%, 100% { transform: scale(0.7); opacity: 0.55; }
         50% { transform: scale(1); opacity: 1; }
       }
-      @media (max-width: 900px) { .sidebar { position: static; width: 100%; } .content { margin-left: 0; } }
+      @media (max-width: 980px) {
+        .sidebar { width: 196px; }
+        .content { margin-left: 208px; }
+        body.sidebar-collapsed .content { margin-left: 90px; }
+      }
+      @media (max-width: 760px) {
+        .sidebar {
+          position: static;
+          width: 100%;
+          border-right: none;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+        }
+        .content,
+        body.sidebar-collapsed .content { margin-left: 0; }
+        body.sidebar-collapsed .sidebar { width: 100%; }
+        body.sidebar-collapsed .sidebar .label,
+        body.sidebar-collapsed .sidebar .sidebar-brand { display: block; }
+        .toggle-btn { display: none; }
+        .wrap {
+          margin-top: 1rem;
+          padding: 0 0.72rem;
+        }
+      }
     </style>
   </head>
   <body data-rack-name="{{ rack_name }}">
     <div class="sidebar">
-      <div class="sidebar-brand" style="padding:0.25rem 0.45rem 0.8rem; margin-bottom:0.7rem; border-bottom:1px solid rgba(148,163,184,0.2);">
-        <div class="sidebar-title" style="font-size:0.95rem; font-weight:800; color:#f8fafc; letter-spacing:0.02em;">Rack Ops</div>
-        <div class="sidebar-subtitle" style="margin-top:0.2rem; color:#94a3b8; font-size:0.75rem;">OpenWrt Ansible Probe</div>
+      <div class="sidebar-brand">
+        <div class="sidebar-title">Callback Site</div>
+        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops 📡</div>
       </div>
-      <a href="/">Home</a>
-      <a href="/nodes">Nodes</a>
-      <a href="/monitor">Monitor</a>
+      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
+      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span class="label">Dashboard</span></a>
+      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span class="label">Node Ops</span></a>
+      <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span class="label">Monitor</span></a>
       {% if kubernetes_available %}
-      <a href="/kubernetes">Kubernetes</a>
+      <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" href="/kubernetes"><span class="label">Kubernetes</span></a>
       {% endif %}
-      <a href="/images">Images</a>
-      <a href="/tailscale-acl">Tailscale ACL</a>
-      <a href="/openwrt" class="active">OpenWrt</a>
-      <a href="/settings">Settings</a>
-      <a href="/test-terminal">Test Terminal</a>
+      <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span class="label">Image Library</span></a>
+      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
+      <a class="{% if request.path.startswith('/openwrt') %}active{% endif %}" href="/openwrt"><span class="label">OpenWrt</span></a>
+      <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span class="label">Terminal</span></a>
+      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span class="label">Settings</span></a>
     </div>
-    <div class="content">
+    <main class="content">
+      <div class="wrap">
       <div class="panel hero-card">
         <div class="pill">OpenWrt Ansible Probe</div>
         <h1 style="margin:0.45rem 0 0.35rem; font-size:1.45rem;">Inspect the details needed for an OpenWrt Ansible login</h1>
@@ -337,8 +427,12 @@
         </div>
       </div>
     </div>
+      </div>
+    </main>
 
     <script>
+      const body = document.body;
+      const toggleBtn = document.getElementById('sidebar-toggle');
       const inspectBtn = document.getElementById('inspect-btn');
       const pushKeyBtn = document.getElementById('push-key-btn');
       const resultStatus = document.getElementById('result-status');
@@ -359,6 +453,13 @@
         ['push-key-password', 'push_key_password'],
       ];
       const STORAGE_KEY = 'openwrt-form:';
+
+      function initSidebar() {
+        const saved = localStorage.getItem('sidebar-collapsed');
+        if (saved === '1') {
+          body.classList.add('sidebar-collapsed');
+        }
+      }
 
       function escapeHtml(value) {
         return String(value ?? '')
@@ -443,6 +544,11 @@
         element.addEventListener('change', writeStoredState);
       }
       keySelect.addEventListener('change', writeStoredState);
+
+      toggleBtn.addEventListener('click', () => {
+        body.classList.toggle('sidebar-collapsed');
+        localStorage.setItem('sidebar-collapsed', body.classList.contains('sidebar-collapsed') ? '1' : '0');
+      });
 
       inspectBtn.addEventListener('click', async () => {
         const payload = {
@@ -547,6 +653,7 @@
         resultStatus.innerHTML = `Key push complete for <strong>${data.key_name}</strong>.<br><span class="note">${data.details || 'The public key was pushed to the target router.'}</span>`;
       });
 
+      initSidebar();
       restoreStoredState();
       loadSavedKeys();
     </script>

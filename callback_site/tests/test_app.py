@@ -1875,6 +1875,9 @@ class CallbackSiteTests(BaseCallbackSiteTest):
                 "enable_unattended_upgrades": True,
                 "enable_power_restore_callback": True,
                 "reboot_after_bootstrap": True,
+                "usb_max_current_enable": True,
+                "pciex1_enable": True,
+                "pciex1_gen3": True,
                 "ssh_port": "2222",
                 "ssh_allow_groups": ["sudo", "wheel"],
                 "extra_ssh_keys": [
@@ -1912,6 +1915,9 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(env.get("CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES"), "true")
         self.assertEqual(env.get("CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK"), "true")
         self.assertEqual(env.get("CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_USB_MAX_CURRENT_ENABLE"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_PCIEX1_ENABLE"), "true")
+        self.assertEqual(env.get("CLOUD_INIT_PCIEX1_GEN3"), "true")
         self.assertEqual(env.get("CLOUD_INIT_SSH_PORT"), "2222")
         self.assertEqual(env.get("CLOUD_INIT_SSH_ALLOW_GROUPS"), "sudo,wheel")
         self.assertEqual(

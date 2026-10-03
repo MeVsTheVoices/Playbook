@@ -203,6 +203,7 @@
         justify-content: center;
         gap: 0.45rem;
         min-width: 138px;
+        transition: background-color 220ms ease, box-shadow 220ms ease, transform 180ms ease, filter 180ms ease, color 180ms ease;
       }
       button.ping-action::after {
         content: "";
@@ -211,6 +212,7 @@
         border-radius: 50%;
         border: 2px solid rgba(255, 255, 255, 0.55);
         background: transparent;
+        transition: border-color 220ms ease, background-color 220ms ease, box-shadow 260ms ease, transform 220ms ease;
       }
       button.ping-action.ping-pending::after {
         border-color: rgba(255, 255, 255, 0.4);
@@ -231,6 +233,14 @@
         border-color: #ef4444;
         background: #ef4444;
         box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.2);
+      }
+      button.ping-action.ping-good,
+      button.ping-action.ping-warn,
+      button.ping-action.ping-bad {
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+      }
+      button.ping-action.ping-bad {
+        filter: saturate(1.05);
       }
       @keyframes ping-spin {
         0% { transform: rotate(0deg); }
@@ -426,7 +436,7 @@
       <div class="wrap">
         <div class="panel hero">
           <h1>Hardware Monitor 🖥️</h1>
-          <p>Per-node hardware configuration state from callback reports. Rows appear after a node's first <code>hardware-check</code> or <code>runcmd</code> callback.</p>
+          <p>Unified operations cockpit for hardware callbacks, node reachability, provision outcomes, and cloud-init/security state.</p>
           <div class="actions-row controls-inline">
             <button id="refresh-summary" type="button">Refresh</button>
             <button id="prune-stale-monitor" type="button" class="secondary">Prune Stale Nodes</button>
@@ -436,6 +446,12 @@
             </label>
             <button id="summary-run-ping" type="button" class="secondary ping-action" data-default-label="Simple Ping">Simple Ping</button>
             <span class="note" id="monitor-status">Idle.</span>
+          </div>
+          <div id="fleet-kpis" class="kpi-grid" style="margin-top: 0.8rem;">
+            <div class="kpi"><div class="label">Nodes Visible</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">Hardware Fresh</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">Certificates Present</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">Last Check Failed</div><div class="value">-</div></div>
           </div>
         </div>
 
@@ -469,6 +485,67 @@
         </div>
 
         <div class="panel">
+          <h2>Cloud-Init Coverage And Security Profile</h2>
+          <p class="note">Tracks which cloud-init option IDs are assigned per node and what option templates exist in monitor state.</p>
+          <div class="split">
+            <div>
+              <h3 style="margin-bottom: 0.4rem;">Node Option Assignments</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Node</th>
+                      <th>Assigned Option IDs</th>
+                      <th>Profiles</th>
+                    </tr>
+                  </thead>
+                  <tbody id="monitor-cloud-init-body">
+                    <tr><td colspan="3">No assignment data loaded yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin-bottom: 0.4rem;">Known Cloud-Init Options</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Option</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody id="monitor-option-catalog">
+                    <tr><td colspan="2">No option catalog loaded yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Latest Provision Check Outcomes</h2>
+          <p class="note">Recent profile check statuses per node, including short command output snippets from the latest run.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>Last Check</th>
+                  <th>Step</th>
+                  <th>Status</th>
+                  <th>Output Snippet</th>
+                </tr>
+              </thead>
+              <tbody id="latest-checks-body">
+                <tr><td colspan="5">No provision check outcomes yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
           <h2>Get Hardware Profile</h2>
           <p class="note">Select a discovered node and trigger a hardware profile run so the hardware monitor refreshes with the latest callback data.</p>
           <div class="actions-row controls-inline">
@@ -484,7 +561,7 @@
 
         <div class="panel">
           <h2>Hardware Status</h2>
-          <p class="note">Populated from hardware-check callbacks. Trigger a fresh run from this page or Node Ops → Get Hardware Profile to update any row.</p>
+          <p class="note">Populated from hardware-check callbacks and integrated with callback/provision metadata.</p>
           <table>
             <thead>
               <tr>
@@ -495,13 +572,14 @@
                 <th>RAM (MB)</th>
                 <th>Storage (GB)</th>
                 <th>NVMe</th>
+                <th>Profiles</th>
                 <th>Cert</th>
                 <th>Last HW Check</th>
                 <th>Report</th>
               </tr>
             </thead>
             <tbody id="hw-body">
-              <tr><td colspan="10">No hardware data yet. Run Get Hardware Profile from Node Ops.</td></tr>
+              <tr><td colspan="11">No hardware data yet. Run Get Hardware Profile from Node Ops.</td></tr>
             </tbody>
           </table>
         </div>
@@ -578,10 +656,20 @@
       const sotKpisEl = document.getElementById("sot-kpis");
       const sotBodyEl = document.getElementById("sot-body");
       const sotMetaEl = document.getElementById("sot-meta");
+      const fleetKpisEl = document.getElementById("fleet-kpis");
+      const monitorCloudInitBodyEl = document.getElementById("monitor-cloud-init-body");
+      const monitorOptionCatalogEl = document.getElementById("monitor-option-catalog");
+      const latestChecksBodyEl = document.getElementById("latest-checks-body");
 
       let nodes = [];
       let sourceOfTruthState = null;
       const pingResetTimers = new WeakMap();
+      const PING_RESET_DELAYS_MS = Object.freeze({
+        "ping-good": 1500,
+        "ping-warn": 4500,
+        "ping-bad": 9000,
+        default: 2000,
+      });
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -739,9 +827,10 @@
 
       function finishPingButton(button, outcomeClass, label) {
         setPingVisualState(button, outcomeClass, label);
+        const delay = PING_RESET_DELAYS_MS[outcomeClass] || PING_RESET_DELAYS_MS.default;
         const timerId = setTimeout(() => {
           resetPingButton(button);
-        }, 1000);
+        }, delay);
         pingResetTimers.set(button, timerId);
       }
 
@@ -763,6 +852,33 @@
           return { state: "ping-warn", label: `${Math.round(latency)}ms` };
         }
         return { state: "ping-bad", label: `${Math.round(latency)}ms` };
+      }
+
+      function publishPingResult(nodeName, outcome, data, triggerButton) {
+        const latency = Number(data && data.latency_ms);
+        const latencyText = Number.isFinite(latency)
+          ? `${Math.round(Math.max(0, latency))}ms`
+          : String(outcome.label || "-");
+        const errorText = String((data && data.error) || "").trim();
+
+        if (triggerButton === monitorRunPingBtn) {
+          const msg = outcome.state === "ping-bad"
+            ? `Ping failed for ${nodeName}.${errorText ? ` ${errorText}` : ""}`
+            : `Ping ${outcome.state === "ping-warn" ? "slow" : "ok"} for ${nodeName} (${latencyText}).`;
+          setMonitorCheckState(outcome.state === "ping-bad" ? "error" : "ok", msg);
+          return;
+        }
+
+        if (triggerButton === nodeFormPingBtn) {
+          nodeFormStatusEl.textContent = outcome.state === "ping-bad"
+            ? `Ping failed for ${nodeName}.${errorText ? ` ${errorText}` : ""}`
+            : `Ping ${outcome.state === "ping-warn" ? "slow" : "ok"} for ${nodeName} (${latencyText}).`;
+          return;
+        }
+
+        monitorStatus.textContent = outcome.state === "ping-bad"
+          ? `Ping failed for ${nodeName}.${errorText ? ` ${errorText}` : ""}`
+          : `Ping ${outcome.state === "ping-warn" ? "slow" : "ok"} for ${nodeName} (${latencyText}).`;
       }
 
       function toPrettyJson(value) {
@@ -845,7 +961,7 @@
         hwBodyEl.innerHTML = "";
         const hwNodes = nodes.filter((n) => n.hardware && n.hardware.received_at);
         if (!hwNodes.length) {
-          hwBodyEl.innerHTML = "<tr><td colspan='10' style='color:var(--muted)'>No hardware-check callbacks received yet. Run <em>Get Hardware Profile</em> in Node Ops to trigger one.</td></tr>";
+          hwBodyEl.innerHTML = "<tr><td colspan='11' style='color:var(--muted)'>No hardware-check callbacks received yet. Run <em>Get Hardware Profile</em> in Node Ops to trigger one.</td></tr>";
           return;
         }
         for (const [index, node] of hwNodes.entries()) {
@@ -871,6 +987,7 @@
             <td>${hw.ram_mb != null ? hw.ram_mb : "-"}</td>
             <td>${hw.sd_capacity_gb != null ? hw.sd_capacity_gb : "-"}</td>
             <td>${hw.nvme != null ? String(hw.nvme) : "-"}</td>
+            <td>${escapeHtml((Array.isArray(node.selected_profiles) ? node.selected_profiles.join(", ") : "") || "-")}</td>
             <td>${certTag}</td>
             <td>${escapeHtml(hw.received_at ? hw.received_at.replace("T", " ").replace("+00:00", " UTC") : "-")}</td>
             <td>${reportLink}</td>
@@ -882,7 +999,7 @@
           detailRow.id = detailRowId;
           detailRow.hidden = true;
           detailRow.innerHTML = `
-            <td colspan='10'>
+            <td colspan='11'>
               <div class='hw-detail-grid'>
                 <div class='hw-detail-card'>
                   <h4>Parsed Hardware Profile</h4>
@@ -906,6 +1023,116 @@
               expander.textContent = `${isOpen ? "▶" : "▼"} ${node.name || "node"}`;
             });
           }
+        }
+      }
+
+      function renderFleetKpis() {
+        if (!fleetKpisEl) {
+          return;
+        }
+        const hardwareFresh = nodes.filter((n) => n.hardware && n.hardware.received_at).length;
+        const certPresent = nodes.filter((n) => n.cert && n.cert.cert_present).length;
+        const failedChecks = nodes.filter((n) => n.latest_check && n.latest_check.ok === false).length;
+        const cards = [
+          ["Nodes Visible", nodes.length],
+          ["Hardware Fresh", `${hardwareFresh}/${nodes.length || 0}`],
+          ["Certificates Present", `${certPresent}/${nodes.length || 0}`],
+          ["Last Check Failed", failedChecks],
+        ];
+        fleetKpisEl.innerHTML = "";
+        for (const [label, value] of cards) {
+          const card = document.createElement("div");
+          card.className = "kpi";
+          card.innerHTML = `<div class='label'>${escapeHtml(label)}</div><div class='value'>${escapeHtml(String(value))}</div>`;
+          fleetKpisEl.appendChild(card);
+        }
+      }
+
+      function renderCloudInitCoverage() {
+        if (!monitorCloudInitBodyEl || !monitorOptionCatalogEl) {
+          return;
+        }
+        monitorCloudInitBodyEl.innerHTML = "";
+        const rows = [...nodes].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+        if (!rows.length) {
+          monitorCloudInitBodyEl.innerHTML = "<tr><td colspan='3' style='color:var(--muted)'>No nodes available.</td></tr>";
+        }
+        for (const node of rows) {
+          const optionIds = Array.isArray(node.cloud_init_option_ids) ? node.cloud_init_option_ids : [];
+          const profiles = Array.isArray(node.selected_profiles) ? node.selected_profiles : [];
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><strong>${escapeHtml(node.name || "-")}</strong></td>
+            <td class='mono'>${escapeHtml(optionIds.join(", ") || "-")}</td>
+            <td>${escapeHtml(profiles.join(", ") || "-")}</td>
+          `;
+          monitorCloudInitBodyEl.appendChild(tr);
+        }
+
+        monitorOptionCatalogEl.innerHTML = "";
+        const optionCatalog = Array.isArray(sourceOfTruthState?.monitor?.cloud_init_options)
+          ? sourceOfTruthState.monitor.cloud_init_options
+          : [];
+        if (!optionCatalog.length) {
+          monitorOptionCatalogEl.innerHTML = "<tr><td colspan='2' style='color:var(--muted)'>No cloud-init options cataloged in monitor state.</td></tr>";
+          return;
+        }
+        for (const option of optionCatalog) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td class='mono'>${escapeHtml(option.id || option.name || "-")}</td>
+            <td>${escapeHtml(option.label || option.description || "-")}</td>
+          `;
+          monitorOptionCatalogEl.appendChild(tr);
+        }
+      }
+
+      function renderLatestChecks() {
+        if (!latestChecksBodyEl) {
+          return;
+        }
+        latestChecksBodyEl.innerHTML = "";
+        const rows = [];
+        for (const node of nodes) {
+          const latest = node.latest_check || {};
+          const checkedAt = formatTimestamp(latest.checked_at || "-");
+          const steps = Array.isArray(node.latest_check_steps) ? node.latest_check_steps : [];
+          if (!steps.length) {
+            rows.push({
+              node: node.name || "-",
+              checkedAt,
+              step: "-",
+              status: latest.ok === true ? "ok" : latest.ok === false ? "failed" : "unknown",
+              output: "No step details available",
+            });
+            continue;
+          }
+          for (const step of steps) {
+            rows.push({
+              node: node.name || "-",
+              checkedAt,
+              step: step.profile_id || "-",
+              status: step.status || "unknown",
+              output: step.output || "-",
+            });
+          }
+        }
+
+        if (!rows.length) {
+          latestChecksBodyEl.innerHTML = "<tr><td colspan='5' style='color:var(--muted)'>No provision check outcomes yet.</td></tr>";
+          return;
+        }
+
+        for (const row of rows.slice(0, 120)) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><strong>${escapeHtml(row.node)}</strong></td>
+            <td>${escapeHtml(row.checkedAt)}</td>
+            <td class='mono'>${escapeHtml(row.step)}</td>
+            <td>${escapeHtml(row.status)}</td>
+            <td class='mono'>${escapeHtml(String(row.output || "-").slice(0, 240))}</td>
+          `;
+          latestChecksBodyEl.appendChild(tr);
         }
       }
 
@@ -996,7 +1223,10 @@
         renderHardwareTable();
         renderNodeSelectors();
         renderMonitorNodeSelector();
+        renderFleetKpis();
         renderSourceOfTruth();
+        renderCloudInitCoverage();
+        renderLatestChecks();
         const hwCount = nodes.filter((n) => n.hardware && n.hardware.received_at).length;
         monitorStatus.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"} loaded, ${hwCount} with hardware data.`;
       }
@@ -1183,21 +1413,32 @@
 
         triggerButton.disabled = true;
         setPingVisualState(triggerButton, "ping-pending", "Pinging");
+        if (triggerButton === monitorRunPingBtn) {
+          setMonitorCheckState("busy", `Pinging ${selected}...`);
+        } else if (triggerButton === nodeFormPingBtn) {
+          nodeFormStatusEl.textContent = `Pinging ${selected}...`;
+        } else {
+          monitorStatus.textContent = `Pinging ${selected}...`;
+        }
         try {
           const res = await fetchJsonWithTimeout(`/api/monitor/nodes/${encodeURIComponent(selected)}/ping`, {}, 12000);
           const data = await res.json();
           if (!res.ok || !data.ok) {
             finishPingButton(triggerButton, "ping-bad", "Bad");
+            publishPingResult(selected, { state: "ping-bad", label: "Bad" }, data || {}, triggerButton);
             return;
           }
 
           const outcome = classifyPingOutcome(data);
           finishPingButton(triggerButton, outcome.state, outcome.label);
+          publishPingResult(selected, outcome, data, triggerButton);
         } catch (err) {
           if (err && err.name === "AbortError") {
             finishPingButton(triggerButton, "ping-warn", "Slow");
+            publishPingResult(selected, { state: "ping-warn", label: "Slow" }, { error: "Request timed out" }, triggerButton);
           } else {
             finishPingButton(triggerButton, "ping-bad", "Bad");
+            publishPingResult(selected, { state: "ping-bad", label: "Bad" }, { error: String(err && err.message ? err.message : err) }, triggerButton);
           }
         }
       }

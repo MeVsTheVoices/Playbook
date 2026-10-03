@@ -1212,7 +1212,15 @@ server: https://local-machine-ip:6443
                 <div class="form-grid">
                   <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1">
                     <input id="opt_usb_max_current_enable" data-option-key="usb_max_current_enable" data-option-type="checkbox" type="checkbox">
-                    <label for="opt_usb_max_current_enable" style="margin: 0;">Enable usb_max_current_enable=1 for Pi 5 peripherals</label>
+                    <label for="opt_usb_max_current_enable" style="margin: 0;">Set usb_max_current_enable=1 (Pi 5: useful with 3A PSU for USB boot/peripheral power limits)</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1">
+                    <input id="opt_pciex1_enable" data-option-key="pciex1_enable" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_pciex1_enable" style="margin: 0;">Enable PCIe connector (dtparam=pciex1) for non-HAT+ NVMe adapters</label>
+                  </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1">
+                    <input id="opt_pciex1_gen3" data-option-key="pciex1_gen3" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_pciex1_gen3" style="margin: 0;">Enable PCIe Gen3 (dtparam=pciex1_gen=3) - higher throughput, can reduce stability on Pi 5</label>
                   </div>
                 </div>
               </details>

@@ -306,6 +306,7 @@
               <span class="kube-badge">Pods <strong id="kube-pods-hero">0 / 0</strong></span>
               <span class="kube-badge">Namespaces <strong id="kube-namespaces-hero">0</strong></span>
               <span class="kube-badge">Jobs <strong id="kube-jobs-hero">0 / 0</strong></span>
+              <span class="kube-badge">Longhorn <strong id="kube-longhorn-hero">--</strong></span>
             </div>
             <div id="kube-status" class="status kube-status">⏳ Loading Kubernetes status...</div>
           </div>
@@ -345,6 +346,8 @@
             <div class="kube-card"><div class="k">Pods Running / Total</div><div class="v" id="kube-pods">0 / 0</div></div>
             <div class="kube-card"><div class="k">Namespaces</div><div class="v" id="kube-namespaces">0</div></div>
             <div class="kube-card"><div class="k">Jobs Running / Total</div><div class="v" id="kube-jobs">0 / 0</div></div>
+            <div class="kube-card"><div class="k">Longhorn Pods Running / Total</div><div class="v" id="kube-longhorn">0 / 0</div></div>
+            <div class="kube-card"><div class="k">Longhorn Ready</div><div class="v" id="kube-longhorn-ready">no</div></div>
             <div class="kube-card"><div class="k">Ready %</div><div class="v" id="kube-ready-percent">0%</div></div>
             <div class="kube-card"><div class="k">Running %</div><div class="v" id="kube-running-percent">0%</div></div>
             <div class="kube-card"><div class="k">Last Error</div><div class="v" id="kube-last-error">none</div></div>
@@ -480,6 +483,7 @@
       const podsHeroEl = document.getElementById("kube-pods-hero");
       const namespacesHeroEl = document.getElementById("kube-namespaces-hero");
       const jobsHeroEl = document.getElementById("kube-jobs-hero");
+      const longhornHeroEl = document.getElementById("kube-longhorn-hero");
       const runtimeServiceEl = document.getElementById("kube-runtime-service");
       const runtimeServiceDetailEl = document.getElementById("kube-runtime-service-detail");
       const kubeconfigEl = document.getElementById("kube-has-kubeconfig");
@@ -490,6 +494,8 @@
       const readyPercentEl = document.getElementById("kube-ready-percent");
       const runningPercentEl = document.getElementById("kube-running-percent");
       const lastErrorEl = document.getElementById("kube-last-error");
+      const longhornEl = document.getElementById("kube-longhorn");
+      const longhornReadyEl = document.getElementById("kube-longhorn-ready");
       const nodeRowsEl = document.getElementById("kube-node-rows");
       const podRowsEl = document.getElementById("kube-pod-rows");
       const namespaceRowsEl = document.getElementById("kube-namespace-rows");
@@ -617,17 +623,20 @@
           podsEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
           namespacesEl.textContent = String(data.namespaces_total || 0);
           jobsEl.textContent = `${Number(data.jobs_running || 0)} / ${Number(data.jobs_total || 0)}`;
+          longhornEl.textContent = `${Number(data.longhorn_pods_running || 0)} / ${Number(data.longhorn_pods_total || 0)}`;
           nodesTotalHeroEl.textContent = String(data.nodes_total || 0);
           nodesReadyHeroEl.textContent = String(data.nodes_ready || 0);
           controlPlaneHeroEl.textContent = String(data.control_plane_nodes || 0);
           podsHeroEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
           namespacesHeroEl.textContent = String(data.namespaces_total || 0);
           jobsHeroEl.textContent = `${Number(data.jobs_running || 0)} / ${Number(data.jobs_total || 0)}`;
+          longhornHeroEl.textContent = data.longhorn_ready ? "ready" : (data.longhorn_namespace_present ? "degraded" : "absent");
 
           readyPercentEl.textContent = `${data.nodes_total ? Math.round((Number(data.nodes_ready || 0) / Number(data.nodes_total || 1)) * 100) : 0}%`;
           runningPercentEl.textContent = `${data.pods_total ? Math.round((Number(data.pods_running || 0) / Number(data.pods_total || 1)) * 100) : 0}%`;
           lastErrorEl.textContent = data.last_error ? String(data.last_error) : "none";
           observedAtEl.textContent = data.observed_at ? String(data.observed_at) : "--";
+          longhornReadyEl.textContent = data.longhorn_ready ? "yes" : "no";
 
           const runtime = data.runtime && typeof data.runtime === "object" ? data.runtime : {};
           const activeService = String(runtime.active_service || "none");
@@ -674,6 +683,7 @@
             `Nodes ready ${escapeHtml(data.nodes_ready || 0)} of ${escapeHtml(data.nodes_total || 0)}`,
             `Pods running ${escapeHtml(data.pods_running || 0)} of ${escapeHtml(data.pods_total || 0)}`,
             `Jobs running ${escapeHtml(data.jobs_running || 0)} of ${escapeHtml(data.jobs_total || 0)}`,
+            `Longhorn ${escapeHtml(data.longhorn_pods_running || 0)} of ${escapeHtml(data.longhorn_pods_total || 0)} pods · ready ${escapeHtml(data.longhorn_ready ? "yes" : "no")}`,
             `Namespaces tracked ${escapeHtml(data.namespaces_total || 0)}`,
             `Last error ${escapeHtml(lastErrorText)}`,
           ].map((line) => `<li>${line}</li>`).join("");

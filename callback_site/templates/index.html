@@ -1559,6 +1559,7 @@ server: https://local-machine-ip:6443
       const sdOptionsProfileSelectEl = document.getElementById("sd_options_profile_select");
       const sdOptionsProfileNameEl = document.getElementById("sd_options_profile_name");
       const sdOptionsProfileDescriptionEl = document.getElementById("sd_options_profile_description");
+      const sdOptionsProfilePiOnlyEl = document.getElementById("sd_options_profile_pi_only");
       const sdOptionsProfileStatusEl = document.getElementById("sd-options-profile-status");
       const sdOptionsConfigCountEl = document.getElementById("sd-options-config-count");
       const sdOptionsLoadBtn = document.getElementById("sd-options-load");
@@ -3215,9 +3216,6 @@ server: https://local-machine-ip:6443
           if (!wrapper) continue;
           wrapper.style.display = visible ? "" : "none";
           el.disabled = !visible;
-          if (!visible && String(el.dataset.optionType || "") === "checkbox") {
-            el.checked = false;
-          }
         }
       }
 
@@ -3344,19 +3342,24 @@ server: https://local-machine-ip:6443
           sdOptionsProfileStatusEl.textContent = "Selected template not found.";
           return;
         }
+        const isPiOnlyProfile = Boolean(profile.pi_only);
         const profileDistribution = String(profile.distribution || "").trim().toLowerCase();
-        if (profileDistribution === "k3s" || profileDistribution === "standard") {
+        if (!isPiOnlyProfile && (profileDistribution === "k3s" || profileDistribution === "standard")) {
           form.distribution.value = profileDistribution;
         }
-        applyCloudInitOptions(profile.options || {});
+        const currentOptions = gatherCloudInitOptions();
+        const profileOptions = profile.options && typeof profile.options === "object" ? profile.options : {};
+        applyCloudInitOptions(isPiOnlyProfile ? { ...currentOptions, ...profileOptions } : profileOptions);
         if (sdOptionsProfilePiOnlyEl) {
-          sdOptionsProfilePiOnlyEl.checked = Boolean(profile.pi_only);
+          sdOptionsProfilePiOnlyEl.checked = isPiOnlyProfile;
         }
         updatePiScopedOptionsVisibility();
         ensureK3sConfigDefaults();
         sdOptionsProfileNameEl.value = name;
         sdOptionsProfileDescriptionEl.value = String(profile.description || "");
-        sdOptionsProfileStatusEl.textContent = `Loaded template '${name}'.`;
+        sdOptionsProfileStatusEl.textContent = isPiOnlyProfile
+          ? `Loaded Pi-specific template '${name}' and merged it into the current optional settings.`
+          : `Loaded template '${name}'.`;
         updateSdOptionActions();
       }
 

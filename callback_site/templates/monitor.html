@@ -1228,11 +1228,15 @@
         for (const [index, node] of hwNodes.entries()) {
           const hw = node.hardware || {};
           const cert = node.cert || {};
-          const storageValue = hw.nvme_capacity_gb != null && hw.nvme_capacity_gb !== 0
-            ? `${hw.nvme_capacity_gb} NVMe`
-            : hw.sd_capacity_gb != null && hw.sd_capacity_gb !== 0
-              ? `${hw.sd_capacity_gb} SD`
-              : (hw.nvme ? "NVMe present" : "-");
+          const storageParts = [];
+          const sdCapacity = Number(hw.sd_capacity_gb || 0);
+          const nvmeCapacity = Number(hw.nvme_capacity_gb || 0);
+          if (sdCapacity > 0) storageParts.push(`${sdCapacity} GB SD`);
+          if (nvmeCapacity > 0) storageParts.push(`${nvmeCapacity} GB NVMe`);
+          else if (hw.nvme) storageParts.push("NVMe present");
+          const storageTotal = sdCapacity + nvmeCapacity;
+          const storageValue = storageTotal > 0 ? `${storageTotal} GB total` : "-";
+          const storageDetail = storageParts.length ? storageParts.join(" • ") : "No storage data";
           const certTag = cert.cert_present
             ? "<span class='tag ok'>present</span>"
             : "<span class='tag bad'>missing</span>";
@@ -1256,7 +1260,12 @@
             </td>
             <td class='mono'>${escapeHtml(hw.source_ip || node.address || "-")}</td>
             <td><div class='summary-stack'><div class='summary-main'>${escapeHtml(hardwareSummary[0] || "-")}</div><div class='summary-sub'>${escapeHtml(hardwareSummary.slice(1).join(" • ") || "No summary")}</div></div></td>
-            <td>${escapeHtml(storageValue)}</td>
+            <td>
+              <div class='summary-stack'>
+                <div class='summary-main' style='font-size:1rem; font-weight:700;'>${escapeHtml(storageValue || "-")}</div>
+                <div class='summary-sub'>${escapeHtml(storageDetail || "-")}</div>
+              </div>
+            </td>
             <td>
               <div class='summary-stack'>
                 <div class='summary-main' style='font-size:1rem; font-weight:700;'>${escapeHtml(hardwareReceivedAt || "-")}</div>

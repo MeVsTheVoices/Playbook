@@ -754,7 +754,7 @@
           </div>
           <div id="hardware-kpis" class="kpi-grid" style="margin-bottom: 0.75rem;">
             <div class="kpi"><div class="label">Hardware Reports</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Nodes With NVMe</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">Nodes With Storage</div><div class="value">-</div></div>
             <div class="kpi"><div class="label">Report Links</div><div class="value">-</div></div>
             <div class="kpi"><div class="label">Certificates Seen</div><div class="value">-</div></div>
           </div>
@@ -765,7 +765,7 @@
                 <th>Node</th>
                 <th>Address</th>
                 <th>Hardware Summary</th>
-                <th>NVMe (GB)</th>
+                <th>Storage (GB)</th>
                 <th>Last HW Check</th>
                 <th>Report</th>
               </tr>
@@ -1195,12 +1195,17 @@
           return;
         }
         const hwNodes = nodes.filter((n) => n.hardware && n.hardware.received_at);
-        const nodesWithNvme = hwNodes.filter((node) => Number(node.hardware?.nvme_capacity_gb || 0) > 0 || Boolean(node.hardware?.nvme)).length;
+        const nodesWithStorage = hwNodes.filter((node) => {
+          const hardware = node.hardware || {};
+          return Number(hardware.nvme_capacity_gb || 0) > 0
+            || Number(hardware.sd_capacity_gb || 0) > 0
+            || Boolean(hardware.nvme);
+        }).length;
         const reportLinks = hwNodes.filter((node) => String(node.hardware?.node_report_id || "").trim()).length;
         const certsSeen = hwNodes.filter((node) => Boolean(node.cert?.cert_present)).length;
         const cards = [
           ["Hardware Reports", `${hwNodes.length}/${nodes.length || 0}`],
-          ["Nodes With NVMe", nodesWithNvme],
+          ["Nodes With Storage", nodesWithStorage],
           ["Report Links", reportLinks],
           ["Certificates Seen", certsSeen],
         ];
@@ -1223,9 +1228,11 @@
         for (const [index, node] of hwNodes.entries()) {
           const hw = node.hardware || {};
           const cert = node.cert || {};
-          const nvmeValue = hw.nvme_capacity_gb != null && hw.nvme_capacity_gb !== 0
-            ? String(hw.nvme_capacity_gb)
-            : (hw.nvme ? "present" : "-");
+          const storageValue = hw.nvme_capacity_gb != null && hw.nvme_capacity_gb !== 0
+            ? `${hw.nvme_capacity_gb} NVMe`
+            : hw.sd_capacity_gb != null && hw.sd_capacity_gb !== 0
+              ? `${hw.sd_capacity_gb} SD`
+              : (hw.nvme ? "NVMe present" : "-");
           const certTag = cert.cert_present
             ? "<span class='tag ok'>present</span>"
             : "<span class='tag bad'>missing</span>";
@@ -1249,7 +1256,7 @@
             </td>
             <td class='mono'>${escapeHtml(hw.source_ip || node.address || "-")}</td>
             <td><div class='summary-stack'><div class='summary-main'>${escapeHtml(hardwareSummary[0] || "-")}</div><div class='summary-sub'>${escapeHtml(hardwareSummary.slice(1).join(" • ") || "No summary")}</div></div></td>
-            <td>${escapeHtml(nvmeValue)}</td>
+            <td>${escapeHtml(storageValue)}</td>
             <td>
               <div class='summary-stack'>
                 <div class='summary-main' style='font-size:1rem; font-weight:700;'>${escapeHtml(hardwareReceivedAt || "-")}</div>

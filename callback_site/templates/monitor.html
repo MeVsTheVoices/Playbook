@@ -1237,6 +1237,8 @@
             hw.ram_mb != null ? `${hw.ram_mb} MB RAM` : "RAM unknown",
             hw.sd_capacity_gb != null ? `${hw.sd_capacity_gb} GB SD` : "SD unknown",
           ].filter(Boolean);
+          const hardwareReceivedAt = formatTimestamp(hw.received_at || "-");
+          const firstCallbackAt = formatTimestamp(hw.first_callback || "-");
           const summaryRow = document.createElement("tr");
           const detailRowId = `hw-detail-${index}`;
           summaryRow.innerHTML = `
@@ -1248,7 +1250,12 @@
             <td class='mono'>${escapeHtml(hw.source_ip || node.address || "-")}</td>
             <td><div class='summary-stack'><div class='summary-main'>${escapeHtml(hardwareSummary[0] || "-")}</div><div class='summary-sub'>${escapeHtml(hardwareSummary.slice(1).join(" • ") || "No summary")}</div></div></td>
             <td>${escapeHtml(nvmeValue)}</td>
-            <td>${escapeHtml(hw.received_at ? hw.received_at.replace("T", " ").replace("+00:00", " UTC") : "-")}</td>
+            <td>
+              <div class='summary-stack'>
+                <div class='summary-main' style='font-size:1rem; font-weight:700;'>${escapeHtml(hardwareReceivedAt || "-")}</div>
+                <div class='summary-sub'>First callback: ${escapeHtml(firstCallbackAt || "-")}</div>
+              </div>
+            </td>
             <td>${reportLink}</td>
           `;
           hwBodyEl.appendChild(summaryRow);

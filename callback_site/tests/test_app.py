@@ -235,7 +235,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="sot-kpis"', text)
         self.assertIn('id="sot-body"', text)
         self.assertIn("Discovered node", text)
-        self.assertIn("NVMe (GB)", text)
+        self.assertIn("Storage (GB)", text)
         self.assertIn("nvme_capacity_gb", text)
 
     def test_monitor_page_shows_hardware_first_callback_copy(self) -> None:

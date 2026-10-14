@@ -3126,6 +3126,33 @@ def _last_callback_by_host() -> Dict[str, str]:
     return seen
 
 
+def _first_callback_by_host() -> Dict[str, str]:
+    seen: Dict[str, str] = {}
+    if not DATA_FILE.exists():
+        return seen
+
+    try:
+        lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return seen
+
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        ts = str(event.get("received_at", "")).strip()
+        if not ts:
+            continue
+        candidates = set()
+        for raw in (event.get("hostname"), event.get("fqdn")):
+            candidates.update(_node_aliases(str(raw or "")))
+        for host in candidates:
+            if host and host not in seen:
+                seen[host] = ts
+    return seen
+
+
 def _is_placeholder_inventory_address(address: str) -> bool:
     value = str(address or "").strip()
     if not value:
@@ -3138,6 +3165,7 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
     """Return the most recent hardware-check event payload per hostname."""
     seen: Dict[str, Dict[str, Any]] = {}
     seen_ts: Dict[str, datetime] = {}
+    first_seen: Dict[str, str] = _first_callback_by_host()
     for event in _read_events(limit=limit):
         if str(event.get("stage", "")).strip() != "hardware-check":
             continue
@@ -3154,6 +3182,7 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
             hw_block = {}
         payload: Dict[str, Any] = {
             "received_at": str(event.get("received_at", "")).strip(),
+            "first_callback": "",
             "model": str(hw_block.get("model", "")).strip(),
             "ram_mb": hw_block.get("ram_mb"),
             "sd_capacity_gb": hw_block.get("sd_capacity_gb"),
@@ -3167,6 +3196,7 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
         for host in candidates:
             if not host:
                 continue
+            payload["first_callback"] = str(first_seen.get(host, "")).strip()
             current_ts = seen_ts.get(host)
             if current_ts is None or event_ts is None or event_ts > current_ts:
                 seen[host] = payload

@@ -238,6 +238,13 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("NVMe (GB)", text)
         self.assertIn("nvme_capacity_gb", text)
 
+    def test_monitor_page_shows_hardware_first_callback_copy(self) -> None:
+        response = self.client.get("/monitor")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("First callback:", text)
+        self.assertIn("font-size:1rem; font-weight:700;", text)
+
     def test_settings_page_exposes_stale_prune_controls(self) -> None:
         response = self.client.get("/settings")
         self.assertEqual(response.status_code, 200)
@@ -3482,11 +3489,16 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             "fqdn": "node-01.example",
             "raw": {"hardware": {"model": "new", "ram_mb": 2048, "nvme_capacity_gb": 953}},
         }
-        with patch.object(callback_core, "_read_events", return_value=[older, newer]):
+        with patch.object(callback_core, "_read_events", return_value=[older, newer]), patch.object(
+            callback_core,
+            "_first_callback_by_host",
+            return_value={"node-01": "2024-12-31T23:59:58+00:00"},
+        ):
             result = callback_core._latest_hardware_by_host(limit=10)
         self.assertEqual(result["node-01"]["model"], "new")
         self.assertEqual(result["node-01"]["ram_mb"], 2048)
         self.assertEqual(result["node-01"]["nvme_capacity_gb"], 953)
+        self.assertEqual(result["node-01"]["first_callback"], "2024-12-31T23:59:58+00:00")
 
     def test_nodes_telegraf_test_uses_current_profile_inputs(self) -> None:
         summary = self.client.get("/api/nodes/summary")

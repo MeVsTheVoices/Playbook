@@ -50,6 +50,10 @@ class KubernetesPageTests(BaseCallbackSiteTest):
             "namespaces_total": 6,
             "jobs_total": 2,
             "jobs_running": 1,
+            "longhorn_namespace_present": True,
+            "longhorn_pods_total": 3,
+            "longhorn_pods_running": 3,
+            "longhorn_ready": True,
             "job_rows": [{"namespace": "default", "name": "refresh-secrets", "status": "Running", "active": 1, "succeeded": 0, "failed": 0}],
             "last_error": "",
         }
@@ -60,6 +64,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["nodes_total"], 3)
         self.assertEqual(payload["jobs_running"], 1)
+        self.assertTrue(payload["longhorn_ready"])
 
     def test_kubernetes_page_renders_dense_dashboard_sections(self) -> None:
         response = self.client.get("/kubernetes")
@@ -73,6 +78,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         self.assertIn("Active Jobs", text)
         self.assertIn("Snapshot Notes", text)
         self.assertIn("Raw JSON snapshot", text)
+        self.assertIn("Longhorn", text)
 
     def test_kubernetes_page_refreshes_summary_without_cache(self) -> None:
         text = (Path(__file__).resolve().parents[1] / "templates" / "kubernetes.html").read_text(encoding="utf-8")

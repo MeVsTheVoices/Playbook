@@ -920,6 +920,15 @@
         localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
       });
 
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
       function profileById(id) {
         return profiles.find((p) => p.id === id);
       }
@@ -1033,6 +1042,13 @@
           title.textContent = profile.label;
           wrapper.appendChild(title);
 
+          if (profile.id === "longhorn") {
+            const helper = document.createElement("p");
+            helper.className = "note";
+            helper.textContent = "Use a stable mounted path for Longhorn data now; when you move the Pi boot/storage layout to NVMe later, change only the storage path value rather than the workflow.";
+            wrapper.appendChild(helper);
+          }
+
           const values = (saved[profile.id] && typeof saved[profile.id] === "object") ? saved[profile.id] : {};
           for (const spec of specs) {
             const fieldId = String(spec.id || "");
@@ -1056,6 +1072,14 @@
 
             wrapper.appendChild(label);
             wrapper.appendChild(input);
+          }
+
+          if (profile.id === "longhorn") {
+            const tip = document.createElement("p");
+            tip.className = "note";
+            tip.style.marginTop = "0.35rem";
+            tip.textContent = "Recommended first pass: keep the default replica count at 2 on a 2-node storage pair, and point storage_path at the eventual NVMe mount when you are ready.";
+            wrapper.appendChild(tip);
           }
           profileInputs.appendChild(wrapper);
         }

@@ -26,3 +26,12 @@ raspberry_pi5_tailscale_advertise_routes: []
 
 # Force re-running tailscale up even if device is already connected.
 raspberry_pi5_tailscale_force_reconfigure: false
+
+# Longhorn defaults (used when provision_profile=longhorn).
+# Keep storage_path configurable so future SD -> NVMe boot/storage moves only
+# require changing this path, not the workflow.
+raspberry_pi5_longhorn_storage_path: /var/lib/longhorn
+raspberry_pi5_longhorn_default_replica_count: 2
+raspberry_pi5_longhorn_set_default_storage_class: true
+raspberry_pi5_longhorn_install_chart: true
+raspberry_pi5_longhorn_chart_version: ""

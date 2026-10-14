@@ -169,3 +169,130 @@
   when:
     - raspberry_pi5_tailscale_manage | bool
     - raspberry_pi5_tailscale_force_reconfigure | bool or raspberry_pi5_tailscale_needs_up | default(true)
+
+- name: Resolve Longhorn inputs from provisioning payload
+  ansible.builtin.set_fact:
+    raspberry_pi5_longhorn_storage_path_effective: >-
+      {{
+        (provision_inputs.storage_path | default(raspberry_pi5_longhorn_storage_path) | string | trim)
+        if (provision_inputs | default({})) is mapping
+        else raspberry_pi5_longhorn_storage_path
+      }}
+    raspberry_pi5_longhorn_default_replica_count_effective: >-
+      {{
+        ((provision_inputs.default_replica_count | default(raspberry_pi5_longhorn_default_replica_count) | string | trim) | int)
+        if (provision_inputs | default({})) is mapping
+        else (raspberry_pi5_longhorn_default_replica_count | int)
+      }}
+    raspberry_pi5_longhorn_set_default_storage_class_effective: >-
+      {{
+        (provision_inputs.set_default_storage_class | default(raspberry_pi5_longhorn_set_default_storage_class) | string | lower)
+        in ['1', 'true', 'yes', 'on']
+        if (provision_inputs | default({})) is mapping
+        else (raspberry_pi5_longhorn_set_default_storage_class | bool)
+      }}
+    raspberry_pi5_longhorn_install_chart_effective: >-
+      {{
+        (provision_inputs.install_chart | default(raspberry_pi5_longhorn_install_chart) | string | lower)
+        in ['1', 'true', 'yes', 'on']
+        if (provision_inputs | default({})) is mapping
+        else (raspberry_pi5_longhorn_install_chart | bool)
+      }}
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+- name: Ensure Longhorn prerequisite packages are installed
+  ansible.builtin.apt:
+    name:
+      - open-iscsi
+      - nfs-common
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when:
+    - rack_manage_with_ansible | bool
+    - raspberry_pi5_manage_system | bool
+    - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+- name: Ensure iscsid service is enabled and running
+  ansible.builtin.service:
+    name: iscsid
+    enabled: true
+    state: started
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+- name: Ensure open-iscsi service is enabled and running
+  ansible.builtin.service:
+    name: open-iscsi
+    enabled: true
+    state: started
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+- name: Ensure Longhorn storage path exists
+  ansible.builtin.file:
+    path: "{{ raspberry_pi5_longhorn_storage_path_effective }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+- name: Check whether this node is a K3s server
+  ansible.builtin.command: systemctl is-active k3s
+  register: raspberry_pi5_k3s_server_active
+  changed_when: false
+  failed_when: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+- name: Install or update Longhorn via K3s HelmChart manifest
+  ansible.builtin.copy:
+    dest: /var/lib/rancher/k3s/server/manifests/longhorn-helmchart.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: longhorn
+        namespace: kube-system
+      spec:
+        chart: longhorn
+        repo: https://charts.longhorn.io
+        targetNamespace: longhorn-system
+        createNamespace: true
+        valuesContent: |-
+          defaultSettings:
+            defaultDataPath: {{ raspberry_pi5_longhorn_storage_path_effective | quote }}
+            defaultReplicaCount: {{ raspberry_pi5_longhorn_default_replica_count_effective | int }}
+          persistence:
+            defaultClassReplicaCount: {{ raspberry_pi5_longhorn_default_replica_count_effective | int }}
+            defaultClass: {{ raspberry_pi5_longhorn_set_default_storage_class_effective | ternary('true', 'false') }}
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+    - raspberry_pi5_longhorn_install_chart_effective | bool
+    - raspberry_pi5_k3s_server_active.rc == 0
+  tags:
+    - longhorn

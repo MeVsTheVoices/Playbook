@@ -10,6 +10,7 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 - Catalog management with cache checks and bulk pulls.
 - Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
 - OpenWrt inspection helpers, SSH key management, and Tailscale ACL planning.
+- Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
 
 ## Runtime Contract
 
@@ -50,6 +51,13 @@ Open:
 - `/nodes` — node inventory, saved inputs, and provisioning check/apply.
 - `/openwrt` — router inspection helper for Ansible access.
 - `/tailscale-acl` — ACL planning and generation.
+
+## Longhorn Notes
+
+- Longhorn is intentionally wired as an optional Pi 5 profile for now.
+- The first pass assumes the nodes still boot from SD card.
+- The storage path is configurable so you can later move Longhorn data to an NVMe-backed mount without changing the operator flow.
+- The K3s dashboard reports whether the `longhorn-system` namespace and pods are present and healthy.
 
 ## Architecture
 

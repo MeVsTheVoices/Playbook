@@ -249,6 +249,39 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         ],
     },
     {
+        "id": "longhorn",
+        "label": "Longhorn",
+        "description": "Optional Longhorn install and node prerequisites for Pi 5 Kubernetes nodes.",
+        "tags": ["longhorn"],
+        "groups": ["rpi5_active"],
+        "input_specs": [
+            {
+                "id": "storage_path",
+                "label": "Longhorn Storage Path",
+                "placeholder": "/var/lib/longhorn",
+                "required": False,
+            },
+            {
+                "id": "default_replica_count",
+                "label": "Default Replica Count",
+                "placeholder": "2",
+                "required": False,
+            },
+            {
+                "id": "set_default_storage_class",
+                "label": "Set Longhorn As Default StorageClass",
+                "placeholder": "true or false",
+                "required": False,
+            },
+            {
+                "id": "install_chart",
+                "label": "Install Longhorn Chart On K3s Server Node",
+                "placeholder": "true or false",
+                "required": False,
+            },
+        ],
+    },
+    {
         "id": "telegraf",
         "label": "Telegraf",
         "description": "Telegraf provisioning with InfluxDB bucket credentials.",

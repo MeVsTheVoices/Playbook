@@ -122,6 +122,15 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         text = response.get_data(as_text=True)
         self.assertIn("Most users only need the server endpoint here; it tells K3s where the control-plane API lives.", text)
 
+    def test_home_page_merges_pi_specific_templates_into_current_options(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('const isPiOnlyProfile = Boolean(profile.pi_only);', text)
+        self.assertIn('const currentOptions = gatherCloudInitOptions();', text)
+        self.assertIn('applyCloudInitOptions(isPiOnlyProfile ? { ...currentOptions, ...profileOptions } : profileOptions);', text)
+        self.assertIn("Loaded Pi-specific template '${name}' and merged it into the current optional settings.", text)
+
     def test_home_page_embeds_cached_catalog_metadata(self) -> None:
         entry = next(item for item in callback_app.IMAGE_CATALOG if str(item.get("image_url", "")).strip())
         cache_path = str(callback_app.IMAGE_CACHE_DIR / callback_app._safe_catalog_filename(str(entry.get("image_url", "")), str(entry.get("id", ""))))
@@ -192,6 +201,13 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="profile-select"', text)
         self.assertIn("Hold Ctrl/Cmd to select multiple profiles", text)
 
+    def test_node_ops_page_exposes_longhorn_storage_guidance(self) -> None:
+        response = self.client.get("/nodes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Use a stable mounted path for Longhorn data now", text)
+        self.assertIn("default replica count at 2", text)
+
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
         self.assertEqual(response.status_code, 200)
@@ -219,6 +235,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="sot-kpis"', text)
         self.assertIn('id="sot-body"', text)
         self.assertIn("Discovered node", text)
+        self.assertIn("NVMe (GB)", text)
+        self.assertIn("nvme_capacity_gb", text)
 
     def test_settings_page_exposes_stale_prune_controls(self) -> None:
         response = self.client.get("/settings")
@@ -3057,6 +3075,24 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertEqual(latest_check.get("status"), "planned")
         self.assertEqual(latest_check.get("mode"), "check")
 
+    def test_nodes_profiles_exposes_longhorn_profile_inputs(self) -> None:
+        response = self.client.get("/api/nodes/profiles")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload.get("ok"))
+
+        profiles = payload.get("profiles", [])
+        match = next((p for p in profiles if str(p.get("id", "")) == "longhorn"), None)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.get("groups"), ["rpi5_active"])
+
+        specs = match.get("input_specs", []) if isinstance(match, dict) else []
+        spec_ids = {str(spec.get("id", "")) for spec in specs if isinstance(spec, dict)}
+        self.assertIn("storage_path", spec_ids)
+        self.assertIn("default_replica_count", spec_ids)
+        self.assertIn("set_default_storage_class", spec_ids)
+        self.assertIn("install_chart", spec_ids)
+
     def test_node_provision_check_mode_uses_background_job_when_ansible_enabled(self) -> None:
         summary = self.client.get("/api/nodes/summary")
         self.assertEqual(summary.status_code, 200)
@@ -3437,19 +3473,20 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             "received_at": "2025-01-01T00:00:00+00:00",
             "hostname": "node-01",
             "fqdn": "node-01.example",
-            "raw": {"hardware": {"model": "old", "ram_mb": 512}},
+            "raw": {"hardware": {"model": "old", "ram_mb": 512, "nvme_capacity_gb": 0}},
         }
         newer = {
             "stage": "hardware-check",
             "received_at": "2025-01-01T00:05:00+00:00",
             "hostname": "node-01",
             "fqdn": "node-01.example",
-            "raw": {"hardware": {"model": "new", "ram_mb": 2048}},
+            "raw": {"hardware": {"model": "new", "ram_mb": 2048, "nvme_capacity_gb": 953}},
         }
         with patch.object(callback_core, "_read_events", return_value=[older, newer]):
             result = callback_core._latest_hardware_by_host(limit=10)
         self.assertEqual(result["node-01"]["model"], "new")
         self.assertEqual(result["node-01"]["ram_mb"], 2048)
+        self.assertEqual(result["node-01"]["nvme_capacity_gb"], 953)
 
     def test_nodes_telegraf_test_uses_current_profile_inputs(self) -> None:
         summary = self.client.get("/api/nodes/summary")

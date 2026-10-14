@@ -2717,17 +2717,22 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
 
         device_info = fact_payload.get("ansible_devices") if isinstance(fact_payload.get("ansible_devices"), dict) else {}
         sd_capacity_gb = 0
+        nvme_capacity_gb = 0
         for device_name, metadata in device_info.items():
             if not isinstance(metadata, dict):
                 continue
-            if str(device_name).startswith("mmcblk"):
-                size_txt = str(metadata.get("size") or "").strip()
-                value = re.search(r"(\d+(?:\.\d+)?)\s*(?:G|GB)", size_txt, flags=re.IGNORECASE)
-                if value:
-                    try:
-                        sd_capacity_gb = max(sd_capacity_gb, int(float(value.group(1))))
-                    except ValueError:
-                        pass
+            size_txt = str(metadata.get("size") or "").strip()
+            value = re.search(r"(\d+(?:\.\d+)?)\s*(?:G|GB)", size_txt, flags=re.IGNORECASE)
+            size_gb = 0
+            if value:
+                try:
+                    size_gb = int(float(value.group(1)))
+                except ValueError:
+                    size_gb = 0
+            if str(device_name).startswith("mmcblk") and size_gb:
+                sd_capacity_gb = max(sd_capacity_gb, size_gb)
+            if str(device_name).startswith("nvme") and size_gb:
+                nvme_capacity_gb = max(nvme_capacity_gb, size_gb)
         nvme_present = any(str(name).startswith("nvme") for name in device_info)
         payload = {
             "instance_id": f"{node_name}-hw",
@@ -2741,6 +2746,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
                 "ram_mb": ram_mb,
                 "sd_capacity_gb": sd_capacity_gb,
                 "nvme": nvme_present,
+                "nvme_capacity_gb": nvme_capacity_gb,
                 "hat": False,
                 "poe": False,
             },
@@ -3152,6 +3158,7 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
             "ram_mb": hw_block.get("ram_mb"),
             "sd_capacity_gb": hw_block.get("sd_capacity_gb"),
             "nvme": hw_block.get("nvme"),
+            "nvme_capacity_gb": hw_block.get("nvme_capacity_gb"),
             "hat": hw_block.get("hat"),
             "poe": hw_block.get("poe"),
             "node_report_id": str(event.get("node_report_id", "")).strip(),
@@ -4015,6 +4022,10 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
         "namespaces_total": 0,
         "jobs_total": 0,
         "jobs_running": 0,
+        "longhorn_namespace_present": False,
+        "longhorn_pods_total": 0,
+        "longhorn_pods_running": 0,
+        "longhorn_ready": False,
         "node_rows": [],
         "pod_rows": [],
         "namespace_rows": [],
@@ -4038,6 +4049,18 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
     if not isinstance(node_items, list):
         node_items = []
     summary["nodes_total"] = len(node_items)
+
+    longhorn_namespace_present = False
+    if isinstance(ns_doc, dict):
+        ns_items_for_longhorn = ns_doc.get("items", []) if isinstance(ns_doc.get("items"), list) else []
+        for namespace in ns_items_for_longhorn:
+            if not isinstance(namespace, dict):
+                continue
+            metadata = namespace.get("metadata", {}) if isinstance(namespace.get("metadata"), dict) else {}
+            if str(metadata.get("name", "")).strip() == "longhorn-system":
+                longhorn_namespace_present = True
+                break
+    summary["longhorn_namespace_present"] = longhorn_namespace_present
 
     nodes_ready = 0
     control_plane_nodes = 0
@@ -4109,6 +4132,8 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
         summary["pods_total"] = len(pod_items)
         pod_rows: List[Dict[str, Any]] = []
         pods_running = 0
+        longhorn_pods_total = 0
+        longhorn_pods_running = 0
         for pod in pod_items:
             if not isinstance(pod, dict):
                 continue
@@ -4117,6 +4142,10 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
             phase = str(status.get("phase", ""))
             if phase == "Running":
                 pods_running += 1
+            if str(metadata.get("namespace", "")).strip() == "longhorn-system":
+                longhorn_pods_total += 1
+                if phase == "Running":
+                    longhorn_pods_running += 1
             container_statuses = status.get("containerStatuses", []) if isinstance(status.get("containerStatuses"), list) else []
             ready_count = 0
             restart_count = 0
@@ -4141,6 +4170,11 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
                 }
             )
         summary["pods_running"] = pods_running
+        summary["longhorn_pods_total"] = longhorn_pods_total
+        summary["longhorn_pods_running"] = longhorn_pods_running
+        summary["longhorn_ready"] = bool(
+            longhorn_namespace_present and longhorn_pods_total > 0 and longhorn_pods_running == longhorn_pods_total
+        )
         summary["pod_rows"] = pod_rows[:60]
 
     if isinstance(ns_doc, dict):

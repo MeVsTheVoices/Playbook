@@ -116,6 +116,7 @@ All routes call core helpers for state and business logic.
   - /api/nodes/profiles
   - /api/nodes/node-inputs
   - /api/nodes/provision and /api/nodes/provision/jobs/<job_id>
+- Optional node profiles can add storage-oriented behavior such as Longhorn. The first-pass implementation assumes Pi 5 nodes still boot from SD card, but the Longhorn storage path remains configurable so future NVMe-backed data paths can be swapped in without changing the operator flow.
 
 ### callback_site/templates/monitor.html
 
@@ -124,6 +125,13 @@ All routes call core helpers for state and business logic.
   - /api/state/source-of-truth
   - /api/monitor/nodes/<node>/ping
   - /api/nodes/provision and job status endpoint for check-closer actions
+
+### callback_site/templates/kubernetes.html
+
+- Kubernetes runtime and cluster snapshot page
+- Pulls from:
+  - /api/kubernetes/summary
+- The summary now includes a Longhorn readiness signal based on the `longhorn-system` namespace and pods so operators can confirm whether storage automation is present and healthy.
 
 ## 5) Data and State Dependency Map
 

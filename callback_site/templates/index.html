@@ -3332,7 +3332,13 @@ server: https://local-machine-ip:6443
       }
 
       function loadSelectedSdOptionProfile() {
-        const name = String(sdOptionsProfileSelectEl.value || "").trim();
+        let name = String(sdOptionsProfileSelectEl.value || "").trim();
+        if (!name && sdOptionProfileOrder.length === 1) {
+          name = sdOptionProfileOrder[0];
+          sdOptionsProfileSelectEl.value = name;
+          sdOptionsProfileNameEl.value = name;
+          sdOptionsProfileStatusEl.textContent = `Auto-selected the only available template '${name}'.`;
+        }
         if (!name) {
           sdOptionsProfileStatusEl.textContent = "Select a template to load.";
           return;

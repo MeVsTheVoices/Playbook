@@ -1442,6 +1442,15 @@ server: https://local-machine-ip:6443
                   <div class="grid-span-full">
                     <label for="opt_motd_banner">MOTD Banner (optional)</label>
                     <textarea id="opt_motd_banner" data-option-key="motd_banner" placeholder="Welcome to rack node ${HOSTNAME}"></textarea>
+                    <details class="motd-vars-pulldown" style="margin-top: 0.35rem;">
+                      <summary class="segment-hint" style="cursor: pointer;">Embeddable variables</summary>
+                      <ul class="segment-hint" style="margin: 0.4rem 0 0; padding-left: 1.1rem;">
+                        <li><code>${HOSTNAME}</code> — node hostname</li>
+                        <li><code>${PROFILE}</code> — image profile (pi5 / pibplus)</li>
+                        <li><code>${DISTRIBUTION}</code> — standard or k3s</li>
+                        <li><code>${CALLBACK_URL}</code> — configured callback endpoint</li>
+                      </ul>
+                    </details>
                   </div>
                 </div>
               </details>

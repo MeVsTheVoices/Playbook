@@ -161,6 +161,19 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("Auto-selected the only available template", text)
         self.assertIn("sdOptionProfileOrder.length === 1", text)
 
+    def test_home_page_motd_banner_has_collapsed_variables_pulldown(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="opt_motd_banner"', text)
+        self.assertIn("Embeddable variables", text)
+        self.assertIn('<details class="motd-vars-pulldown"', text)
+        self.assertNotIn('<details class="motd-vars-pulldown" open', text)
+        self.assertIn("${HOSTNAME}", text)
+        self.assertIn("${PROFILE}", text)
+        self.assertIn("${DISTRIBUTION}", text)
+        self.assertIn("${CALLBACK_URL}", text)
+
     def test_home_page_contains_flash_mascot_hooks(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

@@ -177,6 +177,13 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn(str(entry.get("id", "")), text)
         self.assertIn(cache_path, text)
 
+    def test_home_page_auto_selects_single_cloud_init_profile(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("Auto-selected the only available template", text)
+        self.assertIn("sdOptionProfileOrder.length === 1", text)
+
     def test_home_page_contains_flash_mascot_hooks(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

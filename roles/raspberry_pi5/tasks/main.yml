@@ -8,6 +8,8 @@
     update_cache: true
     cache_valid_time: 3600
   when: raspberry_pi5_manage_system | bool
+  tags:
+    - baseline
 
 - name: Install baseline packages
   ansible.builtin.apt:
@@ -16,11 +18,43 @@
   when:
     - raspberry_pi5_manage_system | bool
     - common_packages | length > 0
+  tags:
+    - baseline
 
 - name: Optionally upgrade packages
   ansible.builtin.apt:
     upgrade: dist
   when: raspberry_pi5_upgrade_packages | bool
+  tags:
+    - baseline
+
+- name: Resolve Tailscale provisioning inputs
+  ansible.builtin.set_fact:
+    raspberry_pi5_tailscale_auth_key_provisioned: >-
+      {{
+        (provision_inputs.auth_key | default('') | string | trim)
+        if (provision_inputs | default({})) is mapping
+        else ''
+      }}
+    raspberry_pi5_tailscale_tailnet_effective: >-
+      {{
+        (provision_inputs.tailnet | default('') | string | trim)
+        if (provision_inputs | default({})) is mapping
+           and (provision_inputs.tailnet | default('') | string | trim) | length > 0
+        else raspberry_pi5_tailscale_tailnet
+      }}
+    raspberry_pi5_tailscale_tags_effective: >-
+      {{
+        ((provision_inputs.advertise_tags | default('') | string).split(',') | map('trim') | select('truthy') | list)
+        if (provision_inputs | default({})) is mapping
+           and (provision_inputs.advertise_tags | default('') | string | trim) | length > 0
+        else raspberry_pi5_tailscale_tags
+      }}
+  when:
+    - rack_manage_with_ansible | bool
+    - raspberry_pi5_tailscale_manage | bool
+  tags:
+    - tailscale
 
 - name: Download Tailscale installation script
   ansible.builtin.get_url:
@@ -28,26 +62,45 @@
     dest: /tmp/install_tailscale.sh
     mode: '0755'
   when: raspberry_pi5_tailscale_manage | bool
+  tags:
+    - tailscale
 
 - name: Run Tailscale installer when binary is missing
   ansible.builtin.command: /tmp/install_tailscale.sh
   args:
     creates: /usr/sbin/tailscaled
   when: raspberry_pi5_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Check for tailscaled binary
+  ansible.builtin.stat:
+    path: /usr/sbin/tailscaled
+  register: raspberry_pi5_tailscaled_binary
+  when: raspberry_pi5_tailscale_manage | bool
+  tags:
+    - tailscale
 
 - name: Ensure tailscaled service is enabled and running
   ansible.builtin.service:
     name: tailscaled
     enabled: true
     state: started
-  when: raspberry_pi5_tailscale_manage | bool
+  when:
+    - raspberry_pi5_tailscale_manage | bool
+    - (raspberry_pi5_tailscaled_binary.stat.exists | bool) or (not ansible_check_mode)
+  tags:
+    - tailscale
 
 - name: Read tailscale status
   ansible.builtin.command: tailscale status --json
   register: raspberry_pi5_tailscale_status
   failed_when: false
   changed_when: false
+  check_mode: false
   when: raspberry_pi5_tailscale_manage | bool
+  tags:
+    - tailscale
 
 - name: Determine whether tailscale up is needed
   ansible.builtin.set_fact:
@@ -59,6 +112,8 @@
         ) != 'Running'
       }}
   when: raspberry_pi5_tailscale_manage | bool
+  tags:
+    - tailscale
 
 - name: Request OAuth access token for Tailscale API
   ansible.builtin.uri:
@@ -75,11 +130,15 @@
   when:
     - raspberry_pi5_tailscale_manage | bool
     - raspberry_pi5_tailscale_oauth_enabled | bool
+    - raspberry_pi5_tailscale_auth_key_provisioned | default('') | length == 0
     - raspberry_pi5_tailscale_auth_key | length == 0
+    - not ansible_check_mode | bool
+  tags:
+    - tailscale
 
 - name: Create short-lived auth key from OAuth token
   ansible.builtin.uri:
-    url: "https://api.tailscale.com/api/v2/tailnet/{{ raspberry_pi5_tailscale_tailnet }}/keys"
+    url: "https://api.tailscale.com/api/v2/tailnet/{{ raspberry_pi5_tailscale_tailnet_effective }}/keys"
     method: POST
     headers:
       Authorization: "Bearer {{ raspberry_pi5_tailscale_oauth_token.json.access_token }}"
@@ -91,7 +150,7 @@
             reusable: false
             ephemeral: false
             preauthorized: true
-            tags: "{{ raspberry_pi5_tailscale_tags }}"
+            tags: "{{ raspberry_pi5_tailscale_tags_effective }}"
       expirySeconds: "{{ raspberry_pi5_tailscale_auth_key_ttl_seconds }}"
       description: "ansible-{{ inventory_hostname }}"
     status_code: 200
@@ -100,28 +159,40 @@
   when:
     - raspberry_pi5_tailscale_manage | bool
     - raspberry_pi5_tailscale_oauth_enabled | bool
+    - raspberry_pi5_tailscale_auth_key_provisioned | default('') | length == 0
     - raspberry_pi5_tailscale_auth_key | length == 0
+    - not ansible_check_mode | bool
+  tags:
+    - tailscale
 
 - name: Resolve effective auth key
   ansible.builtin.set_fact:
     raspberry_pi5_tailscale_auth_key_effective: >-
       {{
-        raspberry_pi5_tailscale_auth_key
-        if (raspberry_pi5_tailscale_auth_key | length > 0)
-        else (raspberry_pi5_tailscale_key_response.json.key)
+        raspberry_pi5_tailscale_auth_key_provisioned
+        if (raspberry_pi5_tailscale_auth_key_provisioned | default('') | length > 0)
+        else (
+          raspberry_pi5_tailscale_auth_key
+          if (raspberry_pi5_tailscale_auth_key | length > 0)
+          else (raspberry_pi5_tailscale_key_response.json.key | default(''))
+        )
       }}
   no_log: true
   when: raspberry_pi5_tailscale_manage | bool
+  tags:
+    - tailscale
 
 - name: Ensure auth key exists for tailscale up
   ansible.builtin.fail:
     msg: >-
-      Provide raspberry_pi5_tailscale_auth_key or enable OAuth with
+      Provide raspberry_pi5_tailscale_auth_key (or the Tailscale profile auth_key input) or enable OAuth with
       raspberry_pi5_tailscale_oauth_client_id, raspberry_pi5_tailscale_oauth_client_secret,
       and raspberry_pi5_tailscale_tailnet.
   when:
     - raspberry_pi5_tailscale_manage | bool
     - raspberry_pi5_tailscale_auth_key_effective | default('') | length == 0
+  tags:
+    - tailscale
 
 - name: Enable IPv4 forwarding for routing features
   ansible.posix.sysctl:
@@ -134,6 +205,8 @@
     - raspberry_pi5_tailscale_manage | bool
     - raspberry_pi5_tailscale_advertise_exit_node | bool
       or (raspberry_pi5_tailscale_advertise_routes | length > 0)
+  tags:
+    - tailscale
 
 - name: Enable IPv6 forwarding for routing features
   ansible.posix.sysctl:
@@ -146,6 +219,8 @@
     - raspberry_pi5_tailscale_manage | bool
     - raspberry_pi5_tailscale_advertise_exit_node | bool
       or (raspberry_pi5_tailscale_advertise_routes | length > 0)
+  tags:
+    - tailscale
 
 - name: Bring node online with desired tailscale flags
   ansible.builtin.command: >-
@@ -157,8 +232,8 @@
     {{ '--advertise-exit-node' if raspberry_pi5_tailscale_advertise_exit_node else '' }}
     {{ '--advertise-routes=' + (raspberry_pi5_tailscale_advertise_routes | join(','))
        if (raspberry_pi5_tailscale_advertise_routes | length > 0) else '' }}
-    {{ '--advertise-tags=' + (raspberry_pi5_tailscale_tags | join(','))
-       if (raspberry_pi5_tailscale_tags | length > 0) else '' }}
+    {{ '--advertise-tags=' + (raspberry_pi5_tailscale_tags_effective | join(','))
+       if (raspberry_pi5_tailscale_tags_effective | length > 0) else '' }}
   register: raspberry_pi5_tailscale_up
   no_log: true
   changed_when: >-
@@ -169,6 +244,8 @@
   when:
     - raspberry_pi5_tailscale_manage | bool
     - raspberry_pi5_tailscale_force_reconfigure | bool or raspberry_pi5_tailscale_needs_up | default(true)
+  tags:
+    - tailscale
 
 - name: Resolve Longhorn inputs from provisioning payload
   ansible.builtin.set_fact:

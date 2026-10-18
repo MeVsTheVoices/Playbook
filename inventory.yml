@@ -75,6 +75,21 @@ all:
                   rack_state: planned
                   rack_slot: 7
                   rack_manage_with_ansible: false
+        rpi_3bplus:
+          vars:
+            rack_node_family: rpi-3bplus
+            rack_node_storage_profile: sdcard
+          children:
+            rpi_3bplus_active:
+              hosts:
+                rpi-3bplus-01:
+                  ansible_host: CHANGE_ME_RPI_3BPLUS_01
+                  rack_state: up
+                  rack_slot: 8
+                rpi-3bplus-02:
+                  ansible_host: CHANGE_ME_RPI_3BPLUS_02
+                  rack_state: up
+                  rack_slot: 9
     rack19:
       vars:
         rack_form_factor: "19-inch"

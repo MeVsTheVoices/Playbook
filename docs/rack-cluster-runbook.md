@@ -5,6 +5,7 @@
 - Network layer: PoE switch under router.
 - Raspberry Pi 5: 2 currently online, 4 target total. Pi 5 nodes include NVMe bottoms and PoE hats.
 - Raspberry Pi B+: 1 currently online, 3 target total. Pi B+ nodes have no NVMe storage.
+- Raspberry Pi 3B+: 2 slots reserved for k3s control-plane testing. Pi 3B+ nodes run 64-bit images and SD-card storage only.
 
 ## Power-Restore / IP-Change Note
 - Every device provisioned by this workflow now tries to call home again on every boot or power restoration by enabling a persistent local systemd callback.
@@ -12,7 +13,7 @@
 - In other words: DHCP can change the TCP/IP endpoint, but the identity update still needs an authenticated reauth step to avoid stale or wrong lease data.
 
 ## Repository Model
-- Active hosts are in `rpi5_active` and `rpi_bplus_active` and are targeted by `site.yml`.
+- Active hosts are in `rpi5_active`, `rpi_bplus_active`, and `rpi_3bplus_active` and are targeted by `site.yml`.
 - Planned hosts are tracked in `rpi5_planned` and `rpi_bplus_planned` but not targeted by default.
 - Router and switch are represented in inventory as infrastructure placeholders and marked unmanaged.
 
@@ -36,6 +37,8 @@
    - `sudo scripts/prepare_sd_cloud_init.sh --profile pi5 --hostname rpi5-03 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback`
 4. For Pi B+, provide a cloud-init compatible image explicitly:
    - `sudo scripts/prepare_sd_cloud_init.sh --profile pibplus --hostname rpi-bplus-02 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback --image-url <your-cloud-init-image-url>`
+5. For Pi 3B+, the default Ubuntu 24.04 ARM64 image applies automatically (same as Pi 5), or pass `--image-url` explicitly:
+   - `sudo scripts/prepare_sd_cloud_init.sh --profile pi3bplus --hostname rpi-3bplus-01 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback`
 5. Insert SD card, boot node, then watch callback events:
    - Open `http://<callback-host>:8088/`
 6. If the callback host is reached through the router WAN or another NAT hop, the dashboard will show that upstream address in `source_ip`.

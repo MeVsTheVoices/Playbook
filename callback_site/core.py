@@ -1051,7 +1051,7 @@ def _prune_stale_nodes(max_age_hours: int = 168, dry_run: bool = False) -> Dict[
 
 def _backfill_event_profile(hostname: str, instance_id: str, fqdn: str, profile: str) -> int:
     profile_value = str(profile or "").strip().lower()
-    if profile_value not in {"pi5", "pibplus"}:
+    if profile_value not in {"pi5", "pibplus", "pi3bplus"}:
         return 0
 
     _ensure_data_file()
@@ -1174,7 +1174,7 @@ def _backfill_event_fields(hostname: str, instance_id: str, fqdn: str, event_fie
                 changed = True
 
         current_profile = str(event.get("profile", "")).strip().lower()
-        if incoming["profile"] in {"pi5", "pibplus"} and current_profile in {"", "unknown"}:
+        if incoming["profile"] in {"pi5", "pibplus", "pi3bplus"} and current_profile in {"", "unknown"}:
             event["profile"] = incoming["profile"]
             changed = True
 
@@ -1886,6 +1886,8 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
             group = "rpi5_active"
         elif event_profile == "pibplus":
             group = "rpi_bplus_active"
+        elif event_profile == "pi3bplus":
+            group = "rpi_3bplus_active"
         else:
             group = "discovered"
 
@@ -2172,6 +2174,8 @@ def _trigger_initial_callback_closer(event: Dict[str, Any]) -> None:
         profile_group = "rpi5_active"
     elif profile == "pibplus":
         profile_group = "rpi_bplus_active"
+    elif profile == "pi3bplus":
+        profile_group = "rpi_3bplus_active"
 
     if not profile_group:
         return
@@ -2640,7 +2644,13 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
     temp_inventory.flush()
     temp_inventory.close()
 
-    profile_value = "pibplus" if "bplus" in str(node_group or "").lower() else "pi5"
+    group_l = str(node_group or "").lower()
+    if "3bplus" in group_l or "3b+" in group_l:
+        profile_value = "pi3bplus"
+    elif "bplus" in group_l:
+        profile_value = "pibplus"
+    else:
+        profile_value = "pi5"
     callback_url = _default_callback_url()
     cmd = [
         ansible_cmd or "ansible",
@@ -3001,7 +3011,7 @@ def _inventory_nodes() -> List[Dict[str, Any]]:
         return _inventory_nodes_from_yaml_fallback()
 
     hostvars = inv.get("_meta", {}).get("hostvars", {})
-    groups = ["rpi5_active", "rpi_bplus_active"]
+    groups = ["rpi5_active", "rpi_bplus_active", "rpi_3bplus_active"]
     nodes: List[Dict[str, Any]] = []
     for group in groups:
         for host in inv.get(group, {}).get("hosts", []):
@@ -3025,7 +3035,7 @@ def _inventory_nodes_from_yaml_fallback() -> List[Dict[str, Any]]:
 
     text = INVENTORY_FILE.read_text(encoding="utf-8")
     lines = text.splitlines()
-    target_groups = {"rpi5_active", "rpi_bplus_active"}
+    target_groups = {"rpi5_active", "rpi_bplus_active", "rpi_3bplus_active"}
 
     nodes: List[Dict[str, Any]] = []
     current_group = ""
@@ -3317,6 +3327,8 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
             group = "rpi5_active"
         elif profile == "pibplus":
             group = "rpi_bplus_active"
+        elif profile == "pi3bplus":
+            group = "rpi_3bplus_active"
         else:
             group = "callback"
         inventory_by_name[node_name] = {

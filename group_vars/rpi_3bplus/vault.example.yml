@@ -1,0 +1,4 @@
+---
+# Copy to vault.yml and encrypt with ansible-vault before committing.
+vault_rpi_3bplus_tailscale_oauth_client_id: "CHANGE_ME"
+vault_rpi_3bplus_tailscale_oauth_client_secret: "CHANGE_ME"

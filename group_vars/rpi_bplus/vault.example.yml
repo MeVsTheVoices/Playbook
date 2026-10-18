@@ -1,4 +1,0 @@
----
-# Copy this file to a vault-encrypted vars file before putting real values in place.
-vault_rpi_bplus_tailscale_oauth_client_id: "CHANGE_ME"
-vault_rpi_bplus_tailscale_oauth_client_secret: "CHANGE_ME"

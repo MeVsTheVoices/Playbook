@@ -53,12 +53,11 @@ function saveAclDraft() {
   const tailnetEl = document.getElementById("tailnet");
   const adminEl = document.getElementById("admin_group");
   const rpi5El = document.getElementById("rpi5_tag");
-  const bplusEl = document.getElementById("rpi_bplus_tag");
   const threeBplusEl = document.getElementById("rpi_3bplus_tag");
   const homelabEl = document.getElementById("homelab_tag");
   const subnetEl = document.getElementById("pi5_subnets");
 
-  if (!rackNameEl || !tailnetEl || !adminEl || !rpi5El || !bplusEl || !homelabEl || !subnetEl) {
+  if (!rackNameEl || !tailnetEl || !adminEl || !rpi5El || !homelabEl || !subnetEl) {
     return;
   }
 
@@ -67,7 +66,6 @@ function saveAclDraft() {
     tailnet: tailnetEl.value,
     admin_group: adminEl.value,
     rpi5_tag: rpi5El.value,
-    rpi_bplus_tag: bplusEl.value,
     rpi_3bplus_tag: threeBplusEl ? threeBplusEl.value : "",
     homelab_tag: homelabEl.value,
     pi5_subnets: subnetEl.value,
@@ -163,7 +161,6 @@ function applyAclDraft(draft) {
     ["tailnet", document.getElementById("tailnet")],
     ["admin_group", document.getElementById("admin_group")],
     ["rpi5_tag", document.getElementById("rpi5_tag")],
-    ["rpi_bplus_tag", document.getElementById("rpi_bplus_tag")],
     ["rpi_3bplus_tag", document.getElementById("rpi_3bplus_tag")],
     ["homelab_tag", document.getElementById("homelab_tag")],
     ["pi5_subnets", document.getElementById("pi5_subnets")],
@@ -200,12 +197,11 @@ function generatePolicy() {
   const tailnetEl = document.getElementById("tailnet");
   const adminEl = document.getElementById("admin_group");
   const rpi5El = document.getElementById("rpi5_tag");
-  const bplusEl = document.getElementById("rpi_bplus_tag");
   const threeBplusEl = document.getElementById("rpi_3bplus_tag");
   const homelabEl = document.getElementById("homelab_tag");
   const subnetEl = document.getElementById("pi5_subnets");
 
-  if (!out || !rackNameEl || !tailnetEl || !adminEl || !rpi5El || !bplusEl || !homelabEl || !subnetEl) {
+  if (!out || !rackNameEl || !tailnetEl || !adminEl || !rpi5El || !homelabEl || !subnetEl) {
     return;
   }
 
@@ -218,16 +214,14 @@ function generatePolicy() {
 
   const admin = adminEl.value.trim();
   const rpi5Tag = rpi5El.value.trim();
-  const bplusTag = bplusEl.value.trim();
   const threeBplusTag = threeBplusEl ? threeBplusEl.value.trim() : "";
   const homelabTag = homelabEl.value.trim();
   const subnets = parseSubnets(subnetEl.value);
-  const piNodeTags = [rpi5Tag, bplusTag, threeBplusTag].filter(Boolean);
+  const piNodeTags = [rpi5Tag, threeBplusTag].filter(Boolean);
 
   const policy = {
     tagOwners: {
       [rpi5Tag]: [admin],
-      [bplusTag]: [admin],
       ...(threeBplusTag ? { [threeBplusTag]: [admin] } : {}),
       [homelabTag]: [admin],
     },

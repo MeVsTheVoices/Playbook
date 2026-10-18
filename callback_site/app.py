@@ -381,6 +381,8 @@ def _infer_profile_from_text(*values: str) -> str:
             continue
         if "pibplus" in text or "pi-bplus" in text or "bplus" in text:
             return "pibplus"
+        if "pi3bplus" in text or "pi-3bplus" in text or "pi3b+" in text or "pi-3b+" in text or "3bplus" in text:
+            return "pi3bplus"
         if "pi5" in text or "pi-5" in text:
             return "pi5"
     return ""
@@ -401,7 +403,7 @@ def _extract_payload_profile(payload: Any, depth: int = 0) -> str:
             "provision_profile",
         ):
             value = str(payload.get(key, "")).strip().lower()
-            if value in {"pi5", "pibplus"}:
+            if value in {"pi5", "pibplus", "pi3bplus"}:
                 return value
             inferred = _infer_profile_from_text(value)
             if inferred:
@@ -658,8 +660,8 @@ def sd_prepare() -> Any:
     if missing:
         return jsonify({"ok": False, "errors": [f"Missing fields: {', '.join(missing)}"]}), 400
 
-    if payload["profile"] not in {"pi5", "pibplus"}:
-        return jsonify({"ok": False, "errors": ["profile must be pi5 or pibplus"]}), 400
+    if payload["profile"] not in {"pi5", "pibplus", "pi3bplus"}:
+        return jsonify({"ok": False, "errors": ["profile must be pi5, pibplus, or pi3bplus"]}), 400
 
     distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
     if distribution not in {"standard", "k3s"}:

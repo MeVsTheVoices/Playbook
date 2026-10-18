@@ -7,7 +7,7 @@ Prepare an SD card with a cloud-init enabled Raspberry Pi image and callback met
 
 Usage:
   scripts/prepare_sd_cloud_init.sh \
-    --profile pi5|pibplus \
+    --profile pi5|pibplus|pi3bplus \
     --hostname HOSTNAME \
     --device /dev/sdX \
     --ssh-key-file ~/.ssh/id_ed25519.pub \
@@ -151,7 +151,7 @@ if [[ -z "$PROFILE" || -z "$HOSTNAME" || -z "$DEVICE" || -z "$SSH_KEY_FILE" || -
   exit 1
 fi
 
-if [[ "$PROFILE" != "pi5" && "$PROFILE" != "pibplus" ]]; then
+if [[ "$PROFILE" != "pi5" && "$PROFILE" != "pibplus" && "$PROFILE" != "pi3bplus" ]]; then
   echo "Invalid --profile value: $PROFILE" >&2
   exit 1
 fi
@@ -200,7 +200,7 @@ require_cmd python3
 require_cmd openssl
 
 if [[ -z "$IMAGE_FILE" ]]; then
-  if [[ -z "$IMAGE_URL" && "$PROFILE" == "pi5" ]]; then
+  if [[ -z "$IMAGE_URL" && ( "$PROFILE" == "pi5" || "$PROFILE" == "pi3bplus" ) ]]; then
     IMAGE_URL="https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-arm64+raspi.img.xz"
   fi
 
@@ -409,6 +409,10 @@ PROFILE_STORAGE="nvme"
 PROFILE_PACKAGES="qemu-guest-agent curl git python3 python3-apt htop nvme-cli lshw"
 if [[ "$PROFILE" == "pibplus" ]]; then
   PROFILE_ROLE="pi-bplus"
+  PROFILE_STORAGE="sdcard"
+  PROFILE_PACKAGES="curl git python3 python3-apt htop lshw"
+elif [[ "$PROFILE" == "pi3bplus" ]]; then
+  PROFILE_ROLE="pi-3bplus"
   PROFILE_STORAGE="sdcard"
   PROFILE_PACKAGES="curl git python3 python3-apt htop lshw"
 fi

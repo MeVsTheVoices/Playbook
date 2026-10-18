@@ -7,6 +7,7 @@ image_catalog:
     arch: arm64
     profiles:
       - pi5
+      - pi3bplus
     recommended: true
     image_url: https://downloads.raspberrypi.com/raspios_arm64/images/raspios_arm64-2026-06-19/2026-06-18-raspios-trixie-arm64.img.xz
     image_sha256: ""
@@ -20,6 +21,7 @@ image_catalog:
     profiles:
       - pi5
       - pibplus
+      - pi3bplus
     recommended: true
     image_url: https://downloads.raspberrypi.com/raspios_armhf/images/raspios_armhf-2026-06-19/2026-06-18-raspios-trixie-armhf.img.xz
     image_sha256: ""
@@ -32,6 +34,7 @@ image_catalog:
     arch: arm64
     profiles:
       - pi5
+      - pi3bplus
     recommended: false
     image_url: https://downloads.raspberrypi.com/raspios_oldstable_lite_arm64/images/raspios_oldstable_lite_arm64-2026-06-19/2026-06-18-raspios-bookworm-arm64-lite.img.xz
     image_sha256: ""
@@ -45,6 +48,7 @@ image_catalog:
     profiles:
       - pi5
       - pibplus
+      - pi3bplus
     recommended: true
     image_url: https://downloads.raspberrypi.com/raspios_oldstable_lite_armhf/images/raspios_oldstable_lite_armhf-2026-06-19/2026-06-18-raspios-bookworm-armhf-lite.img.xz
     image_sha256: ""
@@ -57,6 +61,7 @@ image_catalog:
     arch: arm64
     profiles:
       - pi5
+      - pi3bplus
     recommended: true
     image_url: https://old-releases.ubuntu.com/releases/24.04/ubuntu-24.04.2-preinstalled-server-arm64+raspi.img.xz
     image_sha256: 07fe39e530381cee7095c16f54d05fd99db2fe8233e05ebf8948437e40b5feaa
@@ -69,6 +74,7 @@ image_catalog:
     arch: arm64
     profiles:
       - pi5
+      - pi3bplus
     recommended: false
     image_url: https://old-releases.ubuntu.com/releases/22.04/ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz
     image_sha256: 8985915e3840d1e3971780aa160791e0665f64a2ee7e52ef8285c0701a8f6d6b
@@ -81,6 +87,7 @@ image_catalog:
     arch: arm64
     profiles:
       - pi5
+      - pi3bplus
     recommended: true
     image_url: https://old-releases.ubuntu.com/releases/24.04/ubuntu-24.04.2-preinstalled-server-arm64+raspi.img.xz
     image_sha256: 07fe39e530381cee7095c16f54d05fd99db2fe8233e05ebf8948437e40b5feaa
@@ -105,11 +112,12 @@ image_catalog:
     arch: armhf
     profiles:
       - pibplus
+      - pi3bplus
     recommended: true
     image_url: ""
     image_sha256: ""
     docs_url: https://raspi.debian.net/tested-images/
-    notes: Good baseline for Pi B+ 32-bit class hardware.
+    notes: Good baseline for Pi B+ and Pi 3B+ 32-bit class hardware.
   - id: fedora-iot-arm64
     label: Fedora IoT (ARM64)
     distro: Fedora

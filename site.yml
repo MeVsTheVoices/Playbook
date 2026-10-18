@@ -14,3 +14,11 @@
   become_user: root
   roles:
     - role: raspberry_pi_bplus
+
+- name: Configure active Raspberry Pi 3B+ hosts
+  hosts: rpi_3bplus_active
+  become: true
+  become_method: sudo
+  become_user: root
+  roles:
+    - role: raspberry_pi_3bplus

@@ -1046,6 +1046,7 @@
                 <select id="profile" name="profile">
                   <option value="pi5">pi5</option>
                   <option value="pibplus">pibplus</option>
+                  <option value="pi3bplus">pi3bplus</option>
                 </select>
               </div>
               <div>
@@ -1446,7 +1447,7 @@ server: https://local-machine-ip:6443
                       <summary class="segment-hint" style="cursor: pointer;">Embeddable variables</summary>
                       <ul class="segment-hint" style="margin: 0.4rem 0 0; padding-left: 1.1rem;">
                         <li><code>${HOSTNAME}</code> — node hostname</li>
-                        <li><code>${PROFILE}</code> — image profile (pi5 / pibplus)</li>
+                        <li><code>${PROFILE}</code> — image profile (pi5 / pibplus / pi3bplus)</li>
                         <li><code>${DISTRIBUTION}</code> — standard or k3s</li>
                         <li><code>${CALLBACK_URL}</code> — configured callback endpoint</li>
                       </ul>
@@ -2620,7 +2621,8 @@ server: https://local-machine-ip:6443
       }
 
       function profileArch(profile) {
-        return profile === "pibplus" ? "armhf" : "arm64";
+        if (profile === "pibplus") return "armhf";
+        return "arm64";
       }
 
       function profileCatalog(profile) {
@@ -2773,6 +2775,8 @@ server: https://local-machine-ip:6443
           osPresetNoteEl.textContent = `${distro} ${release} selected for ${profile} (${arch}). Image URL was populated 🌐`;
         } else if (profile === "pibplus") {
           osPresetNoteEl.textContent = `${distro} ${release} selected. Provide a direct Image URL or local Image File for Pi B+ 🧪`;
+        } else if (profile === "pi3bplus") {
+          osPresetNoteEl.textContent = `${distro} ${release} selected for Pi 3B+. The default Ubuntu 24.04 ARM64 image works on this board 🌐`;
         } else {
           osPresetNoteEl.textContent = `${distro} ${release} selected. Provide a direct Image URL or local Image File 🙂`;
         }

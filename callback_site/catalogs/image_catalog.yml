@@ -20,7 +20,6 @@ image_catalog:
     arch: armhf
     profiles:
       - pi5
-      - pibplus
       - pi3bplus
     recommended: true
     image_url: https://downloads.raspberrypi.com/raspios_armhf/images/raspios_armhf-2026-06-19/2026-06-18-raspios-trixie-armhf.img.xz
@@ -47,7 +46,6 @@ image_catalog:
     arch: armhf
     profiles:
       - pi5
-      - pibplus
       - pi3bplus
     recommended: true
     image_url: https://downloads.raspberrypi.com/raspios_oldstable_lite_armhf/images/raspios_oldstable_lite_armhf-2026-06-19/2026-06-18-raspios-bookworm-armhf-lite.img.xz
@@ -111,13 +109,12 @@ image_catalog:
     release: 12 Bookworm
     arch: armhf
     profiles:
-      - pibplus
       - pi3bplus
     recommended: true
     image_url: ""
     image_sha256: ""
     docs_url: https://raspi.debian.net/tested-images/
-    notes: Good baseline for Pi B+ and Pi 3B+ 32-bit class hardware.
+    notes: Good baseline for Pi 3B+ 32-bit class hardware.
   - id: fedora-iot-arm64
     label: Fedora IoT (ARM64)
     distro: Fedora
@@ -172,24 +169,24 @@ image_catalog:
     release: Stable
     arch: armhf
     profiles:
-      - pibplus
+      - pi3bplus
     recommended: false
     image_url: ""
     image_sha256: ""
     docs_url: https://dietpi.com/#download
-    notes: Lightweight OS option for Raspberry Pi B+ class hardware.
+    notes: Lightweight OS option for 32-bit-capable Pi hardware.
   - id: raspios-legacy-bullseye-armhf-lite
     label: Raspberry Pi OS Lite (Bullseye, 32-bit)
     distro: Raspberry Pi OS
     release: Bullseye Legacy
     arch: armhf
     profiles:
-      - pibplus
+      - pi3bplus
     recommended: false
     image_url: ""
     image_sha256: ""
     docs_url: https://www.raspberrypi.com/software/operating-systems/
-    notes: Legacy fallback image for older Pi B+ compatibility paths.
+    notes: Legacy fallback image for older 32-bit compatibility paths.
   - id: alpine-aarch64
     label: Alpine Linux (AArch64)
     distro: Alpine
@@ -244,7 +241,7 @@ image_catalog:
     release: Manual
     arch: armhf
     profiles:
-      - pibplus
+      - pi3bplus
     recommended: false
     image_url: ""
     image_sha256: ""

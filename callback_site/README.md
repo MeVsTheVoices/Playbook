@@ -4,7 +4,7 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 
 ## At A Glance
 
-- SD-card imaging for `pi5`, `pibplus`, and `pi3bplus` profiles.
+- SD-card imaging for `pi5` and `pi3bplus` profiles.
 - Cloud-init authoring with reusable optional-setting templates.
 - Distribution-aware imaging for `standard` and `k3s` flows.
 - Catalog management with cache checks and bulk pulls.

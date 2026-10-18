@@ -3221,6 +3221,41 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("rack-bootstrap-ed25519", inventory_text)
         self.assertIn("PreferredAuthentications=publickey", inventory_text)
 
+    def test_run_node_profile_nests_active_group_under_family_group(self) -> None:
+        with patch.object(callback_core.logger, "info"), patch.object(callback_core.shutil, "which", return_value="/tmp/fake-ansible"), patch.object(
+            callback_core.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout="ok\n", stderr=""),
+        ) as run_mock, patch.object(
+            callback_core,
+            "_ssh_private_key_preflight",
+            return_value="",
+        ):
+            callback_core._run_node_profile(
+                "node-3b-01",
+                {"id": "tailscale", "tags": ["tailscale"]},
+                mode="apply",
+                run_ansible=True,
+                profile_inputs={},
+                node_group="rpi_3bplus_active",
+                node_address="192.0.2.20",
+            )
+
+        cmd = run_mock.call_args.args[0]
+        inventory_index = cmd.index("-i") + 1
+        inventory_text = Path(cmd[inventory_index]).read_text(encoding="utf-8")
+        self.assertIn("rpi_3bplus:", inventory_text)
+        self.assertIn("rpi_3bplus_active:", inventory_text)
+        self.assertIn("node-3b-01", inventory_text)
+
+    def test_pi_roles_tag_tasks_for_profile_scoped_runs(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        for role in ("raspberry_pi5", "raspberry_pi_3bplus"):
+            tasks_text = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
+            self.assertIn("- tailscale", tasks_text, msg=f"{role} must tag tailscale tasks")
+            self.assertIn("- baseline", tasks_text, msg=f"{role} must tag baseline tasks")
+            self.assertIn("Resolve Tailscale provisioning inputs", tasks_text, msg=f"{role} must consume provision_inputs")
+
     def test_run_node_profile_uses_appdata_backed_ssh_key_path(self) -> None:
         with patch.object(callback_core.logger, "info"), patch.object(callback_core.shutil, "which", return_value="/tmp/fake-ansible"), patch.object(
             callback_core.subprocess,

@@ -2836,7 +2836,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             json={
                 "hostname": "edge-node-01",
                 "instance_id": "iid-edge-01",
-                "profile": "pibplus",
+                "profile": "pi3bplus",
                 "stage": "hardware-check",
             },
         )
@@ -2857,7 +2857,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         matching = [e for e in events if e.get("instance_id") == "iid-edge-01"]
         self.assertGreaterEqual(len(matching), 2)
         latest = matching[0]
-        self.assertEqual(latest["profile"], "pibplus")
+        self.assertEqual(latest["profile"], "pi3bplus")
         self.assertEqual(latest["stage"], "hardware-check")
 
     def test_initial_callback_triggers_auto_closer_check(self) -> None:

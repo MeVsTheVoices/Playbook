@@ -26,7 +26,7 @@ rack_nodes_expected:
     current: 2
     planned_total: 4
     storage: nvme
-  rpi_bplus:
-    current: 1
-    planned_total: 3
+  rpi_3bplus:
+    current: 0
+    planned_total: 2
     storage: sdcard

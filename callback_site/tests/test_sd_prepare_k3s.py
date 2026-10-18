@@ -182,7 +182,7 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         script_text = script_path.read_text(encoding="utf-8")
         self.assertIn('"$PROFILE" != "pi3bplus"', script_text)
         self.assertIn('PROFILE_ROLE="pi-3bplus"', script_text)
-        self.assertIn('--profile pi5|pibplus|pi3bplus', script_text)
+        self.assertIn('--profile pi5|pi3bplus', script_text)
 
     def test_prepare_sd_script_installs_fancy_motd_packages(self) -> None:
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"

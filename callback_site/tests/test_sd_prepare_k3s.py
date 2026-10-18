@@ -10,6 +10,35 @@ except ImportError:
 
 
 class SdPrepareK3sTests(BaseCallbackSiteTest):
+    def test_sd_prepare_endpoint_accepts_pi3bplus_profile(self) -> None:
+        with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch.object(
+            callback_app.threading, "Thread"
+        ) as thread_cls:
+            response = self.client.post(
+                "/api/sd/prepare",
+                json={
+                    "profile": "pi3bplus",
+                    "hostname": "rack-node-3b-01",
+                    "device": "/dev/sdb",
+                    "ssh_public_key": "ssh-ed25519 AAAA",
+                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "distribution": "k3s",
+                    "cloud_init_options": {},
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        job_id = payload.get("job_id")
+        self.assertTrue(job_id)
+        with callback_app.JOBS_LOCK:
+            job = callback_app.JOBS.get(job_id)
+            self.assertIsNotNone(job)
+            request_payload = dict(job.get("request", {})) if job else {}
+            callback_app.JOBS.pop(job_id, None)
+        self.assertEqual(request_payload.get("profile"), "pi3bplus")
+        thread_cls.assert_called_once()
+
     def test_sanitize_sd_prepare_payload_supports_k3s_distribution(self) -> None:
         cleaned = callback_app._sanitize_sd_prepare_payload(
             {
@@ -147,6 +176,13 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         self.assertIn('CLOUD_INIT_PCIEX1_GEN3', script_text)
         self.assertIn('dtparam=pciex1', script_text)
         self.assertIn('dtparam=pciex1_gen=3', script_text)
+
+    def test_prepare_sd_script_accepts_pi3bplus_profile(self) -> None:
+        script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"
+        script_text = script_path.read_text(encoding="utf-8")
+        self.assertIn('"$PROFILE" != "pi3bplus"', script_text)
+        self.assertIn('PROFILE_ROLE="pi-3bplus"', script_text)
+        self.assertIn('--profile pi5|pibplus|pi3bplus', script_text)
 
     def test_prepare_sd_script_installs_fancy_motd_packages(self) -> None:
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"

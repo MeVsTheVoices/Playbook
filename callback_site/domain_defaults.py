@@ -14,6 +14,7 @@ TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
     "admin_group": "group:admins",
     "rpi5_tag": "tag:rpi5",
     "rpi_bplus_tag": "tag:rpi-bplus",
+    "rpi_3bplus_tag": "tag:rpi-3bplus",
     "homelab_tag": "tag:homelab",
     "pi5_subnets": ["192.168.174.0/24", "192.168.175.0/24"],
 }
@@ -156,7 +157,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Baseline",
         "description": "Core system baseline and host-level defaults.",
         "tags": ["baseline"],
-        "groups": ["rpi5_active", "rpi_bplus_active"],
+        "groups": ["rpi5_active", "rpi_bplus_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "timezone",
@@ -177,7 +178,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Tailscale",
         "description": "Tailnet agent and related ACL tag setup.",
         "tags": ["tailscale"],
-        "groups": ["rpi5_active", "rpi_bplus_active"],
+        "groups": ["rpi5_active", "rpi_bplus_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "auth_key",
@@ -226,7 +227,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Kubernetes",
         "description": "Kubernetes bootstrap defaults for control-plane or worker nodes.",
         "tags": ["kubernetes"],
-        "groups": ["rpi5_active"],
+        "groups": ["rpi5_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "cluster_name",
@@ -286,7 +287,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Telegraf",
         "description": "Telegraf provisioning with InfluxDB bucket credentials.",
         "tags": ["monitoring", "telegraf"],
-        "groups": ["rpi5_active", "rpi_bplus_active"],
+        "groups": ["rpi5_active", "rpi_bplus_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "influx_endpoint",

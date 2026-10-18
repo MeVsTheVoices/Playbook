@@ -1,0 +1,13 @@
+---
+# Keep real secrets in vault-backed variables.
+raspberry_pi_3bplus_tailscale_manage: true
+raspberry_pi_3bplus_tailscale_oauth_enabled: true
+raspberry_pi_3bplus_tailscale_tailnet: tail00c2ce
+raspberry_pi_3bplus_tailscale_oauth_client_id: "{{ vault_rpi_3bplus_tailscale_oauth_client_id | default(vault_rpi5_tailscale_oauth_client_id) }}"
+raspberry_pi_3bplus_tailscale_oauth_client_secret: "{{ vault_rpi_3bplus_tailscale_oauth_client_secret | default(vault_rpi5_tailscale_oauth_client_secret) }}"
+
+raspberry_pi_3bplus_tailscale_advertise_exit_node: false
+raspberry_pi_3bplus_tailscale_advertise_routes: []
+raspberry_pi_3bplus_tailscale_tags:
+  - tag:rpi-3bplus
+  - tag:homelab

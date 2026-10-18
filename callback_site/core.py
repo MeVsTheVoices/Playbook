@@ -2451,15 +2451,28 @@ def _run_node_profile(
         temp_inventory = tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8")
         temp_inventory.write("all:\n")
         temp_inventory.write("  children:\n")
-        temp_inventory.write(f"    {resolved_group or 'dynamic_provisioning'}:\n")
-        temp_inventory.write("      hosts:\n")
-        temp_inventory.write(f"        {node_name}:\n")
-        temp_inventory.write(f"          ansible_host: {host_target}\n")
-        temp_inventory.write(f"          ansible_user: {ssh_user}\n")
-        temp_inventory.write(f"          ansible_ssh_private_key_file: {ssh_key_path}\n")
-        temp_inventory.write(f"          ansible_ssh_common_args: '{known_hosts_args}'\n")
-        temp_inventory.write("          ansible_connection: ssh\n")
-        temp_inventory.write("          ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
+        family_group = resolved_group[:-len("_active")] if resolved_group.endswith("_active") else ""
+        if family_group:
+            # Nest the active group under its family group so family-level
+            # group_vars (e.g. group_vars/rpi_3bplus) apply to the run.
+            temp_inventory.write(f"    {family_group}:\n")
+            temp_inventory.write("      children:\n")
+            temp_inventory.write(f"        {resolved_group}:\n")
+            temp_inventory.write("          hosts:\n")
+            host_indent = "            "
+            var_indent = "              "
+        else:
+            temp_inventory.write(f"    {resolved_group or 'dynamic_provisioning'}:\n")
+            temp_inventory.write("      hosts:\n")
+            host_indent = "        "
+            var_indent = "          "
+        temp_inventory.write(f"{host_indent}{node_name}:\n")
+        temp_inventory.write(f"{var_indent}ansible_host: {host_target}\n")
+        temp_inventory.write(f"{var_indent}ansible_user: {ssh_user}\n")
+        temp_inventory.write(f"{var_indent}ansible_ssh_private_key_file: {ssh_key_path}\n")
+        temp_inventory.write(f"{var_indent}ansible_ssh_common_args: '{known_hosts_args}'\n")
+        temp_inventory.write(f"{var_indent}ansible_connection: ssh\n")
+        temp_inventory.write(f"{var_indent}ansible_ssh_extra_args: '-o PreferredAuthentications=publickey'\n")
         temp_inventory.flush()
         temp_inventory.close()
         temporary_inventory_path = temp_inventory.name
@@ -2522,7 +2535,11 @@ def _run_node_profile(
                 "inputs": _redact_profile_inputs(profile_id, profile_inputs),
                 "output": output[-12000:] or "Ansible failed before provisioning completed. Check vault/password prompts and credentials.",
             }
-        if proc.returncode != 0 and ("permission denied" in output.lower() or "unreachable" in output.lower() or "failed to connect" in output.lower()):
+        if proc.returncode != 0 and (
+            "permission denied" in output.lower()
+            or "unreachable!" in output.lower()
+            or "failed to connect" in output.lower()
+        ):
             ssh_hint = (
                 "SSH authentication or reachability failed. Ensure the target node has the bootstrap SSH key installed "
                 "for the expected user (often root or ops) and that the node is reachable at the configured address."
@@ -3186,7 +3203,6 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
             hw_block = {}
         payload: Dict[str, Any] = {
             "received_at": str(event.get("received_at", "")).strip(),
-            "first_callback": "",
             "model": str(hw_block.get("model", "")).strip(),
             "ram_mb": hw_block.get("ram_mb"),
             "sd_capacity_gb": hw_block.get("sd_capacity_gb"),
@@ -3200,10 +3216,11 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
         for host in candidates:
             if not host:
                 continue
-            payload["first_callback"] = str(first_seen.get(host, "")).strip()
+            host_payload = dict(payload)
+            host_payload["first_callback"] = str(first_seen.get(host, "")).strip()
             current_ts = seen_ts.get(host)
             if current_ts is None or event_ts is None or event_ts > current_ts:
-                seen[host] = payload
+                seen[host] = host_payload
                 if event_ts is not None:
                     seen_ts[host] = event_ts
     return seen

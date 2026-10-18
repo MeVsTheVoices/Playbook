@@ -14,7 +14,7 @@ maas_role_profiles:
     architecture: arm64/generic
     pool: default
     zone: default
-  rpi_bplus:
-    architecture: armhf/generic
+  rpi_3bplus:
+    architecture: arm64/generic
     pool: default
     zone: default

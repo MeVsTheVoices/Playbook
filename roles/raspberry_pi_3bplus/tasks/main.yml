@@ -218,3 +218,62 @@
     - raspberry_pi_3bplus_tailscale_force_reconfigure | bool or raspberry_pi_3bplus_tailscale_needs_up | default(true)
   tags:
     - tailscale
+
+- name: Detect K3s server unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s.service
+  register: raspberry_pi_3bplus_k3s_server_unit
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+  tags:
+    - kubernetes
+
+- name: Detect K3s agent unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s-agent.service
+  register: raspberry_pi_3bplus_k3s_agent_unit
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+  tags:
+    - kubernetes
+
+- name: Write K3s config from provisioning input
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    content: "{{ ((provision_inputs.k3s_config | default('') | string).rstrip() + '\n') if (provision_inputs | default({})) is mapping else '' }}"
+  register: raspberry_pi_3bplus_k3s_config_written
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - (provision_inputs | default({})) is mapping
+    - (provision_inputs.k3s_config | default('') | string | trim) | length > 0
+  tags:
+    - kubernetes
+
+- name: Restart K3s server when config changed
+  ansible.builtin.service:
+    name: k3s
+    state: restarted
+  when:
+    - raspberry_pi_3bplus_k3s_config_written is defined
+    - raspberry_pi_3bplus_k3s_config_written.changed
+    - raspberry_pi_3bplus_k3s_server_unit.stat.exists | bool
+  tags:
+    - kubernetes
+
+- name: Restart K3s agent when config changed
+  ansible.builtin.service:
+    name: k3s-agent
+    state: restarted
+  when:
+    - raspberry_pi_3bplus_k3s_config_written is defined
+    - raspberry_pi_3bplus_k3s_config_written.changed
+    - not (raspberry_pi_3bplus_k3s_server_unit.stat.exists | bool)
+    - raspberry_pi_3bplus_k3s_agent_unit.stat.exists | bool
+  tags:
+    - kubernetes

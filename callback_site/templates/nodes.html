@@ -294,6 +294,56 @@
         margin: 0 0 0.45rem;
         font-size: 0.86rem;
       }
+      .module-list {
+        display: grid;
+        gap: 0.45rem;
+      }
+      .module-item {
+        text-align: left;
+        background: #f8fafc;
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.55rem 0.7rem;
+      }
+      .module-item:hover {
+        border-color: #0b8b6e;
+      }
+      .module-item.selected {
+        border-color: #0b8b6e;
+        background: #ecfdf5;
+      }
+      .module-item-sub {
+        display: block;
+        margin-top: 0.15rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .module-detail {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.75rem;
+        background: #ffffff;
+        min-height: 160px;
+      }
+      .module-detail h4 {
+        margin: 0 0 0.25rem;
+      }
+      .module-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin: 0.3rem 0 0.6rem;
+      }
+      .module-tag {
+        display: inline-flex;
+        padding: 0.12rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #f8fafc;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
       .required {
         color: #991b1b;
       }
@@ -769,6 +819,33 @@
           </div>
         </div>
 
+        <details class="panel collapsible-panel" id="module-configuration" open>
+          <summary>
+            <div class="collapsible-summary">
+              <h2>Module Configuration 🧩</h2>
+              <p class="collapsible-subtitle">Pick one module, review its parameter template for the selected node, and push changes one module at a time.</p>
+            </div>
+            <span class="collapsible-indicator" aria-hidden="true">›</span>
+          </summary>
+          <div class="collapsible-body">
+            <p class="note">Modules are the provisioning profiles defined for this rack. Selecting a module shows its template with the currently saved values for the node chosen above; saving adds the module to that node’s selection if needed.</p>
+            <div class="split">
+              <div>
+                <div id="module-list" class="module-list"></div>
+              </div>
+              <div>
+                <div id="module-detail" class="module-detail"></div>
+                <div class="inline-actions" style="margin-top: 0.6rem;">
+                  <button id="module-save-inputs" type="button">Save Module Inputs</button>
+                  <button id="module-check" type="button" class="secondary">Check Module</button>
+                  <button id="module-apply" type="button">Apply Module</button>
+                </div>
+                <p id="module-status" class="note"></p>
+              </div>
+            </div>
+          </div>
+        </details>
+
         <details class="panel collapsible-panel" id="user-profile-segments">
           <summary>
             <div class="collapsible-summary">
@@ -909,6 +986,10 @@
       let statusByNode = {};
       let nodeInputs = {};
       let manualNodes = {};
+      let selectedModuleId = "";
+      const moduleListEl = document.getElementById("module-list");
+      const moduleDetailEl = document.getElementById("module-detail");
+      const moduleStatusEl = document.getElementById("module-status");
 
       function initSidebar() {
         const saved = localStorage.getItem("sidebar-collapsed");
@@ -1093,6 +1174,126 @@
       profileList.addEventListener("change", () => {
         renderProfileInputs();
       });
+
+      function renderModuleSection() {
+        if (!moduleListEl || !moduleDetailEl) {
+          return;
+        }
+        const nodeName = provisionNode.value;
+        const selected = new Set(selectedProfileIdsForNode(nodeName));
+        moduleListEl.innerHTML = "";
+        if (!profiles.length) {
+          moduleListEl.innerHTML = "<p class='note'>No modules available.</p>";
+        }
+        for (const profile of profiles) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "module-item" + (profile.id === selectedModuleId ? " selected" : "");
+          const tags = Array.isArray(profile.tags) ? profile.tags.join(", ") : "";
+          const marker = selected.has(profile.id) ? " • selected for node" : "";
+          btn.innerHTML = `<strong>${escapeHtml(profile.label || profile.id)}</strong><span class="module-item-sub">${escapeHtml(tags)}${escapeHtml(marker)}</span>`;
+          btn.addEventListener("click", () => {
+            selectedModuleId = profile.id;
+            moduleStatusEl.textContent = "";
+            renderModuleSection();
+          });
+          moduleListEl.appendChild(btn);
+        }
+
+        const profile = profiles.find((p) => p.id === selectedModuleId);
+        if (!profile) {
+          moduleDetailEl.innerHTML = "<p class='note'>Select a module to view its parameter template.</p>";
+          return;
+        }
+        const saved = (nodeInputs[nodeName] && typeof nodeInputs[nodeName] === "object" && typeof nodeInputs[nodeName][profile.id] === "object")
+          ? nodeInputs[nodeName][profile.id]
+          : {};
+        const specs = Array.isArray(profile.input_specs) ? profile.input_specs : [];
+        const groups = Array.isArray(profile.groups) ? profile.groups : [];
+        const tagsHtml = (Array.isArray(profile.tags) ? profile.tags : []).map((t) => `<span class="module-tag">${escapeHtml(t)}</span>`).join("");
+        const groupsHtml = groups.map((g) => `<span class="module-tag">${escapeHtml(g)}</span>`).join("");
+
+        moduleDetailEl.innerHTML = "";
+        const heading = document.createElement("h4");
+        heading.textContent = profile.label || profile.id;
+        moduleDetailEl.appendChild(heading);
+        const desc = document.createElement("p");
+        desc.className = "note";
+        desc.textContent = profile.description || "";
+        moduleDetailEl.appendChild(desc);
+        const tagRow = document.createElement("div");
+        tagRow.className = "module-tags";
+        tagRow.innerHTML = tagsHtml + groupsHtml;
+        moduleDetailEl.appendChild(tagRow);
+
+        if (!specs.length) {
+          const empty = document.createElement("p");
+          empty.className = "note";
+          empty.textContent = "This module has no parameters to edit.";
+          moduleDetailEl.appendChild(empty);
+        }
+        for (const spec of specs) {
+          const fieldId = String(spec.id || "");
+          if (!fieldId) continue;
+          const label = document.createElement("label");
+          label.innerHTML = `${escapeHtml(spec.label || fieldId)}${spec.required ? " *" : ""}`;
+          const input = document.createElement("input");
+          input.type = spec.sensitive ? "password" : "text";
+          input.placeholder = spec.placeholder || "";
+          input.value = String(saved[fieldId] || "");
+          input.dataset.moduleField = fieldId;
+          moduleDetailEl.appendChild(label);
+          moduleDetailEl.appendChild(input);
+        }
+      }
+
+      function collectModuleInputs() {
+        const out = {};
+        moduleDetailEl.querySelectorAll("input[data-module-field]").forEach((input) => {
+          out[input.dataset.moduleField] = input.value.trim();
+        });
+        return out;
+      }
+
+      async function saveModuleInputs() {
+        const nodeName = provisionNode.value;
+        if (!nodeName) {
+          moduleStatusEl.textContent = "Select a node first.";
+          return;
+        }
+        if (!selectedModuleId) {
+          moduleStatusEl.textContent = "Select a module first.";
+          return;
+        }
+
+        const selected = new Set(selectedProfileIdsForNode(nodeName));
+        if (!selected.has(selectedModuleId)) {
+          selected.add(selectedModuleId);
+          const res = await fetch("/api/nodes/node-configs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node: nodeName, profile_ids: Array.from(selected) }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            moduleStatusEl.textContent = data.error || "Could not add the module to the node selection.";
+            return;
+          }
+        }
+
+        const res = await fetch("/api/nodes/node-inputs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node: nodeName, profile_inputs: { [selectedModuleId]: collectModuleInputs() } }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          moduleStatusEl.textContent = data.error || "Could not save module inputs.";
+          return;
+        }
+        moduleStatusEl.textContent = `Saved inputs for module '${selectedModuleId}'.`;
+        await loadSummary();
+      }
 
       function collectProfileInputs() {
         const out = {};
@@ -1595,6 +1796,7 @@
           provisionNode.value = oldNode;
         }
         renderProfileChecklist();
+        renderModuleSection();
         renderRows();
         updateProvisionActionState();
       }
@@ -1794,7 +1996,7 @@
         provisionStatus.textContent = `${mode === "check" ? "Check" : "Apply"} is still running in the background; refresh the node summary to see the result.`;
       }
 
-      async function runProvision(node, mode) {
+      async function runProvision(node, mode, profileIds) {
         if (node) {
           const selectedNode = provisionNode.value;
           if (selectedNode && selectedNode === node) {
@@ -1804,10 +2006,14 @@
 
         provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning for the selected node...`;
         try {
+          const requestBody = { node, mode, run_ansible: runAnsible.checked };
+          if (Array.isArray(profileIds) && profileIds.length) {
+            requestBody.profile_ids = profileIds;
+          }
           const res = await fetchJsonWithTimeout("/api/nodes/provision", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ node, mode, run_ansible: runAnsible.checked }),
+            body: JSON.stringify(requestBody),
           }, 20000);
           const data = await res.json();
           if (!res.ok || !data.ok) {
@@ -1848,6 +2054,10 @@
       }
 
       provisionNode.addEventListener("change", renderProfileChecklist);
+      provisionNode.addEventListener("change", renderModuleSection);
+      document.getElementById("module-save-inputs").addEventListener("click", saveModuleInputs);
+      document.getElementById("module-check").addEventListener("click", () => runProvision(provisionNode.value, "check", selectedModuleId ? [selectedModuleId] : null));
+      document.getElementById("module-apply").addEventListener("click", () => runProvision(provisionNode.value, "apply", selectedModuleId ? [selectedModuleId] : null));
       document.getElementById("save-config").addEventListener("click", saveConfig);
       document.getElementById("save-profile-segment").addEventListener("click", saveProfileSegment);
       document.getElementById("refresh-profile-segments").addEventListener("click", refreshProfileSegments);

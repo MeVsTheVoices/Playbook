@@ -123,7 +123,13 @@ def _run_test_terminal_job(job_id: str, cmd: list[str]) -> None:
         TEST_TERMINAL_JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
 
 
-def _run_node_provision_job(job_id: str, target_node_names: list[str], mode: str, run_ansible: bool) -> None:
+def _run_node_provision_job(
+    job_id: str,
+    target_node_names: list[str],
+    mode: str,
+    run_ansible: bool,
+    profile_filter: list[str] | None = None,
+) -> None:
     started_at = datetime.now(timezone.utc).isoformat()
     with PROVISION_JOBS_LOCK:
         job = PROVISION_JOBS.get(job_id)
@@ -146,6 +152,9 @@ def _run_node_provision_job(job_id: str, target_node_names: list[str], mode: str
                 continue
             state = _load_node_provisioning()
             profile_ids = _effective_node_profiles(node, state)
+            if profile_filter:
+                allowed = set(profile_filter)
+                profile_ids = [pid for pid in profile_ids if pid in allowed]
             if mode == "apply":
                 missing = _missing_required_inputs(node_name, profile_ids, state)
                 if missing:
@@ -1488,6 +1497,14 @@ def nodes_provision() -> Any:
     if mode not in {"check", "apply"}:
         return jsonify({"ok": False, "error": "mode must be check or apply"}), 400
 
+    profile_filter: List[str] = []
+    raw_profile_ids = payload.get("profile_ids")
+    if raw_profile_ids is not None:
+        if not isinstance(raw_profile_ids, list):
+            return jsonify({"ok": False, "error": "profile_ids must be an array"}), 400
+        known_profiles = _profile_map()
+        profile_filter = [str(pid) for pid in raw_profile_ids if str(pid) in known_profiles]
+
     nodes = _node_ops_inventory_view()
     if node_name:
         target_nodes = [n for n in nodes if n["name"] == node_name]
@@ -1501,6 +1518,9 @@ def nodes_provision() -> Any:
 
     for node in target_nodes:
         profile_ids = _effective_node_profiles(node, state)
+        if profile_filter:
+            allowed = set(profile_filter)
+            profile_ids = [pid for pid in profile_ids if pid in allowed]
         missing = _missing_required_inputs(node["name"], profile_ids, state)
         if missing and mode == "apply":
             missing_by_node.append(
@@ -1528,13 +1548,14 @@ def nodes_provision() -> Any:
                 "mode": mode,
                 "run_ansible": run_ansible,
                 "target_nodes": [node["name"] for node in target_nodes],
+                "profile_filter": list(profile_filter),
                 "results": [],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         thread = threading.Thread(
             target=_run_node_provision_job,
-            args=(job_id, [node["name"] for node in target_nodes], mode, run_ansible),
+            args=(job_id, [node["name"] for node in target_nodes], mode, run_ansible, profile_filter),
             daemon=True,
         )
         thread.start()
@@ -1543,6 +1564,9 @@ def nodes_provision() -> Any:
     results: List[Dict[str, Any]] = []
     for node in target_nodes:
         profile_ids = _effective_node_profiles(node, state)
+        if profile_filter:
+            allowed = set(profile_filter)
+            profile_ids = [pid for pid in profile_ids if pid in allowed]
         results.append(_apply_node_provisioning(node["name"], profile_ids, mode=mode, run_ansible=run_ansible))
 
     return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "results": results})

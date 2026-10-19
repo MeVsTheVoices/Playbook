@@ -3,8 +3,8 @@
 ## Current Hardware Snapshot
 - Top of rack: GL.iNet router running OpenWrt.
 - Network layer: PoE switch under router.
-- Raspberry Pi 5: 2 currently online, 4 target total. Pi 5 nodes include NVMe bottoms and PoE hats.
-- Raspberry Pi 3B+: 2 slots reserved for k3s control-plane testing. Pi 3B+ nodes run 64-bit images and SD-card storage only.
+- Raspberry Pi 5: 2 currently online, 4 target total. Pi 5 nodes include NVMe bottoms and PoE hats. **Pi 5 nodes join k3s as workers.**
+- Raspberry Pi 3B+: 2 slots reserved for k3s control-plane testing. Pi 3B+ nodes run 64-bit images and SD-card storage only. **Pi 3B+ nodes are the k3s control plane.**
 
 ## Power-Restore / IP-Change Note
 - Every device provisioned by this workflow now tries to call home again on every boot or power restoration by enabling a persistent local systemd callback.

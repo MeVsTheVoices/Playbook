@@ -261,6 +261,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("data-module-field", text)
         self.assertIn("data-module-type", text)
         self.assertIn('spec.input_type || "text"', text)
+        self.assertIn('"control-plane" : "worker"', text)
+        self.assertIn("Pi 3B+ nodes are the control plane", text)
 
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")

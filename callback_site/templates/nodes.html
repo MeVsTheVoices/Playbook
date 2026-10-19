@@ -283,79 +283,6 @@
         margin-right: 0.3rem;
         margin-bottom: 0.25rem;
       }
-      .profile-list {
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 0.7rem;
-        background: linear-gradient(180deg, #fcfeff 0%, #f8fafc 100%);
-      }
-      .profile-list select {
-        min-height: 92px;
-        padding: 0.65rem;
-        font-weight: 600;
-        color: #0f172a;
-        background: #fff;
-        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
-      }
-      .profile-list .hint {
-        margin-top: 0.5rem;
-        color: var(--muted);
-        font-size: 0.8rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        padding: 0.35rem 0.55rem;
-        border-radius: 999px;
-        background: #ecfeff;
-        border: 1px solid #bae6fd;
-        color: #0c4a6e;
-      }
-      .profile-inputs {
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 0.7rem;
-        margin-top: 0.7rem;
-        max-height: 280px;
-        overflow: auto;
-        background: #f8fafc;
-      }
-      .input-group {
-        border: 1px dashed var(--line);
-        border-radius: 8px;
-        padding: 0.6rem;
-        margin-bottom: 0.55rem;
-        background: #ffffff;
-      }
-      .input-group h4 {
-        margin: 0 0 0.45rem;
-        font-size: 0.86rem;
-      }
-      .module-list {
-        display: grid;
-        gap: 0.45rem;
-      }
-      .module-item {
-        text-align: left;
-        background: #f8fafc;
-        color: var(--ink);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 0.55rem 0.7rem;
-      }
-      .module-item:hover {
-        border-color: #0b8b6e;
-      }
-      .module-item.selected {
-        border-color: #0b8b6e;
-        background: #ecfdf5;
-        box-shadow: inset 3px 0 0 #0b8b6e;
-      }
-      .module-item-sub {
-        display: block;
-        margin-top: 0.15rem;
-        color: var(--muted);
-        font-size: 0.75rem;
-      }
       .module-detail {
         border: 1px solid var(--line);
         border-radius: 10px;
@@ -744,7 +671,7 @@
           <div class="hero-callout">Use the current node IP when local DNS is not available, save profile inputs before you apply, and let the provisioning flow use the bootstrap SSH identity that already worked for the node.</div>
         </div>
 
-        <div class="split">
+        <div>
           <div class="panel">
             <p class="section-kicker">Access</p>
             <h2>Node Access Defaults + Webhook 🔐</h2>
@@ -819,69 +746,51 @@
             </div>
             <p id="manual-node-status" class="note"></p>
           </div>
-
-          <div class="panel">
-            <p class="section-kicker">Provisioning</p>
-            <h2>Provisioning Profiles ⚙️</h2>
-            <div>
-              <label for="provision-node">Node</label>
-              <select id="provision-node"></select>
-            </div>
-            <div class="profile-list" id="profile-list">
-              <select id="profile-select" aria-label="Provisioning profiles" multiple>
-                <option value="">Loading profiles…</option>
-              </select>
-              <div class="hint">🧩 Hold Ctrl/Cmd to select multiple profiles</div>
-            </div>
-            <div class="profile-inputs" id="profile-inputs"></div>
-            <div style="margin-top: 0.6rem;">
-              <label><input type="checkbox" id="run-ansible" checked style="width:auto; margin-right:0.4rem;">Run ansible-playbook now</label>
-            </div>
-            <div class="action-sections">
-              <div class="action-group">
-                <h4>Config + Validate</h4>
-                <div class="actions">
-                  <button id="save-node-profiles">Save Node Config Set</button>
-                  <button id="save-node-inputs" class="secondary">Save Profile Inputs</button>
-                  <button id="test-telegraf" class="secondary">Test Telegraf Influx Inputs</button>
-                </div>
-              </div>
-              <div class="action-group">
-                <h4>Run</h4>
-                <div class="actions">
-                  <button id="check-selected" class="secondary equal-action">Get Hardware Profile (Selected Node)</button>
-                  <button id="apply-selected" class="equal-action">Apply Selected Node</button>
-                  <button id="check-all" class="secondary">Get Hardware Profile (All Nodes)</button>
-                </div>
-              </div>
-            </div>
-            <p id="provision-status" class="note"></p>
-          </div>
         </div>
 
         <details class="panel collapsible-panel" id="module-configuration" open>
           <summary>
             <div class="collapsible-summary">
               <h2>Module Configuration 🧩</h2>
-              <p class="collapsible-subtitle">Pick one module, review its parameter template for the selected node, and push changes one module at a time.</p>
+              <p class="collapsible-subtitle">Choose a node, see which modules are active on it, and configure one module at a time.</p>
             </div>
             <span class="collapsible-indicator" aria-hidden="true">›</span>
           </summary>
           <div class="collapsible-body">
-            <p class="note">Modules are the provisioning profiles defined for this rack. Selecting a module shows its template with the currently saved values for the node chosen above; saving adds the module to that node’s selection if needed.</p>
-            <div class="split">
+            <p class="note">Modules are the provisioning profiles defined for this rack. The table shows which modules are active on the selected node; pick one to edit its parameters and push changes individually.</p>
+            <div class="grid" style="grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); align-items: start;">
               <div>
-                <div id="module-list" class="module-list"></div>
-              </div>
-              <div>
-                <div id="module-detail" class="module-detail"></div>
-                <div class="inline-actions" style="margin-top: 0.6rem;">
-                  <button id="module-save-inputs" type="button">Save Module Inputs</button>
-                  <button id="module-check" type="button" class="secondary">Check Module</button>
-                  <button id="module-apply" type="button">Apply Module</button>
+                <label for="provision-node">Node</label>
+                <select id="provision-node"></select>
+                <div style="margin-top: 0.55rem;">
+                  <label><input type="checkbox" id="run-ansible" checked style="width:auto; margin-right:0.4rem;">Run ansible-playbook now</label>
                 </div>
-                <p id="module-status" class="note"></p>
+                <p id="provision-status" class="note" style="margin-top: 0.55rem;"></p>
               </div>
+              <div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Module</th>
+                      <th>Tags</th>
+                      <th>Active On Node</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="module-status-body">
+                    <tr><td colspan="4">Loading modules...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div style="margin-top: 0.8rem;">
+              <div id="module-detail" class="module-detail"></div>
+              <div class="inline-actions" style="margin-top: 0.6rem;">
+                <button id="module-save-inputs" type="button">Save Module Inputs</button>
+                <button id="module-check" type="button" class="secondary">Check Module</button>
+                <button id="module-apply" type="button">Apply Module</button>
+              </div>
+              <p id="module-status" class="note"></p>
             </div>
           </div>
         </details>
@@ -997,10 +906,7 @@
       const provisionLog = document.getElementById("provision-log");
       const rows = document.getElementById("node-rows");
       const provisionNode = document.getElementById("provision-node");
-      const profileList = document.getElementById("profile-list");
-      const profileInputs = document.getElementById("profile-inputs");
       const runAnsible = document.getElementById("run-ansible");
-      const testTelegrafBtn = document.getElementById("test-telegraf");
       const statNodeCountEl = document.getElementById("stat-node-count");
       const statReachableCountEl = document.getElementById("stat-reachable-count");
       const statCallbackAddressCountEl = document.getElementById("stat-callback-address-count");
@@ -1029,7 +935,7 @@
       let nodeInputs = {};
       let manualNodes = {};
       let selectedModuleId = "";
-      const moduleListEl = document.getElementById("module-list");
+      const moduleStatusBodyEl = document.getElementById("module-status-body");
       const moduleDetailEl = document.getElementById("module-detail");
       const moduleStatusEl = document.getElementById("module-status");
 
@@ -1079,61 +985,6 @@
         }
       }
 
-      function renderProfileChecklist() {
-        const nodeName = provisionNode.value;
-        const selected = new Set(selectedProfileIdsForNode(nodeName));
-        const select = document.getElementById("profile-select");
-        if (!select) {
-          profileList.innerHTML = "";
-          renderProfileInputs();
-          return;
-        }
-
-        select.innerHTML = "";
-        select.multiple = true;
-        select.setAttribute("aria-label", "Provisioning profiles");
-        select.size = Math.min(Math.max(profiles.length, 3), 8);
-
-        for (const profile of profiles) {
-          const option = document.createElement("option");
-          option.value = profile.id;
-          option.textContent = `${profile.label} — ${profile.description}`;
-          option.selected = selected.has(profile.id);
-          select.appendChild(option);
-        }
-
-        if (!profiles.length) {
-          const emptyOption = document.createElement("option");
-          emptyOption.value = "";
-          emptyOption.textContent = "No profiles available";
-          select.appendChild(emptyOption);
-        }
-
-        renderProfileInputs();
-      }
-
-      function selectedProfilesForNode(nodeName) {
-        const liveIds = checkedProfileIds();
-        const ids = liveIds.length ? liveIds : selectedProfileIdsForNode(nodeName);
-        return profiles.filter((p) => ids.includes(p.id));
-      }
-
-      function updateProvisionActionState() {
-        const nodeName = provisionNode.value;
-        if (!nodeName) {
-          testTelegrafBtn.disabled = true;
-          testTelegrafBtn.title = "Select a node first.";
-          return;
-        }
-
-        const selectedProfiles = selectedProfilesForNode(nodeName).map((p) => p.id);
-        const hasTelegraf = selectedProfiles.includes("telegraf");
-        testTelegrafBtn.disabled = !hasTelegraf;
-        testTelegrafBtn.title = hasTelegraf
-          ? "Run dummy Influx connectivity + write checks"
-          : "Select the Telegraf profile to enable this test.";
-      }
-
       function browserTimezone() {
         try {
           const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1143,108 +994,40 @@
         }
       }
 
-      function renderProfileInputs() {
-        const nodeName = provisionNode.value;
-        const selectedProfiles = selectedProfilesForNode(nodeName);
-        const saved = (nodeInputs[nodeName] && typeof nodeInputs[nodeName] === "object") ? nodeInputs[nodeName] : {};
-
-        profileInputs.innerHTML = "";
-        if (!selectedProfiles.length) {
-          profileInputs.textContent = "No selected profiles for this node.";
-          updateProvisionActionState();
-          return;
-        }
-
-        for (const profile of selectedProfiles) {
-          const specs = Array.isArray(profile.input_specs) ? profile.input_specs : [];
-          if (!specs.length) continue;
-
-          const wrapper = document.createElement("div");
-          wrapper.className = "input-group";
-          const title = document.createElement("h4");
-          title.textContent = profile.label;
-          wrapper.appendChild(title);
-
-          if (profile.id === "longhorn") {
-            const helper = document.createElement("p");
-            helper.className = "note";
-            helper.textContent = "Use a stable mounted path for Longhorn data now; when you move the Pi boot/storage layout to NVMe later, change only the storage path value rather than the workflow.";
-            wrapper.appendChild(helper);
-          }
-
-          const values = (saved[profile.id] && typeof saved[profile.id] === "object") ? saved[profile.id] : {};
-          for (const spec of specs) {
-            const fieldId = String(spec.id || "");
-            if (!fieldId) continue;
-
-            const label = document.createElement("label");
-            const required = spec.required ? " *" : "";
-            label.innerHTML = `${spec.label || fieldId}<span class="required">${required}</span>`;
-
-            const input = document.createElement("input");
-            input.type = spec.sensitive ? "password" : "text";
-            input.placeholder = spec.placeholder || "";
-            const savedValue = String(values[fieldId] || "").trim();
-            let defaultValue = "";
-            if (!savedValue && profile.id === "baseline" && fieldId === "timezone") {
-              defaultValue = browserTimezone();
-            }
-            input.value = savedValue || defaultValue;
-            input.dataset.profile = profile.id;
-            input.dataset.field = fieldId;
-
-            wrapper.appendChild(label);
-            wrapper.appendChild(input);
-          }
-
-          if (profile.id === "longhorn") {
-            const tip = document.createElement("p");
-            tip.className = "note";
-            tip.style.marginTop = "0.35rem";
-            tip.textContent = "Recommended first pass: keep the default replica count at 2 on a 2-node storage pair, and point storage_path at the eventual NVMe mount when you are ready.";
-            wrapper.appendChild(tip);
-          }
-          profileInputs.appendChild(wrapper);
-        }
-
-        if (!profileInputs.children.length) {
-          profileInputs.textContent = "Selected profiles do not require extra inputs.";
-        }
-        updateProvisionActionState();
-      }
-
-      profileList.addEventListener("change", () => {
-        renderProfileInputs();
-      });
-
       function renderModuleSection() {
-        if (!moduleListEl || !moduleDetailEl) {
+        if (!moduleStatusBodyEl || !moduleDetailEl) {
           return;
         }
         const nodeName = provisionNode.value;
         const selected = new Set(selectedProfileIdsForNode(nodeName));
-        moduleListEl.innerHTML = "";
+        moduleStatusBodyEl.innerHTML = "";
         if (!profiles.length) {
-          moduleListEl.innerHTML = "<p class='note'>No modules available.</p>";
+          moduleStatusBodyEl.innerHTML = "<tr><td colspan='4' style='color:var(--muted)'>No modules available.</td></tr>";
         }
         for (const profile of profiles) {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "module-item" + (profile.id === selectedModuleId ? " selected" : "");
-          const tags = Array.isArray(profile.tags) ? profile.tags.join(", ") : "";
-          const marker = selected.has(profile.id) ? " • selected for node" : "";
-          btn.innerHTML = `<strong>${escapeHtml(profile.label || profile.id)}</strong><span class="module-item-sub">${escapeHtml(tags)}${escapeHtml(marker)}</span>`;
-          btn.addEventListener("click", () => {
+          const isActive = selected.has(profile.id);
+          const tags = Array.isArray(profile.tags) ? profile.tags.join(", ") : "-";
+          const tr = document.createElement("tr");
+          const activePill = isActive
+            ? "<span class='status-chip ok'>active</span>"
+            : "<span class='status-chip'>inactive</span>";
+          tr.innerHTML = `
+            <td><strong>${escapeHtml(profile.label || profile.id)}</strong></td>
+            <td class='mono'>${escapeHtml(tags)}</td>
+            <td>${activePill}</td>
+            <td><button type='button' class='node-action-btn secondary module-configure-btn'>${profile.id === selectedModuleId ? "Editing" : "Configure"}</button></td>
+          `;
+          tr.querySelector(".module-configure-btn").addEventListener("click", () => {
             selectedModuleId = profile.id;
             moduleStatusEl.textContent = "";
             renderModuleSection();
           });
-          moduleListEl.appendChild(btn);
+          moduleStatusBodyEl.appendChild(tr);
         }
 
         const profile = profiles.find((p) => p.id === selectedModuleId);
         if (!profile) {
-          moduleDetailEl.innerHTML = "<p class='note'>Select a module to view its parameter template.</p>";
+          moduleDetailEl.innerHTML = "<p class='note'>Select a module from the table to view its parameter template.</p>";
           return;
         }
         const saved = (nodeInputs[nodeName] && typeof nodeInputs[nodeName] === "object" && typeof nodeInputs[nodeName][profile.id] === "object")
@@ -1263,6 +1046,12 @@
         desc.className = "note";
         desc.textContent = profile.description || "";
         moduleDetailEl.appendChild(desc);
+        if (profile.id === "longhorn") {
+          const helper = document.createElement("p");
+          helper.className = "note";
+          helper.textContent = "Use a stable mounted path for Longhorn data now; when you move the Pi boot/storage layout to NVMe later, change only the storage path value rather than the workflow. Recommended first pass: keep the default replica count at 2 on a 2-node storage pair.";
+          moduleDetailEl.appendChild(helper);
+        }
         const tagRow = document.createElement("div");
         tagRow.className = "module-tags";
         tagRow.innerHTML = tagsHtml + groupsHtml;
@@ -1374,26 +1163,8 @@
         await loadSummary();
       }
 
-      function collectProfileInputs() {
-        const out = {};
-        profileInputs.querySelectorAll("input[data-profile][data-field]").forEach((input) => {
-          const profileId = input.dataset.profile;
-          const fieldId = input.dataset.field;
-          if (!profileId || !fieldId) return;
-          if (!out[profileId]) out[profileId] = {};
-          out[profileId][fieldId] = input.value.trim();
-        });
-        return out;
-      }
-
-      function checkedProfileIds() {
-        const select = document.getElementById("profile-select");
-        if (!select) {
-          return [];
-        }
-        return Array.from(select.selectedOptions)
-          .map((option) => option.value)
-          .filter(Boolean);
+      function checkedModulePlaceholder() {
+        return "";
       }
 
       function statusBadge(node) {
@@ -1874,61 +1645,8 @@
         if (oldNode && nodes.some((n) => n.name === oldNode)) {
           provisionNode.value = oldNode;
         }
-        renderProfileChecklist();
         renderModuleSection();
         renderRows();
-        updateProvisionActionState();
-      }
-
-      async function saveNodeInputs() {
-        const node = provisionNode.value;
-        if (!node) {
-          provisionStatus.textContent = "Select a node first.";
-          return;
-        }
-        provisionStatus.textContent = "Saving profile inputs...";
-        const res = await fetch("/api/nodes/node-inputs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ node, profile_inputs: collectProfileInputs() }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          provisionStatus.textContent = data.error || "Failed to save profile inputs.";
-          return;
-        }
-        provisionStatus.textContent = `Saved profile inputs for ${node}.`;
-        await loadSummary();
-      }
-
-      async function testTelegrafInputs() {
-        const node = provisionNode.value;
-        if (!node) {
-          provisionStatus.textContent = "Select a node first.";
-          return;
-        }
-
-        provisionStatus.textContent = "Testing Telegraf Influx inputs...";
-        const res = await fetch("/api/nodes/telegraf/test", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ node, profile_inputs: collectProfileInputs() }),
-        });
-        const data = await res.json();
-
-        if (!res.ok || !data.ok) {
-          const result = data.result || {};
-          const checks = Array.isArray(result.checks) ? result.checks : [];
-          const failing = checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.error || c.status || "failed"}`);
-          provisionStatus.textContent = failing.length
-            ? `Telegraf test failed: ${failing.join(" | ")}`
-            : (data.error || result.error || "Telegraf test failed.");
-          provisionLog.textContent = JSON.stringify(data, null, 2);
-          return;
-        }
-
-        provisionStatus.textContent = "Telegraf Influx test passed.";
-        provisionLog.textContent = JSON.stringify(data, null, 2);
       }
 
       async function refreshMonitor(sendWebhook) {
@@ -1978,27 +1696,6 @@
           return;
         }
         configStatus.textContent = `Saved. Password configured: ${data.config.password_set ? "yes" : "no"}`;
-      }
-
-      async function saveNodeProfiles() {
-        const node = provisionNode.value;
-        if (!node) {
-          provisionStatus.textContent = "Select a node first.";
-          return;
-        }
-        provisionStatus.textContent = "Saving node config set...";
-        const res = await fetch("/api/nodes/node-configs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ node, profile_ids: checkedProfileIds() }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          provisionStatus.textContent = data.error || "Failed to save node config set.";
-          return;
-        }
-        provisionStatus.textContent = `Saved config set for ${node}.`;
-        await loadSummary();
       }
 
       function formatProvisionResult(result) {
@@ -2076,13 +1773,6 @@
       }
 
       async function runProvision(node, mode, profileIds) {
-        if (node) {
-          const selectedNode = provisionNode.value;
-          if (selectedNode && selectedNode === node) {
-            await saveNodeInputs();
-          }
-        }
-
         provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning for the selected node...`;
         try {
           const requestBody = { node, mode, run_ansible: runAnsible.checked };
@@ -2132,7 +1822,6 @@
         }
       }
 
-      provisionNode.addEventListener("change", renderProfileChecklist);
       provisionNode.addEventListener("change", renderModuleSection);
       document.getElementById("module-save-inputs").addEventListener("click", saveModuleInputs);
       document.getElementById("module-check").addEventListener("click", () => runProvision(provisionNode.value, "check", selectedModuleId ? [selectedModuleId] : null));
@@ -2155,12 +1844,6 @@
       if (pruneStaleNodesBtn) {
         pruneStaleNodesBtn.addEventListener("click", pruneStaleNodes);
       }
-      document.getElementById("save-node-profiles").addEventListener("click", saveNodeProfiles);
-      document.getElementById("save-node-inputs").addEventListener("click", saveNodeInputs);
-      document.getElementById("test-telegraf").addEventListener("click", testTelegrafInputs);
-      document.getElementById("check-selected").addEventListener("click", () => runProvision(provisionNode.value, "check"));
-      document.getElementById("apply-selected").addEventListener("click", () => runProvision(provisionNode.value, "apply"));
-      document.getElementById("check-all").addEventListener("click", () => runProvision("", "check"));
 
       initSidebar();
       refreshCertificates();

@@ -3330,7 +3330,9 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             tasks_text = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
             self.assertIn("- tailscale", tasks_text, msg=f"{role} must tag tailscale tasks")
             self.assertIn("- baseline", tasks_text, msg=f"{role} must tag baseline tasks")
+            self.assertIn("- kubernetes", tasks_text, msg=f"{role} must tag kubernetes tasks")
             self.assertIn("Resolve Tailscale provisioning inputs", tasks_text, msg=f"{role} must consume provision_inputs")
+            self.assertIn("provision_inputs.k3s_config", tasks_text, msg=f"{role} must apply k3s config from provision inputs")
 
     def test_run_node_profile_uses_appdata_backed_ssh_key_path(self) -> None:
         with patch.object(callback_core.logger, "info"), patch.object(callback_core.shutil, "which", return_value="/tmp/fake-ansible"), patch.object(

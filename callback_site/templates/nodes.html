@@ -140,6 +140,42 @@
         background: linear-gradient(115deg, rgba(255, 255, 255, 0.08), rgba(11, 139, 110, 0.02) 45%, rgba(2, 132, 199, 0.06));
         pointer-events: none;
       }
+      .panel.hero {
+        background:
+          radial-gradient(circle at 88% 10%, rgba(14, 165, 233, 0.16), transparent 42%),
+          linear-gradient(120deg, rgba(15, 118, 110, 0.12), rgba(8, 47, 73, 0.03)),
+          var(--card);
+      }
+      .panel.hero::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 6px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
+        pointer-events: none;
+      }
+      .section-kicker {
+        margin: 0 0 0.2rem;
+        color: #0f766e;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.68rem;
+        font-weight: 800;
+      }
+      thead th {
+        background: #f8fafc;
+        color: var(--muted);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      tbody tr:hover td {
+        background: #f1f5f9;
+      }
       .split {
         display: grid;
         grid-template-columns: 1.25fr 1fr;
@@ -312,6 +348,7 @@
       .module-item.selected {
         border-color: #0b8b6e;
         background: #ecfdf5;
+        box-shadow: inset 3px 0 0 #0b8b6e;
       }
       .module-item-sub {
         display: block;
@@ -690,9 +727,10 @@
 
     <main class="content">
       <div class="wrap">
-        <div class="panel">
+        <div class="panel hero">
           <div class="hero-row">
             <div>
+              <p class="section-kicker">Node Operations</p>
               <h1>Node Ops 🛠️</h1>
               <div class="hero-badges">
                 <span class="hero-badge">⚡ Fast path</span>
@@ -708,6 +746,7 @@
 
         <div class="split">
           <div class="panel">
+            <p class="section-kicker">Access</p>
             <h2>Node Access Defaults + Webhook 🔐</h2>
             <p class="note">These are global defaults for checks/webhooks. Add per-node identity details below when enrolling manual nodes.</p>
             <div class="grid">
@@ -782,6 +821,7 @@
           </div>
 
           <div class="panel">
+            <p class="section-kicker">Provisioning</p>
             <h2>Provisioning Profiles ⚙️</h2>
             <div>
               <label for="provision-node">Node</label>
@@ -892,6 +932,7 @@
         </details>
 
         <div class="panel">
+          <p class="section-kicker">Fleet State</p>
           <h2>Monitoring + Provisioning State 📈</h2>
           <div class="stats-grid">
             <div class="stat-card">
@@ -939,6 +980,7 @@
         </div>
 
         <div class="panel">
+          <p class="section-kicker">Run Log</p>
           <h2>Provisioning Output 🧾</h2>
           <p class="note">Latest check/apply output for profile runs.</p>
           <div id="provision-log" class="log">No provisioning actions yet.</div>

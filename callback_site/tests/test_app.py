@@ -221,6 +221,19 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="profile-select"', text)
         self.assertIn("Hold Ctrl/Cmd to select multiple profiles", text)
 
+    def test_node_ops_page_exposes_module_configuration_section(self) -> None:
+        response = self.client.get("/nodes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="module-configuration"', text)
+        self.assertIn('id="module-list"', text)
+        self.assertIn('id="module-detail"', text)
+        self.assertIn('id="module-save-inputs"', text)
+        self.assertIn('id="module-check"', text)
+        self.assertIn('id="module-apply"', text)
+        self.assertIn("renderModuleSection", text)
+        self.assertIn("data-module-field", text)
+
     def test_node_ops_page_exposes_longhorn_storage_guidance(self) -> None:
         response = self.client.get("/nodes")
         self.assertEqual(response.status_code, 200)
@@ -3178,6 +3191,38 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         node_results = state.get("results", {}).get(node_name, {})
         self.assertTrue(node_results)
         self.assertTrue(all(item["status"] == "planned" for item in node_results.values()))
+
+    def test_node_provision_supports_profile_filter_for_single_module(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        nodes = summary.get_json().get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes in inventory for module filter test")
+
+        node_name = nodes[0]["name"]
+        set_profiles = self.client.post(
+            "/api/nodes/node-configs",
+            json={"node": node_name, "profile_ids": ["baseline", "tailscale"]},
+        )
+        self.assertEqual(set_profiles.status_code, 200)
+
+        response = self.client.post(
+            "/api/nodes/provision",
+            json={"node": node_name, "mode": "check", "run_ansible": False, "profile_ids": ["baseline"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        node_results = payload["results"][0]["results"]
+        self.assertEqual([item["profile_id"] for item in node_results], ["baseline"])
+
+    def test_node_provision_rejects_non_array_profile_filter(self) -> None:
+        response = self.client.post(
+            "/api/nodes/provision",
+            json={"node": "", "mode": "check", "run_ansible": False, "profile_ids": "baseline"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("profile_ids must be an array", response.get_json().get("error", ""))
 
     def test_group_vars_all_vault_file_is_plain_yaml(self) -> None:
         vault_path = Path(__file__).resolve().parents[2] / "group_vars" / "all" / "vault.yml"

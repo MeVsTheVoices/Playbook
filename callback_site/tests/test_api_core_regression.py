@@ -244,6 +244,19 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="profile-select"', text)
         self.assertIn("Hold Ctrl/Cmd to select multiple profiles", text)
 
+    def test_node_ops_page_exposes_module_configuration_section(self) -> None:
+        response = self.client.get("/nodes")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="module-configuration"', text)
+        self.assertIn('id="module-list"', text)
+        self.assertIn('id="module-detail"', text)
+        self.assertIn('id="module-save-inputs"', text)
+        self.assertIn('id="module-check"', text)
+        self.assertIn('id="module-apply"', text)
+        self.assertIn("renderModuleSection", text)
+        self.assertIn("data-module-field", text)
+
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
         self.assertEqual(response.status_code, 200)
@@ -3070,6 +3083,38 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("default_replica_count", spec_ids)
         self.assertIn("set_default_storage_class", spec_ids)
         self.assertIn("install_chart", spec_ids)
+
+    def test_node_provision_supports_profile_filter_for_single_module(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        nodes = summary.get_json().get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes in inventory for module filter test")
+
+        node_name = nodes[0]["name"]
+        set_profiles = self.client.post(
+            "/api/nodes/node-configs",
+            json={"node": node_name, "profile_ids": ["baseline", "tailscale"]},
+        )
+        self.assertEqual(set_profiles.status_code, 200)
+
+        response = self.client.post(
+            "/api/nodes/provision",
+            json={"node": node_name, "mode": "check", "run_ansible": False, "profile_ids": ["baseline"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        node_results = payload["results"][0]["results"]
+        self.assertEqual([item["profile_id"] for item in node_results], ["baseline"])
+
+    def test_node_provision_rejects_non_array_profile_filter(self) -> None:
+        response = self.client.post(
+            "/api/nodes/provision",
+            json={"node": "", "mode": "check", "run_ansible": False, "profile_ids": "baseline"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("profile_ids must be an array", response.get_json().get("error", ""))
 
     def test_node_provision_check_mode_uses_background_job_when_ansible_enabled(self) -> None:
         summary = self.client.get("/api/nodes/summary")

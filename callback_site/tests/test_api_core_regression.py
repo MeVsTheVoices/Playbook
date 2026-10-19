@@ -256,6 +256,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('id="module-apply"', text)
         self.assertIn("renderModuleSection", text)
         self.assertIn("data-module-field", text)
+        self.assertIn("data-module-type", text)
+        self.assertIn('spec.input_type || "text"', text)
 
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
@@ -3083,6 +3085,32 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("default_replica_count", spec_ids)
         self.assertIn("set_default_storage_class", spec_ids)
         self.assertIn("install_chart", spec_ids)
+
+    def test_nodes_profiles_expose_typed_module_fields(self) -> None:
+        response = self.client.get("/api/nodes/profiles")
+        self.assertEqual(response.status_code, 200)
+        profiles = {p.get("id"): p for p in response.get_json().get("profiles", [])}
+
+        tailscale_specs = {s["id"]: s for s in profiles["tailscale"]["input_specs"]}
+        self.assertIn("hostname", tailscale_specs)
+        self.assertEqual(tailscale_specs["advertise_tags"].get("input_type"), "csv")
+        self.assertEqual(tailscale_specs["advertise_exit_node"].get("input_type"), "checkbox")
+        self.assertEqual(tailscale_specs["enable_ssh"].get("input_type"), "checkbox")
+
+        kubernetes_specs = {s["id"]: s for s in profiles["kubernetes"]["input_specs"]}
+        self.assertEqual(kubernetes_specs["k3s_config"].get("input_type"), "textarea")
+        self.assertEqual(kubernetes_specs["k3s_security_baseline"].get("input_type"), "checkbox")
+
+        baseline_specs = {s["id"]: s for s in profiles["baseline"]["input_specs"]}
+        self.assertEqual(baseline_specs["packages"].get("input_type"), "csv")
+        self.assertTrue(baseline_specs["enable_hardware_checks"].get("default"))
+
+        telegraf_ids = {s["id"] for s in profiles["telegraf"]["input_specs"]}
+        self.assertIn("telegraf_config_url", telegraf_ids)
+
+        longhorn_specs = {s["id"]: s for s in profiles["longhorn"]["input_specs"]}
+        self.assertEqual(longhorn_specs["install_chart"].get("input_type"), "checkbox")
+        self.assertTrue(longhorn_specs["install_chart"].get("default"))
 
     def test_node_provision_supports_profile_filter_for_single_module(self) -> None:
         summary = self.client.get("/api/nodes/summary")

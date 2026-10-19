@@ -1277,22 +1277,59 @@
         for (const spec of specs) {
           const fieldId = String(spec.id || "");
           if (!fieldId) continue;
+          const inputType = String(spec.input_type || "text").toLowerCase();
+          const savedValue = String(saved[fieldId] || "");
+
+          if (inputType === "checkbox") {
+            const row = document.createElement("div");
+            row.className = "checkbox-row";
+            row.style.marginTop = "0.35rem";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.style.width = "auto";
+            input.setAttribute("data-module-field", fieldId);
+            input.setAttribute("data-module-type", "checkbox");
+            input.checked = savedValue
+              ? ["1", "true", "yes", "on"].includes(savedValue.toLowerCase())
+              : Boolean(spec.default);
+            const label = document.createElement("label");
+            label.style.margin = "0 0 0 0.4rem";
+            label.innerHTML = `${escapeHtml(spec.label || fieldId)}${spec.required ? " *" : ""}`;
+            row.appendChild(input);
+            row.appendChild(label);
+            moduleDetailEl.appendChild(row);
+            continue;
+          }
+
           const label = document.createElement("label");
+          label.style.marginTop = "0.4rem";
           label.innerHTML = `${escapeHtml(spec.label || fieldId)}${spec.required ? " *" : ""}`;
-          const input = document.createElement("input");
-          input.type = spec.sensitive ? "password" : "text";
-          input.placeholder = spec.placeholder || "";
-          input.value = String(saved[fieldId] || "");
-          input.dataset.moduleField = fieldId;
           moduleDetailEl.appendChild(label);
+
+          let input;
+          if (inputType === "textarea") {
+            input = document.createElement("textarea");
+            input.rows = 5;
+          } else {
+            input = document.createElement("input");
+            input.type = spec.sensitive ? "password" : "text";
+          }
+          input.placeholder = spec.placeholder || "";
+          input.value = savedValue;
+          input.setAttribute("data-module-field", fieldId);
+          input.setAttribute("data-module-type", inputType);
           moduleDetailEl.appendChild(input);
         }
       }
 
       function collectModuleInputs() {
         const out = {};
-        moduleDetailEl.querySelectorAll("input[data-module-field]").forEach((input) => {
-          out[input.dataset.moduleField] = input.value.trim();
+        moduleDetailEl.querySelectorAll("[data-module-field]").forEach((input) => {
+          if (input.getAttribute("data-module-type") === "checkbox") {
+            out[input.getAttribute("data-module-field")] = input.checked ? "true" : "";
+            return;
+          }
+          out[input.getAttribute("data-module-field")] = input.value.trim();
         });
         return out;
       }

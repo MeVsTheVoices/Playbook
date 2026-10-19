@@ -1046,6 +1046,14 @@
         desc.className = "note";
         desc.textContent = profile.description || "";
         moduleDetailEl.appendChild(desc);
+        if (profile.id === "kubernetes") {
+          const roleHint = document.createElement("p");
+          roleHint.className = "note";
+          const nodeGroup = String((nodes.find((n) => n.name === nodeName) || {}).group || "");
+          const familyRole = nodeGroup === "rpi_3bplus_active" ? "control-plane" : "worker";
+          roleHint.textContent = `Rack layout: Pi 3B+ nodes are the control plane, Pi 5 nodes are workers. This node's family maps to '${familyRole}'.`;
+          moduleDetailEl.appendChild(roleHint);
+        }
         if (profile.id === "longhorn") {
           const helper = document.createElement("p");
           helper.className = "note";
@@ -1105,6 +1113,13 @@
           }
           input.placeholder = spec.placeholder || "";
           input.value = savedValue;
+          if (!savedValue && profile.id === "kubernetes" && fieldId === "node_role") {
+            const nodeGroup = String((nodes.find((n) => n.name === nodeName) || {}).group || "");
+            input.value = nodeGroup === "rpi_3bplus_active" ? "control-plane" : "worker";
+          }
+          if (!savedValue && profile.id === "baseline" && fieldId === "timezone") {
+            input.value = browserTimezone();
+          }
           input.setAttribute("data-module-field", fieldId);
           input.setAttribute("data-module-type", inputType);
           moduleDetailEl.appendChild(input);

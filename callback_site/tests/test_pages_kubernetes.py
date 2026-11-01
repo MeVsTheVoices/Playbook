@@ -37,6 +37,22 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         text = response.get_data(as_text=True)
         self.assertIn('href="/kubernetes"', text)
 
+    def test_sidebar_shows_kubernetes_link_when_installed_but_inactive(self) -> None:
+        with patch.object(
+            callback_app,
+            "_detect_kubernetes_runtime",
+            return_value={
+                "available": False,
+                "active_service": "",
+                "k3s_binary": "/usr/local/bin/k3s",
+                "has_kubeconfig": True,
+                "reason": "k3s binary found but service is inactive",
+            },
+        ):
+            response = self.client.get("/settings")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="/kubernetes"', response.get_data(as_text=True))
+
     def test_kubernetes_summary_endpoint_returns_summary(self) -> None:
         fake_summary = {
             "ok": True,

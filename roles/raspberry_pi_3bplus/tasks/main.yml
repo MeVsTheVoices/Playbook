@@ -239,41 +239,296 @@
   tags:
     - kubernetes
 
-- name: Write K3s config from provisioning input
-  ansible.builtin.copy:
-    dest: /etc/rancher/k3s/config.yaml
-    owner: root
-    group: root
-    mode: '0644'
-    content: "{{ ((provision_inputs.k3s_config | default('') | string).rstrip() + '\n') if (provision_inputs | default({})) is mapping else '' }}"
-  register: raspberry_pi_3bplus_k3s_config_written
+- name: Read this node's Tailscale IPv4
+  ansible.builtin.command: tailscale ip -4
+  register: raspberry_pi_3bplus_tailscale_ip
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+  tags:
+    - kubernetes
+
+- name: Resolve structured K3s settings
+  ansible.builtin.set_fact:
+    raspberry_pi_3bplus_k3s_role: "{{ provision_inputs.node_role | default('light-worker') | string | lower | trim }}"
+    raspberry_pi_3bplus_k3s_endpoint: "{{ provision_inputs.server_endpoint | default('') | string | trim }}"
+    raspberry_pi_3bplus_k3s_token: "{{ provision_inputs.server_token | default('') | string | trim }}"
+    raspberry_pi_3bplus_k3s_node_ip: >-
+      {{ (provision_inputs.node_ip | default('') | string | trim)
+         or (raspberry_pi_3bplus_tailscale_ip.stdout_lines | default([]) | first | default('') | trim) }}
+    raspberry_pi_3bplus_k3s_security_enabled: "{{ provision_inputs.k3s_security_baseline | default(false) | bool }}"
+    raspberry_pi_3bplus_k3s_config_override: "{{ provision_inputs.k3s_config | default('') | string | trim }}"
+    raspberry_pi_3bplus_k3s_ingress: "{{ provision_inputs.k3s_ingress | default('traefik') | string | lower | trim }}"
+    raspberry_pi_3bplus_lw_servicelb: "{{ (provision_inputs.k3s_disable_servicelb | default('true') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi_3bplus_lw_metrics: "{{ (provision_inputs.k3s_disable_metrics_server | default('true') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi_3bplus_lw_storage: "{{ (provision_inputs.k3s_disable_local_storage | default('true') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi_3bplus_lw_netpol: "{{ (provision_inputs.k3s_disable_network_policy | default('true') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi_3bplus_lw_cloud: "{{ (provision_inputs.k3s_disable_cloud_controller | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi_3bplus_lw_helm: "{{ (provision_inputs.k3s_disable_helm_controller | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi_3bplus_taint: "{{ (provision_inputs.k3s_taint | default('true') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi_3bplus_max_pods: "{{ provision_inputs.k3s_max_pods | default('20') | string | trim or '20' }}"
   when:
     - rack_manage_with_ansible | bool
     - provision_profile | default('') == 'kubernetes'
     - (provision_inputs | default({})) is mapping
-    - (provision_inputs.k3s_config | default('') | string | trim) | length > 0
+  no_log: true
   tags:
     - kubernetes
 
-- name: Restart K3s server when config changed
-  ansible.builtin.service:
-    name: k3s
-    state: restarted
+- name: Validate 3B+ role
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi_3bplus_k3s_role in ['light-worker', 'utility', 'control-plane']
+    fail_msg: "A Pi 3B+ role must be light-worker, utility or control-plane; 'worker' and other values are not valid for this board."
   when:
-    - raspberry_pi_3bplus_k3s_config_written is defined
-    - raspberry_pi_3bplus_k3s_config_written.changed
-    - raspberry_pi_3bplus_k3s_server_unit.stat.exists | bool
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - (provision_inputs | default({})) is mapping
   tags:
     - kubernetes
 
-- name: Restart K3s agent when config changed
+- name: Refuse implicit K3s agent-to-server conversion
+  ansible.builtin.fail:
+    msg: >-
+      This Pi 3B+ has an installed k3s-agent unit. Converting it to a control-plane server requires an explicit migration or re-image.
+  when:
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+    - raspberry_pi_3bplus_k3s_agent_unit.stat.exists | default(false) | bool
+    - not (raspberry_pi_3bplus_k3s_server_unit.stat.exists | default(false) | bool)
+  tags:
+    - kubernetes
+
+- name: Refuse implicit K3s server-to-agent conversion
+  ansible.builtin.fail:
+    msg: >-
+      This Pi 3B+ has an installed k3s server unit. Converting it to a light worker removes its local control-plane data;
+      re-image it as a light worker or explicitly migrate/uninstall the server (and remove it from etcd) before applying this module.
+  when:
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'light-worker'
+    - raspberry_pi_3bplus_k3s_server_unit.stat.exists | default(false) | bool
+  tags:
+    - kubernetes
+
+- name: Resolve lightweight K3s component list
+  ansible.builtin.set_fact:
+    raspberry_pi_3bplus_k3s_disable: >-
+      {{ (['servicelb'] if raspberry_pi_3bplus_lw_servicelb | bool else [])
+         + (['metrics-server'] if raspberry_pi_3bplus_lw_metrics | bool else [])
+         + (['local-storage'] if raspberry_pi_3bplus_lw_storage | bool else [])
+         + (['traefik'] if raspberry_pi_3bplus_k3s_ingress == 'none' else []) }}
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - kubernetes
+
+- name: Validate lightweight K3s options
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi_3bplus_k3s_ingress in ['traefik', 'none']
+      - not (raspberry_pi_3bplus_lw_helm | bool) or raspberry_pi_3bplus_k3s_ingress == 'none'
+    fail_msg: "Unsupported lightweight K3s options: ingress must be 'traefik' or 'none' (ingress-nginx is retired and not offered), and the Helm controller can only be disabled when ingress is 'none' because Traefik is installed through it."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - kubernetes
+
+- name: Validate 3B+ control-plane settings
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi_3bplus_k3s_endpoint | length > 0
+      - raspberry_pi_3bplus_k3s_token | length > 0
+      - raspberry_pi_3bplus_k3s_node_ip | length > 0
+    fail_msg: "A Pi 3B+ control-plane node needs the K3s endpoint and server token, and must be on Tailscale (its Tailscale IP is read automatically unless node_ip is set)."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+  # Not no_log: the failure message must reach the operator. The conditions only
+  # report pass/fail, never the token value.
+  tags:
+    - kubernetes
+
+- name: Validate 3B+ light-worker settings
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi_3bplus_k3s_endpoint | length > 0
+      - raspberry_pi_3bplus_k3s_token | length > 0
+      - raspberry_pi_3bplus_k3s_node_ip | length > 0
+    fail_msg: "A Pi 3B+ light worker needs the K3s endpoint and server token, and must be on Tailscale (its Tailscale IP is read automatically unless node_ip is set)."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'light-worker'
+  tags:
+    - kubernetes
+
+- name: Validate 3B+ max pods
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi_3bplus_max_pods is match('^[0-9]+$')
+      - (raspberry_pi_3bplus_max_pods | int) >= 1
+      - (raspberry_pi_3bplus_max_pods | int) <= 110
+    fail_msg: "Max pods must be a whole number from 1 to 110."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') in ['light-worker', 'control-plane']
+  tags:
+    - kubernetes
+
+- name: Write structured K3s light-worker config
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+    content: >-
+      {{
+        raspberry_pi_3bplus_k3s_config_override
+        if raspberry_pi_3bplus_k3s_config_override | length > 0
+        else ({
+          'node-name': inventory_hostname,
+          'server': raspberry_pi_3bplus_k3s_endpoint,
+          'token': raspberry_pi_3bplus_k3s_token,
+          'node-ip': raspberry_pi_3bplus_k3s_node_ip,
+          'node-label': ['role=light-worker'],
+          'kubelet-arg': ['max-pods=' ~ (raspberry_pi_3bplus_max_pods | int)]
+        }
+        | combine({'node-taint': ['rack/light=true:NoSchedule']} if raspberry_pi_3bplus_taint | bool else {})
+        | to_nice_yaml(sort_keys=false))
+      }}
+  register: raspberry_pi_3bplus_k3s_agent_config
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'light-worker'
+    - not (raspberry_pi_3bplus_k3s_server_unit.stat.exists | default(false) | bool)
+  tags:
+    - kubernetes
+
+- name: Restart K3s agent after light-worker config change
   ansible.builtin.service:
     name: k3s-agent
     state: restarted
   when:
-    - raspberry_pi_3bplus_k3s_config_written is defined
-    - raspberry_pi_3bplus_k3s_config_written.changed
-    - not (raspberry_pi_3bplus_k3s_server_unit.stat.exists | bool)
-    - raspberry_pi_3bplus_k3s_agent_unit.stat.exists | bool
+    - raspberry_pi_3bplus_k3s_agent_unit.stat.exists | default(false) | bool
+    - raspberry_pi_3bplus_k3s_agent_config.changed | default(false)
+  tags:
+    - kubernetes
+
+- name: Note that the utility role applies no Kubernetes configuration
+  ansible.builtin.debug:
+    msg: >-
+      Utility role: no K3s configuration was applied. If K3s is already installed on this node it was left as-is;
+      remove it explicitly if it should no longer run.
+  when:
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'utility'
+  tags:
+    - kubernetes
+
+- name: Remove legacy secrets-encryption flag when cluster encryption is disabled
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/k3s.service
+    regexp: '.*--secrets-encryption.*'
+    state: absent
+  register: raspberry_pi_3bplus_encryption_flag_removed
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+    - not (raspberry_pi_3bplus_k3s_security_enabled | bool)
+    - raspberry_pi_3bplus_k3s_server_unit.stat.exists | bool
+  tags:
+    - kubernetes
+
+- name: Reload systemd after K3s unit flag change
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - raspberry_pi_3bplus_encryption_flag_removed is defined
+    - raspberry_pi_3bplus_encryption_flag_removed.changed
+  tags:
+    - kubernetes
+
+- name: Set kernel values required by K3s protected defaults
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: true
+    reload: true
+  loop:
+    - { name: vm.overcommit_memory, value: '1' }
+    - { name: kernel.panic, value: '10' }
+    - { name: kernel.panic_on_oops, value: '1' }
+  register: raspberry_pi_3bplus_k3s_kernel_defaults
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Write structured K3s control-plane config
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+    content: >-
+      {{
+        raspberry_pi_3bplus_k3s_config_override
+        if raspberry_pi_3bplus_k3s_config_override | length > 0
+        else ({
+          'node-name': inventory_hostname,
+          'server': raspberry_pi_3bplus_k3s_endpoint,
+          'token': raspberry_pi_3bplus_k3s_token,
+          'node-ip': raspberry_pi_3bplus_k3s_node_ip,
+          'advertise-address': raspberry_pi_3bplus_k3s_node_ip,
+          'secrets-encryption': (raspberry_pi_3bplus_k3s_security_enabled | bool),
+          'node-label': ['role=control-plane']
+        }
+        | combine({'node-taint': ['node-role.kubernetes.io/control-plane:NoSchedule']} if raspberry_pi_3bplus_taint | bool else {})
+        | combine({'kubelet-arg': ['max-pods=' ~ (raspberry_pi_3bplus_max_pods | int)]})
+        | combine({'disable': raspberry_pi_3bplus_k3s_disable} if raspberry_pi_3bplus_k3s_disable | length > 0 else {})
+        | combine({'disable-network-policy': true} if raspberry_pi_3bplus_lw_netpol | bool else {})
+        | combine({'disable-cloud-controller': true} if raspberry_pi_3bplus_lw_cloud | bool else {})
+        | combine({'disable-helm-controller': true} if raspberry_pi_3bplus_lw_helm | bool else {})
+        | to_nice_yaml(sort_keys=false))
+      }}
+  register: raspberry_pi_3bplus_k3s_structured_config
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Restart K3s server when structured config changes
+  ansible.builtin.service:
+    name: k3s
+    state: restarted
+  when:
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+    - raspberry_pi_3bplus_k3s_structured_config is defined
+    - raspberry_pi_3bplus_k3s_server_unit.stat.exists | default(false) | bool
+    - >-
+      raspberry_pi_3bplus_k3s_structured_config.changed
+      or (raspberry_pi_3bplus_k3s_kernel_defaults.changed | default(false))
+      or (raspberry_pi_3bplus_encryption_flag_removed.changed | default(false))
   tags:
     - kubernetes

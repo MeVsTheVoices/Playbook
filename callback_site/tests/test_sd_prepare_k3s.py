@@ -59,7 +59,7 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         self.assertIn("pragma: k3s-config-v1", cleaned["cloud_init_options"]["k3s_config"])
 
     def test_sanitize_sd_prepare_payload_autofills_k3s_config_when_missing(self) -> None:
-        with patch.object(callback_app, "_detect_local_ip", return_value="10.255.45.164"):
+        with patch.dict("os.environ", {"K3S_SERVER_HOST": ""}, clear=False), patch.object(callback_app, "_detect_local_ip", return_value="10.255.45.164"):
             cleaned = callback_app._sanitize_sd_prepare_payload(
                 {
                     "profile": "pi5",
@@ -74,7 +74,13 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         self.assertEqual(cleaned["distribution"], "k3s")
         self.assertIn("k3s_config", cleaned["cloud_init_options"])
         self.assertIn("pragma: k3s-config-v1", cleaned["cloud_init_options"]["k3s_config"])
-        self.assertIn("server: https://10.255.45.164:6443", cleaned["cloud_init_options"]["k3s_config"])
+        # The default joins over Tailscale, never the detected LAN address.
+        self.assertIn("server: https://100.65.24.76:6443", cleaned["cloud_init_options"]["k3s_config"])
+        self.assertNotIn("10.255.45.164", cleaned["cloud_init_options"]["k3s_config"])
+
+    def test_default_k3s_config_server_host_env_override(self) -> None:
+        with patch.dict("os.environ", {"K3S_SERVER_HOST": "control-plane.example"}, clear=False):
+            self.assertIn("server: https://control-plane.example:6443", callback_app._default_k3s_config("rack-node"))
 
     def test_sanitize_sd_prepare_payload_infers_k3s_from_config_block(self) -> None:
         cleaned = callback_app._sanitize_sd_prepare_payload(
@@ -158,16 +164,18 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         self.assertIn('-d "\\${PAYLOAD_JSON}"', script_text)
 
     def test_prepare_sd_script_escapes_runtime_callback_assignments(self) -> None:
+        # The final callback runs on the node via bash, sourcing the baked /etc/rack-node.env.
+        # Rendered behavior is covered in test_sd_cloud_init_render; this pins the shape.
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"
         script_text = script_path.read_text(encoding="utf-8")
-        self.assertIn('SOURCE_IP="\\$(/usr/local/bin/rack-local-ip', script_text)
-        self.assertIn('NODE_REPORT_B64="\\$(/usr/local/bin/rack-node-report', script_text)
+        self.assertIn('. /etc/rack-node.env; SOURCE_IP="$(/usr/local/bin/rack-local-ip', script_text)
+        self.assertIn('NODE_REPORT_B64="$(/usr/local/bin/rack-node-report', script_text)
         self.assertIn('/usr/local/bin/rack-callback-payload', script_text)
-        self.assertIn('INSTANCE_ID="\\${INSTANCE_ID}"', script_text)
-        self.assertIn('HOSTNAME="\\${HOSTNAME}"', script_text)
-        self.assertIn('PROFILE="\\${PROFILE}"', script_text)
-        self.assertIn('SOURCE_IP="\\${SOURCE_IP}"', script_text)
-        self.assertIn('NODE_REPORT_B64="\\${NODE_REPORT_B64}"', script_text)
+        self.assertIn('INSTANCE_ID="$INSTANCE_ID"', script_text)
+        self.assertIn('HOSTNAME="$HOSTNAME"', script_text)
+        self.assertIn('PROFILE="$PROFILE"', script_text)
+        self.assertIn('SOURCE_IP="$SOURCE_IP"', script_text)
+        self.assertIn('NODE_REPORT_B64="$NODE_REPORT_B64"', script_text)
 
     def test_prepare_sd_script_supports_pcie_boot_toggles(self) -> None:
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"
@@ -176,6 +184,8 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
         self.assertIn('CLOUD_INIT_PCIEX1_GEN3', script_text)
         self.assertIn('dtparam=pciex1', script_text)
         self.assertIn('dtparam=pciex1_gen=3', script_text)
+        self.assertIn('[[ "$PROFILE" == "pi5" && ( "${CLOUD_INIT_PCIEX1_ENABLE:-false}" == "true"', script_text)
+        self.assertIn('[[ "$PROFILE" == "pi5" && "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]', script_text)
 
     def test_prepare_sd_script_accepts_pi3bplus_profile(self) -> None:
         script_path = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"

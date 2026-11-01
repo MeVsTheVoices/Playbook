@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="{{ url_for('static', filename='config_check.js') }}"></script>
     <style>
       :root {
         --bg: #f6f7f9;
@@ -1192,33 +1193,77 @@
                 <div class="form-grid">
                   <div class="grid-span-full">
                     <label for="opt_k3s_config">K3s config (required for k3s distribution)</label>
-                    <textarea id="opt_k3s_config" data-option-key="k3s_config" rows="8" placeholder="# User-facing k3s template
+                    <textarea id="opt_k3s_config" data-option-key="k3s_config" data-longform-check="k3s_config" rows="8" placeholder="# User-facing k3s template
 # Update this if you need a non-default control-plane target.
 # pragma: k3s-config-v1
 server: https://local-machine-ip:6443
 "></textarea>
                     <p class="segment-hint">Most users only need the server endpoint here; it tells K3s where the control-plane API lives.</p>
                   </div>
-                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-os-option-wrapper="1">
-                    <input id="opt_k3s_security_baseline" data-option-key="k3s_security_baseline" data-option-type="checkbox" data-option-distribution="k3s" type="checkbox">
-                    <label for="opt_k3s_security_baseline" style="margin: 0;">Apply K3s security baseline (optional)</label>
+                  <div data-os-option-wrapper="1">
+                    <div class="checkbox-row" style="margin-top: 0.2rem;">
+                      <input id="opt_k3s_security_baseline" data-option-key="k3s_security_baseline" data-option-type="checkbox" data-option-distribution="k3s" type="checkbox">
+                      <label for="opt_k3s_security_baseline" style="margin: 0;">Apply K3s security baseline (optional)</label>
+                    </div>
+                    <p class="segment-hint" style="color: #b45309;">Warning: keep this off for now. The baseline adds --secrets-encryption, but the current cluster runs with encryption disabled, so joining control-plane nodes with it on will fail or crash-loop.</p>
                   </div>
+                  <div class="grid-span-full" data-os-option-wrapper="1">
+                    <label for="opt_k3s_role">K3s role</label>
+                    <select id="opt_k3s_role" data-option-key="k3s_role" data-option-default="" data-option-distribution="k3s" data-option-profile="{{ k3s_lightweight_profiles }}"></select>
+                    <p class="segment-hint" id="k3s-role-hint"></p>
+                  </div>
+                  <div data-os-option-wrapper="1">
+                    <div class="checkbox-row" style="margin-top: 0.2rem;">
+                      <input id="opt_k3s_taint" data-option-key="k3s_taint" data-option-type="checkbox" data-option-default="false" data-option-distribution="k3s" data-option-profile="{{ k3s_lightweight_profiles }}" data-option-role="worker light-worker control-plane" type="checkbox">
+                      <label for="opt_k3s_taint" style="margin: 0;">Keep general workloads off this node (taint)</label>
+                    </div>
+                    <p class="segment-hint" style="margin-left: 1.6rem;" id="k3s-taint-hint"></p>
+                  </div>
+                  <div data-os-option-wrapper="1">
+                    <label for="opt_k3s_max_pods">Max pods on this node</label>
+                    <input id="opt_k3s_max_pods" data-option-key="k3s_max_pods" data-option-default="" data-option-distribution="k3s" data-option-profile="{{ k3s_lightweight_profiles }}" data-option-role="worker light-worker control-plane" inputmode="numeric" placeholder="blank = board default">
+                    <p class="segment-hint">Whole number from 1 to 110. Blank uses the board default: 20 on a Pi 3B+ (it cannot carry 110), the K3s default of 110 on a Pi 5.</p>
+                  </div>
+                  <div class="grid-span-full" data-os-option-wrapper="1">
+                    <label for="opt_k3s_ingress">Control-plane: ingress controller</label>
+                    <select id="opt_k3s_ingress" data-option-key="k3s_ingress" data-option-default="{{ k3s_ingress_default }}" data-option-distribution="k3s" data-option-profile="{{ k3s_lightweight_profiles }}" data-option-role="control-plane">
+                      {% for choice in k3s_ingress_choices %}<option value="{{ choice }}"{% if choice == k3s_ingress_default %} selected{% endif %}>{{ choice }}</option>{% endfor %}
+                    </select>
+                    <p class="segment-hint">'none' also disables Traefik. ingress-nginx is not offered: the Kubernetes project retired it in March 2026 (no security fixes). The options below are cluster-wide: the ones marked 'must match' have to be identical on every K3s server, including the NucBox. The Pi 5 starts with all of them off so it matches the NucBox as-is; the Pi 3B+ starts with the lightweight set on.</p>
+                  </div>
+                  {% for opt in k3s_lightweight_options %}
+                  <div data-os-option-wrapper="1">
+                    <div class="checkbox-row" style="margin-top: 0.2rem;">
+                      <input id="opt_{{ opt.id }}" data-option-key="{{ opt.id }}" data-option-type="checkbox" data-option-default="false" data-option-distribution="k3s" data-option-profile="{{ k3s_lightweight_profiles }}" data-option-role="control-plane" type="checkbox">
+                      <label for="opt_{{ opt.id }}" style="margin: 0;">{{ opt.label }}</label>
+                    </div>
+                    <p class="segment-hint" style="margin-left: 1.6rem;">{{ opt.hint }}</p>
+                  </div>
+                  {% endfor %}
                 </div>
               </details>
 
               <details id="pi-specific-section" class="segment">
                 <summary>Pi-specific Bootstrap</summary>
-                <p class="segment-hint">Shown for Pi-specific templates. Use this to add board-focused boot settings such as the USB current override.</p>
+                <p class="segment-hint">Shown for Pi-specific templates. Pick the board; only options that apply to it are listed.</p>
                 <div class="form-grid">
-                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1">
+                  <div>
+                    <label for="pi_model_select">Pi model</label>
+                    <select id="pi_model_select">
+                      <option value="pi5">Pi 5</option>
+                      <option value="pi3bplus">Pi 3B+</option>
+                    </select>
+                  </div>
+                  <p id="pi-model-no-options" class="segment-hint" style="display: none;">No board-specific boot options for this Pi model.</p>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1" data-pi-model="pi5">
                     <input id="opt_usb_max_current_enable" data-option-key="usb_max_current_enable" data-option-type="checkbox" type="checkbox">
                     <label for="opt_usb_max_current_enable" style="margin: 0;">Set usb_max_current_enable=1 (Pi 5: useful with 3A PSU for USB boot/peripheral power limits)</label>
                   </div>
-                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1" data-pi-model="pi5">
                     <input id="opt_pciex1_enable" data-option-key="pciex1_enable" data-option-type="checkbox" type="checkbox">
                     <label for="opt_pciex1_enable" style="margin: 0;">Enable PCIe connector (dtparam=pciex1) for non-HAT+ NVMe adapters</label>
                   </div>
-                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1">
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1" data-pi-model="pi5">
                     <input id="opt_pciex1_gen3" data-option-key="pciex1_gen3" data-option-type="checkbox" type="checkbox">
                     <label for="opt_pciex1_gen3" style="margin: 0;">Enable PCIe Gen3 (dtparam=pciex1_gen=3) - higher throughput, can reduce stability on Pi 5</label>
                   </div>
@@ -2817,7 +2862,78 @@ server: https://local-machine-ip:6443
             return false;
           }
         }
+        const allowedProfilesRaw = String(el.dataset.optionProfile || "").trim().toLowerCase();
+        if (allowedProfilesRaw) {
+          const allowedProfiles = allowedProfilesRaw.split(/\s+/).filter(Boolean);
+          if (!allowedProfiles.includes(String(form.profile?.value || "").trim().toLowerCase())) {
+            return false;
+          }
+        }
+        const requiredRoles = String(el.dataset.optionRole || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (requiredRoles.length) {
+          const currentRole = String(document.getElementById("opt_k3s_role")?.value || "").trim().toLowerCase();
+          if (!requiredRoles.includes(currentRole)) {
+            return false;
+          }
+        }
         return true;
+      }
+
+      const K3S_ROLE_DEFAULTS = {{ k3s_role_defaults|tojson }};
+      const K3S_ROLE_TAINTS = {{ k3s_role_taints|tojson }};
+      const K3S_ROLE_HINTS = {
+        pi3bplus: "A Pi 3B+ has about 900 MB of RAM, below the 2 GB K3s documents for a server. light-worker joins as a K3s agent (no etcd, no API server). For a utility node that runs no Kubernetes, set Distribution to Standard instead.",
+        pi5: "worker joins as a K3s agent. control-plane makes this Pi a K3s server and an etcd voter: keep the number of servers odd (the NucBox plus two Pi 5 makes three). For a utility node that runs no Kubernetes, set Distribution to Standard instead.",
+      };
+
+      function k3sRoleLabel(profile, role) {
+        const d = K3S_ROLE_DEFAULTS[profile] || {};
+        if (role === d.role) return `${role} (recommended)`;
+        return profile === "pi3bplus" && role === "control-plane" ? `${role} (not recommended)` : role;
+      }
+
+      function updateK3sRoleHints() {
+        const profile = String(form.profile?.value || "").trim().toLowerCase();
+        const role = String(document.getElementById("opt_k3s_role")?.value || "");
+        const roleHint = document.getElementById("k3s-role-hint");
+        if (roleHint) roleHint.textContent = K3S_ROLE_HINTS[profile] || "";
+        const taintHint = document.getElementById("k3s-taint-hint");
+        if (taintHint) {
+          const taint = K3S_ROLE_TAINTS[role] || "";
+          taintHint.textContent = taint ? `Adds ${taint}; only pods that tolerate it are scheduled here.` : "";
+        }
+      }
+
+      // Rebuilds the role list and resets every board-dependent default; call on profile change, not when loading a template.
+      function applyK3sRoleDefaults() {
+        const profile = String(form.profile?.value || "").trim().toLowerCase();
+        const d = K3S_ROLE_DEFAULTS[profile];
+        const select = document.getElementById("opt_k3s_role");
+        if (!d || !select) return;
+        select.innerHTML = "";
+        for (const role of d.roles) {
+          const option = document.createElement("option");
+          option.value = role;
+          option.textContent = k3sRoleLabel(profile, role);
+          select.appendChild(option);
+        }
+        // Always back to the board's safe default: a server role must never carry over by accident.
+        select.value = d.role;
+        select.dataset.optionDefault = d.role;
+        const taint = document.getElementById("opt_k3s_taint");
+        taint.checked = Boolean(d.taint);
+        taint.dataset.optionDefault = String(Boolean(d.taint));
+        const maxPods = document.getElementById("opt_k3s_max_pods");
+        maxPods.value = d.max_pods;
+        maxPods.dataset.optionDefault = d.max_pods;
+        document.getElementById("opt_k3s_ingress").value = d.ingress;
+        for (const [optionId, on] of Object.entries(d.server)) {
+          const box = document.getElementById(`opt_${optionId}`);
+          if (!box) continue;
+          box.checked = Boolean(on);
+          box.dataset.optionDefault = String(Boolean(on));
+        }
+        updateK3sRoleHints();
       }
 
       function updateOsScopedOptionsVisibility() {
@@ -2827,7 +2943,9 @@ server: https://local-machine-ip:6443
           const visible = optionScopeMatches(el);
           wrapper.style.display = visible ? "" : "none";
           el.disabled = !visible;
-          if (!visible && String(el.dataset.optionType || "") === "checkbox") {
+          // Profile-scoped options keep their value while hidden; gather skips them, so
+          // nothing is sent for the wrong board and the choice returns when switching back.
+          if (!visible && !el.dataset.optionProfile && String(el.dataset.optionType || "") === "checkbox") {
             el.checked = false;
           }
         }
@@ -3214,17 +3332,31 @@ server: https://local-machine-ip:6443
         const selectedProfile = String(sdOptionsProfileSelectEl.value || "").trim();
         const selectedProfilePiOnly = Boolean(selectedProfile && sdOptionProfiles[selectedProfile] && sdOptionProfiles[selectedProfile].pi_only);
         const visible = piOnlySelected || selectedProfilePiOnly;
+        const piModel = String(form.profile.value || "").trim().toLowerCase();
+        const piModelSelectEl = document.getElementById("pi_model_select");
+        if (piModelSelectEl && piModelSelectEl.value !== piModel) {
+          piModelSelectEl.value = piModel;
+        }
 
         if (section) {
           section.style.display = visible ? "" : "none";
           section.open = visible;
         }
 
+        let shownModelOptions = 0;
         for (const el of sdOptionsInputEls) {
           const wrapper = el.closest("[data-pi-option-wrapper='1']");
           if (!wrapper) continue;
-          wrapper.style.display = visible ? "" : "none";
-          el.disabled = !visible;
+          const wrapperModel = String(wrapper.dataset.piModel || "").trim().toLowerCase();
+          const wrapperVisible = visible && (!wrapperModel || wrapperModel === piModel);
+          wrapper.style.display = wrapperVisible ? "" : "none";
+          el.disabled = !wrapperVisible;
+          if (wrapperVisible) shownModelOptions += 1;
+        }
+
+        const noOptionsEl = document.getElementById("pi-model-no-options");
+        if (noOptionsEl) {
+          noOptionsEl.style.display = visible && shownModelOptions === 0 ? "" : "none";
         }
       }
 
@@ -3247,7 +3379,7 @@ server: https://local-machine-ip:6443
             el.value = Array.isArray(value) ? value.join("\n") : "";
             continue;
           }
-          el.value = value === undefined || value === null ? "" : String(value);
+          el.value = value === undefined || value === null ? String(el.dataset.optionDefault || "") : String(value);
         }
         updateOsScopedOptionsVisibility();
         updatePiScopedOptionsVisibility();
@@ -3593,11 +3725,24 @@ server: https://local-machine-ip:6443
         const eventName = String(el.dataset.optionType || "") === "checkbox" ? "change" : "input";
         el.addEventListener(eventName, updateSdOptionsConfiguredCount);
       }
+      document.getElementById("opt_k3s_role")?.addEventListener("change", () => {
+        updateK3sRoleHints();
+        updateOsScopedOptionsVisibility();
+      });
 
       document.getElementById("ssh_key_name").addEventListener("input", refreshKeyLinks);
 
       form.profile.addEventListener("change", () => {
         rebuildCatalogFilters();
+        updatePiScopedOptionsVisibility();
+        applyK3sRoleDefaults();
+        updateOsScopedOptionsVisibility();
+        updateSdOptionsConfiguredCount();
+      });
+
+      document.getElementById("pi_model_select").addEventListener("change", (event) => {
+        form.profile.value = event.target.value;
+        form.profile.dispatchEvent(new Event("change"));
       });
 
       form.distribution.addEventListener("change", ensureK3sConfigDefaults);
@@ -3632,6 +3777,7 @@ server: https://local-machine-ip:6443
       initSidebar();
       ensureK3sConfigDefaults();
       rebuildCatalogFilters();
+      applyK3sRoleDefaults();
       updateOsScopedOptionsVisibility();
       updatePiScopedOptionsVisibility();
       refreshKeyLinks();

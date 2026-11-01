@@ -53,16 +53,20 @@ class OpenWrtProbeTests(BaseCallbackSiteTest):
         )
         self.assertEqual(generated.status_code, 200)
 
-        response = self.client.post(
-            "/api/openwrt/push-key",
-            json={
-                "host": "127.0.0.1",
-                "port": 22,
-                "username": "root",
-                "password": "secret",
-                "key_name": "openwrt-test-key",
-            },
-        )
+        # Never run a real ssh here: OpenSSH reads the password from the terminal, so a
+        # real attempt against 127.0.0.1 prompts whoever is running the suite.
+        with patch("core.subprocess.run", return_value=SimpleNamespace(returncode=255, stdout="", stderr="stubbed ssh")) as run_mock:
+            response = self.client.post(
+                "/api/openwrt/push-key",
+                json={
+                    "host": "127.0.0.1",
+                    "port": 22,
+                    "username": "root",
+                    "password": "secret",
+                    "key_name": "openwrt-test-key",
+                },
+            )
+        self.assertTrue(run_mock.called)
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertIn("key_name", payload)

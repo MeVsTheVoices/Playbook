@@ -262,9 +262,9 @@ app = Flask(__name__)
 @app.context_processor
 def inject_runtime_flags() -> Dict[str, Any]:
     kube_state = _detect_kubernetes_runtime(force_refresh=False)
-    return {
-        "kubernetes_available": bool(kube_state.get("available", False)),
-    }
+    # Keep the page reachable once K3s is installed, even while the service is down.
+    k3s_installed = bool(kube_state.get("k3s_binary") or kube_state.get("has_kubeconfig"))
+    return {"kubernetes_available": bool(kube_state.get("available", False)) or k3s_installed}
 
 
 def _catalog_entries_for_ui() -> List[Dict[str, Any]]:
@@ -291,7 +291,7 @@ def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
         return existing_name
 
     distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
-    options = payload.get("cloud_init_options") if isinstance(payload.get("cloud_init_options"), dict) else {}
+    options = _redact_sd_secret_options(payload.get("cloud_init_options"))
     hostname = str(payload.get("hostname", "")).strip() or "node"
     base_name = _generated_sd_option_profile_name(hostname)
 
@@ -674,6 +674,12 @@ def sd_prepare() -> Any:
     if distribution not in {"standard", "k3s"}:
         return jsonify({"ok": False, "errors": ["distribution must be standard or k3s"]}), 400
     payload["distribution"] = distribution
+    if payload.get("config_errors"):
+        return jsonify({"ok": False, "errors": [f"K3s lightweight options: {err}" for err in payload["config_errors"]]}), 400
+    if distribution == "k3s":
+        k3s_check = _check_longform("k3s_config", payload["cloud_init_options"].get("k3s_config", ""))
+        if not k3s_check["ok"]:
+            return jsonify({"ok": False, "errors": [f"K3s config: {err}" for err in k3s_check["errors"]]}), 400
     payload["sd_options_profile"] = _auto_generate_sd_option_profile(payload)
 
     job_id = uuid.uuid4().hex
@@ -690,7 +696,7 @@ def sd_prepare() -> Any:
                 "callback_url": payload["callback_url"],
                 "image_sha256": str(payload.get("image_sha256", "")).strip(),
                 "sd_options_profile": str(payload.get("sd_options_profile", "")).strip(),
-                "cloud_init_options": payload.get("cloud_init_options", {}),
+                "cloud_init_options": _redact_sd_secret_options(payload.get("cloud_init_options")),
             },
             "stdout": "",
             "stderr": "",
@@ -1321,7 +1327,7 @@ def nodes_profiles() -> Any:
             "ok": True,
             "profiles": NODE_PROVISION_PROFILES,
             "node_configs": state.get("node_configs", {}),
-            "node_inputs": state.get("node_inputs", {}),
+            "node_inputs": _redact_node_profile_inputs(state.get("node_inputs", {})),
             "manual_nodes": state.get("manual_nodes", {}),
         }
     )
@@ -1411,6 +1417,14 @@ def nodes_node_configs() -> Any:
     return jsonify({"ok": True, "node": node_name, "profile_ids": valid_profile_ids})
 
 
+@app.post("/api/config/check")
+def config_check() -> Any:
+    payload = request.get_json(silent=True) or {}
+    kind = str(payload.get("kind", "")).strip()
+    result = _check_longform(kind, payload.get("text", ""))
+    return jsonify(result), (200 if kind in LONGFORM_CHECKS else 400)
+
+
 @app.post("/api/nodes/node-inputs")
 def nodes_node_inputs() -> Any:
     payload = request.get_json(silent=True) or {}
@@ -1429,12 +1443,16 @@ def nodes_node_inputs() -> Any:
 
     state = _load_node_provisioning()
     profile_ids = _effective_node_profiles(node, state)
+    ignored = [str(pid) for pid in raw_inputs if str(pid) not in profile_ids]
     sanitized = _sanitize_node_profile_inputs(raw_inputs, profile_ids=profile_ids)
+    longform_errors = [err for pid, values in sanitized.items() for err in _longform_input_errors(pid, values)]
+    if longform_errors:
+        return jsonify({"ok": False, "error": "; ".join(longform_errors)}), 400
 
     node_inputs = state.setdefault("node_inputs", {})
-    node_inputs[node_name] = sanitized
+    node_inputs[node_name] = _merge_node_profile_inputs(node_inputs.get(node_name), sanitized)
     _save_node_provisioning(state)
-    return jsonify({"ok": True, "node": node_name})
+    return jsonify({"ok": True, "node": node_name, "ignored_unselected_modules": ignored})
 
 
 def _merged_telegraf_inputs(state: Dict[str, Any], node_name: str, raw_inputs: Any) -> Dict[str, str]:

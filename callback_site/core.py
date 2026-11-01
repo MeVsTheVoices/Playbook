@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
+import yaml
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -64,7 +65,22 @@ KUBERNETES_STATUS_CACHE: Dict[str, Any] = {
         "reason": "not checked",
     },
 }
-from domain_defaults import IMAGE_CATALOG, IMAGE_CATALOG_FILE, NODE_PROVISION_PROFILES, TAILSCALE_POLICY_DEFAULTS
+from domain_defaults import IMAGE_CATALOG, IMAGE_CATALOG_FILE, K3S_API_ENDPOINT_DEFAULT, NODE_PROVISION_PROFILES, TAILSCALE_POLICY_DEFAULTS
+from k3s_lightweight import (
+    INGRESS_CHOICES as K3S_INGRESS_CHOICES,
+    INGRESS_DEFAULT as K3S_INGRESS_DEFAULT,
+    LIGHTWEIGHT_OPTION_IDS as _K3S_SERVER_OPTION_IDS,
+    LIGHTWEIGHT_OPTIONS as K3S_LIGHTWEIGHT_OPTIONS,
+    ROLE_CONTROL_PLANE as K3S_ROLE_CONTROL_PLANE,
+    ROLE_OPTION_ID as _K3S_ROLE_OPTION_ID,
+    ROLE_PROFILES as K3S_ROLE_PROFILES,
+    ROLE_TAINTS as K3S_ROLE_TAINTS,
+    apply_role_to_k3s_config as _apply_k3s_role_config,
+    is_role_profile as _is_k3s_role_profile,
+    k3s_mode_for_role as _k3s_mode_for_role,
+    strip_options as _strip_k3s_lightweight_options,
+    ui_defaults as k3s_role_ui_defaults,
+)
 
 
 
@@ -2106,11 +2122,22 @@ def _single_source_of_truth_summary() -> Dict[str, Any]:
         },
         "provisioning": {
             "config": masked_config,
-            "node_inputs": provision_state.get("node_inputs", {}),
+            "node_inputs": _redact_node_profile_inputs(provision_state.get("node_inputs", {})),
             "manual_nodes": provision_state.get("manual_nodes", {}),
         },
         "nodes": normalized_nodes,
-        "profiles": list(profile_meta.values()),
+        # The Node Ops module forms are built from these specs; node records keep the lean metadata only.
+        "profiles": [
+            {
+                **profile_meta[pid],
+                "groups": [str(g) for g in (profile.get("groups") or [])],
+                "input_specs": [dict(spec) for spec in _profile_input_specs(pid)],
+            }
+            for profile in NODE_PROVISION_PROFILES
+            if isinstance(profile, dict)
+            for pid in [str(profile.get("id", "")).strip()]
+            if pid in profile_meta
+        ],
         "sources": {
             "callbacks": str(DATA_FILE),
             "monitor_state": str(MONITOR_STATE_FILE),
@@ -2277,8 +2304,7 @@ def _sanitize_node_profile_inputs(payload: Dict[str, Any], profile_ids: List[str
         raw_inputs = payload.get(profile_id, {})
         if not isinstance(raw_inputs, dict):
             continue
-        specs = _profile_input_specs(profile_id)
-        allowed = {str(spec.get("id", "")) for spec in specs}
+        allowed = set(_profile_input_spec_map(profile_id))
         cleaned: Dict[str, str] = {}
         for key, value in raw_inputs.items():
             k = str(key)
@@ -2301,6 +2327,50 @@ def _node_profile_inputs(node_name: str, state: Dict[str, Any]) -> Dict[str, Dic
     return out
 
 
+CONFIGURED_SECRET_MARKER = "__CONFIGURED__"  # keep in sync with nodes.html
+
+
+def _profile_input_spec_map(profile_id: str) -> Dict[str, Dict[str, Any]]:
+    return {str(spec.get("id", "")): spec for spec in _profile_input_specs(profile_id)}
+
+
+def _redact_node_profile_inputs(node_inputs: Any) -> Dict[str, Dict[str, Dict[str, str]]]:
+    redacted: Dict[str, Dict[str, Dict[str, str]]] = {}
+    if not isinstance(node_inputs, dict):
+        return redacted
+    for node_name, raw_profiles in node_inputs.items():
+        if not isinstance(raw_profiles, dict):
+            continue
+        profiles: Dict[str, Dict[str, str]] = {}
+        for profile_id, raw_values in raw_profiles.items():
+            if not isinstance(raw_values, dict):
+                continue
+            specs = _profile_input_spec_map(str(profile_id))
+            profiles[str(profile_id)] = {
+                str(field_id): (
+                    CONFIGURED_SECRET_MARKER
+                    if str(value) and specs.get(str(field_id), {}).get("sensitive")
+                    else str(value)
+                )
+                for field_id, value in raw_values.items()
+            }
+        redacted[str(node_name)] = profiles
+    return redacted
+
+
+def _merge_node_profile_inputs(existing: Any, sanitized: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+    # A blank sensitive field keeps its saved value, since the UI never echoes secrets back.
+    existing_profiles = existing if isinstance(existing, dict) else {}
+    merged = {str(pid): dict(values) for pid, values in existing_profiles.items() if isinstance(values, dict)}
+    for profile_id, values in sanitized.items():
+        specs = _profile_input_spec_map(profile_id)
+        combined = merged.setdefault(profile_id, {})
+        for field_id, value in values.items():
+            if value or not specs.get(field_id, {}).get("sensitive"):
+                combined[field_id] = value
+    return merged
+
+
 def _missing_required_inputs(node_name: str, profile_ids: List[str], state: Dict[str, Any]) -> List[Dict[str, Any]]:
     saved_inputs = _node_profile_inputs(node_name, state)
     profile_by_id = _profile_map()
@@ -2313,9 +2383,12 @@ def _missing_required_inputs(node_name: str, profile_ids: List[str], state: Dict
             continue
 
         profile_inputs = saved_inputs.get(profile_id, {})
+        saved_role = str(profile_inputs.get("node_role", "")).strip().lower()
         missing_fields = []
         for spec in required_specs:
             field_id = str(spec.get("id", ""))
+            if saved_role and saved_role in (spec.get("optional_for_roles") or []):
+                continue
             value = str(profile_inputs.get(field_id, "")).strip()
             if not value:
                 missing_fields.append(
@@ -2339,7 +2412,7 @@ def _missing_required_inputs(node_name: str, profile_ids: List[str], state: Dict
 
 
 def _redact_profile_inputs(profile_id: str, inputs: Dict[str, str]) -> Dict[str, str]:
-    specs = {str(s.get("id", "")): s for s in _profile_input_specs(profile_id)}
+    specs = _profile_input_spec_map(profile_id)
     out: Dict[str, str] = {}
     for key, value in inputs.items():
         spec = specs.get(key, {})
@@ -2553,6 +2626,25 @@ def _run_node_profile(
                 "exit_code": proc.returncode,
                 "inputs": _redact_profile_inputs(profile_id, profile_inputs),
                 "output": f"{output[-12000:]}\n\n{ssh_hint}",
+            }
+        lowered_output = output.lower()
+        if proc.returncode == 0 and (
+            "skipping: no hosts matched" in lowered_output
+            or "could not match supplied host pattern" in lowered_output
+        ):
+            # ansible-playbook exits 0 when the host pattern matches nothing, so no task ever ran.
+            return {
+                "profile_id": profile_id,
+                "status": "failed",
+                "mode": mode,
+                "checked_at": checked_at,
+                "command": cmd_for_log,
+                "exit_code": proc.returncode,
+                "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+                "output": (
+                    f"{output[-12000:]}\n\nNo hosts matched, so nothing was applied to this node. "
+                    "Check the node address and its inventory group."
+                ),
             }
         return {
             "profile_id": profile_id,
@@ -3678,11 +3770,68 @@ def _normalize_k3s_node_name(node_name: str | None) -> str:
 
 
 def _default_k3s_config(node_name: str | None = None) -> str:
-    host = os.getenv("K3S_SERVER_HOST", "").strip()
-    if not host:
-        host = _detect_local_ip()
+    host = os.getenv("K3S_SERVER_HOST", "").strip() or urlparse.urlparse(K3S_API_ENDPOINT_DEFAULT).hostname
     node_name = _normalize_k3s_node_name(node_name)
     return f"# pragma: k3s-config-v1\nserver: https://{host}:6443\nnode-name: {node_name}\n"
+
+
+LONGFORM_CHECK_MAX_CHARS = 65536
+_K3S_LIST_KEYS = ("node-label", "node-taint", "kubelet-arg", "tls-san")
+
+
+def _check_k3s_config(text: str) -> Dict[str, List[str]]:
+    try:
+        loaded = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        where = f" (line {mark.line + 1}, column {mark.column + 1})" if mark else ""
+        problem = getattr(exc, "problem", None) or "invalid YAML"
+        return {"errors": [f"YAML syntax error{where}: {problem}"], "warnings": []}
+    if loaded is None:
+        return {"errors": [], "warnings": []}
+    if not isinstance(loaded, dict):
+        return {"errors": ["Config must be a YAML mapping of 'key: value' lines."], "warnings": []}
+
+    errors: List[str] = []
+    warnings: List[str] = []
+    server = loaded.get("server")
+    if server is not None and not re.fullmatch(r"https://(\[[0-9a-fA-F:]+\]|[^\s/:\[\]]+):\d+/?", str(server)):
+        errors.append("'server' must look like https://host:6443.")
+    for key in _K3S_LIST_KEYS:
+        if key in loaded and not isinstance(loaded[key], (str, list)):
+            errors.append(f"'{key}' must be a string or a list.")
+    labels = loaded.get("node-label")
+    for label in labels if isinstance(labels, list) else [labels]:
+        if str(label or "").startswith("node-role.kubernetes.io/"):
+            errors.append("'node-label' cannot set node-role.kubernetes.io/* labels (K3s rejects them); use role=control-plane.")
+    if str(loaded.get("secrets-encryption", "")).lower() == "true":
+        warnings.append("'secrets-encryption' is on, but the current cluster has encryption disabled; joining nodes will fail.")
+    return {"errors": errors, "warnings": warnings}
+
+
+LONGFORM_CHECKS: Dict[str, Callable[[str], Dict[str, List[str]]]] = {"k3s_config": _check_k3s_config}
+
+
+def _check_longform(kind: str, text: Any) -> Dict[str, Any]:
+    check = LONGFORM_CHECKS.get(kind)
+    if check is None:
+        return {"ok": False, "errors": [f"Unknown check kind: {kind}"], "warnings": []}
+    body = str(text or "")
+    if len(body) > LONGFORM_CHECK_MAX_CHARS:
+        return {"ok": False, "errors": [f"Config is longer than {LONGFORM_CHECK_MAX_CHARS} characters."], "warnings": []}
+    result = check(body)
+    return {"ok": not result["errors"], **result}
+
+
+def _longform_input_errors(profile_id: str, values: Dict[str, str]) -> List[str]:
+    specs = _profile_input_spec_map(profile_id)
+    errors: List[str] = []
+    for field_id, value in values.items():
+        spec = specs.get(field_id, {})
+        if spec.get("check") and value:
+            label = spec.get("label", field_id)
+            errors.extend(f"{label}: {err}" for err in _check_longform(spec["check"], value)["errors"])
+    return errors
 
 
 def _normalize_ip(value: str) -> str:
@@ -3928,31 +4077,58 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         canonical_name = _normalize_k3s_node_name(cleaned.get("hostname") or None)
         if not k3s_config:
             cloud_options["k3s_config"] = _default_k3s_config(canonical_name).strip()
-            cleaned["distribution"] = distribution
-            return cleaned
-
-        lines = []
-        seen_node_name = False
-        for raw_line in k3s_config.splitlines():
-            line = raw_line.rstrip()
-            stripped = line.strip()
-            if re.match(r"(?i)^node-name\s*:\s*.*$", stripped):
-                if not seen_node_name:
-                    lines.append(f"node-name: {canonical_name}")
-                    seen_node_name = True
-                continue
-            if re.match(r"(?i)^node-ip\s*:\s*.*$", stripped):
-                continue
-            if stripped:
-                lines.append(line)
-        if not seen_node_name:
-            lines.insert(0, f"node-name: {canonical_name}")
-        k3s_config = "\n".join(lines).strip() + "\n"
-        cloud_options["k3s_config"] = k3s_config
+        else:
+            lines = []
+            seen_node_name = False
+            for raw_line in k3s_config.splitlines():
+                line = raw_line.rstrip()
+                stripped = line.strip()
+                if re.match(r"(?i)^node-name\s*:\s*.*$", stripped):
+                    if not seen_node_name:
+                        lines.append(f"node-name: {canonical_name}")
+                        seen_node_name = True
+                    continue
+                if re.match(r"(?i)^node-ip\s*:\s*.*$", stripped):
+                    continue
+                if stripped:
+                    lines.append(line)
+            if not seen_node_name:
+                lines.insert(0, f"node-name: {canonical_name}")
+            k3s_config = "\n".join(lines).strip() + "\n"
+            cloud_options["k3s_config"] = k3s_config
     cleaned["distribution"] = distribution
     if distribution == "k3s" and not cloud_options.get("k3s_config"):
         cloud_options["k3s_config"] = _default_k3s_config(cleaned.get("hostname") or None).strip()
+    _apply_k3s_lightweight_to_payload(cleaned)
     return cleaned
+
+
+def _apply_k3s_lightweight_to_payload(cleaned: Dict[str, Any]) -> None:
+    """Apply the selected role to the K3s config for the Pi boards; strip role options for anything else."""
+    cloud_options = cleaned["cloud_init_options"]
+    profile = str(cleaned.get("profile", "")).strip().lower()
+    if cleaned.get("distribution") != "k3s" or not _is_k3s_role_profile(profile):
+        _strip_k3s_lightweight_options(cloud_options)
+        return
+    merged, role, errors = _apply_k3s_role_config(str(cloud_options.get("k3s_config", "")), cloud_options, profile)
+    cloud_options["k3s_config"] = merged
+    cloud_options[_K3S_ROLE_OPTION_ID] = role
+    # Server-only options must not linger when the chosen role is not a server.
+    if role != K3S_ROLE_CONTROL_PLANE:
+        _strip_k3s_lightweight_options(cloud_options, _K3S_SERVER_OPTION_IDS)
+    if errors:
+        cleaned["config_errors"] = errors
+
+
+def _redact_sd_secret_options(options: Any) -> Dict[str, Any]:
+    """Copy of SD cloud-init options without the Tailscale auth key.
+
+    Job records and auto-saved templates are readable through the unauthenticated API
+    and stored in plaintext; an auth key can join tagged devices, so it never goes there.
+    """
+    if not isinstance(options, dict):
+        return {}
+    return {key: value for key, value in options.items() if key != "tailscale_auth_key"}
 
 
 def _service_is_active(service_name: str) -> bool:
@@ -4368,6 +4544,11 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
             k3s_config = _default_k3s_config().strip()
         env["CLOUD_INIT_K3S_CONFIG"] = k3s_config
         enabled_options.append("k3s_config")
+        role = str(cloud_init_options.get(_K3S_ROLE_OPTION_ID, "") or "").strip().lower()
+        if role:
+            # An explicit role beats the script's guess from the config text.
+            env["CLOUD_INIT_K3S_MODE"] = _k3s_mode_for_role(role)
+            enabled_options.append(_K3S_ROLE_OPTION_ID)
 
     if cloud_init_options.get("enable_hardware_checks"):
         env["CLOUD_INIT_ENABLE_HARDWARE_CHECKS"] = "true"
@@ -4410,6 +4591,34 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
         if value:
             env[env_key] = value
             enabled_options.append(option_key)
+
+    # First-boot Tailscale. The auth key is only handed to the script through its
+    # environment; the script writes it to a root-only file on the node.
+    if cloud_init_options.get("tailscale_enable"):
+        env["CLOUD_INIT_TAILSCALE_ENABLE"] = "true"
+        enabled_options.append("tailscale_enable")
+        if cloud_init_options.get("tailscale_ssh"):
+            env["CLOUD_INIT_TAILSCALE_SSH"] = "true"
+            enabled_options.append("tailscale_ssh")
+        for option_key, env_key in {
+            "tailscale_auth_key": "CLOUD_INIT_TAILSCALE_AUTH_KEY",
+            "tailscale_hostname": "CLOUD_INIT_TAILSCALE_HOSTNAME",
+            "tailscale_exit_node": "CLOUD_INIT_TAILSCALE_EXIT_NODE",
+        }.items():
+            value = str(cloud_init_options.get(option_key, "") or "").strip()
+            if value:
+                env[env_key] = value
+                enabled_options.append(option_key)
+        for option_key, env_key in {
+            "tailscale_advertise_tags": "CLOUD_INIT_TAILSCALE_TAGS",
+            "tailscale_advertise_routes": "CLOUD_INIT_TAILSCALE_ROUTES",
+        }.items():
+            raw_value = cloud_init_options.get(option_key)
+            items = raw_value if isinstance(raw_value, list) else str(raw_value or "").split(",")
+            cleaned_items = [str(item).strip() for item in items if str(item).strip()]
+            if cleaned_items:
+                env[env_key] = ",".join(cleaned_items)
+                enabled_options.append(option_key)
 
     ssh_list_fields = {
         "ssh_allow_groups": "CLOUD_INIT_SSH_ALLOW_GROUPS",

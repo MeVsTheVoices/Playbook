@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="callback-site-tests-"))
 os.environ["CALLBACK_APPDATA_DIR"] = str(TEST_DATA_DIR)
@@ -30,3 +31,7 @@ atexit.register(_cleanup_test_data_dir)
 class BaseCallbackSiteTest(unittest.TestCase):
     def setUp(self) -> None:
         self.client = app.test_client()
+        # The Node Ops hardware check POSTs here; port 9 is closed, so tests can never reach the live site.
+        guard = patch.object(callback_core, "_default_callback_url", return_value="http://127.0.0.1:9/api/cloud-init/callback")
+        guard.start()
+        self.addCleanup(guard.stop)

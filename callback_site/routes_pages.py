@@ -27,6 +27,12 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
             devices=_list_sd_devices(),
             callback_url_default=_default_callback_url(),
             k3s_config_default=_default_k3s_config(),
+            k3s_lightweight_options=K3S_LIGHTWEIGHT_OPTIONS,
+            k3s_ingress_choices=K3S_INGRESS_CHOICES,
+            k3s_ingress_default=K3S_INGRESS_DEFAULT,
+            k3s_lightweight_profiles=" ".join(K3S_ROLE_PROFILES),
+            k3s_role_defaults=k3s_role_ui_defaults(),
+            k3s_role_taints=K3S_ROLE_TAINTS,
             image_catalog=image_catalog,
         )
 

@@ -131,6 +131,14 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('applyCloudInitOptions(isPiOnlyProfile ? { ...currentOptions, ...profileOptions } : profileOptions);', text)
         self.assertIn("Loaded Pi-specific template '${name}' and merged it into the current optional settings.", text)
 
+    def test_home_page_scopes_pi_boot_options_to_selected_pi_model(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn('id="pi_model_select"', text)
+        self.assertEqual(text.count('data-pi-model="pi5"'), 3)
+        self.assertIn('wrapperModel === piModel', text)
+
     def test_home_page_embeds_cached_catalog_metadata(self) -> None:
         entry = next(item for item in callback_app.IMAGE_CATALOG if str(item.get("image_url", "")).strip())
         cache_path = str(callback_app.IMAGE_CACHE_DIR / callback_app._safe_catalog_filename(str(entry.get("image_url", "")), str(entry.get("id", ""))))
@@ -238,8 +246,8 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn("data-module-field", text)
         self.assertIn("data-module-type", text)
         self.assertIn('spec.input_type || "text"', text)
-        self.assertIn('"control-plane" : "worker"', text)
-        self.assertIn("Pi 3B+ nodes are the control plane", text)
+        self.assertIn('"light-worker" : "worker"', text)
+        self.assertIn("Rack layout:", text)
 
     def test_node_ops_page_exposes_longhorn_storage_guidance(self) -> None:
         response = self.client.get("/nodes")
@@ -3157,6 +3165,9 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         kubernetes_specs = {s["id"]: s for s in profiles["kubernetes"]["input_specs"]}
         self.assertEqual(kubernetes_specs["k3s_config"].get("input_type"), "textarea")
         self.assertEqual(kubernetes_specs["k3s_security_baseline"].get("input_type"), "checkbox")
+        self.assertNotIn("cluster_name", kubernetes_specs)
+        self.assertNotIn("pod_cidr", kubernetes_specs)
+        self.assertNotIn("service_cidr", kubernetes_specs)
 
         baseline_specs = {s["id"]: s for s in profiles["baseline"]["input_specs"]}
         self.assertEqual(baseline_specs["packages"].get("input_type"), "csv")
@@ -3168,6 +3179,64 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         longhorn_specs = {s["id"]: s for s in profiles["longhorn"]["input_specs"]}
         self.assertEqual(longhorn_specs["install_chart"].get("input_type"), "checkbox")
         self.assertTrue(longhorn_specs["install_chart"].get("default"))
+
+        kubernetes_specs = {s["id"]: s for s in profiles["kubernetes"]["input_specs"]}
+        self.assertTrue(kubernetes_specs["server_token"].get("sensitive"))
+        self.assertEqual(kubernetes_specs["node_role"].get("input_type"), "select")
+        self.assertEqual(kubernetes_specs["node_role"].get("options"), ["worker"])
+        self.assertEqual(
+            kubernetes_specs["node_role"].get("options_by_group"),
+            {"rpi5_active": ["worker", "control-plane", "utility"], "rpi_3bplus_active": ["light-worker", "utility", "control-plane"]},
+        )
+
+    def test_node_module_input_saves_merge_and_redact_secrets(self) -> None:
+        summary = self.client.get("/api/nodes/summary")
+        self.assertEqual(summary.status_code, 200)
+        nodes = summary.get_json().get("nodes") or []
+        if not nodes:
+            self.skipTest("No active nodes for module input merge test")
+        node_name = nodes[0]["name"]
+
+        set_profiles = self.client.post(
+            "/api/nodes/node-configs",
+            json={"node": node_name, "profile_ids": ["tailscale", "kubernetes"]},
+        )
+        self.assertEqual(set_profiles.status_code, 200)
+
+        first_save = self.client.post(
+            "/api/nodes/node-inputs",
+            json={
+                "node": node_name,
+                "profile_inputs": {
+                    "tailscale": {"auth_key": "test-tail-key-secret", "tailnet": "tail00c2ce.ts.net"},
+                    "kubernetes": {
+                        "node_role": "control-plane",
+                        "server_endpoint": "https://100.65.24.76:6443",
+                        "server_token": "test-k3s-token-secret",
+                        "node_ip": "100.103.181.86",
+                    },
+                },
+            },
+        )
+        self.assertEqual(first_save.status_code, 200)
+
+        second_save = self.client.post(
+            "/api/nodes/node-inputs",
+            json={"node": node_name, "profile_inputs": {"kubernetes": {"node_ip": "100.103.181.86"}}},
+        )
+        self.assertEqual(second_save.status_code, 200)
+
+        profiles_response = self.client.get("/api/nodes/profiles")
+        saved = profiles_response.get_json()["node_inputs"][node_name]
+        self.assertEqual(saved["tailscale"]["tailnet"], "tail00c2ce.ts.net")
+        self.assertEqual(saved["tailscale"]["auth_key"], "__CONFIGURED__")
+        self.assertEqual(saved["kubernetes"]["server_token"], "__CONFIGURED__")
+        self.assertEqual(saved["kubernetes"]["node_ip"], "100.103.181.86")
+        self.assertNotIn("test-tail-key-secret", json.dumps(profiles_response.get_json()))
+        self.assertNotIn("test-k3s-token-secret", json.dumps(profiles_response.get_json()))
+
+        summary_response = self.client.get("/api/nodes/summary")
+        self.assertNotIn("test-k3s-token-secret", json.dumps(summary_response.get_json()))
 
     def test_node_provision_check_mode_uses_background_job_when_ansible_enabled(self) -> None:
         summary = self.client.get("/api/nodes/summary")
@@ -3334,7 +3403,16 @@ class CallbackSiteTests(BaseCallbackSiteTest):
             self.assertIn("- baseline", tasks_text, msg=f"{role} must tag baseline tasks")
             self.assertIn("- kubernetes", tasks_text, msg=f"{role} must tag kubernetes tasks")
             self.assertIn("Resolve Tailscale provisioning inputs", tasks_text, msg=f"{role} must consume provision_inputs")
-            self.assertIn("provision_inputs.k3s_config", tasks_text, msg=f"{role} must apply k3s config from provision inputs")
+            if role == "raspberry_pi5":
+                self.assertIn("provision_inputs.k3s_config", tasks_text, msg="raspberry_pi5 must apply worker config overrides")
+                self.assertIn("Refuse implicit K3s server-to-worker conversion", tasks_text)
+                self.assertNotIn("provision_inputs.pod_cidr", tasks_text)
+            else:
+                self.assertIn("provision_inputs.server_endpoint", tasks_text, msg="raspberry_pi_3bplus must use structured K3s inputs")
+                self.assertIn("provision_inputs.k3s_config", tasks_text, msg="raspberry_pi_3bplus must support full config overrides")
+                self.assertIn("Set kernel values required by K3s protected defaults", tasks_text)
+                self.assertIn("Refuse implicit K3s agent-to-server conversion", tasks_text)
+                self.assertNotIn("node-role.kubernetes.io/control-plane=true", tasks_text)
 
     def test_run_node_profile_uses_appdata_backed_ssh_key_path(self) -> None:
         with patch.object(callback_core.logger, "info"), patch.object(callback_core.shutil, "which", return_value="/tmp/fake-ansible"), patch.object(
@@ -3533,7 +3611,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         ), patch.object(
             callback_core,
             "_default_callback_url",
-            return_value="http://10.255.45.164:8088/api/cloud-init/callback",
+            return_value="http://127.0.0.1:9/api/cloud-init/callback",  # closed port: never the live site
         ), patch.object(
             callback_core.subprocess,
             "run",
@@ -3768,7 +3846,7 @@ class CallbackSiteTests(BaseCallbackSiteTest):
         self.assertIn('require_cmd openssl', script_text)
         self.assertIn("openssl passwd -6 -stdin", script_text)
         self.assertIn('--retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20', script_text)
-        self.assertIn('rack callback POST failed after retries to ${CALLBACK_URL}', script_text)
+        self.assertIn('rack callback POST failed after retries to $CALLBACK_URL', script_text)
         self.assertIn('if [[ "$CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK" == "true" ]]; then', script_text)
         self.assertIn('if [[ "\\${CLOUD_INIT_BOOT_SUMMARY}" != "true" ]]; then', script_text)
         self.assertIn('printf \'%s+--------------------------------------------------------------+%s\\n\' "\\$cyan" "\\$reset"', script_text)

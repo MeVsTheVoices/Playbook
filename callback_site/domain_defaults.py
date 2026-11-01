@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from k3s_lightweight import node_ops_specs as lightweight_node_ops_specs
+from k3s_lightweight import node_role_spec_parts
+
 BASE_DIR = Path(__file__).resolve().parent
 _DEFAULT_IMAGE_CATALOG_FILE = BASE_DIR / "catalogs" / "image_catalog.yml"
 IMAGE_CATALOG_FILE = Path(os.getenv("CALLBACK_IMAGE_CATALOG_FILE", str(_DEFAULT_IMAGE_CATALOG_FILE))).expanduser()
@@ -150,6 +153,9 @@ def _parse_image_catalog_yaml(text: str) -> Dict[str, Any]:
         data["image_catalog"].append(current_item)
     return data
 
+# NucBox over Tailscale; etcd peer TLS is IP-sensitive, so never the NATed LAN address.
+K3S_API_ENDPOINT_DEFAULT = "https://100.65.24.76:6443"
+
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
         "id": "baseline",
@@ -230,6 +236,13 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "required": False,
             },
             {
+                "id": "node_ip",
+                "label": "Tailscale IPv4 Address (for Kubernetes node IP)",
+                "placeholder": "100.x.y.z",
+                "input_type": "text",
+                "required": False,
+            },
+            {
                 "id": "advertise_tags",
                 "label": "Advertise Tags (comma-separated)",
                 "placeholder": "tag:rpi5,tag:homelab",
@@ -276,44 +289,62 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
         "id": "kubernetes",
         "label": "Kubernetes",
-        "description": "Kubernetes bootstrap defaults for control-plane or worker nodes.",
+        "description": "Kubernetes role and join settings. Pi 5: worker, control-plane or utility (no Kubernetes). Pi 3B+: light-worker, utility, or (not recommended) control-plane.",
         "tags": ["kubernetes"],
         "groups": ["rpi5_active", "rpi_3bplus_active"],
         "input_specs": [
             {
-                "id": "cluster_name",
-                "label": "Cluster Name",
-                "placeholder": "rack-cluster",
-                "input_type": "text",
-                "required": True,
-            },
-            {
                 "id": "node_role",
                 "label": "Node Role",
-                "placeholder": "control-plane or worker",
-                "input_type": "text",
+                "input_type": "select",
+                "options": ["worker"],
+                **node_role_spec_parts(),
+                "default": "worker",
+                "hint": "Pi 5: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). Keep the number of K3s servers odd: the NucBox plus two control-plane Pi 5 makes three.",
                 "required": True,
             },
             {
-                "id": "pod_cidr",
-                "label": "Pod CIDR",
-                "placeholder": "10.244.0.0/16",
+                "id": "server_endpoint",
+                "label": "K3s Server Endpoint",
+                "placeholder": K3S_API_ENDPOINT_DEFAULT,
+                "input_type": "text",
+                "default": K3S_API_ENDPOINT_DEFAULT,
+                "required": True,
+                "optional_for_roles": ["utility"],
+            },
+            {
+                "id": "server_token",
+                "label": "K3s Server Token",
+                "placeholder": "K10...::server:...",
+                "input_type": "text",
+                "sensitive": True,
+                "required": True,
+                "optional_for_roles": ["utility"],
+            },
+            {
+                "id": "node_ip",
+                "label": "Node Advertise IP (blank = read from Tailscale on the node)",
+                "placeholder": "100.x.y.z",
                 "input_type": "text",
                 "required": False,
             },
             {
                 "id": "k3s_config",
-                "label": "K3s Config Override",
+                "label": "Advanced K3s Config Override (replaces generated config)",
                 "placeholder": "# pragma: k3s-config-v1",
                 "input_type": "textarea",
+                "check": "k3s_config",
                 "required": False,
             },
             {
                 "id": "k3s_security_baseline",
-                "label": "Apply K3s security baseline",
+                "label": "Enable cluster secrets encryption (control-plane only)",
+                "warning": "Keep off for now: the current cluster has encryption disabled, so a node joining with this on will fail.",
                 "input_type": "checkbox",
                 "required": False,
             },
+            # Role options, each shown only for the roles it applies to (only_roles) on both boards.
+            *lightweight_node_ops_specs(),
         ],
     },
     {

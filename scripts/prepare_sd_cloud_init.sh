@@ -82,6 +82,7 @@ VALIDATE_CLOUD_INIT_SCHEMA="${CLOUD_INIT_VALIDATE_SCHEMA:-true}"
 DEFAULT_K3S_SERVER_HOST="${CLOUD_INIT_K3S_SERVER_HOST:-}"
 if [[ -z "$DEFAULT_K3S_SERVER_HOST" ]]; then
   DEFAULT_K3S_SERVER_HOST="$(hostname -I | awk '{print $1}')"
+  echo "WARNING: CLOUD_INIT_K3S_SERVER_HOST unset; defaulting the K3s server to this machine's LAN IP (${DEFAULT_K3S_SERVER_HOST}). Joining nodes need the Tailscale address instead." >&2
 fi
 if [[ -z "$DEFAULT_K3S_SERVER_HOST" ]]; then
   DEFAULT_K3S_SERVER_HOST="127.0.0.1"
@@ -374,7 +375,70 @@ CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"
 CLOUD_INIT_SSH_PORT="${CLOUD_INIT_SSH_PORT:-}"
 CLOUD_INIT_SSH_ALLOW_GROUPS="${CLOUD_INIT_SSH_ALLOW_GROUPS:-}"
 CLOUD_INIT_EXTRA_SSH_KEYS="${CLOUD_INIT_EXTRA_SSH_KEYS:-}"
+CLOUD_INIT_TAILSCALE_ENABLE="${CLOUD_INIT_TAILSCALE_ENABLE:-false}"
+CLOUD_INIT_TAILSCALE_AUTH_KEY="${CLOUD_INIT_TAILSCALE_AUTH_KEY:-}"
+CLOUD_INIT_TAILSCALE_HOSTNAME="${CLOUD_INIT_TAILSCALE_HOSTNAME:-${HOSTNAME}}"
+CLOUD_INIT_TAILSCALE_TAGS="${CLOUD_INIT_TAILSCALE_TAGS:-}"
+CLOUD_INIT_TAILSCALE_SSH="${CLOUD_INIT_TAILSCALE_SSH:-false}"
+CLOUD_INIT_TAILSCALE_ROUTES="${CLOUD_INIT_TAILSCALE_ROUTES:-}"
+CLOUD_INIT_TAILSCALE_EXIT_NODE="${CLOUD_INIT_TAILSCALE_EXIT_NODE:-}"
 
+if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
+  if [[ -z "$CLOUD_INIT_TAILSCALE_TAGS" ]]; then
+    # Same defaults the Ansible roles use, so first-boot and Node Ops agree.
+    if [[ "$PROFILE" == "pi3bplus" ]]; then
+      CLOUD_INIT_TAILSCALE_TAGS="tag:rpi-3bplus,tag:homelab"
+    else
+      CLOUD_INIT_TAILSCALE_TAGS="tag:rpi5,tag:homelab"
+    fi
+  fi
+  if [[ -z "$CLOUD_INIT_TAILSCALE_AUTH_KEY" ]]; then
+    echo "Tailscale is enabled but no auth key was provided; 'tailscale up' would wait for an interactive login forever." >&2
+    exit 1
+  fi
+  if [[ ! "$CLOUD_INIT_TAILSCALE_AUTH_KEY" =~ ^tskey-[A-Za-z0-9_-]+$ ]]; then
+    echo "Invalid CLOUD_INIT_TAILSCALE_AUTH_KEY: expected a tskey-... auth key." >&2
+    exit 1
+  fi
+  if [[ ! "$CLOUD_INIT_TAILSCALE_TAGS" =~ ^tag:[A-Za-z0-9-]+(,tag:[A-Za-z0-9-]+)*$ ]]; then
+    echo "Invalid CLOUD_INIT_TAILSCALE_TAGS: expected comma-separated tag:name values." >&2
+    exit 1
+  fi
+  if [[ ! "$CLOUD_INIT_TAILSCALE_HOSTNAME" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then
+    echo "Invalid CLOUD_INIT_TAILSCALE_HOSTNAME value: ${CLOUD_INIT_TAILSCALE_HOSTNAME}" >&2
+    exit 1
+  fi
+  if [[ -n "$CLOUD_INIT_TAILSCALE_ROUTES" && ! "$CLOUD_INIT_TAILSCALE_ROUTES" =~ ^[0-9A-Fa-f:./]+(,[0-9A-Fa-f:./]+)*$ ]]; then
+    echo "Invalid CLOUD_INIT_TAILSCALE_ROUTES: expected comma-separated CIDRs." >&2
+    exit 1
+  fi
+  if [[ -n "$CLOUD_INIT_TAILSCALE_EXIT_NODE" && ! "$CLOUD_INIT_TAILSCALE_EXIT_NODE" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+    echo "Invalid CLOUD_INIT_TAILSCALE_EXIT_NODE value." >&2
+    exit 1
+  fi
+fi
+
+# Append one KEY=value line (shell-quoted, so any value is safe) to the baked node env file.
+emit_env_line() {
+  printf '      %s=%q\n' "$1" "$2" >> "$USER_DATA_OUT"
+}
+
+CLOUD_INIT_K3S_MODE="${CLOUD_INIT_K3S_MODE:-}"
+if [[ ! "$CLOUD_INIT_K3S_MODE" =~ ^(server|agent)?$ ]]; then
+  echo "Invalid CLOUD_INIT_K3S_MODE: expected server or agent." >&2
+  exit 1
+fi
+
+# An explicit mode wins; otherwise guess agent from worker markers in the config text.
+k3s_mode() {
+  if [[ -n "$CLOUD_INIT_K3S_MODE" ]]; then
+    printf '%s' "$CLOUD_INIT_K3S_MODE"
+  elif printf '%s\n' "$DEFAULT_K3S_CONFIG" | grep -Eq 'role:\s*"?worker"?|role=worker|node-role\.kubernetes\.io/worker'; then
+    printf agent
+  else
+    printf server
+  fi
+}
 if [[ ! "$CLOUD_INIT_USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
   echo "Invalid CLOUD_INIT_USERNAME value: ${CLOUD_INIT_USERNAME}" >&2
   echo "Allowed: lowercase letters, numbers, '_' or '-' (must start with a letter or underscore)." >&2
@@ -495,6 +559,115 @@ write_files:
       provisioner=cloud-init
 EOF
 
+RACK_K3S_MODE=""
+if [[ "$DISTRIBUTION" == "k3s" ]]; then
+  RACK_K3S_MODE="$(k3s_mode)"
+fi
+
+# Root-only environment for the node-side scripts below. Those scripts run on the node,
+# where this host's CLOUD_INIT_* variables do not exist, so every value they read is baked here.
+cat >> "$USER_DATA_OUT" <<'NODE_ENV_HEADER'
+  - path: /etc/rack-node.env
+    permissions: "0600"
+    content: |
+NODE_ENV_HEADER
+for node_env_var in \
+  CALLBACK_URL INSTANCE_ID PROFILE HOSTNAME PROFILE_ROLE PROFILE_STORAGE DISTRIBUTION RACK_K3S_MODE \
+  CLOUD_INIT_USERNAME CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH CLOUD_INIT_DISABLE_ROOT_SSH \
+  CLOUD_INIT_BOOT_SUMMARY CLOUD_INIT_ENABLE_FAIL2BAN CLOUD_INIT_ENABLE_UNATTENDED_UPGRADES \
+  CLOUD_INIT_ENABLE_HARDWARE_CHECKS CLOUD_INIT_ENABLE_SYSCTL_HARDENING \
+  CLOUD_INIT_ENABLE_FIREWALL_BASELINE CLOUD_INIT_ENABLE_SELINUX_ENFORCING \
+  CLOUD_INIT_FANCY_MOTD CLOUD_INIT_INSTALL_TELEGRAF CLOUD_INIT_SSH_PORT CLOUD_INIT_SSH_ALLOW_GROUPS \
+  CLOUD_INIT_TELEGRAF_INFLUX_URL CLOUD_INIT_TELEGRAF_INFLUX_TOKEN CLOUD_INIT_TELEGRAF_INFLUX_ORG \
+  CLOUD_INIT_TELEGRAF_INFLUX_BUCKET CLOUD_INIT_TELEGRAF_CONFIG_URL \
+  CLOUD_INIT_TAILSCALE_ENABLE CLOUD_INIT_TAILSCALE_HOSTNAME CLOUD_INIT_TAILSCALE_TAGS \
+  CLOUD_INIT_TAILSCALE_SSH CLOUD_INIT_TAILSCALE_ROUTES CLOUD_INIT_TAILSCALE_EXIT_NODE; do
+  emit_env_line "$node_env_var" "${!node_env_var:-}"
+done
+# The boot summary only reports whether a K3s config exists; never copy its content (it holds the token).
+if [[ "$DISTRIBUTION" == "k3s" ]]; then
+  emit_env_line CLOUD_INIT_K3S_CONFIG "set"
+fi
+
+if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<TS_KEY_FILE
+  - path: /etc/rack-tailscale-authkey
+    permissions: "0600"
+    content: |
+      ${CLOUD_INIT_TAILSCALE_AUTH_KEY}
+TS_KEY_FILE
+  cat >> "$USER_DATA_OUT" <<'TS_BOOTSTRAP'
+  - path: /usr/local/bin/rack-tailscale-bootstrap
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # First-boot Tailscale join, run before K3s so K3s can use the Tailscale address as node-ip.
+      # Fail-safe: always exits 0 so cloud-init continues; Node Ops can finish a failed join later.
+      set -uo pipefail
+      ENV_FILE="${RACK_NODE_ENV:-/etc/rack-node.env}"
+      KEY_FILE="${RACK_TS_KEY_FILE:-/etc/rack-tailscale-authkey}"
+      K3S_CONFIG="${RACK_K3S_CONFIG_PATH:-/etc/rancher/k3s/config.yaml}"
+      # shellcheck disable=SC1090
+      . "$ENV_FILE"
+
+      log() { echo "rack-tailscale: $*" >&2; }
+
+      if ! command -v tailscale >/dev/null 2>&1; then
+        if ! curl -fsSL https://tailscale.com/install.sh | sh; then
+          log "install failed; continuing without Tailscale"
+          exit 0
+        fi
+      fi
+      systemctl enable --now tailscaled || true
+
+      # Tailscale accepts the key from a file; strip any whitespace the file format added.
+      if [[ -f "$KEY_FILE" ]]; then
+        tr -d '[:space:]' < "$KEY_FILE" > "${KEY_FILE}.clean" && mv "${KEY_FILE}.clean" "$KEY_FILE"
+        chmod 0600 "$KEY_FILE"
+      fi
+
+      up_args=("--auth-key=file:${KEY_FILE}" "--hostname=${CLOUD_INIT_TAILSCALE_HOSTNAME}" "--advertise-tags=${CLOUD_INIT_TAILSCALE_TAGS}")
+      if [[ "${CLOUD_INIT_TAILSCALE_SSH:-false}" == "true" ]]; then up_args+=(--ssh); fi
+      if [[ -n "${CLOUD_INIT_TAILSCALE_ROUTES:-}" ]]; then up_args+=("--advertise-routes=${CLOUD_INIT_TAILSCALE_ROUTES}"); fi
+      if [[ -n "${CLOUD_INIT_TAILSCALE_EXIT_NODE:-}" ]]; then up_args+=("--exit-node=${CLOUD_INIT_TAILSCALE_EXIT_NODE}"); fi
+
+      joined=false
+      for attempt in 1 2 3; do
+        if tailscale up --timeout=60s "${up_args[@]}"; then
+          joined=true
+          break
+        fi
+        log "tailscale up failed (attempt ${attempt})"
+        sleep 5
+      done
+      rm -f "$KEY_FILE"
+      if [[ "$joined" != true ]]; then
+        log "could not join the tailnet; K3s will start without a Tailscale node-ip"
+        exit 0
+      fi
+
+      ts_ip=""
+      for _ in $(seq 1 30); do
+        ts_ip="$(tailscale ip -4 2>/dev/null | head -n1)"
+        if [[ -n "$ts_ip" ]]; then break; fi
+        sleep 2
+      done
+      if [[ -z "$ts_ip" ]]; then
+        log "joined but no Tailscale IPv4 yet; K3s will start without node-ip"
+        exit 0
+      fi
+
+      if [[ -f "$K3S_CONFIG" ]]; then
+        sed -i -E '/^(node-ip|advertise-address)[[:space:]]*:/d' "$K3S_CONFIG"
+        if [[ -n "$(tail -c1 "$K3S_CONFIG")" ]]; then echo >> "$K3S_CONFIG"; fi
+        printf 'node-ip: %s\n' "$ts_ip" >> "$K3S_CONFIG"
+        if [[ "${RACK_K3S_MODE:-}" == "server" ]]; then printf 'advertise-address: %s\n' "$ts_ip" >> "$K3S_CONFIG"; fi
+        log "set K3s node-ip to ${ts_ip}"
+      fi
+      exit 0
+TS_BOOTSTRAP
+fi
+
 if [[ "$DISTRIBUTION" == "k3s" ]]; then
   SANITIZED_K3S_CONFIG="$(printf '%s\n' "$DEFAULT_K3S_CONFIG" | awk -v hostname="${HOSTNAME}" '
     BEGIN { seen_node_name = 0 }
@@ -511,7 +684,7 @@ if [[ "$DISTRIBUTION" == "k3s" ]]; then
   ' )"
   cat >> "$USER_DATA_OUT" <<K3S_FILE
   - path: /etc/rancher/k3s/config.yaml
-    permissions: "0644"
+    permissions: "0600"
     content: |
 $(printf '%s\n' "$SANITIZED_K3S_CONFIG" | sed 's/^/      /')
 K3S_FILE
@@ -755,6 +928,9 @@ cat >> "$USER_DATA_OUT" <<EOF
     content: |
       #!/bin/bash
       set -euo pipefail
+      if [[ -r /etc/rack-node.env ]]; then
+        . /etc/rack-node.env
+      fi
 
       if [[ "\${CLOUD_INIT_BOOT_SUMMARY}" != "true" ]]; then
         exit 0
@@ -814,6 +990,9 @@ cat >> "$USER_DATA_OUT" <<EOF
     permissions: "0755"
     content: |
       #!/bin/bash
+      if [[ -r /etc/rack-node.env ]]; then
+        . /etc/rack-node.env
+      fi
       if [[ "\${CLOUD_INIT_FANCY_MOTD:-false}" != "true" ]]; then
         exit 0
       fi
@@ -831,6 +1010,9 @@ cat >> "$USER_DATA_OUT" <<EOF
     content: |
       #!/bin/bash
       set -euo pipefail
+      if [[ -r /etc/rack-node.env ]]; then
+        . /etc/rack-node.env
+      fi
 
       INFLUX_URL="\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"
       INFLUX_TOKEN="\${CLOUD_INIT_TELEGRAF_INFLUX_TOKEN:-}"
@@ -872,7 +1054,7 @@ cat >> "$USER_DATA_OUT" <<EOF
         [[inputs.diskio]]
         [[inputs.net]]
         [[inputs.system]]
-        TELEGRAF_CONF
+      TELEGRAF_CONF
       else
         echo "Telegraf enabled but no config_url or complete Influx credentials provided; skipping config"
         exit 0
@@ -891,6 +1073,13 @@ runcmd:
   - [ systemctl, restart, ssh ]
 EOF
 
+if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
+  # Must run before the K3s install so the Tailscale address is already in the K3s config.
+  cat >> "$USER_DATA_OUT" <<'TS_RUNCMD'
+  - [ /usr/local/bin/rack-tailscale-bootstrap ]
+TS_RUNCMD
+fi
+
 if [[ "$DISTRIBUTION" == "k3s" ]]; then
   if [[ -z "${CLOUD_INIT_K3S_CONFIG:-}" ]]; then
     DEFAULT_K3S_CONFIG="# pragma: k3s-config-v1
@@ -899,14 +1088,12 @@ node-name: ${HOSTNAME}
 "
   fi
 
-  K3S_INSTALL_MODE="server"
-  if printf '%s\n' "$DEFAULT_K3S_CONFIG" | grep -Eq 'role:\s*"?worker"?|role=worker|node-role\.kubernetes\.io/worker'; then
-    K3S_INSTALL_MODE="agent"
-  fi
+  K3S_INSTALL_MODE="$(k3s_mode)"
 
   K3S_SERVER_EXEC="server --with-node-id --config /etc/rancher/k3s/config.yaml"
   K3S_AGENT_EXEC="agent --with-node-id --config /etc/rancher/k3s/config.yaml"
   if [[ "${CLOUD_INIT_K3S_SECURITY_BASELINE:-false}" == "true" ]]; then
+    echo "WARNING: K3s security baseline is on; it adds --secrets-encryption, which conflicts with the current cluster (encryption disabled). Leave it off until the cluster is migrated." >&2
     K3S_SERVER_EXEC="$K3S_SERVER_EXEC --secrets-encryption --kube-apiserver-arg anonymous-auth=false --kube-apiserver-arg authorization-mode=Node,RBAC --kubelet-arg read-only-port=0 --kubelet-arg protect-kernel-defaults=true"
     K3S_AGENT_EXEC="$K3S_AGENT_EXEC --kubelet-arg read-only-port=0 --kubelet-arg protect-kernel-defaults=true"
   fi
@@ -979,7 +1166,7 @@ fi
 
 # Append final runcmd callback using a runtime payload generator so all values are expanded on the node, not during host-side template generation.
 cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ sh, -c, 'SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD_JSON="\$(INSTANCE_ID="\${INSTANCE_ID}" HOSTNAME="\${HOSTNAME}" PROFILE="\${PROFILE}" SOURCE_IP="\${SOURCE_IP}" NODE_REPORT_B64="\${NODE_REPORT_B64}" /usr/local/bin/rack-callback-payload)"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "${CALLBACK_URL}"; then echo "rack callback POST failed after retries to ${CALLBACK_URL}" >&2; fi' ]
+  - [ bash, -c, '. /etc/rack-node.env; SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD_JSON="$(INSTANCE_ID="$INSTANCE_ID" HOSTNAME="$HOSTNAME" PROFILE="$PROFILE" SOURCE_IP="$SOURCE_IP" NODE_REPORT_B64="$NODE_REPORT_B64" /usr/local/bin/rack-callback-payload)"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "$PAYLOAD_JSON" "$CALLBACK_URL"; then echo "rack callback POST failed after retries to $CALLBACK_URL" >&2; fi' ]
 
 RUNCMD_EOF
 
@@ -1026,7 +1213,7 @@ echo "Injecting cloud-init files into boot partition"
 cp "$USER_DATA_OUT" "$TMP_DIR/boot/user-data"
 cp "$META_DATA_OUT" "$TMP_DIR/boot/meta-data"
 
-if [[ "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
+if [[ "$PROFILE" == "pi5" && "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
   for config_target in "$TMP_DIR/boot/config.txt" "$TMP_DIR/boot/boot/firmware/config.txt"; do
     if [[ -f "$config_target" ]]; then
       if ! grep -q '^usb_max_current_enable=1$' "$config_target"; then
@@ -1036,7 +1223,7 @@ if [[ "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
   done
 fi
 
-if [[ "${CLOUD_INIT_PCIEX1_ENABLE:-false}" == "true" || "${CLOUD_INIT_PCIEX1_GEN3:-false}" == "true" ]]; then
+if [[ "$PROFILE" == "pi5" && ( "${CLOUD_INIT_PCIEX1_ENABLE:-false}" == "true" || "${CLOUD_INIT_PCIEX1_GEN3:-false}" == "true" ) ]]; then
   for config_target in "$TMP_DIR/boot/config.txt" "$TMP_DIR/boot/boot/firmware/config.txt"; do
     if [[ -f "$config_target" ]]; then
       if ! grep -q '^dtparam=pciex1$' "$config_target"; then

@@ -133,7 +133,7 @@ install_callback_env() {
 
   (
     cd "$CALLBACK_DIR"
-    "$CALLBACK_VENV/bin/python" -m py_compile app.py
+    "$CALLBACK_VENV/bin/python" -m compileall -q app.py services routes
   )
 }
 

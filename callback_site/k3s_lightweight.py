@@ -1,9 +1,11 @@
-"""K3s roles for the Pi 5 and the Pi 3B+, and the settings that go with each.
+"""K3s roles for the Pi 5, Pi 4 and Pi 3B+, and the settings that go with each. BOARDS is the board registry.
 
 Every board can be a worker, run no Kubernetes ("utility"), or be a K3s server
 ("control-plane"). Defaults differ because the boards do:
 - Pi 5 (NVMe, plenty of RAM): default "worker"; as a control-plane it keeps every
   packaged component on, so it matches the NucBox server without extra flags.
+- Pi 4 (1-8 GB, usually SD or USB): same shape as the Pi 5. As a control-plane it needs an SSD,
+  because K3s documents that SD cards and eMMC cannot handle etcd's IO load.
 - Pi 3B+ (about 900 MB RAM, SD card, below K3s's 2 GB server floor): default
   "light-worker" (a tainted K3s agent with a pod cap). As a control-plane it gets
   the lightweight server profile, and that role is not recommended.
@@ -39,8 +41,11 @@ ROLE_CONTROL_PLANE = "control-plane"
 # "roles": choices on the SD form (utility there is simply the Standard distribution).
 # "node_ops_roles": choices in Node Ops. "taint"/"max_pods": board defaults; blank max_pods keeps K3s's 110.
 # "disable_defaults": whether the lightweight server options start switched on.
+# "label"/"tailscale_tag": display name and the Tailscale tag the nodes advertise by default (SD script, Ansible group_vars).
 BOARDS: Dict[str, Dict[str, Any]] = {
     "pi3bplus": {
+        "label": "Pi 3B+",
+        "tailscale_tag": "tag:rpi-3bplus",
         "group": "rpi_3bplus_active",
         "role": ROLE_LIGHT_WORKER,
         "roles": (ROLE_LIGHT_WORKER, ROLE_CONTROL_PLANE),
@@ -50,7 +55,22 @@ BOARDS: Dict[str, Dict[str, Any]] = {
         "disable_defaults": True,
     },
     "pi5": {
+        "label": "Pi 5",
+        "tailscale_tag": "tag:rpi5",
         "group": "rpi5_active",
+        "role": ROLE_WORKER,
+        "roles": (ROLE_WORKER, ROLE_CONTROL_PLANE),
+        "node_ops_roles": (ROLE_WORKER, ROLE_CONTROL_PLANE, ROLE_UTILITY),
+        "taint": False,
+        "max_pods": "",
+        "disable_defaults": False,
+    },
+    # Pi 4 spans 1-8 GB RAM. It is a full worker or control-plane like the Pi 5, but K3s says etcd needs
+    # an SSD (SD cards and eMMC cannot handle the IO), so control-plane on an SD-booted Pi 4 is a poor idea.
+    "pi4": {
+        "label": "Pi 4",
+        "tailscale_tag": "tag:rpi4",
+        "group": "rpi4_active",
         "role": ROLE_WORKER,
         "roles": (ROLE_WORKER, ROLE_CONTROL_PLANE),
         "node_ops_roles": (ROLE_WORKER, ROLE_CONTROL_PLANE, ROLE_UTILITY),
@@ -61,7 +81,28 @@ BOARDS: Dict[str, Dict[str, Any]] = {
 }
 ROLE_PROFILES = tuple(BOARDS)
 GROUP_TO_PROFILE = {board["group"]: profile for profile, board in BOARDS.items()}
+NODE_GROUPS = tuple(board["group"] for board in BOARDS.values())
 DEFAULT_SERVER_PROFILE = "pi3bplus"
+
+
+def group_for_profile(profile: Any, default: str = "") -> str:
+    board = BOARDS.get(str(profile or "").strip().lower())
+    return board["group"] if board else default
+
+
+def profile_for_group(group: Any, default: str = "") -> str:
+    """Match an inventory group (or any name containing the family) to a profile."""
+    text = str(group or "").strip().lower()
+    if text in GROUP_TO_PROFILE:
+        return GROUP_TO_PROFILE[text]
+    if "3bplus" in text or "3b+" in text:
+        return "pi3bplus"
+    if "rpi4" in text or "pi4" in text:
+        return "pi4"
+    if "rpi5" in text or "pi5" in text:
+        return "pi5"
+    return default
+
 
 ROLE_LABELS = {
     ROLE_WORKER: "role=worker",
@@ -126,7 +167,14 @@ LIGHTWEIGHT_OPTIONS: List[Dict[str, Any]] = [
     },
 ]
 
-LIGHTWEIGHT_OPTION_IDS = tuple(opt["id"] for opt in LIGHTWEIGHT_OPTIONS) + (INGRESS_OPTION_ID,)
+# Server-only options: shown and kept only for the control-plane role.
+ALLOW_SD_ETCD_OPTION_ID = "k3s_allow_sd_etcd"
+LIGHTWEIGHT_OPTION_IDS = tuple(opt["id"] for opt in LIGHTWEIGHT_OPTIONS) + (INGRESS_OPTION_ID, ALLOW_SD_ETCD_OPTION_ID)
+
+# Optional pin for the K3s the SD first boot installs. Blank means "match the K3s on this machine".
+K3S_VERSION_OPTION_ID = "k3s_version"
+K3S_VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+\+k3s\d+$")
+K3S_VERSION_UNPINNED = "none"
 
 TAINT_OPTION_ID = "k3s_taint"
 MAX_PODS_OPTION_ID = "k3s_max_pods"
@@ -239,6 +287,22 @@ def k3s_mode_for_role(role: str) -> str:
     return "server" if role == ROLE_CONTROL_PLANE else "agent"
 
 
+def resolve_k3s_version(options: Dict[str, Any] | None, detected: str = "") -> Tuple[str, List[str]]:
+    """The K3s version to install: an explicit pin, the detected local version, or "" for the release channel.
+
+    A node running a newer K3s than the servers is unsupported and a new server older than the cluster is risky,
+    so the default is the version the existing server runs.
+    """
+    raw = str((options or {}).get(K3S_VERSION_OPTION_ID) or "").strip()
+    if not raw:
+        return detected, []
+    if raw.lower() == K3S_VERSION_UNPINNED:
+        return "", []
+    if K3S_VERSION_RE.match(raw):
+        return raw, []
+    return detected, [f"K3s version '{raw}' must look like v1.36.4+k3s1 (or 'none' to follow the release channel)."]
+
+
 def resolve_common(options: Dict[str, Any] | None, profile: str) -> Dict[str, Any]:
     """Taint and pod cap shared by every K3s role. Blank or missing means the board's default."""
     options = options or {}
@@ -332,7 +396,7 @@ def _role_specs() -> List[Dict[str, Any]]:
             "default": "",
             "default_by_group": {b["group"]: str(b["max_pods"]) for b in BOARDS.values()},
             "placeholder": "blank = board default",
-            "hint": f"Whole number from 1 to {MAX_PODS_LIMIT}. Blank uses the board default: 20 on a Pi 3B+ (it cannot carry 110), the K3s default of 110 on a Pi 5.",
+            "hint": f"Whole number from 1 to {MAX_PODS_LIMIT}. Blank uses the board default: 20 on a Pi 3B+ (it cannot carry 110), the K3s default of 110 on a Pi 5 or Pi 4.",
             "only_groups": _groups(),
             "only_roles": k3s_roles,
         },
@@ -358,6 +422,18 @@ def node_ops_specs() -> List[Dict[str, Any]]:
                 "only_roles": [ROLE_CONTROL_PLANE],
             }
         )
+    specs.append(
+        {
+            "id": ALLOW_SD_ETCD_OPTION_ID,
+            "label": "Allow etcd on an SD card (not recommended)",
+            "input_type": "checkbox",
+            "default": "false",
+            "hint": "K3s says SD cards and eMMC cannot handle etcd's write load, and an unhealthy voter can break quorum. "
+            "A control-plane node refuses to apply while /var/lib is on an SD card unless this is ticked.",
+            "only_groups": _groups(),
+            "only_roles": [ROLE_CONTROL_PLANE],
+        }
+    )
     specs.append(
         {
             "id": INGRESS_OPTION_ID,

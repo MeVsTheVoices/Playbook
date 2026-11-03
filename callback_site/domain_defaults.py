@@ -7,19 +7,13 @@ from typing import Any, Dict, List
 
 from k3s_lightweight import node_ops_specs as lightweight_node_ops_specs
 from k3s_lightweight import node_role_spec_parts
+from tailscale_policy import policy_defaults
 
 BASE_DIR = Path(__file__).resolve().parent
 _DEFAULT_IMAGE_CATALOG_FILE = BASE_DIR / "catalogs" / "image_catalog.yml"
 IMAGE_CATALOG_FILE = Path(os.getenv("CALLBACK_IMAGE_CATALOG_FILE", str(_DEFAULT_IMAGE_CATALOG_FILE))).expanduser()
 
-TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = {
-    "tailnet": "tail00c2ce.ts.net",
-    "admin_group": "group:admins",
-    "rpi5_tag": "tag:rpi5",
-    "rpi_3bplus_tag": "tag:rpi-3bplus",
-    "homelab_tag": "tag:homelab",
-    "pi5_subnets": ["192.168.174.0/24", "192.168.175.0/24"],
-}
+TAILSCALE_POLICY_DEFAULTS: Dict[str, Any] = policy_defaults()
 
 
 def _load_image_catalog() -> List[Dict[str, Any]]:
@@ -162,7 +156,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Baseline",
         "description": "Core system baseline and host-level defaults.",
         "tags": ["baseline"],
-        "groups": ["rpi5_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "timezone",
@@ -211,7 +205,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Tailscale",
         "description": "Tailnet agent and related ACL tag setup.",
         "tags": ["tailscale"],
-        "groups": ["rpi5_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "auth_key",
@@ -268,7 +262,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Docker",
         "description": "Container runtime provisioning and Docker defaults.",
         "tags": ["docker"],
-        "groups": ["rpi5_active"],
+        "groups": ["rpi5_active", "rpi4_active"],
         "input_specs": [
             {
                 "id": "docker_data_root",
@@ -289,9 +283,9 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
         "id": "kubernetes",
         "label": "Kubernetes",
-        "description": "Kubernetes role and join settings. Pi 5: worker, control-plane or utility (no Kubernetes). Pi 3B+: light-worker, utility, or (not recommended) control-plane.",
+        "description": "Kubernetes role and join settings. Pi 5 and Pi 4: worker, control-plane or utility (no Kubernetes). Pi 3B+: light-worker, utility, or (not recommended) control-plane.",
         "tags": ["kubernetes"],
-        "groups": ["rpi5_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "node_role",
@@ -300,7 +294,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "options": ["worker"],
                 **node_role_spec_parts(),
                 "default": "worker",
-                "hint": "Pi 5: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). Keep the number of K3s servers odd: the NucBox plus two control-plane Pi 5 makes three.",
+                "hint": "Pi 5 and Pi 4: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). A Pi 4 control-plane needs an SSD: K3s says SD cards cannot handle etcd. Keep the number of K3s servers odd: the NucBox plus two control-plane Pis makes three.",
                 "required": True,
             },
             {
@@ -389,7 +383,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Telegraf",
         "description": "Telegraf provisioning with InfluxDB bucket credentials.",
         "tags": ["monitoring", "telegraf"],
-        "groups": ["rpi5_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
         "input_specs": [
             {
                 "id": "influx_endpoint",

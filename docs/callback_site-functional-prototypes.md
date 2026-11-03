@@ -4,13 +4,11 @@ This document defines strict functional prototypes (inputs, outputs, side effect
 
 ## 1) Runtime Entry Points
 
-- Flask service entry: callback_site/app.py
-- Route registration modules:
-  - callback_site/routes_pages.py
-  - callback_site/routes_openwrt.py
-  - callback_site/routes_settings.py
-- Ansible execution entry: callback_site/core.py via subprocess calls to ansible-playbook
-- SD prep execution entry: scripts/prepare_sd_cloud_init.sh (invoked by callback_site/core.py)
+- Flask service entry: callback_site/app.py (logging, app object, route registration)
+- Route modules, one per area: callback_site/routes/ (pages, openwrt, settings, callbacks, sd, images, ssh, test_terminal, monitor, nodes)
+- Domain logic: callback_site/services/ (see the module map below)
+- Ansible execution entry: callback_site/services/node_runs.py via subprocess calls to ansible-playbook
+- SD prep execution entry: scripts/prepare_sd_cloud_init.sh and scripts/lib/*.sh (invoked by callback_site/services/sd_prepare.py)
 
 ## 2) Backend Prototype Contracts (Python)
 
@@ -64,14 +62,16 @@ Atomic baseline helper:
 
 ## 3) API Route Contracts (Flask)
 
-Route handlers are split across callback_site/app.py and dedicated route modules:
+Route handlers live in callback_site/routes/, one module per area, each exposing a register_*_routes(app) function that app.py calls:
 
-- callback_site/routes_pages.py
-- callback_site/routes_openwrt.py
-- callback_site/routes_settings.py
-- callback_site/app.py (feature-heavy API endpoints and background-job orchestration)
+- routes/pages.py, routes/openwrt.py, routes/settings.py: pages and fragments, OpenWrt helpers, settings/logging/health/Tailscale
+- routes/callbacks.py: cloud-init callback, events, node reports
+- routes/sd.py, routes/images.py, routes/ssh.py: SD prepare and devices, image library and catalog pulls, SSH keys
+- routes/test_terminal.py, routes/monitor.py, routes/nodes.py: verifier terminal, hardware monitor, Node Ops
 
-All routes call core helpers for state and business logic.
+Routes call helpers in callback_site/services/ for state and business logic. Names below such as _apply_node_provisioning()
+are in services/node_runs.py, _monitor_nodes_summary() in services/node_views.py, _ping_status() in services/node_inventory.py,
+and _run_prepare_job() in services/sd_prepare.py.
 
 ### Monitor/API
 

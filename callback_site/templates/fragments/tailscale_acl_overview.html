@@ -1,18 +1,18 @@
 <div class="overview-head">
 	<div>
 		<p class="eyebrow">Overview</p>
-		<h2>Policy Baseline Builder</h2>
-		<p class="muted-copy">Generate a rack-aware baseline with tags, ACL rules, SSH policy, and route auto-approvers.</p>
+		<h2>Rack Policy Builder</h2>
+		<p class="muted-copy">Builds a grants-based policy for the rack: tags for each board, K3s ports between nodes, admin access, subnet routes, Tailscale SSH and guard tests.</p>
 	</div>
 	<div class="pill-row">
-		<span class="pill info">No API calls required</span>
-		<span class="pill info">Safe to iterate</span>
+		<span class="pill info">Generated on this server</span>
+		<span class="pill info">Nothing is sent to Tailscale</span>
 	</div>
 </div>
 
 <div class="overview-grid">
 	<article class="stat-card">
-		<p class="stat-label">Rack Profile</p>
+		<p class="stat-label">Rack</p>
 		<p class="stat-value" id="ov-rack">Not set</p>
 	</article>
 	<article class="stat-card">
@@ -20,11 +20,21 @@
 		<p class="stat-value" id="ov-tailnet">Not set</p>
 	</article>
 	<article class="stat-card">
+		<p class="stat-label">Rack Tags</p>
+		<p class="stat-value" id="ov-tags">0</p>
+	</article>
+	<article class="stat-card">
+		<p class="stat-label">Grants</p>
+		<p class="stat-value" id="ov-grants">0</p>
+	</article>
+	<article class="stat-card">
 		<p class="stat-label">Advertised Routes</p>
 		<p class="stat-value" id="ov-route-count">0</p>
 	</article>
+	<article class="stat-card">
+		<p class="stat-label">Tests</p>
+		<p class="stat-value" id="ov-tests">0</p>
+	</article>
 </div>
 
-<p class="charm-line">A little planning now saves big policy stress later 🙂</p>
-
-<div class="warn compact-warn">Generated policy is a baseline. Always review before applying in production.</div>
+<div class="warn compact-warn">The output is a baseline to merge into Access Controls, not a drop-in replacement. Review it before saving.</div>

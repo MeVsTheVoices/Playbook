@@ -4,7 +4,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from core import *
+from services.openwrt import _inspect_openwrt_probe, _push_ssh_key_to_target, _resolve_openwrt_ssh_key
 
 
 def register_openwrt_routes(app: Any) -> None:

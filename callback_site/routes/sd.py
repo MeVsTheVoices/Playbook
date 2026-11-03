@@ -1,0 +1,241 @@
+"""SD-card prepare, device and option-profile endpoints."""
+
+from __future__ import annotations
+
+import queue
+import re
+import threading
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict
+
+from flask import jsonify, request, Response, stream_with_context
+
+from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
+
+from services.k3s_config import _check_longform
+from services.sd_devices import (
+    DEVICE_SUBSCRIBERS,
+    DEVICE_SUBSCRIBERS_LOCK,
+    _device_event_message,
+    _ensure_device_monitor_started,
+    _list_sd_devices,
+)
+from services.sd_prepare import (
+    JOBS,
+    JOBS_LOCK,
+    _ensure_prereqs,
+    _redact_sd_secret_options,
+    _run_prepare_job,
+    _sanitize_sd_prepare_payload,
+)
+from services.sd_profiles import (
+    _load_sd_option_profiles,
+    _ordered_sd_option_profiles,
+    _save_sd_option_profiles,
+    _set_preferred_sd_option_profile,
+)
+
+
+def _generated_sd_option_profile_name(hostname: str) -> str:
+    host = re.sub(r"[^a-z0-9-]+", "-", str(hostname or "").strip().lower()).strip("-")
+    host = host[:32] or "node"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"generated-{host}-{stamp}"
+
+
+def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
+    existing_name = str(payload.get("sd_options_profile", "")).strip()
+    if existing_name:
+        _set_preferred_sd_option_profile(existing_name)
+        return existing_name
+
+    distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
+    options = _redact_sd_secret_options(payload.get("cloud_init_options"))
+    hostname = str(payload.get("hostname", "")).strip() or "node"
+    base_name = _generated_sd_option_profile_name(hostname)
+
+    profiles = _load_sd_option_profiles()
+    next_name = base_name
+    suffix = 2
+    while next_name in profiles:
+        next_name = f"{base_name}-{suffix}"
+        suffix += 1
+
+    profiles[next_name] = {
+        "name": next_name,
+        "description": f"Auto-generated from SD prep request for {hostname}",
+        "distribution": distribution if distribution in {"standard", "k3s"} else "standard",
+        "pi_only": bool(payload.get("pi_only", False)),
+        "options": options,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_sd_option_profiles(profiles)
+    _set_preferred_sd_option_profile(next_name)
+    return next_name
+
+
+def register_sd_routes(app: Any) -> None:
+    @app.get("/api/sd/options-profiles")
+    def sd_options_profiles_get() -> Any:
+        profiles = _load_sd_option_profiles()
+        ordered = _ordered_sd_option_profiles(profiles)
+        return jsonify({"ok": True, "profiles": ordered})
+
+    @app.post("/api/sd/options-profiles")
+    def sd_options_profiles_save() -> Any:
+        payload = request.get_json(silent=True) or {}
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            return jsonify({"ok": False, "error": "name is required"}), 400
+        if not re.fullmatch(r"[A-Za-z0-9 _.-]{1,64}", name):
+            return jsonify({"ok": False, "error": "invalid profile name"}), 400
+
+        options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
+        description = str(payload.get("description", "")).strip()
+        distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
+        if distribution not in {"standard", "k3s"}:
+            distribution = "standard"
+        pi_only = bool(payload.get("pi_only", False))
+
+        profiles = _load_sd_option_profiles()
+        profiles[name] = {
+            "name": name,
+            "description": description,
+            "distribution": distribution,
+            "pi_only": pi_only,
+            "options": options,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _save_sd_option_profiles(profiles)
+        if bool(payload.get("set_preferred", False)):
+            _set_preferred_sd_option_profile(name)
+        return jsonify({"ok": True, "profile": profiles[name]})
+
+    @app.delete("/api/sd/options-profiles/<profile_name>")
+    def sd_options_profiles_delete(profile_name: str) -> Any:
+        profiles = _load_sd_option_profiles()
+        target = str(profile_name).strip()
+        if target not in profiles:
+            return jsonify({"ok": False, "error": "profile not found"}), 404
+        profiles.pop(target, None)
+        _save_sd_option_profiles(profiles)
+        return jsonify({"ok": True})
+
+    @app.get("/api/sd/devices")
+    def sd_devices() -> Any:
+        _ensure_device_monitor_started()
+        prereq_errors = _ensure_prereqs()
+        return jsonify({"devices": _list_sd_devices(), "errors": prereq_errors})
+
+    @app.get("/api/sd/devices/webhook")
+    def sd_device_webhook() -> Response:
+        _ensure_device_monitor_started()
+
+        def event_stream() -> Any:
+            sub: queue.Queue[str] = queue.Queue(maxsize=4)
+            with DEVICE_SUBSCRIBERS_LOCK:
+                DEVICE_SUBSCRIBERS.append(sub)
+
+            try:
+                initial_devices = _list_sd_devices()
+                yield _device_event_message(initial_devices)
+                while True:
+                    try:
+                        yield sub.get(timeout=20)
+                    except queue.Empty:
+                        yield "event: ping\\ndata: {}\\n\\n"
+            finally:
+                with DEVICE_SUBSCRIBERS_LOCK:
+                    if sub in DEVICE_SUBSCRIBERS:
+                        DEVICE_SUBSCRIBERS.remove(sub)
+
+        return Response(
+            stream_with_context(event_stream()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.post("/api/sd/prepare")
+    def sd_prepare() -> Any:
+        prereq_errors = _ensure_prereqs()
+        if prereq_errors:
+            return jsonify({"ok": False, "errors": prereq_errors}), 400
+
+        payload_raw = request.get_json(silent=True) or {}
+        payload = _sanitize_sd_prepare_payload(payload_raw if isinstance(payload_raw, dict) else {})
+        required = ["profile", "hostname", "device", "ssh_public_key", "callback_url"]
+        missing = [k for k in required if not str(payload.get(k, "")).strip()]
+        if missing:
+            return jsonify({"ok": False, "errors": [f"Missing fields: {', '.join(missing)}"]}), 400
+
+        if payload["profile"] not in K3S_ROLE_PROFILES:
+            return jsonify({"ok": False, "errors": [f"profile must be one of: {', '.join(K3S_ROLE_PROFILES)}"]}), 400
+
+        distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
+        if distribution not in {"standard", "k3s"}:
+            return jsonify({"ok": False, "errors": ["distribution must be standard or k3s"]}), 400
+        payload["distribution"] = distribution
+        if payload.get("config_errors"):
+            return jsonify({"ok": False, "errors": [f"K3s lightweight options: {err}" for err in payload["config_errors"]]}), 400
+        if distribution == "k3s":
+            k3s_check = _check_longform("k3s_config", payload["cloud_init_options"].get("k3s_config", ""))
+            if not k3s_check["ok"]:
+                return jsonify({"ok": False, "errors": [f"K3s config: {err}" for err in k3s_check["errors"]]}), 400
+        payload["sd_options_profile"] = _auto_generate_sd_option_profile(payload)
+
+        job_id = uuid.uuid4().hex
+        with JOBS_LOCK:
+            JOBS[job_id] = {
+                "id": job_id,
+                "status": "queued",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "request": {
+                    "profile": payload["profile"],
+                    "distribution": payload["distribution"],
+                    "hostname": payload["hostname"],
+                    "device": payload["device"],
+                    "callback_url": payload["callback_url"],
+                    "image_sha256": str(payload.get("image_sha256", "")).strip(),
+                    "sd_options_profile": str(payload.get("sd_options_profile", "")).strip(),
+                    "cloud_init_options": _redact_sd_secret_options(payload.get("cloud_init_options")),
+                },
+                "stdout": "",
+                "stderr": "",
+                "exit_code": None,
+            }
+
+        thread = threading.Thread(target=_run_prepare_job, args=(job_id, payload), daemon=True)
+        thread.start()
+        return jsonify({"ok": True, "job_id": job_id})
+
+    @app.get("/api/sd/jobs")
+    def sd_jobs() -> Any:
+        with JOBS_LOCK:
+            jobs = list(JOBS.values())
+
+        active_jobs: List[Dict[str, Any]] = []
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            status = str(job.get("status", "")).strip().lower()
+            if status in {"queued", "running"}:
+                active_jobs.append(job)
+
+        active_jobs.sort(
+            key=lambda job: str(job.get("created_at") or job.get("started_at") or "").lower(),
+            reverse=True,
+        )
+        return jsonify({"ok": True, "jobs": active_jobs})
+
+    @app.get("/api/sd/jobs/<job_id>")
+    def sd_job(job_id: str) -> Any:
+        with JOBS_LOCK:
+            job = JOBS.get(job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "job not found"}), 404
+        return jsonify({"ok": True, "job": job})

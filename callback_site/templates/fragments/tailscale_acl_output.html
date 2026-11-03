@@ -1,12 +1,22 @@
 <div class="section-head">
 	<div>
 		<p class="eyebrow">Output</p>
-		<h2>Suggested Policy JSON</h2>
+		<h2>Policy JSON</h2>
 	</div>
 	<div class="button-row compact">
-		<button id="format_policy" type="button" class="secondary-btn">Format</button>
+		<button id="download_policy" type="button" class="secondary-btn">Download</button>
 		<button id="copy_policy" type="button" class="secondary-btn">Copy JSON</button>
 	</div>
 </div>
 <p id="policy_status" class="muted-copy">Waiting for inputs...</p>
+<ul id="policy_warnings" class="notice-list"></ul>
+<h3 class="group-title">What the rules do</h3>
+<div class="table-wrap">
+	<table id="policy_rules" class="rules-table">
+		<thead>
+			<tr><th>Rule</th><th>From</th><th>To</th><th>Ports</th><th>Why</th></tr>
+		</thead>
+		<tbody></tbody>
+	</table>
+</div>
 <pre id="policy_output">Waiting for inputs...</pre>

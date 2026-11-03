@@ -1,65 +1,122 @@
 <div class="section-head">
   <div>
     <p class="eyebrow">Inputs</p>
-    <h2>Identity And Routing</h2>
+    <h2>Rack Policy Settings</h2>
   </div>
-  <p class="muted-copy">Edit values and the policy output updates instantly.</p>
+  <p class="muted-copy">Edit values and the policy updates instantly.</p>
 </div>
 
 <p id="acl-draft-status" class="field-hint">Using the default ACL suggestions until you generate a new draft.</p>
 
+<h3 class="group-title">Identity</h3>
 <div class="grid input-grid">
   <div class="field-card">
     <label for="rack_name">Rack Name</label>
     <input id="rack_name" value="{{ defaults.rack_name }}" placeholder="homelab">
-    <p class="field-hint">Used to derive a normalized default for the homelab tag.</p>
+    <p class="field-hint">A label only. Tags are not derived from it: the nodes advertise the tags below.</p>
   </div>
   <div class="field-card">
     <label for="tailnet">Tailnet (display)</label>
     <input id="tailnet" value="{{ defaults.tailnet }}">
-    <p class="field-hint">Reference-only label for your workspace context.</p>
+    <p class="field-hint">Reference only; it does not appear in the policy.</p>
   </div>
   <div class="field-card">
-    <label for="tailscale_api_key">Tailscale API Key</label>
-    <input id="tailscale_api_key" type="password" autocomplete="off" placeholder="tskey-api-...">
-    <p id="tailscale_api_key_hint" class="field-hint">
-      {% if defaults.tailscale_api_key_set %}API key saved in settings.{% else %}No API key saved yet.{% endif %}
-    </p>
-  </div>
-  <div class="field-card">
-    <label for="admin_group">Admin Group/User</label>
+    <label for="admin_group">Admin Principal</label>
     <input id="admin_group" value="{{ defaults.admin_group }}">
-    <p class="field-hint">Source principal used in tag ownership and SSH rules.</p>
+    <p class="field-hint">Who owns the tags and gets full access: a login email, <code>group:name</code>, or <code>autogroup:admin</code>.</p>
   </div>
   <div class="field-card">
-    <label for="rpi5_tag">Pi 5 Tag</label>
-    <input id="rpi5_tag" value="{{ defaults.rpi5_tag }}">
-    <p class="field-hint">Target group for Pi 5 nodes.</p>
-  </div>
-  <div class="field-card">
-    <label for="rpi_3bplus_tag">Pi 3B+ Tag</label>
-    <input id="rpi_3bplus_tag" value="{{ defaults.rpi_3bplus_tag }}">
-    <p class="field-hint">Target group for Raspberry Pi 3B+ nodes.</p>
-  </div>
-  <div class="field-card">
-    <label for="homelab_tag">Homelab Tag</label>
-    <input id="homelab_tag" value="{{ defaults.homelab_tag }}">
-    <p class="field-hint">Shared umbrella tag used for east-west access patterns.</p>
+    <label for="admin_members">Admin Group Members</label>
+    <textarea id="admin_members" class="short" placeholder="you@example.com"></textarea>
+    <p class="field-hint">Login emails, one per line. Only used when the principal is a <code>group:</code>; emits the group definition so Tailscale accepts it.</p>
   </div>
 </div>
 
+<h3 class="group-title">Rack tags</h3>
+<p class="field-hint">These are the tags the SD form and the Node Ops Tailscale module apply to each board by default. Leave a board blank if you have none.</p>
+<div class="grid input-grid">
+  {% for board in defaults.boards %}
+  <div class="field-card">
+    <label for="tag_{{ board.profile }}">{{ board.label }} Tag</label>
+    <input id="tag_{{ board.profile }}" data-board-tag="{{ board.profile }}" value="{{ defaults.board_tags[board.profile] }}">
+    <p class="field-hint">Nodes in <code>{{ board.group }}</code>.</p>
+  </div>
+  {% endfor %}
+  <div class="field-card">
+    <label for="homelab_tag">Homelab Tag</label>
+    <input id="homelab_tag" value="{{ defaults.homelab_tag }}">
+    <p class="field-hint">On every rack node, the NucBox included.</p>
+  </div>
+</div>
+
+<h3 class="group-title">Traffic between rack nodes</h3>
+<div class="grid input-grid">
+  <div class="field-card">
+    <label for="traffic">Allowed traffic</label>
+    <select id="traffic">
+      <option value="k3s" selected>K3s ports only (recommended)</option>
+      <option value="all">All ports</option>
+    </select>
+    <p class="field-hint">K3s over Tailscale needs tcp 6443, tcp 10250 and udp 8472 between nodes.</p>
+  </div>
+  <div class="field-card">
+    <label for="extra_ports">Extra Ports</label>
+    <input id="extra_ports" value="{{ defaults.extra_ports | join(', ') }}" placeholder="tcp:8088, udp:5000-5010">
+    <p class="field-hint">Comma separated. <code>tcp:8088</code> is the callback site on the NucBox.</p>
+  </div>
+  <div class="field-card check-card">
+    <label class="check-row"><input id="pi_servers" type="checkbox" checked> Pis may be K3s servers</label>
+    <p class="field-hint">Opens tcp 2379-2380 (etcd) between nodes. Needed while any Pi is a control-plane node (NucBox plus two Pis is three servers); untick it if the NucBox is the only server.</p>
+  </div>
+</div>
+
+<h3 class="group-title">Subnets and exit nodes</h3>
+
 <div class="subnet-block">
-  <label for="pi5_subnets">Pi 5 Advertised Subnets</label>
-  <textarea id="pi5_subnets" placeholder="10.42.0.0/24\n10.50.0.0/24">{{ defaults.pi5_subnets | join('\n') }}</textarea>
+  <label for="subnets">Advertised Subnets</label>
+  <textarea id="subnets" placeholder="192.168.174.0/24&#10;192.168.175.0/24">{{ defaults.subnets | join('\n') }}</textarea>
   <div class="subnet-meta">
-    <span class="field-hint">One CIDR per line. Empty lines are ignored automatically.</span>
+    <span class="field-hint">One CIDR per line. Approved automatically for the rack tags when first advertised.</span>
     <span id="subnet_counter" class="pill subtle">0 routes</span>
+  </div>
+</div>
+<div class="grid input-grid">
+  <div class="field-card check-card">
+    <label class="check-row"><input id="subnet_access" type="checkbox"> Rack nodes may use the subnets</label>
+    <p class="field-hint">Off by default: the admin always can, and nodes on the tailnet reach each other directly.</p>
+  </div>
+  <div class="field-card check-card">
+    <label class="check-row"><input id="exit_node" type="checkbox"> Allow an exit node</label>
+    <p class="field-hint">Auto-approves exit node advertisements and lets the admin use them.</p>
+  </div>
+</div>
+
+<h3 class="group-title">SSH and tests</h3>
+<div class="grid input-grid">
+  <div class="field-card check-card">
+    <label class="check-row"><input id="ssh" type="checkbox" checked> Tailscale SSH for the admin</label>
+    <p class="field-hint">Only works on nodes brought up with <code>--ssh</code> (the "Enable Tailscale SSH" option).</p>
+  </div>
+  <div class="field-card check-card">
+    <label class="check-row"><input id="ssh_root" type="checkbox"> Also allow root</label>
+    <p class="field-hint">The default is <code>autogroup:nonroot</code> only.</p>
+  </div>
+  <div class="field-card">
+    <label for="ssh_user">SSH Test User</label>
+    <input id="ssh_user" placeholder="jdizzle">
+    <p class="field-hint">A login that exists on the nodes. Adds an <code>sshTests</code> assertion.</p>
+  </div>
+  <div class="field-card check-card">
+    <label class="check-row"><input id="tests" type="checkbox" checked> Include accept tests</label>
+    <p class="field-hint">Tailscale rejects a policy change that breaks one, so they guard the rack.</p>
+  </div>
+  <div class="field-card check-card">
+    <label class="check-row"><input id="deny_tests" type="checkbox"> Include deny tests</label>
+    <p class="field-hint">Only after you remove the default allow-all grant, or the save is rejected.</p>
   </div>
 </div>
 
 <div class="button-row">
-  <button id="generate" type="button">Generate ACL Snippets</button>
-  <button id="save_tailscale_settings" type="button">Save Tailscale API Settings</button>
+  <button id="generate" type="button">Regenerate</button>
+  <button id="reset_defaults" type="button" class="secondary-btn">Reset to defaults</button>
 </div>
-
-<p id="tailscale_settings_status" class="field-hint">Tailscale settings not loaded yet.</p>

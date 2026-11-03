@@ -4,9 +4,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 try:
-    from .test_support import BaseCallbackSiteTest, callback_app
+    from .test_support import BaseCallbackSiteTest
 except ImportError:
-    from test_support import BaseCallbackSiteTest, callback_app
+    from test_support import BaseCallbackSiteTest
+import routes.monitor
+import services.kubernetes
+try:
+    from .test_support import patch_in
+except ImportError:
+    from test_support import patch_in
 
 
 class KubernetesPageTests(BaseCallbackSiteTest):
@@ -16,9 +22,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
 
     def test_sidebar_hides_kubernetes_link_when_runtime_unavailable(self) -> None:
-        with patch.object(
-            callback_app,
-            "_detect_kubernetes_runtime",
+        with patch_in("_detect_kubernetes_runtime",
             return_value={"available": False, "active_service": "", "reason": "inactive"},
         ):
             response = self.client.get("/settings")
@@ -27,9 +31,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         self.assertNotIn('href="/kubernetes"', text)
 
     def test_sidebar_shows_kubernetes_link_when_runtime_available(self) -> None:
-        with patch.object(
-            callback_app,
-            "_detect_kubernetes_runtime",
+        with patch_in("_detect_kubernetes_runtime",
             return_value={"available": True, "active_service": "k3s", "reason": "active"},
         ):
             response = self.client.get("/settings")
@@ -38,9 +40,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         self.assertIn('href="/kubernetes"', text)
 
     def test_sidebar_shows_kubernetes_link_when_installed_but_inactive(self) -> None:
-        with patch.object(
-            callback_app,
-            "_detect_kubernetes_runtime",
+        with patch_in("_detect_kubernetes_runtime",
             return_value={
                 "available": False,
                 "active_service": "",
@@ -73,7 +73,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
             "job_rows": [{"namespace": "default", "name": "refresh-secrets", "status": "Running", "active": 1, "succeeded": 0, "failed": 0}],
             "last_error": "",
         }
-        with patch.object(callback_app, "_kubernetes_local_summary", return_value=fake_summary):
+        with patch_in("_kubernetes_local_summary", return_value=fake_summary):
             response = self.client.get("/api/kubernetes/summary")
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -97,7 +97,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         self.assertIn("Longhorn", text)
 
     def test_kubernetes_page_refreshes_summary_without_cache(self) -> None:
-        text = (Path(__file__).resolve().parents[1] / "templates" / "kubernetes.html").read_text(encoding="utf-8")
+        text = (Path(__file__).resolve().parents[1] / "static" / "kubernetes.js").read_text(encoding="utf-8")
         self.assertIn('fetch("/api/kubernetes/summary", { cache: "no-store" })', text)
         self.assertIn('window.addEventListener("focus", loadKubernetesSummary);', text)
         self.assertIn('document.addEventListener("visibilitychange"', text)

@@ -1,0 +1,258 @@
+:root {
+  color-scheme: light;
+}
+.kube-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+  position: relative;
+  overflow: hidden;
+}
+.kube-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 8px;
+  background: linear-gradient(90deg, #0b8b6e, #0ea5e9 42%, #6366f1 100%);
+  opacity: 0.95;
+}
+.kube-hero-copy {
+  display: grid;
+  gap: 0.8rem;
+  position: relative;
+  z-index: 1;
+}
+.kube-hero-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.kube-hero-title h1 {
+  margin: 0;
+}
+.kube-hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.kube-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 0.78rem;
+  color: #334155;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+.kube-badge strong {
+  color: #0f172a;
+}
+.kube-hero-panel {
+  display: grid;
+  gap: 0.7rem;
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(14, 165, 233, 0.18);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+}
+.kube-hero-panel .mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.kube-hero-panel .mini-grid .kube-mini:nth-child(4n + 1) {
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.9), #ffffff 100%);
+}
+.kube-hero-panel .mini-grid .kube-mini:nth-child(4n + 2) {
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.9), #ffffff 100%);
+}
+.kube-hero-panel .mini-grid .kube-mini:nth-child(4n + 3) {
+  background: linear-gradient(180deg, rgba(250, 245, 255, 0.92), #ffffff 100%);
+}
+.kube-mini {
+  padding: 0.7rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+.kube-mini .k {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.kube-mini .v {
+  margin-top: 0.25rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+  color: #0f172a;
+  word-break: break-word;
+}
+.kube-section {
+  margin-top: 1rem;
+}
+.kube-section > h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.25rem;
+}
+.kube-section > h2::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(11, 139, 110, 0.45), rgba(11, 139, 110, 0));
+}
+.kube-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.65rem;
+}
+.kube-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  padding: 0.75rem;
+  min-height: 92px;
+  position: relative;
+  overflow: hidden;
+}
+.kube-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(11, 139, 110, 0.0), rgba(11, 139, 110, 0.45), rgba(14, 165, 233, 0.4));
+}
+.kube-card .k {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.kube-card .v {
+  margin-top: 0.28rem;
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.kube-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+.kube-table-wrap {
+  overflow: hidden;
+  position: relative;
+}
+.kube-table-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(11, 139, 110, 0.85), rgba(14, 165, 233, 0.85));
+}
+.kube-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+.kube-table th,
+.kube-table td {
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  vertical-align: top;
+}
+.kube-table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  background: rgba(248, 250, 252, 0.92);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.kube-table tr:hover td {
+  background: rgba(241, 245, 249, 0.7);
+}
+.kube-table .kube-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.88);
+}
+.kube-table .ok {
+  color: #166534;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+.kube-table .warn {
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.kube-detail-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+.kube-note-block {
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.9), rgba(248, 250, 252, 0.95));
+  border: 1px solid rgba(16, 185, 129, 0.18);
+}
+.kube-status {
+  position: relative;
+  border-left: 3px solid rgba(14, 165, 233, 0.7);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95), rgba(248, 250, 252, 0.96));
+  animation: kubePulse 2.8s ease-in-out infinite;
+}
+@keyframes kubePulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(14, 165, 233, 0.06); }
+  50% { box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.08); }
+}
+.kube-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+.kube-list li {
+  color: #334155;
+}
+.kube-status {
+  margin-top: 0.8rem;
+  white-space: pre-wrap;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.kube-raw {
+  margin: 0;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.kube-subtle {
+  color: var(--muted);
+  font-size: 0.84rem;
+}

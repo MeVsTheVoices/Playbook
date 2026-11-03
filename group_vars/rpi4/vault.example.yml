@@ -1,0 +1,5 @@
+---
+# Copy to vault.yml and encrypt with ansible-vault before committing.
+# Optional: when unset, the Pi 4 group falls back to the vault_rpi5_* OAuth client.
+vault_rpi4_tailscale_oauth_client_id: "CHANGE_ME"
+vault_rpi4_tailscale_oauth_client_secret: "CHANGE_ME"

@@ -6,8 +6,10 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from core import *
-from tailscale_client import get_tailscale_framework_status
+from services.settings import _load_app_settings, _save_app_settings
+from services.storage import APPDATA_DIR
+from services.tailscale_client import get_tailscale_framework_status
+from tailscale_policy import build_policy
 
 
 def register_settings_routes(app: Any, *, log_file: Path, root_logger: logging.Logger, logger: logging.Logger) -> None:
@@ -73,5 +75,13 @@ def register_settings_routes(app: Any, *, log_file: Path, root_logger: logging.L
     def tailscale_framework_status() -> Any:
         status = get_tailscale_framework_status()
         return jsonify({"ok": True, "status": status})
+
+    @settings_api.post("/api/tailscale/policy")
+    def tailscale_policy() -> Any:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"ok": False, "errors": ["JSON object required"]}), 400
+        result = build_policy(payload)
+        return jsonify(result), (200 if result["ok"] else 400)
 
     app.register_blueprint(settings_api)

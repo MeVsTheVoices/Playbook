@@ -1,6 +1,6 @@
 const body = document.body;
 const toggleBtn = document.getElementById("sidebar-toggle");
-const ACL_DRAFT_STORAGE_KEY = "tailscale-acl-last-used-v1";
+const ACL_DRAFT_STORAGE_KEY = "tailscale-acl-draft-v2";
 
 function initSidebar() {
   const saved = localStorage.getItem("sidebar-collapsed");
@@ -16,25 +16,67 @@ if (toggleBtn) {
   });
 }
 
-function parseSubnets(text) {
-  return text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+const TEXT_FIELDS = ["rack_name", "tailnet", "admin_group", "admin_members", "homelab_tag", "traffic", "extra_ports", "subnets", "ssh_user"];
+const CHECK_FIELDS = ["pi_servers", "subnet_access", "exit_node", "ssh", "ssh_root", "tests", "deny_tests"];
+const POLICY_DEBOUNCE_MS = 250;
+
+let policyRequestSeq = 0;
+let policyTimer = null;
+let defaultInputs = null;
+
+function boardTagInputs() {
+  return Array.from(document.querySelectorAll("[data-board-tag]"));
 }
 
-function setTailscaleSettingsStatus(message) {
-  const status = document.getElementById("tailscale_settings_status");
-  if (status) {
-    status.textContent = message;
+// Reads every input into one object; null when the inputs panel has not loaded yet.
+function collectInputs() {
+  const admin = document.getElementById("admin_group");
+  if (!admin) {
+    return null;
   }
+  const values = {};
+  TEXT_FIELDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) values[id] = el.value;
+  });
+  CHECK_FIELDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) values[id] = el.checked;
+  });
+  values.board_tags = {};
+  boardTagInputs().forEach((el) => {
+    values.board_tags[el.dataset.boardTag] = el.value;
+  });
+  return values;
 }
 
-function setTailscaleApiKeyHint(message) {
-  const hint = document.getElementById("tailscale_api_key_hint");
-  if (hint) {
-    hint.textContent = message;
+function applyInputs(values) {
+  if (!values || typeof values !== "object") {
+    return false;
   }
+  let applied = false;
+  TEXT_FIELDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && values[id] !== undefined && values[id] !== null) {
+      el.value = String(values[id]);
+      applied = true;
+    }
+  });
+  CHECK_FIELDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && typeof values[id] === "boolean") {
+      el.checked = values[id];
+      applied = true;
+    }
+  });
+  const tags = values.board_tags && typeof values.board_tags === "object" ? values.board_tags : {};
+  boardTagInputs().forEach((el) => {
+    if (typeof tags[el.dataset.boardTag] === "string") {
+      el.value = tags[el.dataset.boardTag];
+      applied = true;
+    }
+  });
+  return applied;
 }
 
 function readAclDraft() {
@@ -48,137 +90,18 @@ function readAclDraft() {
   }
 }
 
-function saveAclDraft() {
-  const rackNameEl = document.getElementById("rack_name");
-  const tailnetEl = document.getElementById("tailnet");
-  const adminEl = document.getElementById("admin_group");
-  const rpi5El = document.getElementById("rpi5_tag");
-  const threeBplusEl = document.getElementById("rpi_3bplus_tag");
-  const homelabEl = document.getElementById("homelab_tag");
-  const subnetEl = document.getElementById("pi5_subnets");
-
-  if (!rackNameEl || !tailnetEl || !adminEl || !rpi5El || !homelabEl || !subnetEl) {
-    return;
-  }
-
-  const draft = {
-    rack_name: rackNameEl.value,
-    tailnet: tailnetEl.value,
-    admin_group: adminEl.value,
-    rpi5_tag: rpi5El.value,
-    rpi_3bplus_tag: threeBplusEl ? threeBplusEl.value : "",
-    homelab_tag: homelabEl.value,
-    pi5_subnets: subnetEl.value,
-  };
-
+function saveAclDraft(values) {
   try {
-    localStorage.setItem(ACL_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    localStorage.setItem(ACL_DRAFT_STORAGE_KEY, JSON.stringify(values));
   } catch (_) {
     // Ignore storage quota or privacy mode failures.
   }
 }
 
-function applySettingsDefault(element, value, hasLocalDraft) {
-  if (!element || !value || hasLocalDraft) {
-    return;
-  }
-  if (!String(element.value || "").trim()) {
-    element.value = value;
-  }
-}
-
-async function loadTailscaleSettings(hasLocalDraft = false) {
-  const tailnetEl = document.getElementById("tailnet");
-  const rackNameEl = document.getElementById("rack_name");
-  if (!tailnetEl) {
-    return;
-  }
-
-  setTailscaleSettingsStatus("Loading Tailscale settings...");
-  try {
-    const res = await fetch("/api/settings");
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      setTailscaleSettingsStatus(data.error || "Failed to load Tailscale settings.");
-      return;
-    }
-
-    const settings = data.settings || {};
-    const tailnet = String(settings.tailscale_tailnet || "").trim();
-    const rackName = String(settings.rack_name || "").trim();
-    const apiKeySet = Boolean(settings.tailscale_api_key_set);
-    applySettingsDefault(rackNameEl, rackName, hasLocalDraft);
-    applySettingsDefault(tailnetEl, tailnet, hasLocalDraft);
-    setTailscaleApiKeyHint(apiKeySet ? "API key saved in settings." : "No API key saved yet.");
-    setTailscaleSettingsStatus("Tailscale settings loaded.");
-  } catch (_) {
-    setTailscaleSettingsStatus("Failed to load Tailscale settings.");
-  }
-}
-
-async function saveTailscaleSettings() {
-  const tailnetEl = document.getElementById("tailnet");
-  const apiKeyEl = document.getElementById("tailscale_api_key");
-  if (!tailnetEl || !apiKeyEl) {
-    return;
-  }
-
-  setTailscaleSettingsStatus("Saving Tailscale settings...");
-  try {
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tailscale_tailnet: tailnetEl.value.trim(),
-        tailscale_api_key: apiKeyEl.value,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      setTailscaleSettingsStatus(data.error || "Failed to save Tailscale settings.");
-      return;
-    }
-
-    const saved = data.settings || {};
-    tailnetEl.value = String(saved.tailscale_tailnet || tailnetEl.value || "").trim();
-    const apiKeySet = Boolean(saved.tailscale_api_key_set) || Boolean(String(saved.tailscale_api_key || "").trim());
-    apiKeyEl.value = "";
-    setTailscaleApiKeyHint(apiKeySet ? "API key saved in settings." : "No API key saved yet.");
-    setTailscaleSettingsStatus("Tailscale settings saved.");
-    generatePolicy();
-  } catch (_) {
-    setTailscaleSettingsStatus("Failed to save Tailscale settings.");
-  }
-}
-
-function applyAclDraft(draft) {
-  if (!draft || typeof draft !== "object") {
-    return false;
-  }
-
-  const fields = [
-    ["rack_name", document.getElementById("rack_name")],
-    ["tailnet", document.getElementById("tailnet")],
-    ["admin_group", document.getElementById("admin_group")],
-    ["rpi5_tag", document.getElementById("rpi5_tag")],
-    ["rpi_3bplus_tag", document.getElementById("rpi_3bplus_tag")],
-    ["homelab_tag", document.getElementById("homelab_tag")],
-    ["pi5_subnets", document.getElementById("pi5_subnets")],
-  ];
-
-  let applied = false;
-  for (const [key, element] of fields) {
-    if (!element || draft[key] === undefined || draft[key] === null) continue;
-    element.value = String(draft[key]);
-    applied = true;
-  }
-  return applied;
-}
-
 function restoreAclDraft() {
   const status = document.getElementById("acl-draft-status");
   const draft = readAclDraft();
-  if (applyAclDraft(draft)) {
+  if (applyInputs(draft)) {
     if (status) {
       status.textContent = "Restored your last-used Tailscale ACL configuration.";
     }
@@ -190,95 +113,114 @@ function restoreAclDraft() {
   return false;
 }
 
-function generatePolicy() {
-  const out = document.getElementById("policy_output");
-  const status = document.getElementById("policy_status");
-  const rackNameEl = document.getElementById("rack_name");
-  const tailnetEl = document.getElementById("tailnet");
-  const adminEl = document.getElementById("admin_group");
-  const rpi5El = document.getElementById("rpi5_tag");
-  const threeBplusEl = document.getElementById("rpi_3bplus_tag");
-  const homelabEl = document.getElementById("homelab_tag");
-  const subnetEl = document.getElementById("pi5_subnets");
-
-  if (!out || !rackNameEl || !tailnetEl || !adminEl || !rpi5El || !homelabEl || !subnetEl) {
-    return;
-  }
-
-  const rackNameRaw = rackNameEl.value.trim().toLowerCase();
-  const rackName = rackNameRaw.replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "homelab";
-  const suggestedHomelabTag = `tag:${rackName}`;
-  if (!homelabEl.value.trim() || homelabEl.value.trim() === "tag:homelab") {
-    homelabEl.value = suggestedHomelabTag;
-  }
-
-  const admin = adminEl.value.trim();
-  const rpi5Tag = rpi5El.value.trim();
-  const threeBplusTag = threeBplusEl ? threeBplusEl.value.trim() : "";
-  const homelabTag = homelabEl.value.trim();
-  const subnets = parseSubnets(subnetEl.value);
-  const piNodeTags = [rpi5Tag, threeBplusTag].filter(Boolean);
-
-  const policy = {
-    tagOwners: {
-      [rpi5Tag]: [admin],
-      ...(threeBplusTag ? { [threeBplusTag]: [admin] } : {}),
-      [homelabTag]: [admin],
-    },
-    autoApprovers: {
-      routes: {},
-    },
-    acls: [
-      {
-        action: "accept",
-        src: [admin],
-        dst: [...piNodeTags.map((tag) => `${tag}:*`), `${homelabTag}:*`],
-      },
-      {
-        action: "accept",
-        src: piNodeTags,
-        dst: [`${homelabTag}:*`],
-      },
-    ],
-    ssh: [
-      {
-        action: "accept",
-        src: [admin],
-        dst: piNodeTags,
-        users: ["autogroup:nonroot", "root"],
-      },
-    ],
-  };
-
-  subnets.forEach((cidr) => {
-    policy.autoApprovers.routes[cidr] = [rpi5Tag, homelabTag];
-  });
-
-  out.textContent = JSON.stringify(policy, null, 2);
-  if (status) {
-    const now = new Date();
-    const stamp = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    status.textContent = `Updated ${stamp} - ${subnets.length} route${subnets.length === 1 ? "" : "s"}`;
-  }
-
-  saveAclDraft();
-
-  syncOverview({
-    rack: rackNameEl.value.trim() || "Not set",
-    tailnet: tailnetEl.value.trim() || "Not set",
-    routes: subnets.length,
-  });
-  refreshFieldCards();
-  updateSubnetCounter(subnets.length);
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
 }
 
-function syncOverview(data) {
-  const rackEl = document.getElementById("ov-rack");
-  const tailnetEl = document.getElementById("ov-tailnet");
-  const routeEl = document.getElementById("ov-route-count");
-  if (rackEl) rackEl.textContent = data.rack;
-  if (tailnetEl) tailnetEl.textContent = data.tailnet;
-  if (routeEl) routeEl.textContent = String(data.routes);
+function renderNotices(errors, warnings) {
+  const list = document.getElementById("policy_warnings");
+  if (!list) return;
+  list.replaceChildren();
+  const add = (level, text) => {
+    const item = document.createElement("li");
+    item.className = `notice notice-${level}`;
+    item.textContent = text;
+    list.appendChild(item);
+  };
+  (errors || []).forEach((text) => add("error", text));
+  (warnings || []).forEach((entry) => add(entry.level === "info" ? "info" : "warn", entry.text));
+}
+
+function renderRules(rules) {
+  const body = document.querySelector("#policy_rules tbody");
+  if (!body) return;
+  body.replaceChildren();
+  (rules || []).forEach((rule) => {
+    const row = document.createElement("tr");
+    [rule.name, rule.src.join(", "), rule.dst.join(", "), rule.ports.join(", "), rule.why].forEach((text) => {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      row.appendChild(cell);
+    });
+    body.appendChild(row);
+  });
+}
+
+function syncOverview(inputs, summary) {
+  setText("ov-rack", (inputs.rack_name || "").trim() || "Not set");
+  setText("ov-tailnet", (inputs.tailnet || "").trim() || "Not set");
+  setText("ov-tags", summary ? String(summary.tags.length) : "0");
+  setText("ov-grants", summary ? String(summary.grants) : "0");
+  setText("ov-route-count", summary ? String(summary.routes) : "0");
+  setText("ov-tests", summary ? String(summary.tests) : "0");
+  updateSubnetCounter(summary ? summary.routes : 0);
+}
+
+async function generatePolicy() {
+  const inputs = collectInputs();
+  const out = document.getElementById("policy_output");
+  if (!inputs || !out) {
+    return;
+  }
+  const status = document.getElementById("policy_status");
+  const seq = ++policyRequestSeq;
+
+  let data;
+  try {
+    const res = await fetch("/api/tailscale/policy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        admin: inputs.admin_group,
+        admin_members: inputs.admin_members,
+        homelab_tag: inputs.homelab_tag,
+        board_tags: inputs.board_tags,
+        traffic: inputs.traffic,
+        pi_servers: inputs.pi_servers,
+        extra_ports: inputs.extra_ports,
+        subnets: inputs.subnets,
+        subnet_access: inputs.subnet_access,
+        exit_node: inputs.exit_node,
+        ssh: inputs.ssh,
+        ssh_root: inputs.ssh_root,
+        ssh_user: inputs.ssh_user,
+        tests: inputs.tests,
+        deny_tests: inputs.deny_tests,
+      }),
+    });
+    data = await res.json();
+  } catch (_) {
+    if (seq === policyRequestSeq && status) status.textContent = "Could not reach the server to build the policy.";
+    return;
+  }
+  if (seq !== policyRequestSeq) {
+    return; // a newer edit superseded this response
+  }
+
+  saveAclDraft(inputs);
+  if (!data.ok) {
+    out.textContent = "Fix the inputs listed above to see the policy.";
+    renderNotices(data.errors, []);
+    renderRules([]);
+    syncOverview(inputs, null);
+    if (status) status.textContent = "The inputs have errors.";
+  } else {
+    out.textContent = data.policy_text;
+    renderNotices([], data.warnings);
+    renderRules(data.rules);
+    syncOverview(inputs, data.summary);
+    if (status) {
+      const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      status.textContent = `Updated ${stamp}: ${data.summary.grants} grants, ${data.summary.routes} routes, ${data.summary.tests} tests`;
+    }
+  }
+  refreshFieldCards();
+}
+
+function schedulePolicy() {
+  clearTimeout(policyTimer);
+  policyTimer = setTimeout(generatePolicy, POLICY_DEBOUNCE_MS);
 }
 
 function updateSubnetCounter(count) {
@@ -292,25 +234,12 @@ function updateSubnetCounter(count) {
 function refreshFieldCards() {
   const fieldCards = document.querySelectorAll(".field-card");
   fieldCards.forEach((card) => {
-    const input = card.querySelector("input, textarea");
+    const input = card.querySelector("input:not([type=checkbox]), textarea");
     if (!input) {
       return;
     }
     card.classList.toggle("field-ready", !!input.value.trim());
   });
-}
-
-function formatPolicyOutput() {
-  const out = document.getElementById("policy_output");
-  if (!out) {
-    return;
-  }
-  try {
-    const parsed = JSON.parse(out.textContent || "{}");
-    out.textContent = JSON.stringify(parsed, null, 2);
-  } catch (error) {
-    // Keep existing content if output is not parseable.
-  }
 }
 
 async function copyPolicyOutput() {
@@ -344,9 +273,29 @@ async function copyPolicyOutput() {
   }
 }
 
+function downloadPolicyOutput() {
+  const out = document.getElementById("policy_output");
+  const status = document.getElementById("policy_status");
+  const text = out ? out.textContent || "" : "";
+  try {
+    JSON.parse(text);
+  } catch (_) {
+    if (status) status.textContent = "Nothing to download until the policy builds without errors.";
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "tailscale-policy.json";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function bindOutputActions() {
   const copyBtn = document.getElementById("copy_policy");
-  const formatBtn = document.getElementById("format_policy");
+  const downloadBtn = document.getElementById("download_policy");
 
   if (copyBtn && !copyBtn.dataset.bound) {
     copyBtn.addEventListener("click", () => {
@@ -355,52 +304,71 @@ function bindOutputActions() {
     copyBtn.dataset.bound = "1";
   }
 
-  if (formatBtn && !formatBtn.dataset.bound) {
-    formatBtn.addEventListener("click", () => {
-      formatPolicyOutput();
-    });
-    formatBtn.dataset.bound = "1";
+  if (downloadBtn && !downloadBtn.dataset.bound) {
+    downloadBtn.addEventListener("click", downloadPolicyOutput);
+    downloadBtn.dataset.bound = "1";
   }
+}
+
+function resetToDefaults() {
+  try {
+    localStorage.removeItem(ACL_DRAFT_STORAGE_KEY);
+  } catch (_) {
+    // Ignore storage failures.
+  }
+  applyInputs(defaultInputs);
+  const status = document.getElementById("acl-draft-status");
+  if (status) {
+    status.textContent = "Using the default ACL suggestions until you generate a new draft.";
+  }
+  generatePolicy();
 }
 
 function bindAclInputEvents() {
   const generateBtn = document.getElementById("generate");
+  const resetBtn = document.getElementById("reset_defaults");
   const inputsSection = document.getElementById("acl-inputs-section");
-  const saveTailscaleSettingsBtn = document.getElementById("save_tailscale_settings");
 
   if (generateBtn && !generateBtn.dataset.bound) {
     generateBtn.addEventListener("click", generatePolicy);
     generateBtn.dataset.bound = "1";
   }
 
+  if (resetBtn && !resetBtn.dataset.bound) {
+    resetBtn.addEventListener("click", resetToDefaults);
+    resetBtn.dataset.bound = "1";
+  }
+
   if (inputsSection && !inputsSection.dataset.bound) {
     inputsSection.addEventListener("input", (event) => {
       const target = event.target;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
-        generatePolicy();
+      if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) {
+        schedulePolicy();
+      }
+    });
+    inputsSection.addEventListener("change", (event) => {
+      const target = event.target;
+      if (target && (target.tagName === "SELECT" || target.type === "checkbox")) {
+        schedulePolicy();
       }
     });
     inputsSection.dataset.bound = "1";
   }
 
-  if (saveTailscaleSettingsBtn && !saveTailscaleSettingsBtn.dataset.bound) {
-    saveTailscaleSettingsBtn.addEventListener("click", () => {
-      saveTailscaleSettings();
-    });
-    saveTailscaleSettingsBtn.dataset.bound = "1";
-  }
-
-  const hasLocalDraft = restoreAclDraft();
-  loadTailscaleSettings(hasLocalDraft).finally(() => {
-    generatePolicy();
-  });
+  // Snapshot the server-rendered values before a saved draft overrides them, for "Reset to defaults".
+  defaultInputs = collectInputs();
+  restoreAclDraft();
+  generatePolicy();
 }
 
 document.body.addEventListener("htmx:afterSwap", (event) => {
   const targetId = event.target && event.target.id ? event.target.id : "";
-  if (targetId === "acl-inputs-section" || targetId === "acl-output-section") {
+  if (targetId === "acl-inputs-section") {
     bindAclInputEvents();
+  }
+  if (targetId === "acl-output-section") {
     bindOutputActions();
+    generatePolicy();
   }
   if (targetId === "acl-overview-section") {
     generatePolicy();

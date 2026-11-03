@@ -194,6 +194,34 @@
   tags:
     - tailscale
 
+- name: Enable IPv4 forwarding for routing features
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    sysctl_set: true
+    reload: true
+  when:
+    - raspberry_pi_3bplus_tailscale_manage | bool
+    - raspberry_pi_3bplus_tailscale_advertise_exit_node | bool
+      or (raspberry_pi_3bplus_tailscale_advertise_routes | length > 0)
+  tags:
+    - tailscale
+
+- name: Enable IPv6 forwarding for routing features
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "1"
+    state: present
+    sysctl_set: true
+    reload: true
+  when:
+    - raspberry_pi_3bplus_tailscale_manage | bool
+    - raspberry_pi_3bplus_tailscale_advertise_exit_node | bool
+      or (raspberry_pi_3bplus_tailscale_advertise_routes | length > 0)
+  tags:
+    - tailscale
+
 - name: Bring node online with desired tailscale flags
   ansible.builtin.command: >-
     tailscale up
@@ -270,6 +298,7 @@
     raspberry_pi_3bplus_lw_helm: "{{ (provision_inputs.k3s_disable_helm_controller | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
     raspberry_pi_3bplus_taint: "{{ (provision_inputs.k3s_taint | default('true') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
     raspberry_pi_3bplus_max_pods: "{{ provision_inputs.k3s_max_pods | default('20') | string | trim or '20' }}"
+    raspberry_pi_3bplus_k3s_allow_sd_etcd: "{{ (provision_inputs.k3s_allow_sd_etcd | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
   when:
     - rack_manage_with_ansible | bool
     - provision_profile | default('') == 'kubernetes'
@@ -356,6 +385,31 @@
     - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
   # Not no_log: the failure message must reach the operator. The conditions only
   # report pass/fail, never the token value.
+  tags:
+    - kubernetes
+
+- name: Find the device behind /var/lib
+  ansible.builtin.command: findmnt --noheadings --output SOURCE --target /var/lib
+  register: raspberry_pi_3bplus_k3s_data_device
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Refuse etcd on an SD card
+  ansible.builtin.assert:
+    that:
+      - (raspberry_pi_3bplus_k3s_data_device.stdout | default('') | trim) is not match('^/dev/mmcblk') or (raspberry_pi_3bplus_k3s_allow_sd_etcd | bool)
+    fail_msg: "This control-plane node keeps /var/lib on an SD card. K3s says SD cards cannot handle etcd's write load, and an unhealthy voter can break quorum. Boot it from an SSD, or tick 'Allow etcd on an SD card' to override."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi_3bplus_k3s_role | default('') == 'control-plane'
   tags:
     - kubernetes
 

@@ -4,6 +4,7 @@
 - Top of rack: GL.iNet router running OpenWrt.
 - Network layer: PoE switch under router.
 - Raspberry Pi 5: 2 currently online, 4 target total. Pi 5 nodes include NVMe bottoms and PoE hats. **Their role is selectable per node: `worker` (default), `control-plane`, or `utility` (no Kubernetes).**
+- Raspberry Pi 4: 2 placeholder slots in `inventory.yml` (replace `CHANGE_ME_RPI4_*` with real addresses; RAM and storage vary per unit). Pi 4 nodes run 64-bit images from SD card or USB SSD. **Their role is selectable per node like a Pi 5: `worker` (default), `control-plane` (boot from an SSD, see the K3s section), or `utility` (no Kubernetes).**
 - Raspberry Pi 3B+: 2 slots reserved. Pi 3B+ nodes run 64-bit images and SD-card storage only. **Their role is selectable per node: `light-worker` (default, a tainted K3s agent), `utility` (no Kubernetes), or `control-plane` (not recommended, see the K3s section).**
 
 ## Power-Restore / IP-Change Note
@@ -12,12 +13,12 @@
 - In other words: DHCP can change the TCP/IP endpoint, but the identity update still needs an authenticated reauth step to avoid stale or wrong lease data.
 
 ## Repository Model
-- Active hosts are in `rpi5_active` and `rpi_3bplus_active` and are targeted by `site.yml`.
+- Active hosts are in `rpi5_active`, `rpi4_active` and `rpi_3bplus_active` and are targeted by `site.yml` (roles `raspberry_pi5`, `raspberry_pi4`, `raspberry_pi_3bplus`). The Pi 4 role is the Pi 5 role without the Longhorn tasks; Longhorn stays Pi 5 only.
 - Planned hosts are tracked in `rpi5_planned` but not targeted by default.
 - Router and switch are represented in inventory as infrastructure placeholders and marked unmanaged.
 
 ## K3s Topology And Join Preflight
-- The NucBox is the K3s server. Pi 5 nodes default to workers and can be made control-plane nodes: NVMe storage and more RAM make them far better etcd voters than a Pi 3B+, and the NucBox plus two control-plane Pi 5 makes three servers, which is the odd count etcd wants. A Pi 3B+ is a light worker by default: it has about 900 MB of RAM and an SD card, below the 2 GB K3s documents for a server, and two of them as etcd voters took the cluster down twice. Control-plane remains selectable on a Pi 3B+ but is not recommended.
+- The NucBox is the K3s server. Pi 5 nodes default to workers and can be made control-plane nodes: NVMe storage and more RAM make them far better etcd voters than a Pi 3B+, and the NucBox plus two control-plane Pi 5 makes three servers, which is the odd count etcd wants. A Pi 3B+ is a light worker by default: it has about 900 MB of RAM and an SD card, below the 2 GB K3s documents for a server, and two of them as etcd voters took the cluster down twice. Control-plane remains selectable on a Pi 3B+ but is not recommended. A Pi 4 behaves like a Pi 5 here (worker by default, control-plane selectable, same option defaults), but K3s documents that SD cards and eMMC cannot handle etcd's IO, so only make a Pi 4 a control-plane node when it boots from an SSD, and consider the lightweight server options on a 1 to 2 GB model.
 - Use the NucBox Tailscale address for the API endpoint and each node's own Tailscale IPv4 as `node-ip`/`advertise-address`. The LAN route may be NATed through `192.168.174.1`; etcd peer TLS identity is IP-sensitive, so do not advertise that NAT address.
 - Permit TCP 6443 to the API server and TCP 2379/2380 between control-plane peers over the selected path. Confirm `nc -z <peer-ip> 2380` in both directions before joining another server.
 - All control-plane servers must have matching critical settings, especially `secrets-encryption`. This cluster reports encryption disabled; remove an inherited `--secrets-encryption` systemd flag from joiners rather than enabling a different cluster mode.
@@ -33,27 +34,27 @@
 - API endpoint: `https://100.65.24.76:6443` (NucBox over Tailscale).
 - Control-plane nodes: `jd-shorty-rack-pi3bplus-alpha` (`100.70.57.110`) and `jd-shorty-rack-pi3bplus-bravo` (`100.120.128.100`). Tailscale addresses are assigned per install, so read them from `tailscale status` instead of reusing old ones.
 - Pi 5 nodes default to `worker`; a Pi 5 can also be `control-plane`. Secrets encryption: disabled on the NucBox; joining server units must not carry `--secrets-encryption`.
-- Tailscale tags and ACL: the NucBox is tagged `tag:homelab` and the Pis carry `tag:rpi-3bplus` and `tag:homelab`. The ACL must allow those tags to reach each other and `192.168.174.0/24`; without that rule a tagged node sees no peers and K3s cannot join.
+- Tailscale tags and policy: the NucBox is tagged `tag:homelab`; each Pi carries its board tag (`tag:rpi5`, `tag:rpi4`, `tag:rpi-3bplus`) plus `tag:homelab`. Build the matching policy on the Tailscale ACL page (see "Tailscale Policy Page" below). Without rules letting those tags reach each other on the K3s ports, a tagged node sees no peers and K3s cannot join.
 - Current state (2026-10-31, after the outage): the Pi 3B+ control nodes were too small to carry etcd reliably and quorum was lost twice. The cluster is being rebuilt from the NucBox alone with the lightweight profile below. The old `jd-shorty-rack-alpha-*`, `jd-shorty-rack-beta-*` and Pi 5 node records are stale and removed by the fresh-start script.
 
-### Node Roles (both boards)
+### Node Roles (all boards)
 Chosen on the Home page (K3s section, once a Pi profile is selected; switching boards always returns to that board's safe default role) or per node in Node Ops under the Kubernetes module.
 
 | Role | Board | What it does |
 | --- | --- | --- |
-| `worker` (default) | Pi 5 | K3s agent. Labelled `role=worker`. Optional taint `rack/dedicated=true:NoSchedule` and pod cap, both off by default. |
+| `worker` (default) | Pi 5, Pi 4 | K3s agent. Labelled `role=worker`. Optional taint `rack/dedicated=true:NoSchedule` and pod cap, both off by default. |
 | `light-worker` (default) | Pi 3B+ | K3s agent: no etcd, no API server. Labelled `role=light-worker`, tainted `rack/light=true:NoSchedule` so only pods that tolerate it land there, and capped at 20 pods (K3s defaults to 110). |
-| `utility` | both | No Kubernetes. Use it for Tailscale subnet routing or exit node, monitoring, DNS and similar. On the SD form this is simply the Standard distribution. In Node Ops the Kubernetes module applies nothing and needs no token. If K3s is already installed it is left as-is. |
-| `control-plane` | both | K3s server and etcd voter, labelled `role=control-plane`. Taint, pod cap and the server options below are selectable. Pi 5 starts with all of them off, so it matches the NucBox with no extra flags. Pi 3B+ starts with the lightweight set on and the control-plane taint plus a 20-pod cap, and is not recommended. |
+| `utility` | all | No Kubernetes. Use it for Tailscale subnet routing or exit node, monitoring, DNS and similar. On the SD form this is simply the Standard distribution. In Node Ops the Kubernetes module applies nothing and needs no token. If K3s is already installed it is left as-is. |
+| `control-plane` | all | K3s server and etcd voter, labelled `role=control-plane`. Taint, pod cap and the server options below are selectable. Pi 5 and Pi 4 start with all of them off, so they match the NucBox with no extra flags (a Pi 4 needs an SSD for this role). Pi 3B+ starts with the lightweight set on and the control-plane taint plus a 20-pod cap, and is not recommended. |
 
-Every K3s role also takes the same two options: a taint (defaults: Pi 3B+ on, Pi 5 off) and a pod cap (blank means the board default). To schedule something on a tainted node, give the pod a toleration for that role's taint and, if wanted, a `nodeSelector` such as `role: light-worker`. A blank role is rejected, and a role the board does not offer (for example `light-worker` on a Pi 5) is rejected with a clear message at apply time.
+Every K3s role also takes the same two options: a taint (defaults: Pi 3B+ on, Pi 5 and Pi 4 off) and a pod cap (blank means the board default). To schedule something on a tainted node, give the pod a toleration for that role's taint and, if wanted, a `nodeSelector` such as `role: light-worker`. A blank role is rejected, and a role the board does not offer (for example `light-worker` on a Pi 5) is rejected with a clear message at apply time.
 
 Keep the number of K3s servers odd. With the NucBox plus two control-plane Pi 5 there are three, which tolerates one failure; with two there is no fault tolerance until the third is in.
 
 ### K3s Server Options (control-plane role)
 These trim or tune what a K3s server runs. On a Pi 3B+ they start on (the profile does not make a 900 MB board comfortable, and embedded etcd can be slow on SD cards); on a Pi 5 they start off.
 
-| Option | Pi 3B+ | Pi 5 | Notes |
+| Option | Pi 3B+ | Pi 5 / Pi 4 | Notes |
 | --- | --- | --- | --- |
 | Disable ServiceLB | on | off | No svclb pods. LoadBalancer Services stay pending. |
 | Disable metrics-server | on | off | No `kubectl top` or HPA. |
@@ -75,6 +76,22 @@ Run on the NucBox before reflashing any Pi 3B+ node:
 3. Reflash the Pis. Light workers join as agents and can be brought up in any order. If you do run Pi 3B+ servers, join them one at a time and wait for each to be `Ready`: with two etcd members there is no fault tolerance until the third joins.
 
 Never reflash a control node while it is still an etcd member: removing it first is what keeps quorum.
+
+### Four Pi 4 Layout: Two Control-Plane, Two Workers
+Target: the NucBox plus two control-plane Pi 4 make three etcd voters (tolerates one failure), and two Pi 4 are plain workers.
+
+What the roles produce (checked against the NucBox, which runs `k3s server --cluster-init --tls-san --node-ip --advertise-address` with every packaged component on):
+- Control-plane Pi: `server` (NucBox Tailscale endpoint), `token` (server token), `node-ip` and `advertise-address` (its own Tailscale IPv4), `node-name`, `node-label: role=control-plane`, `secrets-encryption: false`. No `cluster-init`: only the first server has it, and the config check now rejects it on a joining node. No `disable:` entries, so it matches the NucBox, which is what K3s requires for servers.
+- Worker Pi: `server`, `token`, `node-ip`, `node-name`, `node-label: role=worker`. No taint and no pod cap unless you choose them.
+
+Safeguards added for this layout:
+- **SD card guard.** K3s says etcd cannot run on SD cards or eMMC, and that is what broke quorum before. A control-plane node refuses to install or apply when `/var/lib` is on an `mmcblk` device unless "Allow etcd on an SD card" is ticked (SD form and Node Ops). Boot the two control-plane Pis from a USB SSD. The check is exercised in tests with a fake `findmnt`, not on a real Pi.
+- **K3s version pin.** First boot used to install the stable channel, which can be newer than the NucBox. The SD form now installs the NucBox's own version by default (the "K3s version" box shows it); type another `vX.Y.Z+k3sN` to pin it, or `none` for the stable channel. A node should never be newer than the servers, and servers are upgraded before agents.
+- **Raspberry Pi OS and old Ubuntu.** For a K3s image the script adds `cgroup_memory=1 cgroup_enable=memory` to `cmdline.txt` (Raspberry Pi OS needs it or K3s will not start), and adds `linux-modules-extra-raspi` on Ubuntu 21.10 to 23.10 images (22.04 needs it for flannel's VXLAN; 24.04 does not).
+- **Tailscale policy.** Generate it with "Pis may be K3s servers" ticked (the default): etcd uses tcp 2379-2380 between the servers.
+- **Config check.** Flags `cluster-init` on a joiner, a missing token, and a `node-ip`/`advertise-address` outside `100.64.0.0/10` (etcd peer certificates are tied to the advertised address).
+
+Order: reset the cluster to the NucBox alone (`scripts/k3s_fresh_start.sh`), flash the two workers (any order), then join the control-plane Pis one at a time and wait for `etcdctl member list` to show each before starting the next.
 
 ### Joining A Control-Plane Node (order that worked)
 1. Image the card from the Home page with Tailscale enabled and an auth key for the node's tag. First boot installs Tailscale, joins the tailnet, and writes the Tailscale address into the K3s config as `node-ip` before K3s starts. This is fail-safe: if the join fails, cloud-init continues and Node Ops can finish it. The auth key is never stored in job records or auto-saved templates.
@@ -103,17 +120,30 @@ Never reflash a control node while it is still an etcd member: removing it first
    - `sudo scripts/prepare_sd_cloud_init.sh --profile pi5 --hostname rpi5-03 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback`
 4. For Pi 3B+, the default Ubuntu 24.04 ARM64 image applies automatically (same as Pi 5), or pass `--image-url` explicitly:
    - `sudo scripts/prepare_sd_cloud_init.sh --profile pi3bplus --hostname rpi-3bplus-01 --device /dev/sdX --ssh-key-file ~/.ssh/id_ed25519.pub --callback-url http://<callback-host>:8088/api/cloud-init/callback`
+   - For a Pi 4 use `--profile pi4` (same image; default Tailscale tags `tag:rpi4,tag:homelab`).
 5. Insert SD card, boot node, then watch callback events:
    - Open `http://<callback-host>:8088/`
 6. If the callback host is reached through the router WAN or another NAT hop, the dashboard will show that upstream address in `source_ip`.
    - For example, Pi LAN leases on `192.168.174.x` can still appear as `10.255.x` in callback logs when the router NATs the request.
    - Use the router client list for the Pi's LAN lease and the callback dashboard for the observed request path.
 
+## Tailscale Policy Page
+The Tailscale ACL page (`/tailscale-acl`) builds the rack's tailnet policy on the server (`callback_site/tailscale_policy.py`, `POST /api/tailscale/policy`). It never calls Tailscale: you paste the result into Access Controls. Tags come from the same board registry the SD script and Ansible group_vars use, and tests fail if they drift.
+
+What it generates, and why:
+- `tagOwners` for `tag:rpi5`, `tag:rpi4`, `tag:rpi-3bplus` and `tag:homelab`. A tag must exist here before a node can use it, and an auth key (or OAuth client) must be created with the same tags.
+- `grants` (preferred over legacy `acls`; they can coexist): admin to every rack tag and subnet, and rack to rack on the K3s ports only: tcp 6443 (nodes to a server), tcp 10250 (kubelet), udp 8472 (flannel VXLAN) and icmp. tcp 2379-2380 (etcd) is added only when "Pis may be K3s servers" is ticked, and `tcp:8088` (the callback site) is an editable extra. An "All ports" mode exists but is flagged.
+- `ssh`: the admin as `autogroup:nonroot` (root is an explicit opt-in). Tailscale SSH also needs a network rule to port 22, which the admin grant provides, and `tailscale up --ssh` on the node.
+- `autoApprovers` for advertised subnets and, optionally, exit nodes. These only act when a route is first advertised; for one already advertised, stop and re-advertise it.
+- `tests` and `sshTests`: accept assertions by default (Tailscale rejects a policy change that breaks one). Deny assertions are opt-in, because Tailscale's default allow-all grant would make them fail until it is removed.
+
+Rollout: merge the sections rather than replacing your policy, keep the default allow-all grant until the rack works, then delete it. The old page derived the homelab tag from the rack name, produced an ACL that let the Pis reach the NucBox but not the other way round (which blocks `kubectl logs` and flannel), and approved routes only for Pi 5. All three are fixed.
+
 ## Callback Site Testing
 - Run the local regression suite from `callback_site/` with `python -m unittest discover -s tests`.
 - The tests cover page/fragment rendering, image CRUD, callback event fragments, source IP precedence, and the health endpoint.
 - The verifier terminal now accepts only named checks (no freeform remote command input). Use `GET /api/test-terminal/checks` to review allowed checks.
-- Long-form blocks such as the K3s config are syntax-checked when the field loses focus (`POST /api/config/check`, result shown under the field) and re-checked server-side on SD prepare and Node Ops save, so a bad block is rejected even if the page check is skipped. To cover another block, add a checker to `LONGFORM_CHECKS` in `callback_site/core.py` and set `"check": "<kind>"` on its input spec.
+- Long-form blocks such as the K3s config are syntax-checked when the field loses focus (`POST /api/config/check`, result shown under the field) and re-checked server-side on SD prepare and Node Ops save, so a bad block is rejected even if the page check is skipped. To cover another block, add a checker to `LONGFORM_CHECKS` in `callback_site/services/k3s_config.py` and set `"check": "<kind>"` on its input spec.
 - Quick smoke checks:
    - `curl -i http://127.0.0.1:8088/`
    - `curl -s http://127.0.0.1:8088/health`

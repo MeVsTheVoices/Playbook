@@ -9,8 +9,11 @@ import unittest
 from pathlib import Path
 
 import yaml
+try:
+    from .sd_script import read_sd_script
+except ImportError:
+    from sd_script import read_sd_script
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "prepare_sd_cloud_init.sh"
 AUTH_KEY = "tskey-auth-kTEST123CNTRL-abcdef"
 K3S_SERVER_CONFIG = "server: https://100.65.24.76:6443\ntoken: SECRETTOKEN\nnode-name: render-test\n"
 K3S_WORKER_CONFIG = "server: https://100.65.24.76:6443\ntoken: SECRETTOKEN\nnode-label:\n  - role=worker\n"
@@ -18,7 +21,7 @@ K3S_WORKER_CONFIG = "server: https://100.65.24.76:6443\ntoken: SECRETTOKEN\nnode
 
 def _harness_text() -> str:
     """The user-data rendering section of the real script, without any device access."""
-    text = SCRIPT.read_text(encoding="utf-8")
+    text = read_sd_script()
     func = re.search(r"^validate_ssh_public_key_lines\(\) \{\n.*?^\}\n", text, re.S | re.M)
     body = re.search(r"^CLOUD_INIT_USERNAME=.*?(?=^cat > \"\$META_DATA_OUT\")", text, re.S | re.M)
     assert func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
@@ -116,7 +119,7 @@ class SdCloudInitRenderTests(unittest.TestCase):
         self.assertLess(ts, k3s)
 
     def test_default_tags_follow_the_profile(self) -> None:
-        for profile, expected in (("pi3bplus", "tag:rpi-3bplus,tag:homelab"), ("pi5", "tag:rpi5,tag:homelab")):
+        for profile, expected in (("pi3bplus", "tag:rpi-3bplus,tag:homelab"), ("pi5", "tag:rpi5,tag:homelab"), ("pi4", "tag:rpi4,tag:homelab")):
             code, data, err = self.render(R_PROFILE=profile, CLOUD_INIT_TAILSCALE_ENABLE="true", CLOUD_INIT_TAILSCALE_AUTH_KEY=AUTH_KEY)
             self.assertEqual(code, 0, err)
             env = self.files(data)["/etc/rack-node.env"]["content"]
@@ -148,6 +151,90 @@ class SdCloudInitRenderTests(unittest.TestCase):
         code, _data, err = self.render(CLOUD_INIT_K3S_MODE="controller")
         self.assertNotEqual(code, 0)
         self.assertIn("CLOUD_INIT_K3S_MODE", err)
+
+    def test_k3s_version_pins_the_install_for_agents_and_servers(self) -> None:
+        for mode in ("agent", "server"):
+            with self.subTest(mode=mode):
+                pinned = self.k3s_install_command(CLOUD_INIT_K3S_MODE=mode, CLOUD_INIT_K3S_VERSION="v1.36.4+k3s1")
+                self.assertIn("INSTALL_K3S_VERSION=v1.36.4+k3s1 INSTALL_K3S_EXEC=", pinned)
+                unpinned = self.k3s_install_command(CLOUD_INIT_K3S_MODE=mode)
+                self.assertNotIn("INSTALL_K3S_VERSION", unpinned)
+
+    def test_unpinned_k3s_version_is_called_out(self) -> None:
+        _code, _data, err = self.render(CLOUD_INIT_K3S_MODE="agent")
+        self.assertIn("K3s version is not pinned", err)
+        _code, _data, err = self.render(CLOUD_INIT_K3S_MODE="agent", CLOUD_INIT_K3S_VERSION="v1.36.4+k3s1")
+        self.assertNotIn("K3s version is not pinned", err)
+
+    def test_bad_k3s_version_is_rejected(self) -> None:
+        for bad in ("1.36.4", "latest", "v1.36.4+k3s1; id", "v1.36.4"):
+            with self.subTest(version=bad):
+                code, _data, err = self.render(CLOUD_INIT_K3S_VERSION=bad)
+                self.assertNotEqual(code, 0)
+                self.assertIn("CLOUD_INIT_K3S_VERSION", err)
+
+    def test_server_install_refuses_an_sd_card_unless_allowed_and_agents_never_do(self) -> None:
+        server = self.k3s_install_command(CLOUD_INIT_K3S_MODE="server")
+        self.assertIn("/dev/mmcblk*", server)
+        self.assertIn("exit 1", server)
+        self.assertLess(server.index("/dev/mmcblk*"), server.index("get.k3s.io"), "the guard must run before the install")
+        allowed = self.k3s_install_command(CLOUD_INIT_K3S_MODE="server", CLOUD_INIT_K3S_ALLOW_SD_ETCD="true")
+        self.assertNotIn("/dev/mmcblk*", allowed)
+        self.assertNotIn("/dev/mmcblk*", self.k3s_install_command(CLOUD_INIT_K3S_MODE="agent"))
+
+    def test_the_sd_guard_script_actually_refuses_and_allows(self) -> None:
+        command = self.k3s_install_command(CLOUD_INIT_K3S_MODE="server")
+        script = command.removeprefix("sh -c ")
+        guard = script.split("mkdir -p", 1)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = Path(tmp)
+            findmnt = fake_bin / "findmnt"
+            for device, expected in (("/dev/mmcblk0p2", 1), ("/dev/sda2", 0), ("/dev/nvme0n1p2", 0)):
+                findmnt.write_text(f"#!/bin/sh\necho {device}\n", encoding="utf-8")
+                findmnt.chmod(findmnt.stat().st_mode | stat.S_IEXEC)
+                result = subprocess.run(
+                    ["bash", "-c", guard], capture_output=True, text=True, env={"PATH": f"{fake_bin}:{os.environ['PATH']}"}, timeout=10
+                )
+                self.assertEqual(result.returncode, expected, f"{device}: {result.stderr}")
+                if expected:
+                    self.assertIn("refusing", result.stderr)
+
+    def test_ubuntu_images_that_need_the_vxlan_module_get_it(self) -> None:
+        cases = (
+            ("https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz", True),
+            ("https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-arm64+raspi.img.xz", False),
+            ("https://downloads.raspberrypi.com/raspios_arm64/images/2026-06-18-raspios-trixie-arm64.img.xz", False),
+        )
+        for url, expected in cases:
+            with self.subTest(url=url):
+                code, data, err = self.render(IMAGE_URL=url)
+                self.assertEqual(code, 0, err)
+                self.assertEqual("linux-modules-extra-raspi" in data.get("packages", []), expected)
+        code, data, err = self.render(IMAGE_URL=cases[0][0], R_DIST="standard")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("linux-modules-extra-raspi", data.get("packages", []), "plain installs do not need it")
+
+    def test_the_boot_partition_gets_the_memory_cgroup_flags_once(self) -> None:
+        script = read_sd_script()
+        snippet = re.search(r"^if \[\[ \"\$DISTRIBUTION\" == \"k3s\" \]\]; then\n  for cmdline_file in .*?^fi\n", script, re.S | re.M)
+        self.assertIsNotNone(snippet, "cgroup step not found in the script")
+        with tempfile.TemporaryDirectory() as tmp:
+            boot = Path(tmp) / "boot"
+            boot.mkdir()
+            cmdline = boot / "cmdline.txt"
+            cmdline.write_text("console=serial0,115200 root=PARTUUID=abc rootfstype=ext4 rootwait\n", encoding="utf-8")
+            for distribution, expected_flags in (("standard", 0), ("k3s", 1)):
+                cmdline.write_text("console=serial0,115200 root=PARTUUID=abc rootfstype=ext4 rootwait\n", encoding="utf-8")
+                for _ in range(2):  # running twice must not duplicate the flags
+                    result = subprocess.run(
+                        ["bash", "-c", f'TMP_DIR="{tmp}"; DISTRIBUTION={distribution}\n{snippet.group(0)}'],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                text = cmdline.read_text(encoding="utf-8")
+                self.assertEqual(text.count("cgroup_memory=1"), expected_flags, distribution)
+                self.assertEqual(text.count("cgroup_enable=memory"), expected_flags, distribution)
+                self.assertEqual(len(text.strip().splitlines()), 1, "cmdline.txt must stay a single line")
 
     def test_agent_mode_env_tells_the_tailscale_script_to_skip_advertise_address(self) -> None:
         code, data, err = self.render(

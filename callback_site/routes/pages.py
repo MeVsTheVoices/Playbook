@@ -4,7 +4,21 @@ from typing import Any, Callable, Dict, List
 
 from flask import Blueprint, render_template
 
-from core import *
+from k3s_lightweight import INGRESS_CHOICES as K3S_INGRESS_CHOICES
+from k3s_lightweight import INGRESS_DEFAULT as K3S_INGRESS_DEFAULT
+from k3s_lightweight import LIGHTWEIGHT_OPTIONS as K3S_LIGHTWEIGHT_OPTIONS
+from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
+from k3s_lightweight import ROLE_TAINTS as K3S_ROLE_TAINTS
+from k3s_lightweight import ui_defaults as k3s_role_ui_defaults
+from services.events import _read_events
+from services.image_catalog import _image_state_summary
+from services.images import _read_image_history
+from services.k3s_config import _default_k3s_config
+from services.kubernetes import _local_k3s_version
+from services.network import _default_callback_url
+from services.sd_devices import _ensure_device_monitor_started, _list_sd_devices
+from services.sd_profiles import _load_sd_option_profiles
+from services.settings import _load_app_settings, _tailscale_policy_defaults
 
 
 def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[Dict[str, Any]]]) -> None:
@@ -27,6 +41,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
             devices=_list_sd_devices(),
             callback_url_default=_default_callback_url(),
             k3s_config_default=_default_k3s_config(),
+            k3s_version_default=_local_k3s_version(),
             k3s_lightweight_options=K3S_LIGHTWEIGHT_OPTIONS,
             k3s_ingress_choices=K3S_INGRESS_CHOICES,
             k3s_ingress_default=K3S_INGRESS_DEFAULT,

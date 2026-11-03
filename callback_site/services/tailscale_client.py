@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from core import _load_app_settings
+from services.settings import _load_app_settings
 
 try:
     # Third-party package used for future Tailscale API calls.

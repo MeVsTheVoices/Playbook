@@ -298,6 +298,7 @@
     raspberry_pi5_lw_helm: "{{ (provision_inputs.k3s_disable_helm_controller | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
     raspberry_pi5_taint: "{{ (provision_inputs.k3s_taint | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
     raspberry_pi5_max_pods: "{{ provision_inputs.k3s_max_pods | default('') | string | trim }}"
+    raspberry_pi5_k3s_allow_sd_etcd: "{{ (provision_inputs.k3s_allow_sd_etcd | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
   when:
     - rack_manage_with_ansible | bool
     - provision_profile | default('') == 'kubernetes'
@@ -378,6 +379,31 @@
       - raspberry_pi5_k3s_token | length > 0
       - raspberry_pi5_k3s_node_ip | length > 0
     fail_msg: "A Pi 5 control-plane node needs the K3s endpoint and server token, and must be on Tailscale (its Tailscale IP is read automatically unless node_ip is set)."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi5_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Find the device behind /var/lib
+  ansible.builtin.command: findmnt --noheadings --output SOURCE --target /var/lib
+  register: raspberry_pi5_k3s_data_device
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi5_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Refuse etcd on an SD card
+  ansible.builtin.assert:
+    that:
+      - (raspberry_pi5_k3s_data_device.stdout | default('') | trim) is not match('^/dev/mmcblk') or (raspberry_pi5_k3s_allow_sd_etcd | bool)
+    fail_msg: "This control-plane node keeps /var/lib on an SD card. K3s says SD cards cannot handle etcd's write load, and an unhealthy voter can break quorum. Boot it from an SSD, or tick 'Allow etcd on an SD card' to override."
   when:
     - rack_manage_with_ansible | bool
     - provision_profile | default('') == 'kubernetes'

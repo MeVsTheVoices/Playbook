@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-try:
-    from .test_support import BaseCallbackSiteTest, callback_app, callback_core
-except ImportError:
-    from test_support import BaseCallbackSiteTest, callback_app, callback_core
+import routes.sd
+import services.node_runs
+import services.sd_prepare
 
-VALID_K3S_CONFIG = 'server: "https://100.65.24.76:6443"\nnode-label:\n  - "role=control-plane"\n'
+try:
+    from .test_support import BaseCallbackSiteTest, patch_in
+except ImportError:
+    from test_support import BaseCallbackSiteTest, patch_in
+
+VALID_K3S_CONFIG = 'server: "https://100.65.24.76:6443"\ntoken: join-token\nnode-label:\n  - "role=control-plane"\n'
 BAD_YAML = "server: [unclosed\nnode-label: - x\n"
 
 
@@ -56,6 +60,28 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
         data = self.check("secrets-encryption: true\n").get_json()
         self.assertTrue(data["ok"])
         self.assertEqual(len(data["warnings"]), 1)
+
+    def test_cluster_init_on_a_joining_node_is_an_error(self) -> None:
+        data = self.check("server: https://100.65.24.76:6443\ntoken: x\ncluster-init: true\n").get_json()
+        self.assertFalse(data["ok"])
+        self.assertIn("cluster-init", data["errors"][0])
+        # A first server has no 'server' line, so cluster-init is legitimate there.
+        self.assertTrue(self.check("cluster-init: true\n").get_json()["ok"])
+
+    def test_a_joining_node_without_a_token_is_warned(self) -> None:
+        data = self.check("server: https://100.65.24.76:6443\n").get_json()
+        self.assertTrue(data["ok"])
+        self.assertTrue(any("token" in w for w in data["warnings"]))
+        self.assertEqual(self.check(VALID_K3S_CONFIG).get_json()["warnings"], [])
+
+    def test_a_node_address_outside_tailscale_is_warned(self) -> None:
+        for key in ("node-ip", "advertise-address"):
+            with self.subTest(key=key):
+                data = self.check(f"server: https://100.65.24.76:6443\ntoken: x\n{key}: 192.168.174.20\n").get_json()
+                self.assertTrue(data["ok"])
+                self.assertTrue(any(key in w and "Tailscale" in w for w in data["warnings"]), data["warnings"])
+                clean = self.check(f"server: https://100.65.24.76:6443\ntoken: x\n{key}: 100.70.57.110\n").get_json()
+                self.assertEqual(clean["warnings"], [])
 
     def test_unknown_kind_and_oversized_text_are_rejected(self) -> None:
         self.assertEqual(self.check("a: b", kind="nope").status_code, 400)
@@ -118,15 +144,15 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
             "distribution": "k3s",
             "cloud_init_options": {"k3s_config": BAD_YAML},
         }
-        with callback_app.JOBS_LOCK:
-            jobs_before = len(callback_app.JOBS)
-        with patch.object(callback_app, "_ensure_prereqs", return_value=[]), patch("app.threading.Thread") as thread:
+        with services.sd_prepare.JOBS_LOCK:
+            jobs_before = len(services.sd_prepare.JOBS)
+        with patch_in("_ensure_prereqs", return_value=[]), patch("threading.Thread") as thread:
             response = self.client.post("/api/sd/prepare", json=body)
         self.assertEqual(response.status_code, 400)
         self.assertIn("K3s config", json.dumps(response.get_json()["errors"]))
         thread.assert_not_called()
-        with callback_app.JOBS_LOCK:
-            self.assertEqual(len(callback_app.JOBS), jobs_before)
+        with services.sd_prepare.JOBS_LOCK:
+            self.assertEqual(len(services.sd_prepare.JOBS), jobs_before)
 
     def test_role_k3s_config_renders_as_valid_multiline_yaml(self) -> None:
         # Regression: hand-built strings with a literal "\n" wrote one-line YAML that K3s refused to parse.
@@ -230,7 +256,7 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
 
     def test_tests_never_target_the_live_callback_site(self) -> None:
         # Regression: the hardware-check step POSTed fake nodes to the real site on every test run.
-        self.assertTrue(callback_core._default_callback_url().startswith("http://127.0.0.1:9/"))
+        self.assertTrue(services.node_runs._default_callback_url().startswith("http://127.0.0.1:9/"))
 
     def test_pages_wire_the_blur_check(self) -> None:
         home = self.client.get("/").get_data(as_text=True)

@@ -4,16 +4,17 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 try:
-    from .test_support import BaseCallbackSiteTest, callback_core
+    from .test_support import BaseCallbackSiteTest
 except ImportError:
-    from test_support import BaseCallbackSiteTest, callback_core
+    from test_support import BaseCallbackSiteTest
+import services.openwrt
 
 
 class OpenWrtProbeTests(BaseCallbackSiteTest):
     def test_openwrt_page_renders_and_api_returns_probe_stats(self) -> None:
         page = self.client.get("/openwrt")
         self.assertEqual(page.status_code, 200)
-        text = page.get_data(as_text=True)
+        text = self.page_text(page)
         self.assertIn("OpenWrt Ansible Probe", text)
         self.assertIn("ansible_host", text)
         self.assertIn("router-activity", text)
@@ -55,7 +56,7 @@ class OpenWrtProbeTests(BaseCallbackSiteTest):
 
         # Never run a real ssh here: OpenSSH reads the password from the terminal, so a
         # real attempt against 127.0.0.1 prompts whoever is running the suite.
-        with patch("core.subprocess.run", return_value=SimpleNamespace(returncode=255, stdout="", stderr="stubbed ssh")) as run_mock:
+        with patch("subprocess.run", return_value=SimpleNamespace(returncode=255, stdout="", stderr="stubbed ssh")) as run_mock:
             response = self.client.post(
                 "/api/openwrt/push-key",
                 json={
@@ -73,8 +74,8 @@ class OpenWrtProbeTests(BaseCallbackSiteTest):
         self.assertEqual(payload["key_name"], "openwrt-test-key")
 
     def test_probe_ssh_target_can_use_password_pipe_without_sshpass(self) -> None:
-        with patch("core.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout="login ok\n", stderr="")) as run_mock:
-            result = callback_core._probe_ssh_target(host="router", port=22, username="root", password="secret")
+        with patch("subprocess.run", return_value=SimpleNamespace(returncode=0, stdout="login ok\n", stderr="")) as run_mock:
+            result = services.openwrt._probe_ssh_target(host="router", port=22, username="root", password="secret")
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["details"], "login ok")

@@ -2,13 +2,12 @@
 
 Use filename patterns that encode feature area and behavior:
 
-- test_pages_<feature>.py: page rendering and page-level API tests.
-- test_sd_prepare_<feature>.py: SD preparation and cloud-init option behavior.
-- test_<integration_area>.py: endpoint or workflow integration tests.
-- test_api_core_regression.py: temporary catch-all regression suite while older tests are being migrated.
+- test_<feature>.py: one file per feature area (callbacks, images, monitor, node provisioning, node inventory, SD card, settings, SSH keys, terminal checks, repo config).
+- test_k3s_lightweight.py, test_tailscale_policy.py: board/role rules and the Tailscale policy builder.
+- test_support.py: shared base class and `patch_in`, which patches a name in every module that imported it. Use `page_text()` for assertions on text that now lives in linked static files.
 
 Guidelines:
 
 - Keep one dominant concern per file.
 - Prefer explicit names over generic buckets.
-- Add new tests to focused files first; only use the regression file when no focused module exists yet.
+- Add new tests to the focused file for their feature.

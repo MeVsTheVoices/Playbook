@@ -1,0 +1,318 @@
+function ensureK3sConfigDefaults() {
+  const textarea = document.getElementById("opt_k3s_config");
+  const section = document.getElementById("k3s-distribution-section");
+  const isK3sSelected = String(form.distribution.value || "standard").trim().toLowerCase() === "k3s";
+  if (section) {
+    section.open = isK3sSelected;
+  }
+  if (!textarea) return;
+  const value = String(textarea.value || "").trim();
+  if (isK3sSelected && !value) {
+    textarea.value = DEFAULT_K3S_CONFIG.trimEnd();
+  }
+}
+
+function gatherCloudInitOptions() {
+  const options = {};
+  for (const el of sdOptionsInputEls) {
+    if (el.disabled) {
+      continue;
+    }
+    if (!optionScopeMatches(el)) {
+      continue;
+    }
+    const key = String(el.dataset.optionKey || "").trim();
+    if (!key) continue;
+    const kind = String(el.dataset.optionType || "").trim();
+    if (kind === "checkbox") {
+      if (el.checked) {
+        options[key] = true;
+      } else if (String(el.dataset.optionDefault || "").trim().toLowerCase() === "true") {
+        options[key] = false;
+      }
+      continue;
+    }
+
+    const raw = String(el.value || "").trim();
+    if (!raw) continue;
+    if (kind === "csv") {
+      const values = raw.split(",").map((v) => v.trim()).filter(Boolean);
+      if (values.length) options[key] = values;
+      continue;
+    }
+    if (kind === "lines") {
+      const values = raw.split("\n").map((v) => v.trim()).filter(Boolean);
+      if (values.length) options[key] = values;
+      continue;
+    }
+    options[key] = raw;
+  }
+  if (String(form.distribution.value || "standard").trim().toLowerCase() === "k3s") {
+    const k3sValue = String(document.getElementById("opt_k3s_config")?.value || "").trim();
+    if (!k3sValue) {
+      options.k3s_config = DEFAULT_K3S_CONFIG.trimEnd();
+    } else {
+      options.k3s_config = k3sValue;
+    }
+  }
+  return options;
+}
+
+function updateSdOptionsConfiguredCount() {
+  const count = Object.keys(gatherCloudInitOptions()).length;
+  sdOptionsConfigCountEl.textContent = `${count} field${count === 1 ? "" : "s"} set`;
+}
+
+function updateSdOptionActions() {
+  const hasSelected = Boolean(String(sdOptionsProfileSelectEl.value || "").trim());
+  sdOptionsLoadBtn.disabled = !hasSelected;
+  sdOptionsDeleteBtn.disabled = !hasSelected;
+  sdOptionsSaveBtn.disabled = false;
+}
+
+function updatePiScopedOptionsVisibility() {
+  const section = document.getElementById("pi-specific-section");
+  const piOnlySelected = Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked);
+  const selectedProfile = String(sdOptionsProfileSelectEl.value || "").trim();
+  const selectedProfilePiOnly = Boolean(selectedProfile && sdOptionProfiles[selectedProfile] && sdOptionProfiles[selectedProfile].pi_only);
+  const visible = piOnlySelected || selectedProfilePiOnly;
+  const piModel = String(form.profile.value || "").trim().toLowerCase();
+  const piModelSelectEl = document.getElementById("pi_model_select");
+  if (piModelSelectEl && piModelSelectEl.value !== piModel) {
+    piModelSelectEl.value = piModel;
+  }
+
+  if (section) {
+    section.style.display = visible ? "" : "none";
+    section.open = visible;
+  }
+
+  let shownModelOptions = 0;
+  for (const el of sdOptionsInputEls) {
+    const wrapper = el.closest("[data-pi-option-wrapper='1']");
+    if (!wrapper) continue;
+    const wrapperModel = String(wrapper.dataset.piModel || "").trim().toLowerCase();
+    const wrapperVisible = visible && (!wrapperModel || wrapperModel === piModel);
+    wrapper.style.display = wrapperVisible ? "" : "none";
+    el.disabled = !wrapperVisible;
+    if (wrapperVisible) shownModelOptions += 1;
+  }
+
+  const noOptionsEl = document.getElementById("pi-model-no-options");
+  if (noOptionsEl) {
+    noOptionsEl.style.display = visible && shownModelOptions === 0 ? "" : "none";
+  }
+}
+
+function applyCloudInitOptions(options) {
+  const data = options && typeof options === "object" ? options : {};
+  for (const el of sdOptionsInputEls) {
+    const key = String(el.dataset.optionKey || "").trim();
+    const kind = String(el.dataset.optionType || "").trim();
+    const value = data[key];
+    if (kind === "checkbox") {
+      const defaultChecked = String(el.dataset.optionDefault || "").trim().toLowerCase() === "true";
+      el.checked = value === undefined || value === null ? defaultChecked : Boolean(value);
+      continue;
+    }
+    if (kind === "csv") {
+      el.value = Array.isArray(value) ? value.join(", ") : "";
+      continue;
+    }
+    if (kind === "lines") {
+      el.value = Array.isArray(value) ? value.join("\n") : "";
+      continue;
+    }
+    el.value = value === undefined || value === null ? String(el.dataset.optionDefault || "") : String(value);
+  }
+  updateOsScopedOptionsVisibility();
+  updatePiScopedOptionsVisibility();
+  updateSdOptionsConfiguredCount();
+}
+
+function resetCloudInitOptions() {
+  applyCloudInitOptions({});
+  sdOptionsProfileSelectEl.value = "";
+  if (sdOptionsProfilePiOnlyEl) {
+    sdOptionsProfilePiOnlyEl.checked = false;
+  }
+  updatePiScopedOptionsVisibility();
+  updateSdOptionActions();
+  sdOptionsProfileStatusEl.textContent = "Optional cloud-init fields reset. Fill manually or load a template.";
+}
+
+function applySecurityStarterDefaults() {
+  const defaults = {
+    disable_ssh_password_auth: true,
+    disable_root_ssh: true,
+    boot_summary: true,
+    enable_fail2ban: true,
+    enable_unattended_upgrades: true,
+  };
+  applyCloudInitOptions({
+    ...gatherCloudInitOptions(),
+    ...defaults,
+  });
+
+  const allowGroupsEl = document.getElementById("opt_ssh_allow_groups");
+  if (allowGroupsEl && !String(allowGroupsEl.value || "").trim()) {
+    allowGroupsEl.value = "sudo";
+  }
+  updateSdOptionsConfiguredCount();
+  sdOptionsProfileStatusEl.textContent = "Security starter defaults applied: SSH password off, root SSH off, fail2ban on, unattended upgrades on. 🔐✨";
+}
+
+function renderSdOptionProfiles() {
+  const selected = sdOptionsProfileSelectEl.value;
+  const known = new Set(Object.keys(sdOptionProfiles));
+  const ordered = [];
+  for (const name of sdOptionProfileOrder) {
+    if (known.has(name) && !ordered.includes(name)) {
+      ordered.push(name);
+    }
+  }
+  const names = ordered.concat(Object.keys(sdOptionProfiles).filter((name) => !ordered.includes(name)).sort((a, b) => a.localeCompare(b)));
+  sdOptionsProfileSelectEl.innerHTML = "";
+
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "No saved template selected";
+  sdOptionsProfileSelectEl.appendChild(empty);
+
+  for (const name of names) {
+    const profile = sdOptionProfiles[name] || {};
+    const option = document.createElement("option");
+    option.value = name;
+    const desc = String(profile.description || "").trim();
+    const piBadge = profile.pi_only ? " [Pi]" : "";
+    option.textContent = desc ? `${name}${piBadge} - ${desc}` : `${name}${piBadge}`;
+    sdOptionsProfileSelectEl.appendChild(option);
+  }
+
+  if (selected && names.includes(selected)) {
+    sdOptionsProfileSelectEl.value = selected;
+  }
+  updateSdOptionActions();
+}
+
+async function loadSdOptionProfiles() {
+  const res = await fetch("/api/sd/options-profiles");
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    sdOptionsProfileStatusEl.textContent = data.error || "Could not load cloud-init templates.";
+    return;
+  }
+
+  const next = {};
+  const nextOrder = [];
+  for (const profile of Array.isArray(data.profiles) ? data.profiles : []) {
+    const name = String(profile.name || "").trim();
+    if (!name) continue;
+    next[name] = profile;
+    nextOrder.push(name);
+  }
+  sdOptionProfiles = next;
+  sdOptionProfileOrder = nextOrder;
+  renderSdOptionProfiles();
+}
+
+function loadSelectedSdOptionProfile() {
+  let name = String(sdOptionsProfileSelectEl.value || "").trim();
+  if (!name && sdOptionProfileOrder.length === 1) {
+    name = sdOptionProfileOrder[0];
+    sdOptionsProfileSelectEl.value = name;
+    sdOptionsProfileNameEl.value = name;
+    sdOptionsProfileStatusEl.textContent = `Auto-selected the only available template '${name}'.`;
+  }
+  if (!name) {
+    sdOptionsProfileStatusEl.textContent = "Select a template to load.";
+    return;
+  }
+  const profile = sdOptionProfiles[name];
+  if (!profile) {
+    sdOptionsProfileStatusEl.textContent = "Selected template not found.";
+    return;
+  }
+  const isPiOnlyProfile = Boolean(profile.pi_only);
+  const profileDistribution = String(profile.distribution || "").trim().toLowerCase();
+  if (!isPiOnlyProfile && (profileDistribution === "k3s" || profileDistribution === "standard")) {
+    form.distribution.value = profileDistribution;
+  }
+  const currentOptions = gatherCloudInitOptions();
+  const profileOptions = profile.options && typeof profile.options === "object" ? profile.options : {};
+  applyCloudInitOptions(isPiOnlyProfile ? { ...currentOptions, ...profileOptions } : profileOptions);
+  if (sdOptionsProfilePiOnlyEl) {
+    sdOptionsProfilePiOnlyEl.checked = isPiOnlyProfile;
+  }
+  updatePiScopedOptionsVisibility();
+  ensureK3sConfigDefaults();
+  sdOptionsProfileNameEl.value = name;
+  sdOptionsProfileDescriptionEl.value = String(profile.description || "");
+  sdOptionsProfileStatusEl.textContent = isPiOnlyProfile
+    ? `Loaded Pi-specific template '${name}' and merged it into the current optional settings.`
+    : `Loaded template '${name}'.`;
+  updateSdOptionActions();
+}
+
+async function saveCurrentSdOptionProfile() {
+  const name = String(sdOptionsProfileNameEl.value || "").trim();
+  if (!name) {
+    sdOptionsProfileStatusEl.textContent = "Enter a template name before saving.";
+    return;
+  }
+  const payload = {
+    name,
+    description: String(sdOptionsProfileDescriptionEl.value || "").trim(),
+    distribution: String(form.distribution.value || "standard").trim().toLowerCase() || "standard",
+    pi_only: Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked),
+    options: gatherCloudInitOptions(),
+  };
+  const res = await fetch("/api/sd/options-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    sdOptionsProfileStatusEl.textContent = data.error || "Could not save template.";
+    return;
+  }
+
+  const savedName = String((data.profile || {}).name || name).trim();
+  if (savedName) {
+    sdOptionProfiles[savedName] = data.profile;
+    sdOptionProfileOrder = [savedName].concat(sdOptionProfileOrder.filter((name) => name !== savedName));
+    renderSdOptionProfiles();
+    sdOptionsProfileSelectEl.value = savedName;
+    sdOptionsProfileNameEl.value = savedName;
+  }
+  sdOptionsProfileStatusEl.textContent = `Saved template '${savedName || name}'.`;
+  updateSdOptionsConfiguredCount();
+  updateSdOptionActions();
+}
+
+async function deleteSelectedSdOptionProfile() {
+  const name = String(sdOptionsProfileSelectEl.value || "").trim();
+  if (!name) {
+    sdOptionsProfileStatusEl.textContent = "Select a template to delete.";
+    return;
+  }
+  if (!confirm(`Delete template '${name}'?`)) {
+    return;
+  }
+
+  const res = await fetch(`/api/sd/options-profiles/${encodeURIComponent(name)}`, { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    sdOptionsProfileStatusEl.textContent = data.error || "Could not delete template.";
+    return;
+  }
+
+  delete sdOptionProfiles[name];
+  sdOptionProfileOrder = sdOptionProfileOrder.filter((item) => item !== name);
+  renderSdOptionProfiles();
+  sdOptionsProfileNameEl.value = "";
+  sdOptionsProfileDescriptionEl.value = "";
+  sdOptionsProfileStatusEl.textContent = `Deleted template '${name}'.`;
+  updateSdOptionActions();
+}

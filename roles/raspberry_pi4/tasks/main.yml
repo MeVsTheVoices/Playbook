@@ -1,0 +1,590 @@
+---
+- name: Skip host when it is marked unmanaged
+  ansible.builtin.meta: end_host
+  when: not (rack_manage_with_ansible | bool)
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: raspberry_pi4_manage_system | bool
+  tags:
+    - baseline
+
+- name: Install baseline packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+  when:
+    - raspberry_pi4_manage_system | bool
+    - common_packages | length > 0
+  tags:
+    - baseline
+
+- name: Optionally upgrade packages
+  ansible.builtin.apt:
+    upgrade: dist
+  when: raspberry_pi4_upgrade_packages | bool
+  tags:
+    - baseline
+
+- name: Resolve Tailscale provisioning inputs
+  ansible.builtin.set_fact:
+    raspberry_pi4_tailscale_auth_key_provisioned: >-
+      {{
+        (provision_inputs.auth_key | default('') | string | trim)
+        if (provision_inputs | default({})) is mapping
+        else ''
+      }}
+    raspberry_pi4_tailscale_tailnet_effective: >-
+      {{
+        (provision_inputs.tailnet | default('') | string | trim)
+        if (provision_inputs | default({})) is mapping
+           and (provision_inputs.tailnet | default('') | string | trim) | length > 0
+        else raspberry_pi4_tailscale_tailnet
+      }}
+    raspberry_pi4_tailscale_tags_effective: >-
+      {{
+        ((provision_inputs.advertise_tags | default('') | string).split(',') | map('trim') | select('truthy') | list)
+        if (provision_inputs | default({})) is mapping
+           and (provision_inputs.advertise_tags | default('') | string | trim) | length > 0
+        else raspberry_pi4_tailscale_tags
+      }}
+  when:
+    - rack_manage_with_ansible | bool
+    - raspberry_pi4_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Download Tailscale installation script
+  ansible.builtin.get_url:
+    url: https://tailscale.com/install.sh
+    dest: /tmp/install_tailscale.sh
+    mode: '0755'
+  when: raspberry_pi4_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Run Tailscale installer when binary is missing
+  ansible.builtin.command: /tmp/install_tailscale.sh
+  args:
+    creates: /usr/sbin/tailscaled
+  when: raspberry_pi4_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Check for tailscaled binary
+  ansible.builtin.stat:
+    path: /usr/sbin/tailscaled
+  register: raspberry_pi4_tailscaled_binary
+  when: raspberry_pi4_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Ensure tailscaled service is enabled and running
+  ansible.builtin.service:
+    name: tailscaled
+    enabled: true
+    state: started
+  when:
+    - raspberry_pi4_tailscale_manage | bool
+    - (raspberry_pi4_tailscaled_binary.stat.exists | bool) or (not ansible_check_mode)
+  tags:
+    - tailscale
+
+- name: Read tailscale status
+  ansible.builtin.command: tailscale status --json
+  register: raspberry_pi4_tailscale_status
+  failed_when: false
+  changed_when: false
+  check_mode: false
+  when: raspberry_pi4_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Determine whether tailscale up is needed
+  ansible.builtin.set_fact:
+    raspberry_pi4_tailscale_needs_up: >-
+      {{
+        (raspberry_pi4_tailscale_status.rc | default(1)) != 0
+        or (
+          (raspberry_pi4_tailscale_status.stdout | default('{}') | from_json).BackendState | default('')
+        ) != 'Running'
+      }}
+  when: raspberry_pi4_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Request OAuth access token for Tailscale API
+  ansible.builtin.uri:
+    url: https://api.tailscale.com/api/v2/oauth/token
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: client_credentials
+      client_id: "{{ raspberry_pi4_tailscale_oauth_client_id }}"
+      client_secret: "{{ raspberry_pi4_tailscale_oauth_client_secret }}"
+    status_code: 200
+  register: raspberry_pi4_tailscale_oauth_token
+  no_log: true
+  when:
+    - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_oauth_enabled | bool
+    - raspberry_pi4_tailscale_auth_key_provisioned | default('') | length == 0
+    - raspberry_pi4_tailscale_auth_key | length == 0
+    - not ansible_check_mode | bool
+  tags:
+    - tailscale
+
+- name: Create short-lived auth key from OAuth token
+  ansible.builtin.uri:
+    url: "https://api.tailscale.com/api/v2/tailnet/{{ raspberry_pi4_tailscale_tailnet_effective }}/keys"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ raspberry_pi4_tailscale_oauth_token.json.access_token }}"
+    body_format: json
+    body:
+      capabilities:
+        devices:
+          create:
+            reusable: false
+            ephemeral: false
+            preauthorized: true
+            tags: "{{ raspberry_pi4_tailscale_tags_effective }}"
+      expirySeconds: "{{ raspberry_pi4_tailscale_auth_key_ttl_seconds }}"
+      description: "ansible-{{ inventory_hostname }}"
+    status_code: 200
+  register: raspberry_pi4_tailscale_key_response
+  no_log: true
+  when:
+    - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_oauth_enabled | bool
+    - raspberry_pi4_tailscale_auth_key_provisioned | default('') | length == 0
+    - raspberry_pi4_tailscale_auth_key | length == 0
+    - not ansible_check_mode | bool
+  tags:
+    - tailscale
+
+- name: Resolve effective auth key
+  ansible.builtin.set_fact:
+    raspberry_pi4_tailscale_auth_key_effective: >-
+      {{
+        raspberry_pi4_tailscale_auth_key_provisioned
+        if (raspberry_pi4_tailscale_auth_key_provisioned | default('') | length > 0)
+        else (
+          raspberry_pi4_tailscale_auth_key
+          if (raspberry_pi4_tailscale_auth_key | length > 0)
+          else (raspberry_pi4_tailscale_key_response.json.key | default(''))
+        )
+      }}
+  no_log: true
+  when: raspberry_pi4_tailscale_manage | bool
+  tags:
+    - tailscale
+
+- name: Ensure auth key exists for tailscale up
+  ansible.builtin.fail:
+    msg: >-
+      Provide raspberry_pi4_tailscale_auth_key (or the Tailscale profile auth_key input) or enable OAuth with
+      raspberry_pi4_tailscale_oauth_client_id, raspberry_pi4_tailscale_oauth_client_secret,
+      and raspberry_pi4_tailscale_tailnet.
+  when:
+    - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_auth_key_effective | default('') | length == 0
+  tags:
+    - tailscale
+
+- name: Enable IPv4 forwarding for routing features
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    sysctl_set: true
+    reload: true
+  when:
+    - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_advertise_exit_node | bool
+      or (raspberry_pi4_tailscale_advertise_routes | length > 0)
+  tags:
+    - tailscale
+
+- name: Enable IPv6 forwarding for routing features
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "1"
+    state: present
+    sysctl_set: true
+    reload: true
+  when:
+    - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_advertise_exit_node | bool
+      or (raspberry_pi4_tailscale_advertise_routes | length > 0)
+  tags:
+    - tailscale
+
+- name: Bring node online with desired tailscale flags
+  ansible.builtin.command: >-
+    tailscale up
+    --auth-key={{ raspberry_pi4_tailscale_auth_key_effective }}
+    --hostname={{ raspberry_pi4_tailscale_hostname }}
+    {{ '--accept-dns=true' if raspberry_pi4_tailscale_accept_dns else '--accept-dns=false' }}
+    {{ '--ssh' if raspberry_pi4_tailscale_enable_ssh else '' }}
+    {{ '--advertise-exit-node' if raspberry_pi4_tailscale_advertise_exit_node else '' }}
+    {{ '--advertise-routes=' + (raspberry_pi4_tailscale_advertise_routes | join(','))
+       if (raspberry_pi4_tailscale_advertise_routes | length > 0) else '' }}
+    {{ '--advertise-tags=' + (raspberry_pi4_tailscale_tags_effective | join(','))
+       if (raspberry_pi4_tailscale_tags_effective | length > 0) else '' }}
+  register: raspberry_pi4_tailscale_up
+  no_log: true
+  changed_when: >-
+    {{
+      raspberry_pi4_tailscale_force_reconfigure | bool
+      or raspberry_pi4_tailscale_needs_up | default(true)
+    }}
+  when:
+    - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_force_reconfigure | bool or raspberry_pi4_tailscale_needs_up | default(true)
+  tags:
+    - tailscale
+
+- name: Detect K3s server unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s.service
+  register: raspberry_pi4_k3s_server_unit
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+  tags:
+    - kubernetes
+
+- name: Detect K3s agent unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s-agent.service
+  register: raspberry_pi4_k3s_agent_unit
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+  tags:
+    - kubernetes
+
+- name: Read this node's Tailscale IPv4
+  ansible.builtin.command: tailscale ip -4
+  register: raspberry_pi4_tailscale_ip
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+  tags:
+    - kubernetes
+
+- name: Resolve structured K3s settings
+  ansible.builtin.set_fact:
+    raspberry_pi4_k3s_role: "{{ provision_inputs.node_role | default('worker') | string | lower | trim }}"
+    raspberry_pi4_k3s_endpoint: "{{ provision_inputs.server_endpoint | default('') | string | trim }}"
+    raspberry_pi4_k3s_token: "{{ provision_inputs.server_token | default('') | string | trim }}"
+    raspberry_pi4_k3s_node_ip: >-
+      {{ (provision_inputs.node_ip | default('') | string | trim)
+         or (raspberry_pi4_tailscale_ip.stdout_lines | default([]) | first | default('') | trim) }}
+    raspberry_pi4_k3s_security_enabled: "{{ provision_inputs.k3s_security_baseline | default(false) | bool }}"
+    raspberry_pi4_k3s_config_override: "{{ provision_inputs.k3s_config | default('') | string | trim }}"
+    raspberry_pi4_k3s_ingress: "{{ provision_inputs.k3s_ingress | default('traefik') | string | lower | trim }}"
+    raspberry_pi4_lw_servicelb: "{{ (provision_inputs.k3s_disable_servicelb | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi4_lw_metrics: "{{ (provision_inputs.k3s_disable_metrics_server | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi4_lw_storage: "{{ (provision_inputs.k3s_disable_local_storage | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi4_lw_netpol: "{{ (provision_inputs.k3s_disable_network_policy | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi4_lw_cloud: "{{ (provision_inputs.k3s_disable_cloud_controller | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi4_lw_helm: "{{ (provision_inputs.k3s_disable_helm_controller | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi4_taint: "{{ (provision_inputs.k3s_taint | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    raspberry_pi4_max_pods: "{{ provision_inputs.k3s_max_pods | default('') | string | trim }}"
+    raspberry_pi4_k3s_allow_sd_etcd: "{{ (provision_inputs.k3s_allow_sd_etcd | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - (provision_inputs | default({})) is mapping
+  no_log: true
+  tags:
+    - kubernetes
+
+- name: Validate Pi 4 role
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi4_k3s_role in ['worker', 'utility', 'control-plane']
+    fail_msg: "A Pi 4 role must be worker, utility or control-plane."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - kubernetes
+
+- name: Refuse implicit K3s agent-to-server conversion
+  ansible.builtin.fail:
+    msg: >-
+      This Pi 4 has an installed k3s-agent unit. Converting it to a control-plane server requires an explicit migration or re-image.
+  when:
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+    - raspberry_pi4_k3s_agent_unit.stat.exists | default(false) | bool
+    - not (raspberry_pi4_k3s_server_unit.stat.exists | default(false) | bool)
+  tags:
+    - kubernetes
+
+- name: Refuse implicit K3s server-to-worker conversion
+  ansible.builtin.fail:
+    msg: >-
+      This Pi 4 has an installed k3s server unit. Converting it to a worker removes its local control-plane data;
+      re-image it as a worker or explicitly migrate/uninstall the server (and remove it from etcd) before applying this module.
+  when:
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'worker'
+    - raspberry_pi4_k3s_server_unit.stat.exists | default(false) | bool
+  tags:
+    - kubernetes
+
+- name: Resolve lightweight K3s component list
+  ansible.builtin.set_fact:
+    raspberry_pi4_k3s_disable: >-
+      {{ (['servicelb'] if raspberry_pi4_lw_servicelb | bool else [])
+         + (['metrics-server'] if raspberry_pi4_lw_metrics | bool else [])
+         + (['local-storage'] if raspberry_pi4_lw_storage | bool else [])
+         + (['traefik'] if raspberry_pi4_k3s_ingress == 'none' else []) }}
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - kubernetes
+
+- name: Validate lightweight K3s options
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi4_k3s_ingress in ['traefik', 'none']
+      - not (raspberry_pi4_lw_helm | bool) or raspberry_pi4_k3s_ingress == 'none'
+    fail_msg: "Unsupported K3s server options: ingress must be 'traefik' or 'none' (ingress-nginx is retired and not offered), and the Helm controller can only be disabled when ingress is 'none' because Traefik is installed through it."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - kubernetes
+
+- name: Validate Pi 4 control-plane settings
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi4_k3s_endpoint | length > 0
+      - raspberry_pi4_k3s_token | length > 0
+      - raspberry_pi4_k3s_node_ip | length > 0
+    fail_msg: "A Pi 4 control-plane node needs the K3s endpoint and server token, and must be on Tailscale (its Tailscale IP is read automatically unless node_ip is set)."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Find the device behind /var/lib
+  ansible.builtin.command: findmnt --noheadings --output SOURCE --target /var/lib
+  register: raspberry_pi4_k3s_data_device
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Refuse etcd on an SD card
+  ansible.builtin.assert:
+    that:
+      - (raspberry_pi4_k3s_data_device.stdout | default('') | trim) is not match('^/dev/mmcblk') or (raspberry_pi4_k3s_allow_sd_etcd | bool)
+    fail_msg: "This control-plane node keeps /var/lib on an SD card. K3s says SD cards cannot handle etcd's write load, and an unhealthy voter can break quorum. Boot it from an SSD, or tick 'Allow etcd on an SD card' to override."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Validate Pi 4 worker settings
+  ansible.builtin.assert:
+    that:
+      - raspberry_pi4_k3s_endpoint | length > 0
+      - raspberry_pi4_k3s_token | length > 0
+      - raspberry_pi4_k3s_node_ip | length > 0
+    fail_msg: "A Pi 4 worker needs the K3s endpoint and server token, and must be on Tailscale (its Tailscale IP is read automatically unless node_ip is set)."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'worker'
+  # Not no_log: the failure message must reach the operator. The conditions only
+  # report pass/fail, never the token value.
+  tags:
+    - kubernetes
+
+- name: Validate Pi 4 max pods
+  ansible.builtin.assert:
+    that:
+      - >-
+        (raspberry_pi4_max_pods | length == 0)
+        or (raspberry_pi4_max_pods is match('^[0-9]+$')
+            and (raspberry_pi4_max_pods | int) >= 1
+            and (raspberry_pi4_max_pods | int) <= 110)
+    fail_msg: "Max pods must be a whole number from 1 to 110, or blank for the K3s default."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') in ['worker', 'control-plane']
+  tags:
+    - kubernetes
+
+- name: Remove legacy secrets-encryption flag when cluster encryption is disabled
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/k3s.service
+    regexp: '.*--secrets-encryption.*'
+    state: absent
+  register: raspberry_pi4_encryption_flag_removed
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+    - not (raspberry_pi4_k3s_security_enabled | bool)
+    - raspberry_pi4_k3s_server_unit.stat.exists | bool
+  tags:
+    - kubernetes
+
+- name: Reload systemd after K3s unit flag change
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - raspberry_pi4_encryption_flag_removed is defined
+    - raspberry_pi4_encryption_flag_removed.changed
+  tags:
+    - kubernetes
+
+- name: Set kernel values required by K3s protected defaults
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: true
+    reload: true
+  loop:
+    - { name: vm.overcommit_memory, value: '1' }
+    - { name: kernel.panic, value: '10' }
+    - { name: kernel.panic_on_oops, value: '1' }
+  register: raspberry_pi4_k3s_kernel_defaults
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Write structured K3s control-plane config
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+    content: >-
+      {{
+        raspberry_pi4_k3s_config_override
+        if raspberry_pi4_k3s_config_override | length > 0
+        else ({
+          'node-name': inventory_hostname,
+          'server': raspberry_pi4_k3s_endpoint,
+          'token': raspberry_pi4_k3s_token,
+          'node-ip': raspberry_pi4_k3s_node_ip,
+          'advertise-address': raspberry_pi4_k3s_node_ip,
+          'secrets-encryption': (raspberry_pi4_k3s_security_enabled | bool),
+          'node-label': ['role=control-plane']
+        }
+        | combine({'node-taint': ['node-role.kubernetes.io/control-plane:NoSchedule']} if raspberry_pi4_taint | bool else {})
+        | combine({'kubelet-arg': ['max-pods=' ~ (raspberry_pi4_max_pods | int)]} if raspberry_pi4_max_pods | length > 0 else {})
+        | combine({'disable': raspberry_pi4_k3s_disable} if raspberry_pi4_k3s_disable | length > 0 else {})
+        | combine({'disable-network-policy': true} if raspberry_pi4_lw_netpol | bool else {})
+        | combine({'disable-cloud-controller': true} if raspberry_pi4_lw_cloud | bool else {})
+        | combine({'disable-helm-controller': true} if raspberry_pi4_lw_helm | bool else {})
+        | to_nice_yaml(sort_keys=false))
+      }}
+  register: raspberry_pi4_k3s_server_config
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+  tags:
+    - kubernetes
+
+- name: Restart K3s server when structured config changes
+  ansible.builtin.service:
+    name: k3s
+    state: restarted
+  when:
+    - raspberry_pi4_k3s_role | default('') == 'control-plane'
+    - raspberry_pi4_k3s_server_config is defined
+    - raspberry_pi4_k3s_server_unit.stat.exists | default(false) | bool
+    - >-
+      raspberry_pi4_k3s_server_config.changed
+      or (raspberry_pi4_k3s_kernel_defaults.changed | default(false))
+      or (raspberry_pi4_encryption_flag_removed.changed | default(false))
+  tags:
+    - kubernetes
+
+- name: Write structured K3s worker config
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+    content: >-
+      {{
+        raspberry_pi4_k3s_config_override
+        if raspberry_pi4_k3s_config_override | length > 0
+        else ({
+          'node-name': inventory_hostname,
+          'server': raspberry_pi4_k3s_endpoint,
+          'token': raspberry_pi4_k3s_token,
+          'node-ip': raspberry_pi4_k3s_node_ip,
+          'node-label': ['role=worker']
+        }
+        | combine({'node-taint': ['rack/dedicated=true:NoSchedule']} if raspberry_pi4_taint | bool else {})
+        | combine({'kubelet-arg': ['max-pods=' ~ (raspberry_pi4_max_pods | int)]} if raspberry_pi4_max_pods | length > 0 else {})
+        | to_nice_yaml(sort_keys=false))
+      }}
+  register: raspberry_pi4_k3s_structured_config
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'worker'
+    - not (raspberry_pi4_k3s_server_unit.stat.exists | default(false) | bool)
+  tags:
+    - kubernetes
+
+- name: Restart K3s agent after structured config change
+  ansible.builtin.service:
+    name: k3s-agent
+    state: restarted
+  when:
+    - raspberry_pi4_k3s_agent_unit.stat.exists | default(false) | bool
+    - raspberry_pi4_k3s_structured_config.changed | default(false)
+  tags:
+    - kubernetes
+
+- name: Note that the utility role applies no Kubernetes configuration
+  ansible.builtin.debug:
+    msg: >-
+      Utility role: no K3s configuration was applied. If K3s is already installed on this node it was left as-is;
+      remove it explicitly if it should no longer run.
+  when:
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi4_k3s_role | default('') == 'utility'
+  tags:
+    - kubernetes

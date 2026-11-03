@@ -1,21 +1,28 @@
 <div class="section-head">
 	<div>
 		<p class="eyebrow">Apply Guide</p>
-		<h2>Where To Apply</h2>
+		<h2>Rolling It Out</h2>
 	</div>
 </div>
 <div class="guide-steps">
 	<article class="guide-step">
 		<span class="step-index">1</span>
-		<p>Open Tailscale Admin Console and navigate to Access Controls.</p>
+		<p><strong>Merge, do not replace.</strong> Open the Tailscale admin console, go to Access Controls and add the generated sections (<code>tagOwners</code>, <code>grants</code>, <code>ssh</code>, <code>autoApprovers</code>, <code>tests</code>). Grants and legacy <code>acls</code> can coexist. Keep Tailscale's default allow-all grant until the rack works, then delete it.</p>
 	</article>
 	<article class="guide-step">
 		<span class="step-index">2</span>
-		<p>Merge generated blocks into your existing policy JSON, preserving any custom rules.</p>
+		<p><strong>Tags before auth keys.</strong> A tag must exist in <code>tagOwners</code> before a node can use it, and an auth key (or OAuth client) must be created with the same tags the node advertises. Each board advertises its own tag plus the homelab tag, set by the SD form and the Node Ops Tailscale module.</p>
 	</article>
 	<article class="guide-step">
 		<span class="step-index">3</span>
-		<p>Use Tailscale policy validation, resolve warnings, then save and roll out.</p>
+		<p><strong>Subnet routes.</strong> Auto-approval only fires when a route is first advertised. If a node already advertises it, stop advertising and advertise it again.</p>
+	</article>
+	<article class="guide-step">
+		<span class="step-index">4</span>
+		<p><strong>SSH needs two things.</strong> A network rule to port 22 (the admin grant covers it) and an <code>ssh</code> rule. The node must also run <code>tailscale up --ssh</code>.</p>
+	</article>
+	<article class="guide-step">
+		<span class="step-index">5</span>
+		<p><strong>Save and read the result.</strong> Tailscale runs the tests when you save and rejects the change if one fails, so a broken rule shows up before it reaches the rack. A reimaged node gets a new tailnet IP; tags keep the rules working.</p>
 	</article>
 </div>
-<p class="charm-line">Last glance, then ship it with confidence.</p>

@@ -4,7 +4,7 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 
 ## At A Glance
 
-- SD-card imaging for `pi5` and `pi3bplus` profiles.
+- SD-card imaging for `pi5`, `pi4` and `pi3bplus` profiles.
 - Cloud-init authoring with reusable optional-setting templates.
 - Distribution-aware imaging for `standard` and `k3s` flows.
 - Catalog management with cache checks and bulk pulls.
@@ -50,7 +50,7 @@ Open:
 - `/monitor` — callback event feed, hardware snapshots, and certificate pull helpers.
 - `/nodes` — node inventory, saved inputs, and provisioning check/apply.
 - `/openwrt` — router inspection helper for Ansible access.
-- `/tailscale-acl` — ACL planning and generation.
+- `/tailscale-acl` — rack tailnet policy builder (grants, K3s ports, SSH, routes, tests).
 
 ## Longhorn Notes
 
@@ -61,12 +61,15 @@ Open:
 
 ## Architecture
 
-- `callback_site/app.py` remains the Flask entrypoint and shared runtime/job-state owner.
-- `callback_site/core.py` owns persistence, source-of-truth aggregation, and most business logic.
-- Route registration is split into focused modules:
-  - `callback_site/routes_pages.py` for page and fragment rendering routes.
-  - `callback_site/routes_openwrt.py` for OpenWrt helper API routes.
-  - `callback_site/routes_settings.py` for settings, logging, and health routes.
+- `callback_site/app.py` is the Flask entrypoint: logging, the app object and route registration.
+- `callback_site/routes/` holds the HTTP endpoints, one module per area (pages, openwrt, settings, callbacks, sd, images, ssh, test_terminal, monitor, nodes). Each exposes a `register_*_routes(app)` function.
+- `callback_site/services/` holds the domain logic, layered so imports only point downward:
+  - `storage`, `settings`, `sd_profiles`, `ssh_keys`, `openwrt`, `network`: paths, settings, keys and addressing.
+  - `events`, `images`, `image_catalog`, `reports`: callback events, the image library and catalog pulls.
+  - `node_state`, `node_inventory`, `node_runs`, `node_views`: Node Ops state, inventory, Ansible runs and read models.
+  - `sd_prepare`, `k3s_config`, `sd_devices`, `kubernetes`, `terminal_checks`, `provision_jobs`: SD preparation, config checks, devices, cluster summary and background jobs.
+- `callback_site/k3s_lightweight.py` (board and role registry) and `callback_site/tailscale_policy.py` (policy builder) are shared by the services, routes and templates.
+- Page CSS and JavaScript live in `callback_site/static/` (`home/`, `nodes/` and `monitor/` split the large scripts by area; templates only carry markup and a small data bootstrap).
 
 ## SD and Cloud-Init Flow
 
@@ -124,7 +127,7 @@ Run the project test suite from the repo root:
 
 ```bash
 cd /home/jdizzle/Playbook
-.venv/bin/python -m unittest callback_site/tests/test_app.py
+.venv/bin/python -m unittest discover -s callback_site/tests -t callback_site/tests
 ```
 
 For a broader validation pass, use:

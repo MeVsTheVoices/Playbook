@@ -26,6 +26,10 @@ rack_nodes_expected:
     current: 2
     planned_total: 4
     storage: nvme
+  rpi4:
+    current: 0
+    planned_total: 2
+    storage: sd-or-usb
   rpi_3bplus:
     current: 0
     planned_total: 2

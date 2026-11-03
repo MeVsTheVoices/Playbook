@@ -52,6 +52,21 @@ all:
                   rack_state: planned
                   rack_slot: 4
                   rack_manage_with_ansible: false
+        rpi4:
+          vars:
+            rack_node_family: rpi4
+            rack_node_storage_profile: sd-or-usb
+          children:
+            rpi4_active:
+              hosts:
+                rpi4-01:
+                  ansible_host: CHANGE_ME_RPI4_01
+                  rack_state: up
+                  rack_slot: 7
+                rpi4-02:
+                  ansible_host: CHANGE_ME_RPI4_02
+                  rack_state: up
+                  rack_slot: 8
         rpi_3bplus:
           vars:
             rack_node_family: rpi-3bplus

@@ -76,8 +76,6 @@ sshKeySelectEl.addEventListener("change", () => {
 
 sshKeyUploadEl.addEventListener("change", handleSshKeyUpload);
 
-sdOptionsLoadBtn.addEventListener("click", loadSelectedSdOptionProfile);
-
 sdOptionsSaveBtn.addEventListener("click", saveCurrentSdOptionProfile);
 
 sdOptionsResetBtn.addEventListener("click", resetCloudInitOptions);
@@ -88,10 +86,8 @@ sdOptionsDeleteBtn.addEventListener("click", deleteSelectedSdOptionProfile);
 
 sdOptionsProfileSelectEl.addEventListener("change", () => {
   const name = String(sdOptionsProfileSelectEl.value || "").trim();
-  const profile = name ? sdOptionProfiles[name] : null;
-  if (profile) {
-    sdOptionsProfileNameEl.value = name;
-    sdOptionsProfileDescriptionEl.value = String(profile.description || "");
+  if (name && sdOptionProfiles[name]) {
+    loadSelectedSdOptionProfile();
   }
   updateSdOptionActions();
 });

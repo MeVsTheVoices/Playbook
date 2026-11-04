@@ -48,7 +48,7 @@ Open:
 - `/` — SD image prep, SSH keys, optional cloud-init settings, and saved templates.
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
 - `/monitor` — callback event feed, hardware snapshots, and certificate pull helpers.
-- `/nodes` — node inventory, saved inputs, and provisioning check/apply.
+- `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
 - `/openwrt` — router inspection helper for Ansible access.
 - `/tailscale-acl` — rack tailnet policy builder (grants, K3s ports, SSH, routes, tests).
 
@@ -108,6 +108,10 @@ That config is carried forward in the cloud-init payload and used by the post-bo
 - `GET /api/nodes/summary`
 - `POST /api/nodes/stale/prune`
 - `POST /api/nodes/provision`
+- `GET /api/nodes/module-presets?module=<id>&node=<name>` — saved configurations plus settings drawn from other nodes and SD profiles
+- `POST /api/nodes/module-presets` — name a saved configuration (`id`, `name`) or save a node's current inputs under a name (`node`, `module`, `name`)
+- `POST /api/nodes/module-presets/load` — fill a node's module inputs from a source (`preset:<id>`, `node:<name>`, `sd:<profile>`)
+- `DELETE /api/nodes/module-presets/<id>`
 - `POST /api/ssh/generate`
 - `GET /api/ssh/keys`
 
@@ -117,6 +121,7 @@ That config is carried forward in the cloud-init payload and used by the post-bo
 - `callback_site/data/image_cache/` — local image cache
 - `callback_site/catalogs/image_catalog.yml` — source image catalog
 - `callback_site/data/node_provisioning.json` — node profiles and saved inputs
+- `callback_site/data/module_presets.json` — remembered and named module configurations (contains secrets; git-ignored)
 - `callback_site/data/sd_option_profiles.json` — reusable cloud-init option templates
 - `callback_site/data/ssh_keys/` — generated SSH key material
 - `callback_site/data/node_reports/` — stored hardware-report payloads

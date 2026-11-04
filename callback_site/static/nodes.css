@@ -280,6 +280,13 @@ th, td {
   background: #ffffff;
   min-height: 160px;
 }
+.module-list-scroll {
+  /* Fits today's six modules as they were; a longer list scrolls under the sticky header. */
+  max-height: 24rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
 .module-detail h4 {
   margin: 0 0 0.25rem;
 }

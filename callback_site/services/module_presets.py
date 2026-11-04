@@ -25,6 +25,12 @@ NAME_MAX = 60
 _SD_KEY_ALIASES: Dict[str, Dict[str, str]] = {
     "tailscale": {"tailscale_auth_key": "auth_key", "tailscale_ssh": "enable_ssh", "tailscale_tags": "advertise_tags"},
     "kubernetes": {"k3s_role": "node_role"},
+    "telegraf": {
+        "telegraf_influx_url": "influx_endpoint",
+        "telegraf_influx_token": "influx_access_key",
+        "telegraf_influx_org": "influx_org",
+        "telegraf_influx_bucket": "influx_bucket",
+    },
 }
 
 
@@ -175,6 +181,8 @@ def _sd_profile_inputs(module_id: str, profile: Dict[str, Any]) -> Dict[str, str
     if module_id == "tailscale" and not options.get("tailscale_enable"):
         return {}
     if module_id == "kubernetes" and profile.get("distribution") != "k3s":
+        return {}
+    if module_id == "telegraf" and not options.get("install_telegraf"):
         return {}
 
     out: Dict[str, str] = {}

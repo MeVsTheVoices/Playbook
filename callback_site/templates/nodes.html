@@ -25,7 +25,6 @@
       {% endif %}
       <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span class="label">Image Library</span></a>
       <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
-      <a class="{% if request.path.startswith('/openwrt') %}active{% endif %}" href="/openwrt"><span class="label">OpenWrt</span></a>
       <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span class="label">Terminal</span></a>
       <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span class="label">Settings</span></a>
     </aside>
@@ -179,7 +178,8 @@
           <summary>
             <div class="collapsible-summary">
               <h2>User-defined profile segments 🧩</h2>
-              <p class="collapsible-subtitle">Reusable profile blocks with defaults and optional Galaxy requirements.</p>
+              <p class="collapsible-subtitle">Reusable profile blocks with defaults and optional Galaxy requirements. A segment is a named config block attached to one profile; it is merged in whenever that profile is run.</p>
+              <p class="collapsible-count" id="profile-segment-summary">Loading segments...</p>
             </div>
             <span class="collapsible-indicator" aria-hidden="true">›</span>
           </summary>
@@ -217,6 +217,42 @@
             </div>
             <p id="profile-segment-status" class="note">No saved profile segments yet.</p>
             <div id="profile-segment-list"></div>
+          </div>
+        </details>
+
+        <details class="panel collapsible-panel" id="openwrt-host">
+          <summary>
+            <div class="collapsible-summary">
+              <h2>OpenWrt routers 📡</h2>
+              <p class="collapsible-subtitle">A router is a host in group "openwrt". Probe its SSH login and push a saved key. More router actions will land here.</p>
+              <p class="collapsible-count" id="openwrt-host-summary">No router hosts yet</p>
+            </div>
+            <span class="collapsible-indicator" aria-hidden="true">›</span>
+          </summary>
+          <div class="collapsible-body">
+            <div class="grid">
+              <div>
+                <label for="openwrt-host-select">Router host</label>
+                <select id="openwrt-host-select">
+                  <option value="">No OpenWrt hosts yet</option>
+                </select>
+              </div>
+              <div>
+                <label for="openwrt-port">SSH port</label>
+                <input id="openwrt-port" type="number" min="1" max="65535" value="22">
+              </div>
+              <div>
+                <label for="openwrt-password">Password (probe / key push only, not saved)</label>
+                <input id="openwrt-password" type="password" placeholder="optional" autocomplete="off">
+              </div>
+            </div>
+            <div class="inline-actions" style="margin-top: 0.7rem;">
+              <button id="openwrt-add" type="button" class="secondary">Add router host</button>
+              <button id="openwrt-probe" type="button">Probe</button>
+              <button id="openwrt-push-key" type="button" class="secondary">Push SSH key</button>
+            </div>
+            <p id="openwrt-status" class="note"></p>
+            <pre id="openwrt-result" class="log" hidden></pre>
           </div>
         </details>
 
@@ -283,6 +319,7 @@
     <script src="{{ url_for('static', filename='nodes/node_table.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/profile_segments.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/manual_nodes.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='nodes/openwrt_host.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/summary.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/provisioning.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/init.js') }}" defer></script>

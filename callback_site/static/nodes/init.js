@@ -19,6 +19,12 @@ document.getElementById("refresh-profile-segments").addEventListener("click", re
 
 document.getElementById("add-manual-node").addEventListener("click", addManualNode);
 
+document.getElementById("openwrt-add").addEventListener("click", addOpenwrtHost);
+
+document.getElementById("openwrt-probe").addEventListener("click", probeOpenwrtHost);
+
+document.getElementById("openwrt-push-key").addEventListener("click", pushOpenwrtKey);
+
 manualNodeSelectorEl.addEventListener("change", () => {
   const selectedNode = manualNodeSelectorEl.value.trim();
   if (!selectedNode) {
@@ -39,6 +45,8 @@ if (pruneStaleNodesBtn) {
 }
 
 initSidebar();
+
+refreshProfileSegments();
 
 refreshCertificates();
 

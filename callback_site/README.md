@@ -7,9 +7,9 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 - SD-card imaging for `pi5`, `pi4` and `pi3bplus` profiles.
 - Cloud-init authoring with reusable optional-setting templates.
 - Distribution-aware imaging for `standard` and `k3s` flows.
-- Catalog management with cache checks and bulk pulls.
+- Catalog management with cache checks and bulk pulls (select several presets, or pull everything missing).
 - Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
-- OpenWrt inspection helpers, SSH key management, and Tailscale ACL planning.
+- OpenWrt routers as Node Ops hosts (group `openwrt`) with SSH probe and key push, SSH key management, and Tailscale ACL planning.
 - Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
 
 ## Runtime Contract
@@ -49,7 +49,7 @@ Open:
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
 - `/monitor` — callback event feed, hardware snapshots, and certificate pull helpers.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
-- `/openwrt` — router inspection helper for Ansible access.
+- `/openwrt` — redirects to the OpenWrt routers panel in `/nodes`.
 - `/tailscale-acl` — rack tailnet policy builder (grants, K3s ports, SSH, routes, tests).
 
 ## Longhorn Notes

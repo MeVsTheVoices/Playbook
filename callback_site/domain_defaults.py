@@ -417,10 +417,19 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
             {
                 "id": "influx_secret_key",
                 "label": "Influx Secret Key",
-                "placeholder": "secret",
+                "placeholder": "only for the access_key:secret_key token form",
                 "input_type": "text",
-                "required": True,
+                "required": False,
                 "sensitive": True,
+            },
+            {
+                "id": "influx_token_mode",
+                "label": "Influx Token Form",
+                "input_type": "select",
+                "options": ["access_key", "access_key:secret_key"],
+                "default": "access_key",
+                "required": False,
+                "hint": "What Telegraf sends as the Influx token: the access key alone, or access_key:secret_key. Test Influx connection finds out which one your server accepts.",
             },
             {
                 "id": "telegraf_config_url",

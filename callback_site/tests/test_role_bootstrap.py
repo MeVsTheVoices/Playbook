@@ -6,6 +6,7 @@ import copy
 import json
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -28,6 +29,16 @@ SHARED_TASKS = (
     "Ensure the K3s config directory exists",
     "Read the K3s server's version",
     "Install K3s when this node does not run it yet",
+    "Resolve Telegraf inputs",
+    "Validate Telegraf settings",
+    "Install Telegraf",
+    "Ensure the Telegraf config directory exists",
+    "Write Telegraf config from the Influx settings",
+    "Download Telegraf config from the config URL",
+    "Give Telegraf its token for downloaded configs",
+    "Check that the Telegraf config parses",
+    "Ensure Telegraf is enabled and running",
+    "Restart Telegraf when its config changes",
 )
 DOCKER_TASKS = (
     "Resolve Docker inputs",
@@ -178,6 +189,62 @@ class RoleBootstrapRenderTests(unittest.TestCase):
                 mirror_only = self.render_docker_daemon(board, {"docker_data_root": "", "registry_mirror": "https://mirror.lab:5000"})
                 self.assertEqual(mirror_only, {"registry-mirrors": ["https://mirror.lab:5000"]})
                 self.assertIsNone(self.render_docker_daemon(board, {"docker_data_root": "", "registry_mirror": ""}), "blank inputs must not overwrite a hand-edited daemon.json")
+
+    TELEGRAF_BASE = {"influx_endpoint": "https://influx.example:8086/", "influx_bucket": "telegraf", "influx_org": "homelab", "influx_access_key": "access"}
+
+    def telegraf_tasks(self, board: str, names: tuple[str, ...]) -> list[dict]:
+        by = by_name(load_tasks(BOARDS[board]["role_dir"]))
+        tasks = []
+        for name in names:
+            task = copy.deepcopy(by[name])
+            task.pop("tags", None)
+            task.pop("no_log", None)
+            tasks.append(task)
+        return tasks
+
+    def render_telegraf_conf(self, board: str, inputs: dict) -> dict:
+        tasks = self.telegraf_tasks(board, ("Resolve Telegraf inputs", "Write Telegraf config from the Influx settings"))
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "telegraf.conf"
+            tasks[1]["ansible.builtin.copy"] = {"dest": str(out), "content": tasks[1]["ansible.builtin.copy"]["content"]}
+            tasks[1].pop("register", None)
+            code, output = self.run_play(tasks, {
+                "rack_manage_with_ansible": True, "provision_profile": "telegraf", "inventory_hostname": "rack-node-01", "provision_inputs": inputs,
+            })
+            self.assertEqual(code, 0, output[-800:])
+            return tomllib.loads(out.read_text(encoding="utf-8"))
+
+    def test_telegraf_config_is_valid_toml_with_the_chosen_token_form(self) -> None:
+        for board in BOARDS:
+            with self.subTest(board=board):
+                plain = self.render_telegraf_conf(board, {**self.TELEGRAF_BASE, "influx_secret_key": "secret", "influx_token_mode": "access_key"})
+                output = plain["outputs"]["influxdb_v2"][0]
+                self.assertEqual(output["urls"], ["https://influx.example:8086"], "a trailing slash is dropped")
+                self.assertEqual((output["token"], output["organization"], output["bucket"]), ("access", "homelab", "telegraf"))
+                self.assertEqual(plain["agent"]["hostname"], "rack-node-01")
+                self.assertIn("cpu", plain["inputs"])
+
+                combo = self.render_telegraf_conf(board, {**self.TELEGRAF_BASE, "influx_secret_key": "secret", "influx_token_mode": "access_key:secret_key"})
+                self.assertEqual(combo["outputs"]["influxdb_v2"][0]["token"], "access:secret")
+
+    def test_telegraf_values_with_quotes_cannot_break_the_config(self) -> None:
+        conf = self.render_telegraf_conf("pi5", {**self.TELEGRAF_BASE, "influx_org": 'ho"me\\lab'})
+        self.assertEqual(conf["outputs"]["influxdb_v2"][0]["organization"], 'ho"me\\lab')
+
+    def run_telegraf_validation(self, board: str, inputs: dict) -> int:
+        tasks = self.telegraf_tasks(board, ("Resolve Telegraf inputs", "Validate Telegraf settings"))
+        code, _output = self.run_play(tasks, {"rack_manage_with_ansible": True, "provision_profile": "telegraf", "provision_inputs": inputs})
+        return code
+
+    def test_telegraf_validation_accepts_a_config_url_or_complete_influx_settings(self) -> None:
+        for board in BOARDS:
+            with self.subTest(board=board):
+                self.assertEqual(self.run_telegraf_validation(board, self.TELEGRAF_BASE), 0)
+                self.assertEqual(self.run_telegraf_validation(board, {"telegraf_config_url": "https://influx.example/api/v2/telegrafs/abc"}), 0)
+                self.assertNotEqual(self.run_telegraf_validation(board, {**self.TELEGRAF_BASE, "influx_access_key": ""}), 0, "no token")
+                self.assertNotEqual(self.run_telegraf_validation(board, {**self.TELEGRAF_BASE, "influx_endpoint": "influx.example:8086"}), 0, "endpoint must be http(s)")
+                self.assertNotEqual(self.run_telegraf_validation(board, {"telegraf_config_url": "ftp://x"}), 0)
+                self.assertNotEqual(self.run_telegraf_validation(board, {}), 0)
 
 
 if __name__ == "__main__":

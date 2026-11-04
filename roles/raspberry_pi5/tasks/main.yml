@@ -20,6 +20,8 @@
     - kubernetes
     - longhorn
     - docker
+    - telegraf
+    - monitoring
 
 # First boot runs cloud-init's own apt at the same time as the installers below.
 - name: Let apt wait for the dpkg lock
@@ -39,6 +41,8 @@
     - kubernetes
     - longhorn
     - docker
+    - telegraf
+    - monitoring
 
 - name: Update apt cache
   ansible.builtin.apt:
@@ -790,6 +794,197 @@
     - not ansible_check_mode
   tags:
     - docker
+
+- name: Resolve Telegraf inputs
+  ansible.builtin.set_fact:
+    raspberry_pi5_telegraf_endpoint: "{{ (provision_inputs.influx_endpoint | default('') | string | trim) | regex_replace('/+$', '') }}"
+    raspberry_pi5_telegraf_bucket: "{{ provision_inputs.influx_bucket | default('') | string | trim }}"
+    raspberry_pi5_telegraf_org: "{{ provision_inputs.influx_org | default('') | string | trim }}"
+    raspberry_pi5_telegraf_config_url: "{{ provision_inputs.telegraf_config_url | default('') | string | trim }}"
+    # Influx accepts either the access key alone or "access_key:secret_key" as the token; Node Ops finds out which.
+    raspberry_pi5_telegraf_token: >-
+      {{ ((provision_inputs.influx_access_key | default('') | string | trim) ~ ':' ~ (provision_inputs.influx_secret_key | default('') | string | trim))
+         if (provision_inputs.influx_token_mode | default('access_key') | string | trim) == 'access_key:secret_key'
+         else (provision_inputs.influx_access_key | default('') | string | trim) }}
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - telegraf
+    - monitoring
+
+- name: Validate Telegraf settings
+  ansible.builtin.assert:
+    that:
+      - (raspberry_pi5_telegraf_config_url | length > 0) or ((raspberry_pi5_telegraf_endpoint | length > 0) and (raspberry_pi5_telegraf_bucket | length > 0) and (raspberry_pi5_telegraf_org | length > 0) and (raspberry_pi5_telegraf_token | length > 0))
+      - (raspberry_pi5_telegraf_endpoint | length == 0) or (raspberry_pi5_telegraf_endpoint is match('^https?://'))
+      - (raspberry_pi5_telegraf_config_url | length == 0) or (raspberry_pi5_telegraf_config_url is match('^https?://'))
+    fail_msg: "Telegraf needs a config URL, or an Influx endpoint (http or https), bucket, org and access key."
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - telegraf
+    - monitoring
+
+- name: Install Telegraf
+  ansible.builtin.apt:
+    name: telegraf
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    lock_timeout: 300
+  when:
+    - rack_manage_with_ansible | bool
+    - raspberry_pi5_manage_system | bool
+    - provision_profile | default('') == 'telegraf'
+  tags:
+    - telegraf
+    - monitoring
+
+- name: Ensure the Telegraf config directory exists
+  ansible.builtin.file:
+    path: /etc/telegraf
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+  tags:
+    - telegraf
+    - monitoring
+
+# Same agent settings the first-boot script writes. The token is inside, so only root and the telegraf group read it.
+- name: Write Telegraf config from the Influx settings
+  ansible.builtin.copy:
+    dest: /etc/telegraf/telegraf.conf
+    owner: root
+    group: "{{ 'root' if ansible_check_mode else 'telegraf' }}"
+    mode: '0640'
+    content: |
+      [agent]
+        interval = "10s"
+        round_interval = true
+        metric_batch_size = 1000
+        metric_buffer_limit = 10000
+        flush_interval = "10s"
+        hostname = {{ inventory_hostname | to_json }}
+
+      [[outputs.influxdb_v2]]
+        urls = [{{ raspberry_pi5_telegraf_endpoint | to_json }}]
+        token = {{ raspberry_pi5_telegraf_token | to_json }}
+        organization = {{ raspberry_pi5_telegraf_org | to_json }}
+        bucket = {{ raspberry_pi5_telegraf_bucket | to_json }}
+
+      [[inputs.cpu]]
+        percpu = true
+        totalcpu = true
+
+      [[inputs.mem]]
+
+      [[inputs.disk]]
+        ignore_fs = ["tmpfs", "devtmpfs", "overlay", "squashfs"]
+
+      [[inputs.diskio]]
+
+      [[inputs.net]]
+
+      [[inputs.system]]
+  register: raspberry_pi5_telegraf_conf
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+    - raspberry_pi5_telegraf_config_url | length == 0
+  tags:
+    - telegraf
+    - monitoring
+
+- name: Download Telegraf config from the config URL
+  ansible.builtin.get_url:
+    url: "{{ raspberry_pi5_telegraf_config_url }}"
+    dest: /etc/telegraf/telegraf.conf
+    owner: root
+    group: "{{ 'root' if ansible_check_mode else 'telegraf' }}"
+    mode: '0640'
+    force: true
+    headers: "{{ {'Authorization': 'Token ' ~ raspberry_pi5_telegraf_token} if raspberry_pi5_telegraf_token | length > 0 else {} }}"
+  register: raspberry_pi5_telegraf_download
+  retries: 3
+  delay: 10
+  until: raspberry_pi5_telegraf_download is succeeded
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+    - raspberry_pi5_telegraf_config_url | length > 0
+  tags:
+    - telegraf
+    - monitoring
+
+# Configs generated by InfluxDB's UI read $INFLUX_TOKEN, which the packaged service takes from this file.
+- name: Give Telegraf its token for downloaded configs
+  ansible.builtin.lineinfile:
+    path: /etc/default/telegraf
+    regexp: '^INFLUX_TOKEN='
+    line: "INFLUX_TOKEN={{ raspberry_pi5_telegraf_token }}"
+    create: true
+    owner: root
+    group: "{{ 'root' if ansible_check_mode else 'telegraf' }}"
+    mode: '0640'
+  register: raspberry_pi5_telegraf_env
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+    - raspberry_pi5_telegraf_config_url | length > 0
+    - raspberry_pi5_telegraf_token | length > 0
+  tags:
+    - telegraf
+    - monitoring
+
+- name: Check that the Telegraf config parses
+  ansible.builtin.command: timeout 60 telegraf --config /etc/telegraf/telegraf.conf --test --input-filter cpu
+  changed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+    - not ansible_check_mode
+    - (raspberry_pi5_telegraf_conf.changed | default(false)) or (raspberry_pi5_telegraf_download.changed | default(false))
+  tags:
+    - telegraf
+    - monitoring
+
+- name: Ensure Telegraf is enabled and running
+  ansible.builtin.service:
+    name: telegraf
+    enabled: true
+    state: started
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'telegraf'
+    - not ansible_check_mode
+  tags:
+    - telegraf
+    - monitoring
+
+- name: Restart Telegraf when its config changes
+  ansible.builtin.service:
+    name: telegraf
+    state: restarted
+  when:
+    - provision_profile | default('') == 'telegraf'
+    - not ansible_check_mode
+    - (raspberry_pi5_telegraf_conf.changed | default(false)) or (raspberry_pi5_telegraf_download.changed | default(false)) or (raspberry_pi5_telegraf_env.changed | default(false))
+  tags:
+    - telegraf
+    - monitoring
 
 - name: Resolve Longhorn inputs from provisioning payload
   ansible.builtin.set_fact:

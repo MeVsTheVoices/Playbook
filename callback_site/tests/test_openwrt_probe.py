@@ -11,21 +11,20 @@ import services.openwrt
 
 
 class OpenWrtProbeTests(BaseCallbackSiteTest):
-    def test_openwrt_page_renders_and_api_returns_probe_stats(self) -> None:
-        page = self.client.get("/openwrt")
+    def test_openwrt_lives_in_node_ops_and_api_returns_probe_stats(self) -> None:
+        old_page = self.client.get("/openwrt")
+        self.assertEqual(old_page.status_code, 302)
+        self.assertTrue(old_page.headers["Location"].endswith("/nodes#openwrt-host"))
+
+        page = self.client.get("/nodes")
         self.assertEqual(page.status_code, 200)
-        text = self.page_text(page)
-        self.assertIn("OpenWrt Ansible Probe", text)
-        self.assertIn("ansible_host", text)
-        self.assertIn("router-activity", text)
-        self.assertIn("🙂", text)
-        self.assertIn("🐶", text)
-        self.assertIn("Reuse a saved SSH identity", text)
-        self.assertIn("Push selected key", text)
-        self.assertIn("localStorage", text)
-        self.assertIn("openwrt-form:", text)
-        self.assertIn("result-shell", text)
-        self.assertIn("result-preview", text)
+        text = page.get_data(as_text=True)
+        self.assertIn('id="openwrt-host"', text)
+        self.assertIn("openwrt-host-select", text)
+        self.assertIn("openwrt-probe", text)
+        self.assertIn("openwrt-push-key", text)
+        self.assertNotIn('href="/openwrt"', text)
+        self.assertNotIn('href="/openwrt"', self.client.get("/settings").get_data(as_text=True))
 
         response = self.client.post(
             "/api/openwrt/inspect",

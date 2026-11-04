@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -117,6 +119,14 @@ class SdCloudInitRenderTests(unittest.TestCase):
         ts = next(i for i, c in enumerate(cmds) if "rack-tailscale-bootstrap" in c)
         k3s = next(i for i, c in enumerate(cmds) if "get.k3s.io" in c)
         self.assertLess(ts, k3s)
+
+    def test_clock_sync_runs_before_any_https_install(self) -> None:
+        code, data, err = self.render(CLOUD_INIT_TAILSCALE_ENABLE="true", CLOUD_INIT_TAILSCALE_AUTH_KEY=AUTH_KEY)
+        self.assertEqual(code, 0, err)
+        cmds = [" ".join(c) if isinstance(c, list) else str(c) for c in self.runcmd(data)]
+        clock = next(i for i, c in enumerate(cmds) if "NTPSynchronized" in c)
+        self.assertLess(clock, next(i for i, c in enumerate(cmds) if "rack-tailscale-bootstrap" in c))
+        self.assertLess(clock, next(i for i, c in enumerate(cmds) if "get.k3s.io" in c))
 
     def test_default_tags_follow_the_profile(self) -> None:
         for profile, expected in (("pi3bplus", "tag:rpi-3bplus,tag:homelab"), ("pi5", "tag:rpi5,tag:homelab"), ("pi4", "tag:rpi4,tag:homelab")):
@@ -266,7 +276,7 @@ class SdCloudInitRenderTests(unittest.TestCase):
 class TailscaleBootstrapBehaviorTests(unittest.TestCase):
     """Run the generated first-boot script against stand-in binaries."""
 
-    def run_bootstrap(self, *, mode_config: str, mode: str, up_rc: int, existing: str = "") -> tuple[int, str, bool]:
+    def run_bootstrap(self, *, mode_config: str, mode: str, up_rc: int, existing: str = "", installs_on_attempt: int | None = None) -> tuple[int, str, bool]:
         helper = SdCloudInitRenderTests()
         code, data, err = helper.render(
             CLOUD_INIT_TAILSCALE_ENABLE="true", CLOUD_INIT_TAILSCALE_AUTH_KEY=AUTH_KEY,
@@ -278,11 +288,24 @@ class TailscaleBootstrapBehaviorTests(unittest.TestCase):
             tmp_path = Path(tmp)
             bindir = tmp_path / "bin"
             bindir.mkdir()
-            for name, body in {
-                "tailscale": f'#!/bin/bash\ncase "$1" in up) exit {up_rc};; ip) echo 100.70.57.110;; esac\n',
+            ts_body = f'#!/bin/bash\ncase "$1" in up) exit {up_rc};; ip) echo 100.70.57.110;; esac\n'
+            stubs = {
                 "systemctl": "#!/bin/bash\nexit 0\n",
                 "sleep": "#!/bin/bash\nexit 0\n",
-            }.items():
+            }
+            if installs_on_attempt is None:
+                stubs["tailscale"] = ts_body
+            else:
+                # Tailscale starts absent; the fake installer only works from the Nth curl call.
+                counter = tmp_path / "curl-calls"
+                install = f"printf '%s' {shlex.quote(ts_body)} > {bindir}/tailscale; chmod +x {bindir}/tailscale"
+                stubs["curl"] = (
+                    f"#!/bin/bash\nn=$(cat {counter} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {counter}\n"
+                    f"if [ $n -lt {installs_on_attempt} ]; then exit 22; fi\necho {shlex.quote(install)}\n"
+                )
+                for tool in ("sh", "tr", "mv", "chmod", "sed", "tail", "head", "seq", "cat", "rm"):
+                    (bindir / tool).symlink_to(shutil.which(tool))
+            for name, body in stubs.items():
                 path = bindir / name
                 path.write_text(body, encoding="utf-8")
                 path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -295,10 +318,10 @@ class TailscaleBootstrapBehaviorTests(unittest.TestCase):
             script = tmp_path / "bootstrap.sh"
             script.write_text(files["/usr/local/bin/rack-tailscale-bootstrap"]["content"], encoding="utf-8")
             result = subprocess.run(
-                ["bash", str(script)],
+                ["bash" if installs_on_attempt is None else shutil.which("bash"), str(script)],
                 capture_output=True, text=True, timeout=60,
                 env={
-                    "PATH": f"{bindir}:{os.environ['PATH']}",
+                    "PATH": str(bindir) if installs_on_attempt is not None else f"{bindir}:{os.environ['PATH']}",
                     "RACK_NODE_ENV": str(env_file), "RACK_TS_KEY_FILE": str(key_file),
                     "RACK_K3S_CONFIG_PATH": str(config),
                 },
@@ -325,6 +348,16 @@ class TailscaleBootstrapBehaviorTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(config.count("node-ip:"), 1)
         self.assertEqual(yaml.safe_load(config)["node-ip"], "100.70.57.110")
+
+    def test_install_is_retried_until_the_network_is_ready(self) -> None:
+        rc, config, _ = self.run_bootstrap(mode_config=K3S_WORKER_CONFIG, mode="agent", up_rc=0, installs_on_attempt=3)
+        self.assertEqual(rc, 0)
+        self.assertEqual(yaml.safe_load(config)["node-ip"], "100.70.57.110")
+
+    def test_install_that_never_works_still_lets_cloud_init_continue(self) -> None:
+        rc, config, _ = self.run_bootstrap(mode_config=K3S_WORKER_CONFIG, mode="agent", up_rc=0, installs_on_attempt=99)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("node-ip", config)
 
     def test_failed_join_never_aborts_cloud_init_and_leaves_config_untouched(self) -> None:
         rc, config, key_left = self.run_bootstrap(mode_config=K3S_SERVER_CONFIG, mode="server", up_rc=1)

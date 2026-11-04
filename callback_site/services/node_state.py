@@ -14,6 +14,7 @@ from services.storage import (
     KEYS_DIR,
     KEY_ARCHIVE_DIR,
     KEY_ARCHIVE_INDEX_FILE,
+    MODULE_PRESETS_FILE,
     MONITOR_STATE_FILE,
     NODE_CONFIG_FILE,
     NODE_PROVISION_FILE,
@@ -254,6 +255,8 @@ def _reset_node_ops_settings() -> Dict[str, Any]:
     node_prov = _default_node_provisioning()
     _atomic_write_text(NODE_CONFIG_FILE, json.dumps(node_cfg, indent=2))
     _atomic_write_text(NODE_PROVISION_FILE, json.dumps(node_prov, indent=2))
+    # Saved configurations hold the same secrets as the node inputs they were taken from.
+    _atomic_write_text(MODULE_PRESETS_FILE, "[]")
 
     deleted_ssh_files = _purge_files(KEYS_DIR)
     deleted_archive_files = _purge_files(KEY_ARCHIVE_DIR)

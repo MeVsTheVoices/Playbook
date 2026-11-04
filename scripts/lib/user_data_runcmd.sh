@@ -1,6 +1,11 @@
 # runcmd: install steps and the final callback.
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
 
+# A Pi has no RTC and boots on the image build date, so HTTPS installers fail with "certificate is not yet valid".
+cat >> "$USER_DATA_OUT" <<'CLOCK_RUNCMD'
+  - [ sh, -c, 'timedatectl set-ntp true || true; for i in $(seq 1 90); do [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ] && exit 0; sleep 2; done; echo "rack: clock not synced after 180s" >&2; exit 0' ]
+CLOCK_RUNCMD
+
 if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
   # Must run before the K3s install so the Tailscale address is already in the K3s config.
   cat >> "$USER_DATA_OUT" <<'TS_RUNCMD'

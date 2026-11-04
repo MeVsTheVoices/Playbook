@@ -3,10 +3,48 @@
   ansible.builtin.meta: end_host
   when: not (rack_manage_with_ansible | bool)
 
+# A Pi has no RTC, so shortly after boot HTTPS downloads fail with "certificate is not yet valid" and apt rejects fresh repositories.
+- name: Wait for the system clock to synchronise
+  ansible.builtin.command: timedatectl show --property=NTPSynchronized --value
+  register: raspberry_pi5_clock_sync
+  until: (raspberry_pi5_clock_sync.rc != 0) or (raspberry_pi5_clock_sync.stdout | trim == 'yes')
+  retries: 60
+  delay: 5
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: rack_manage_with_ansible | bool
+  tags:
+    - baseline
+    - tailscale
+    - kubernetes
+    - longhorn
+    - docker
+
+# First boot runs cloud-init's own apt at the same time as the installers below.
+- name: Let apt wait for the dpkg lock
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/80rack-lock-timeout
+    content: |
+      DPkg::Lock::Timeout "300";
+    owner: root
+    group: root
+    mode: '0644'
+  when:
+    - rack_manage_with_ansible | bool
+    - raspberry_pi5_manage_system | bool
+  tags:
+    - baseline
+    - tailscale
+    - kubernetes
+    - longhorn
+    - docker
+
 - name: Update apt cache
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
+    lock_timeout: 300
   when: raspberry_pi5_manage_system | bool
   tags:
     - baseline
@@ -15,6 +53,7 @@
   ansible.builtin.apt:
     name: "{{ common_packages }}"
     state: present
+    lock_timeout: 300
   when:
     - raspberry_pi5_manage_system | bool
     - common_packages | length > 0
@@ -24,6 +63,7 @@
 - name: Optionally upgrade packages
   ansible.builtin.apt:
     upgrade: dist
+    lock_timeout: 300
   when: raspberry_pi5_upgrade_packages | bool
   tags:
     - baseline
@@ -61,6 +101,10 @@
     url: https://tailscale.com/install.sh
     dest: /tmp/install_tailscale.sh
     mode: '0755'
+  register: raspberry_pi5_tailscale_installer_download
+  retries: 5
+  delay: 15
+  until: raspberry_pi5_tailscale_installer_download is succeeded
   when: raspberry_pi5_tailscale_manage | bool
   tags:
     - tailscale
@@ -69,6 +113,10 @@
   ansible.builtin.command: /tmp/install_tailscale.sh
   args:
     creates: /usr/sbin/tailscaled
+  register: raspberry_pi5_tailscale_install
+  retries: 3
+  delay: 20
+  until: raspberry_pi5_tailscale_install.rc == 0
   when: raspberry_pi5_tailscale_manage | bool
   tags:
     - tailscale
@@ -443,6 +491,20 @@
   tags:
     - kubernetes
 
+- name: Ensure the K3s config directory exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi5_k3s_role | default('') in ['worker', 'control-plane']
+  tags:
+    - kubernetes
+
 - name: Remove legacy secrets-encryption flag when cluster encryption is disabled
   ansible.builtin.lineinfile:
     path: /etc/systemd/system/k3s.service
@@ -589,6 +651,146 @@
   tags:
     - kubernetes
 
+- name: Read the K3s server's version
+  ansible.builtin.uri:
+    url: "{{ raspberry_pi5_k3s_endpoint }}/version"
+    validate_certs: false
+    return_content: true
+    timeout: 15
+  register: raspberry_pi5_k3s_server_version
+  failed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi5_k3s_role | default('') in ['worker', 'control-plane']
+    - raspberry_pi5_k3s_endpoint | default('') | length > 0
+    - not (raspberry_pi5_k3s_server_unit.stat.exists | default(false) | bool)
+    - not (raspberry_pi5_k3s_agent_unit.stat.exists | default(false) | bool)
+  tags:
+    - kubernetes
+
+# The config file written above carries the server, token and node IP, so a fresh install joins the cluster on first start.
+- name: Install K3s when this node does not run it yet
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsSL https://get.k3s.io | {{ ('INSTALL_K3S_VERSION=' ~ (raspberry_pi5_k3s_install_version | quote) ~ ' ') if raspberry_pi5_k3s_install_version | length > 0 else '' }}INSTALL_K3S_EXEC={{ (((raspberry_pi5_k3s_role == 'control-plane') | ternary('server', 'agent')) ~ ' --with-node-id --config /etc/rancher/k3s/config.yaml') | quote }} sh -
+  args:
+    executable: /bin/bash
+    creates: "{{ '/etc/systemd/system/k3s.service' if raspberry_pi5_k3s_role == 'control-plane' else '/etc/systemd/system/k3s-agent.service' }}"
+  vars:
+    # Match the server this node joins: an agent newer than its server is unsupported.
+    raspberry_pi5_k3s_install_version: >-
+      {{ raspberry_pi5_k3s_version if (raspberry_pi5_k3s_version | length > 0)
+         else ((raspberry_pi5_k3s_server_version.json | default({})).gitVersion | default('')) }}
+  register: raspberry_pi5_k3s_install
+  retries: 3
+  delay: 20
+  until: raspberry_pi5_k3s_install.rc == 0
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi5_k3s_role | default('') in ['worker', 'control-plane']
+    - not (raspberry_pi5_k3s_server_unit.stat.exists | default(false) | bool)
+    - not (raspberry_pi5_k3s_agent_unit.stat.exists | default(false) | bool)
+  tags:
+    - kubernetes
+
+- name: Resolve Docker inputs
+  ansible.builtin.set_fact:
+    raspberry_pi5_docker_data_root: "{{ provision_inputs.docker_data_root | default('') | string | trim }}"
+    raspberry_pi5_docker_registry_mirror: "{{ provision_inputs.registry_mirror | default('') | string | trim }}"
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'docker'
+    - (provision_inputs | default({})) is mapping
+  tags:
+    - docker
+
+- name: Install Docker engine
+  ansible.builtin.apt:
+    name: docker.io
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    lock_timeout: 300
+  when:
+    - rack_manage_with_ansible | bool
+    - raspberry_pi5_manage_system | bool
+    - provision_profile | default('') == 'docker'
+  tags:
+    - docker
+
+- name: Ensure the Docker config directory exists
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'docker'
+  tags:
+    - docker
+
+- name: Ensure the Docker data directory exists
+  ansible.builtin.file:
+    path: "{{ raspberry_pi5_docker_data_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0710'
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'docker'
+    - raspberry_pi5_docker_data_root | default('') | length > 0
+  tags:
+    - docker
+
+# Existing images do not move when data-root changes; only new data lands there.
+- name: Write Docker daemon settings
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      {{ {}
+         | combine({'data-root': raspberry_pi5_docker_data_root} if raspberry_pi5_docker_data_root | length > 0 else {})
+         | combine({'registry-mirrors': [raspberry_pi5_docker_registry_mirror]} if raspberry_pi5_docker_registry_mirror | length > 0 else {})
+         | to_nice_json }}
+  register: raspberry_pi5_docker_daemon
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'docker'
+    - (raspberry_pi5_docker_data_root | default('') | length > 0) or (raspberry_pi5_docker_registry_mirror | default('') | length > 0)
+  tags:
+    - docker
+
+- name: Ensure Docker is enabled and running
+  ansible.builtin.service:
+    name: docker
+    enabled: true
+    state: started
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'docker'
+    - not ansible_check_mode
+  tags:
+    - docker
+
+- name: Restart Docker when its daemon settings change
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+  when:
+    - provision_profile | default('') == 'docker'
+    - raspberry_pi5_docker_daemon.changed | default(false)
+    - not ansible_check_mode
+  tags:
+    - docker
+
 - name: Resolve Longhorn inputs from provisioning payload
   ansible.builtin.set_fact:
     raspberry_pi5_longhorn_storage_path_effective: >-
@@ -631,6 +833,7 @@
     state: present
     update_cache: true
     cache_valid_time: 3600
+    lock_timeout: 300
   when:
     - rack_manage_with_ansible | bool
     - raspberry_pi5_manage_system | bool

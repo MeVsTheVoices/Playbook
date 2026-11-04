@@ -33,6 +33,11 @@ from services.provision_jobs import PROVISION_JOBS, PROVISION_JOBS_LOCK, _run_no
 from services.sd_profiles import _load_profile_segments, _upsert_profile_segment
 
 
+def _without_blank_secrets(values: Dict[str, Any]) -> Dict[str, str]:
+    # The form never shows saved secrets, so a blank secret means "keep the saved one".
+    return {str(k): str(v) for k, v in values.items() if str(v) or str(k) not in {"influx_access_key", "influx_secret_key"}}
+
+
 def _merged_telegraf_inputs(state: Dict[str, Any], node_name: str, raw_inputs: Any) -> Dict[str, str]:
     merged: Dict[str, str] = {}
     saved_node_inputs = state.get("node_inputs", {}).get(node_name, {}) if isinstance(state.get("node_inputs", {}), dict) else {}
@@ -45,7 +50,7 @@ def _merged_telegraf_inputs(state: Dict[str, Any], node_name: str, raw_inputs: A
     if isinstance(raw_inputs, dict):
         candidate = raw_inputs.get("telegraf")
         if isinstance(candidate, dict):
-            merged.update({str(k): str(v) for k, v in candidate.items()})
+            merged.update(_without_blank_secrets(candidate))
         else:
             direct_keys = {
                 "influx_endpoint",
@@ -56,7 +61,7 @@ def _merged_telegraf_inputs(state: Dict[str, Any], node_name: str, raw_inputs: A
             }
             direct_values = {k: str(v) for k, v in raw_inputs.items() if str(k) in direct_keys}
             if direct_values:
-                merged.update(direct_values)
+                merged.update(_without_blank_secrets(direct_values))
 
     return merged
 

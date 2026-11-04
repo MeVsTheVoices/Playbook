@@ -115,7 +115,7 @@ Order: reset the cluster to the NucBox alone (`scripts/k3s_fresh_start.sh`), fla
    - `tailscale` downloads and runs the Tailscale installer when `tailscaled` is missing (download retried 5 times, install 3 times), then joins the tailnet.
    - `kubernetes` creates `/etc/rancher/k3s`, writes the structured config, and installs K3s (agent for worker/light-worker, server for control-plane) when neither unit exists. The version matches the server it joins (read from `<endpoint>/version`); set `<board>_k3s_version` in `group_vars` to pin one. Join over Tailscale first: the Tailscale module must have run so the node has a Tailscale IPv4.
    - `docker` (Pi 4 and Pi 5) installs `docker.io`, enables it, and writes `/etc/docker/daemon.json` only when a data root or registry mirror is entered. Existing images do not move when the data root changes.
-   - `telegraf` is still configured only by the first-boot script; the Ansible module has no tasks yet.
+   - `telegraf` installs the `telegraf` package, writes `/etc/telegraf/telegraf.conf` (root:telegraf, 0640, since it holds the token) from the Influx endpoint, bucket, org and access key, or downloads the Config URL with the token as an `Authorization: Token` header and stores the token in `/etc/default/telegraf` as `INFLUX_TOKEN` for UI-generated configs. It validates the config with `telegraf --test` before restarting the service. The token is the access key alone unless the "Influx Token Form" is `access_key:secret_key`; the first-boot script writes the same agent settings and now also restricts the file to root and the telegraf group.
 
 ## SD Bootstrap + Callback (Recommended)
 1. Start the callback site:
@@ -183,6 +183,8 @@ Rollout: merge the sections rather than replacing your policy, keep the default 
 8. Use plan-only checks by disabling Ansible execution in the Node Ops UI.
 9. Expect the provisioning path to be non-interactive: it should not hang on vault prompts, and it should use the bootstrap SSH identity/private key that matches the original cloud-init bootstrap.
 10. Check Module and Apply Module report progress on the line under the module buttons (and on the status line above the table).
+11. The module list keeps its look but scrolls once it holds more modules than fit (the header stays put and the module you are editing is kept in view).
+12. Telegraf: fill the endpoint, bucket, org and access key (the secret key is only needed for the `access_key:secret_key` token form), then press "Test Influx connection". It writes one dummy point with the values on screen (a blank secret field uses the saved secret), reports health and write results, and sets the token form to the one your server accepted. Save the module inputs to keep it, then Apply Module.
 
 ### Saved module configurations
 The module panel remembers its work, so a setup can be named and reapplied instead of retyped.

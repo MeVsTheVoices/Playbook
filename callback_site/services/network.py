@@ -91,10 +91,20 @@ def _is_transit_hop_ip(ip: str) -> bool:
     )
 
 
+_TAILSCALE_NET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _is_tailscale_ip(ip: str) -> bool:
+    parsed = _normalize_ip(ip)
+    return bool(parsed) and ipaddress.ip_address(parsed) in _TAILSCALE_NET
+
+
 def _is_usable_callback_ip(ip: str) -> bool:
     parsed = _normalize_ip(ip)
     if not parsed:
         return False
+    if _is_tailscale_ip(parsed):
+        return True
     try:
         addr = ipaddress.ip_address(parsed)
     except ValueError:
@@ -119,6 +129,12 @@ def _preferred_node_connect_target(node_name: str, inventory_address: str, callb
     node_name = str(node_name or "").strip()
     inventory_address = str(inventory_address or "").strip()
     callback_source_ip = str(callback_source_ip or "").strip()
+
+    # The NucBox cannot route to NATed LAN addresses; the tailnet address always works.
+    if _is_tailscale_ip(callback_source_ip):
+        return callback_source_ip, "callback"
+    if _is_tailscale_ip(inventory_address):
+        return inventory_address, "inventory"
 
     if _is_usable_callback_ip(callback_source_ip):
         return callback_source_ip, "callback"

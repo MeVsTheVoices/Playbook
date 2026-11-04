@@ -32,7 +32,8 @@
 
 ### Known-Good Current Values
 - API endpoint: `https://100.65.24.76:6443` (NucBox over Tailscale).
-- Control-plane nodes: `jd-shorty-rack-pi3bplus-alpha` (`100.70.57.110`) and `jd-shorty-rack-pi3bplus-bravo` (`100.120.128.100`). Tailscale addresses are assigned per install, so read them from `tailscale status` instead of reusing old ones.
+- Control-plane nodes: the NucBox only (`100.65.24.76`) since the 2026-11-03 `--cluster-reset`; the Pi 3B+ voters were removed. Tailscale addresses are assigned per install, so read each node's from `tailscale status` instead of reusing old ones.
+- Node Ops targets a node by its Tailscale IP when one is known (callback or saved `node_ip`), ahead of any LAN or NAT address. A Pi behind the router (`192.168.174.x`, seen as `10.255.45.243`) is not reachable from the NucBox until it joins the tailnet.
 - Pi 5 nodes default to `worker`; a Pi 5 can also be `control-plane`. Secrets encryption: disabled on the NucBox; joining server units must not carry `--secrets-encryption`.
 - Tailscale tags and policy: the NucBox is tagged `tag:homelab`; each Pi carries its board tag (`tag:rpi5`, `tag:rpi4`, `tag:rpi-3bplus`) plus `tag:homelab`. Build the matching policy on the Tailscale ACL page (see "Tailscale Policy Page" below). Without rules letting those tags reach each other on the K3s ports, a tagged node sees no peers and K3s cannot join.
 - Current state (2026-10-31, after the outage): the Pi 3B+ control nodes were too small to carry etcd reliably and quorum was lost twice. The cluster is being rebuilt from the NucBox alone with the lightweight profile below. The old `jd-shorty-rack-alpha-*`, `jd-shorty-rack-beta-*` and Pi 5 node records are stale and removed by the fresh-start script.
@@ -109,6 +110,12 @@ Order: reset the cluster to the NucBox alone (`scripts/k3s_fresh_start.sh`), fla
 4. Run Ansible for active nodes:
    - `./.venv/bin/ansible-playbook site.yml --check`
    - `./.venv/bin/ansible-playbook site.yml`
+5. What the roles install, so a node whose first boot failed can be repaired from Node Ops or `site.yml`:
+   - Every role first waits (up to 5 minutes) for the clock to synchronise. A Pi has no RTC and boots on the image build date, so HTTPS installers fail with "certificate is not yet valid" and apt rejects fresh repositories until NTP catches up. A `DPkg::Lock::Timeout` drop-in and `lock_timeout` on the apt tasks make installs wait for cloud-init's own apt run.
+   - `tailscale` downloads and runs the Tailscale installer when `tailscaled` is missing (download retried 5 times, install 3 times), then joins the tailnet.
+   - `kubernetes` creates `/etc/rancher/k3s`, writes the structured config, and installs K3s (agent for worker/light-worker, server for control-plane) when neither unit exists. The version matches the server it joins (read from `<endpoint>/version`); set `<board>_k3s_version` in `group_vars` to pin one. Join over Tailscale first: the Tailscale module must have run so the node has a Tailscale IPv4.
+   - `docker` (Pi 4 and Pi 5) installs `docker.io`, enables it, and writes `/etc/docker/daemon.json` only when a data root or registry mirror is entered. Existing images do not move when the data root changes.
+   - `telegraf` is still configured only by the first-boot script; the Ansible module has no tasks yet.
 
 ## SD Bootstrap + Callback (Recommended)
 1. Start the callback site:
@@ -126,6 +133,7 @@ Order: reset the cluster to the NucBox alone (`scripts/k3s_fresh_start.sh`), fla
 6. If the callback host is reached through the router WAN or another NAT hop, the dashboard will show that upstream address in `source_ip`.
    - For example, Pi LAN leases on `192.168.174.x` can still appear as `10.255.x` in callback logs when the router NATs the request.
    - Use the router client list for the Pi's LAN lease and the callback dashboard for the observed request path.
+7. If a Pi called back but never appears in `tailscale status`, read its first-boot log: `sudo grep -n 'rack-tailscale\|rack:' /var/log/cloud-init-output.log`. The first-boot script waits for NTP before any HTTPS install and retries the Tailscale install 5 times; the same log shows a rejected auth key (`tailscale up failed`). The NucBox cannot reach a Pi behind the router NAT (`192.168.174.x`) until it is on the tailnet, and Node Ops prefers a node's Tailscale address over any LAN or NAT address once it has one.
 
 ## Tailscale Policy Page
 The Tailscale ACL page (`/tailscale-acl`) builds the rack's tailnet policy on the server (`callback_site/tailscale_policy.py`, `POST /api/tailscale/policy`). It never calls Tailscale: you paste the result into Access Controls. Tags come from the same board registry the SD script and Ansible group_vars use, and tests fail if they drift.
@@ -174,6 +182,15 @@ Rollout: merge the sections rather than replacing your policy, keep the default 
 7. Run "Apply" for optional provisioning once checks look correct.
 8. Use plan-only checks by disabling Ansible execution in the Node Ops UI.
 9. Expect the provisioning path to be non-interactive: it should not hang on vault prompts, and it should use the bootstrap SSH identity/private key that matches the original cloud-init bootstrap.
+10. Check Module and Apply Module report progress on the line under the module buttons (and on the status line above the table).
+
+### Saved module configurations
+The module panel remembers its work, so a setup can be named and reapplied instead of retyped.
+- Every "Save Module Inputs" is recorded per module (identical re-saves only refresh the time; the 30 newest unnamed saves are kept).
+- "Save as named configuration" keeps the current inputs under a name. A name is unique per module; reusing it moves the label to the newer save. Entries can be renamed or deleted.
+- **Load** fills the selected node's saved inputs from an entry; **Apply** loads it and then runs the module apply.
+- "Draw from existing settings" lists values already enabled elsewhere, each showing the fields it would fill: other nodes' Node Ops inputs (origin "Node Ops") and SD-card option profiles from the provisioning dashboard (origin "Provisioning dashboard"). SD options map onto module fields, for example `k3s_role` to the node role and the `server:` and `token:` lines of `k3s_config` to the server endpoint and token.
+- Secrets are stored so they can be reapplied, but the browser only ever sees "(secret kept)". The data lives in `callback_site/data/module_presets.json` (git-ignored) and is cleared by the Node Ops settings reset.
 
 ## Kubernetes (K8s) Primer
 - What it is: Kubernetes is a scheduler and control plane for running containerized workloads across multiple machines.

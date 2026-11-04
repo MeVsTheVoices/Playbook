@@ -34,7 +34,6 @@ const sdOptionsProfileStatusEl = document.getElementById("sd-options-profile-sta
 
 const sdOptionsConfigCountEl = document.getElementById("sd-options-config-count");
 
-const sdOptionsLoadBtn = document.getElementById("sd-options-load");
 
 const sdOptionsSaveBtn = document.getElementById("sd-options-save");
 

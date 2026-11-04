@@ -551,6 +551,15 @@ th, td {
   color: var(--muted);
   font-size: 0.83rem;
 }
+.collapsible-count {
+  margin: 0.25rem 0 0;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #0f766e;
+}
 .collapsible-indicator {
   margin-left: auto;
   font-size: 1.1rem;

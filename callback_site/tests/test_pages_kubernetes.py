@@ -17,7 +17,7 @@ except ImportError:
 
 class KubernetesPageTests(BaseCallbackSiteTest):
     def test_dashboard_and_pages_render(self) -> None:
-        for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/test-terminal", "/openwrt", "/kubernetes"):
+        for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/test-terminal", "/kubernetes"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
 

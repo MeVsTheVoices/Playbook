@@ -46,6 +46,7 @@ async function loadSummary() {
   renderProfileSegmentOptions();
   manualNodes = (state.provisioning && typeof state.provisioning.manual_nodes === "object") ? state.provisioning.manual_nodes : {};
   renderManualNodeSelector();
+  renderOpenwrtHosts();
 
   statusByNode = {};
   for (const node of nodes) {

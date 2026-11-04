@@ -28,6 +28,12 @@ class ImageLibraryTests(BaseCallbackSiteTest):
         self.assertIn('images.js', text)
         self.assertIn('window.__IMAGE_CATALOG__', text)
 
+    def test_images_page_has_bulk_pull_controls(self) -> None:
+        text = self.client.get("/images").get_data(as_text=True)
+        self.assertIn('id="pull-all-missing"', text)
+        script = self.client.get("/static/images.js").get_data(as_text=True)
+        self.assertIn("catalog-select-all", script)
+        self.assertIn("Pull selected", script)
     def test_images_page_renders_collapsible_manual_section(self) -> None:
         response = self.client.get("/images")
         self.assertEqual(response.status_code, 200)

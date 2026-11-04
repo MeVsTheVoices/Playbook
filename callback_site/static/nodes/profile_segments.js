@@ -11,6 +11,13 @@ function renderProfileSegmentOptions() {
 function renderProfileSegments(segments) {
   profileSegmentListEl.innerHTML = "";
   const entries = Object.entries(segments || {}).sort(([a], [b]) => a.localeCompare(b));
+  const total = entries.reduce((sum, [, items]) => sum + (Array.isArray(items) ? items.length : 0), 0);
+  const summaryEl = document.getElementById("profile-segment-summary");
+  if (summaryEl) {
+    summaryEl.textContent = total
+      ? `${total} segment${total === 1 ? "" : "s"} defined across ${entries.length} profile${entries.length === 1 ? "" : "s"}: ${entries.map(([id]) => id).join(", ")}`
+      : "No segments defined yet";
+  }
   if (!entries.length) {
     profileSegmentListEl.innerHTML = '<div class="note">No saved profile segments yet.</div>';
     return;

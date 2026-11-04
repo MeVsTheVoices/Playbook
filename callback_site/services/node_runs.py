@@ -566,7 +566,6 @@ def _telegraf_influx_dummy_check(inputs: Dict[str, str], timeout: int = 8) -> Di
         "influx_bucket": bucket,
         "influx_org": org,
         "influx_access_key": access_key,
-        "influx_secret_key": secret_key,
     }
     missing = [k for k, v in required.items() if not v]
     if missing:
@@ -628,10 +627,11 @@ def _telegraf_influx_dummy_check(inputs: Dict[str, str], timeout: int = 8) -> Di
 
     token_candidates: List[Dict[str, str]] = [{"label": "access_key", "token": access_key}]
     combo = f"{access_key}:{secret_key}"
-    if combo != access_key:
+    if secret_key:
         token_candidates.append({"label": "access_key:secret_key", "token": combo})
 
     write_ok = False
+    auth_mode = ""
     last_write_error = ""
     last_status: int | None = None
 
@@ -652,6 +652,7 @@ def _telegraf_influx_dummy_check(inputs: Dict[str, str], timeout: int = 8) -> Di
                 last_status = status
                 if status in {204, 202, 200}:
                     write_ok = True
+                    auth_mode = candidate["label"]
                     checks.append(
                         {
                             "name": "dummy_write",
@@ -683,6 +684,7 @@ def _telegraf_influx_dummy_check(inputs: Dict[str, str], timeout: int = 8) -> Di
         "endpoint": endpoint,
         "bucket": bucket,
         "org": org,
+        "auth_mode": auth_mode,
         "checks": checks,
     }
 

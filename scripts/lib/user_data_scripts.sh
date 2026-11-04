@@ -302,6 +302,10 @@ cat >> "$USER_DATA_OUT" <<EOF
         exit 0
       fi
 
+      # The config can hold the Influx token: root and the telegraf group only.
+      chgrp telegraf /etc/telegraf/telegraf.conf 2>/dev/null || true
+      chmod 0640 /etc/telegraf/telegraf.conf || true
+
       systemctl enable telegraf || true
       systemctl restart telegraf || true
 

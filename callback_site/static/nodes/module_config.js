@@ -61,6 +61,16 @@ function appendModuleFieldHint(spec, parent = moduleDetailEl) {
   parent.appendChild(hint);
 }
 
+// Scroll the module list itself (not the page) so the module being edited stays in view.
+function keepRowVisible(row) {
+  const box = document.getElementById("module-list-scroll");
+  if (!box || !row) return;
+  const top = row.offsetTop;
+  const bottom = top + row.offsetHeight;
+  if (top < box.scrollTop) box.scrollTop = top;
+  else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight;
+}
+
 function groupDefault(spec, group) {
   const byGroup = spec.default_by_group;
   return byGroup && group in byGroup ? byGroup[group] : spec.default;
@@ -92,6 +102,7 @@ function renderModuleSection() {
     moduleConnectionContext.textContent = `Admin SSH target: ${adminAddress} (${adminPath}). K3s peer/API path: Tailscale (${clusterIp}); node role is derived from Pi family.`;
   }
   moduleStatusBodyEl.innerHTML = "";
+  let selectedRow = null;
   if (!profiles.length) {
     moduleStatusBodyEl.innerHTML = "<tr><td colspan='4' style='color:var(--muted)'>No modules available.</td></tr>";
   }
@@ -114,7 +125,9 @@ function renderModuleSection() {
       renderModuleSection();
     });
     moduleStatusBodyEl.appendChild(tr);
+    if (profile.id === selectedModuleId) selectedRow = tr;
   }
+  keepRowVisible(selectedRow);
 
   const profile = profiles.find((p) => p.id === selectedModuleId);
   if (!profile) {
@@ -250,6 +263,23 @@ function renderModuleSection() {
     appendModuleFieldHint(spec, fieldHost);
     appendModuleFieldWarning(spec, fieldHost);
   }
+  if (profile.id === "telegraf") {
+    const testRow = document.createElement("div");
+    testRow.className = "inline-actions";
+    testRow.style.marginTop = "0.6rem";
+    const testButton = document.createElement("button");
+    testButton.type = "button";
+    testButton.className = "secondary";
+    testButton.id = "telegraf-test-influx";
+    testButton.textContent = "Test Influx connection";
+    const testResult = document.createElement("p");
+    testResult.className = "note";
+    testResult.id = "telegraf-test-result";
+    testButton.addEventListener("click", () => testInfluxConnection(testButton, testResult));
+    testRow.appendChild(testButton);
+    moduleDetailEl.appendChild(testRow);
+    moduleDetailEl.appendChild(testResult);
+  }
   applyModuleRoleVisibility();
   renderModulePresets();
 }
@@ -265,6 +295,39 @@ function collectModuleInputs() {
     out[input.getAttribute("data-module-field")] = input.value.trim();
   });
   return out;
+}
+
+// Writes one dummy point to Influx with the entered values (saved secrets fill blank secret fields) and keeps the token form that worked.
+async function testInfluxConnection(button, resultEl) {
+  const nodeName = provisionNode.value;
+  if (!nodeName) {
+    resultEl.textContent = "Select a node first.";
+    return;
+  }
+  button.disabled = true;
+  resultEl.textContent = "Testing the Influx connection...";
+  try {
+    const res = await fetchJsonWithTimeout("/api/nodes/telegraf/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node: nodeName, profile_inputs: { telegraf: collectModuleInputs() } }),
+    }, 30000);
+    const data = await res.json();
+    const result = data.result || {};
+    const checks = (result.checks || []).map((c) => `${c.name}: ${c.ok ? "ok" : `failed${c.error ? ` (${c.error})` : ""}`}`);
+    if (!data.ok) {
+      const missing = (result.missing || []).length ? ` Missing: ${result.missing.join(", ")}.` : "";
+      resultEl.textContent = `${result.error || data.error || "Influx test failed."}${missing} ${checks.join(" · ")}`.trim();
+      return;
+    }
+    const modeInput = moduleDetailEl.querySelector("[data-module-field='influx_token_mode']");
+    if (modeInput && result.auth_mode) modeInput.value = result.auth_mode;
+    resultEl.textContent = `${checks.join(" · ")}. Token form set to ${result.auth_mode || "access_key"}; save the module inputs to keep it.`;
+  } catch (err) {
+    resultEl.textContent = `Influx test failed: ${String(err && err.message ? err.message : err)}`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function saveModuleInputs() {

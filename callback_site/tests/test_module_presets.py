@@ -125,6 +125,44 @@ class ModulePresetTests(BaseCallbackSiteTest):
         self.assertEqual(state["node_inputs"][NODE_B]["kubernetes"]["server_token"], "K10abc::server:tokensecret")
         self.assertIn("kubernetes", state["node_configs"][NODE_B], "loading activates the module on the node")
 
+    def test_sd_telegraf_settings_map_onto_the_telegraf_module(self) -> None:
+        services.sd_profiles._save_sd_option_profiles({
+            "test-sd-telegraf": {
+                "name": "test-sd-telegraf",
+                "description": "",
+                "distribution": "standard",
+                "pi_only": True,
+                "updated_at": "2026-11-03T20:00:00+00:00",
+                "options": {
+                    "install_telegraf": True,
+                    "telegraf_influx_url": "https://influx.example:8086",
+                    "telegraf_influx_token": "influx-token-secret",
+                    "telegraf_influx_org": "homelab",
+                    "telegraf_influx_bucket": "telegraf",
+                },
+            },
+            "test-sd-no-telegraf": {
+                "name": "test-sd-no-telegraf",
+                "description": "",
+                "distribution": "standard",
+                "pi_only": True,
+                "updated_at": "2026-11-03T20:00:00+00:00",
+                "options": {"telegraf_influx_url": "https://ignored.example"},
+            },
+        })
+        listed = self.client.get(f"/api/nodes/module-presets?module=telegraf&node={NODE_A}")
+        self.assertNotIn("influx-token-secret", listed.get_data(as_text=True))
+        sources = {s["source"]: s for s in listed.get_json()["sources"]}
+        self.assertNotIn("sd:test-sd-no-telegraf", sources, "Telegraf options only count when the agent was enabled")
+        fields = {f["id"]: f for f in sources["sd:test-sd-telegraf"]["fields"]}
+        self.assertEqual(set(fields), {"influx_endpoint", "influx_access_key", "influx_org", "influx_bucket"})
+        self.assertTrue(fields["influx_access_key"]["sensitive"])
+
+        loaded = self.client.post("/api/nodes/module-presets/load", json={"node": NODE_B, "module": "telegraf", "source": "sd:test-sd-telegraf"})
+        self.assertEqual(loaded.status_code, 200, loaded.get_data(as_text=True))
+        saved = services.node_state._load_node_provisioning()["node_inputs"][NODE_B]["telegraf"]
+        self.assertEqual(saved["influx_access_key"], "influx-token-secret")
+
     def test_delete_and_error_paths(self) -> None:
         self.save_tailscale(NODE_A, tailnet="a.ts.net")
         preset_id = self.listing("tailscale", NODE_A)["presets"][0]["id"]

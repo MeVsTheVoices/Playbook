@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
 
-from flask import Blueprint, render_template
+from flask import Blueprint, redirect, render_template
 
 from k3s_lightweight import INGRESS_CHOICES as K3S_INGRESS_CHOICES
 from k3s_lightweight import INGRESS_DEFAULT as K3S_INGRESS_DEFAULT
@@ -56,8 +56,8 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
         return render_template("tailscale_acl.html")
 
     @pages.get("/openwrt")
-    def openwrt_page() -> str:
-        return render_template("openwrt.html", rack_name=_load_app_settings().get("rack_name", "homelab"))
+    def openwrt_page() -> Any:
+        return redirect("/nodes#openwrt-host")
 
     @pages.get("/fragments/tailscale-acl/overview")
     def tailscale_acl_overview_fragment() -> str:

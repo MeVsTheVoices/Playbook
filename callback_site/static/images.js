@@ -46,6 +46,18 @@
   let currentCatalogPullJob = null;
   let catalogRefreshTimer = null;
   let managedImageRecords = [];
+  let catalogEntriesCache = [];
+
+  function pullAllMissingCatalogEntries() {
+    const ids = catalogEntriesCache
+      .filter((entry) => !entry.local_available && String(entry.image_url || "").trim())
+      .map((entry) => String(entry.id || ""));
+    if (!ids.length) {
+      catalogPullStatusEl.textContent = "Nothing missing: every downloadable preset is already cached.";
+      return;
+    }
+    startCatalogPullForIds(ids, `${ids.length} missing preset${ids.length === 1 ? "" : "s"}`);
+  }
 
   function availabilityGlyph(available) {
     return available ? "✅" : "❌";
@@ -537,12 +549,56 @@
         empty.textContent = `No ${group.key === "missing" ? "missing" : "downloaded"} presets right now.`;
         body.appendChild(empty);
       } else {
+        const toolbar = document.createElement("div");
+        toolbar.className = "catalog-group-toolbar";
+        const selectAllLabel = document.createElement("label");
+        selectAllLabel.className = "catalog-select-all";
+        const selectAll = document.createElement("input");
+        selectAll.type = "checkbox";
+        selectAllLabel.appendChild(selectAll);
+        selectAllLabel.appendChild(document.createTextNode(" Select all"));
+        const bulkBtn = document.createElement("button");
+        bulkBtn.type = "button";
+        bulkBtn.className = "catalog-inline-btn";
+        bulkBtn.disabled = true;
+        bulkBtn.textContent = "Pull selected (0)";
+        toolbar.appendChild(selectAllLabel);
+        toolbar.appendChild(bulkBtn);
+        body.appendChild(toolbar);
+
+        const checkedBoxes = () => Array.from(body.querySelectorAll("input.catalog-select:checked"));
+        const refreshToolbar = () => {
+          const boxes = Array.from(body.querySelectorAll("input.catalog-select:not(:disabled)"));
+          const checked = checkedBoxes().length;
+          bulkBtn.disabled = checked === 0;
+          bulkBtn.textContent = `Pull selected (${checked})`;
+          selectAll.checked = boxes.length > 0 && checked === boxes.length;
+        };
+        selectAll.addEventListener("change", () => {
+          body.querySelectorAll("input.catalog-select:not(:disabled)").forEach((box) => { box.checked = selectAll.checked; });
+          refreshToolbar();
+        });
+        bulkBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          const ids = checkedBoxes().map((box) => String(box.value || ""));
+          startCatalogPullForIds(ids, `${ids.length} selected preset${ids.length === 1 ? "" : "s"}`);
+        });
+
         for (const entry of group.items) {
           const item = document.createElement("div");
           item.className = "catalog-group-item";
           item.dataset.catalogId = entry.id || "";
+          const pick = document.createElement("input");
+          pick.type = "checkbox";
+          pick.className = "catalog-select";
+          pick.value = entry.id || "";
+          pick.disabled = !String(entry.image_url || "").trim();
+          pick.title = pick.disabled ? "No download URL for this preset" : "Select for bulk pull";
+          pick.addEventListener("change", refreshToolbar);
+          item.appendChild(pick);
           const main = document.createElement("div");
           main.className = "catalog-group-item-main";
+          main.style.flex = "1";
           const title = document.createElement("div");
           title.className = "catalog-group-item-title";
           title.textContent = entry.label || entry.id || "Catalog entry";
@@ -591,6 +647,7 @@
     }
 
     const entries = Array.isArray(data.entries) ? data.entries : [];
+    catalogEntriesCache = entries;
     catalogAvailabilityBodyEl.innerHTML = "";
     if (!entries.length) {
       const tr = document.createElement("tr");
@@ -823,6 +880,7 @@
     document.getElementById("save-image-record").addEventListener("click", saveImageRecord);
     document.getElementById("clear-image-record").addEventListener("click", clearImageRecordForm);
     document.getElementById("start-catalog-pull").addEventListener("click", startCatalogPull);
+    document.getElementById("pull-all-missing").addEventListener("click", pullAllMissingCatalogEntries);
     document.getElementById("refresh-catalog-availability").addEventListener("click", loadCatalogAvailability);
     document.getElementById("refresh-cloud-init-profiles").addEventListener("click", loadCloudInitProfiles);
 

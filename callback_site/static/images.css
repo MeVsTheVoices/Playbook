@@ -406,6 +406,14 @@ button { background: var(--accent); color: white; border: none; cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 .catalog-group-item:hover { transform: translateY(-1px); }
+.catalog-group-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+}
+.catalog-select-all { display: flex; align-items: center; gap: 0.35rem; margin: 0; font-size: 0.82rem; }
+.catalog-select-all input, .catalog-group-item input.catalog-select { width: auto; margin: 0; }
 .catalog-group-item.pulling {
   border-color: #f59e0b;
   background: linear-gradient(90deg, #fffbeb 0%, #fff7ed 50%, #fffbeb 100%);

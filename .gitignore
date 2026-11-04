@@ -16,6 +16,7 @@ callback_site/data/app_settings.json
 callback_site/data/node_monitor_config.json
 callback_site/data/node_monitor_state.json
 callback_site/data/node_provisioning.json
+callback_site/data/module_presets.json
 callback_site/data/sd_option_profiles.json
 callback_site/data/sd_option_profile_state.json
 callback_site/data/image_download_catalog.jsonl

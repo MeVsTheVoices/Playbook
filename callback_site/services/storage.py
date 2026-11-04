@@ -58,6 +58,9 @@ SD_OPTION_PROFILE_STATE_FILE = DATA_DIR / "sd_option_profile_state.json"
 PROFILE_SEGMENTS_FILE = DATA_DIR / "profile_segments.json"
 
 
+MODULE_PRESETS_FILE = DATA_DIR / "module_presets.json"
+
+
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 
 

@@ -549,6 +549,13 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         self.assertEqual(target, "192.168.2.20")
         self.assertEqual(source, "callback")
 
+    def test_preferred_node_connect_target_prefers_tailscale_over_lan(self) -> None:
+        target, source = services.network._preferred_node_connect_target("node-01", "100.70.1.5", "192.168.174.88")
+        self.assertEqual((target, source), ("100.70.1.5", "inventory"))
+        target, source = services.network._preferred_node_connect_target("node-01", "192.168.2.99", "100.70.1.6")
+        self.assertEqual((target, source), ("100.70.1.6", "callback"))
+        self.assertTrue(services.network._is_usable_callback_ip("100.70.1.5"))
+
     def test_preferred_node_connect_target_uses_recent_callback_over_inventory(self) -> None:
         target, source = services.network._preferred_node_connect_target(
             "node-01",

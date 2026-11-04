@@ -19,6 +19,12 @@ PI5_ONLY = {"Resolve Longhorn inputs from provisioning payload", "Ensure Longhor
             "Ensure iscsid service is enabled and running", "Ensure open-iscsi service is enabled and running",
             "Ensure Longhorn storage path exists", "Check whether this node is a K3s server",
             "Install or update Longhorn via K3s HelmChart manifest"}
+# The Docker module targets Pi 4 and Pi 5 only (see its groups in NODE_PROVISION_PROFILES).
+DOCKER_TASKS = {
+    "Resolve Docker inputs", "Install Docker engine", "Ensure the Docker config directory exists",
+    "Ensure the Docker data directory exists", "Write Docker daemon settings", "Ensure Docker is enabled and running",
+    "Restart Docker when its daemon settings change",
+}
 # The 3B+ has a light-worker role instead of worker, so these are named differently.
 THREEB_RENAMES = {
     "Validate Pi 4 role": "Validate 3B+ role",
@@ -56,7 +62,7 @@ class RoleParityTests(unittest.TestCase):
         self.assertEqual(pi4, pi5)
 
     def test_3bplus_has_every_pi4_task_apart_from_its_renames(self) -> None:
-        pi4 = {THREEB_RENAMES.get(t["name"], t["name"]) for t in load_tasks("raspberry_pi4") if "name" in t}
+        pi4 = {THREEB_RENAMES.get(t["name"], t["name"]) for t in load_tasks("raspberry_pi4") if "name" in t and t["name"] not in DOCKER_TASKS}
         three = [t["name"] for t in load_tasks("raspberry_pi_3bplus") if "name" in t]
         self.assertEqual(len(three), len(set(three)), "duplicate task names")
         self.assertEqual(set(three), pi4, "the 3B+ role has drifted from the Pi 4 role (missing or extra tasks)")

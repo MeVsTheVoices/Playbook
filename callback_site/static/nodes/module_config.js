@@ -119,6 +119,7 @@ function renderModuleSection() {
   const profile = profiles.find((p) => p.id === selectedModuleId);
   if (!profile) {
     moduleDetailEl.innerHTML = "<p class='note'>Select a module from the table to view its parameter template.</p>";
+    renderModulePresets();
     return;
   }
   const saved = (nodeInputs[nodeName] && typeof nodeInputs[nodeName] === "object" && typeof nodeInputs[nodeName][profile.id] === "object")
@@ -250,6 +251,7 @@ function renderModuleSection() {
     appendModuleFieldWarning(spec, fieldHost);
   }
   applyModuleRoleVisibility();
+  renderModulePresets();
 }
 
 function collectModuleInputs() {
@@ -269,11 +271,11 @@ async function saveModuleInputs() {
   const nodeName = provisionNode.value;
   if (!nodeName) {
     moduleStatusEl.textContent = "Select a node first.";
-    return;
+    return false;
   }
   if (!selectedModuleId) {
     moduleStatusEl.textContent = "Select a module first.";
-    return;
+    return false;
   }
 
   const selected = new Set(selectedProfileIdsForNode(nodeName));
@@ -287,7 +289,7 @@ async function saveModuleInputs() {
     const data = await res.json();
     if (!res.ok || !data.ok) {
       moduleStatusEl.textContent = data.error || "Could not add the module to the node selection.";
-      return;
+      return false;
     }
   }
 
@@ -299,10 +301,11 @@ async function saveModuleInputs() {
   const data = await res.json();
   if (!res.ok || !data.ok) {
     moduleStatusEl.textContent = data.error || "Could not save module inputs.";
-    return;
+    return false;
   }
   moduleStatusEl.textContent = `Saved inputs for module '${selectedModuleId}'.`;
   await loadSummary();
+  return true;
 }
 
 function checkedModulePlaceholder() {

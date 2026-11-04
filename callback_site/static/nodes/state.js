@@ -6,7 +6,15 @@ const configStatus = document.getElementById("config-status");
 
 const monitorStatus = document.getElementById("monitor-status");
 
-const provisionStatus = document.getElementById("provision-status");
+const provisionStatusEl = document.getElementById("provision-status");
+
+// Check/Apply Module sit beside #module-status, far from #provision-status, so show progress in both.
+const provisionStatus = {
+  set textContent(text) {
+    provisionStatusEl.textContent = text;
+    moduleStatusEl.textContent = text;
+  },
+};
 
 const provisionLog = document.getElementById("provision-log");
 

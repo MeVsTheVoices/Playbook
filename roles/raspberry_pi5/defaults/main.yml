@@ -27,6 +27,9 @@ raspberry_pi5_tailscale_advertise_routes: []
 # Force re-running tailscale up even if device is already connected.
 raspberry_pi5_tailscale_force_reconfigure: false
 
+# K3s release the playbook installs on a node that does not run it yet. Blank matches the server it joins.
+raspberry_pi5_k3s_version: ""
+
 # Longhorn defaults (used when provision_profile=longhorn).
 # Keep storage_path configurable so future SD -> NVMe boot/storage moves only
 # require changing this path, not the workflow.

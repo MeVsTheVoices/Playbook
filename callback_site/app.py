@@ -10,6 +10,7 @@ from flask import Flask
 from launch import maybe_reexec_with_sudo
 from routes.callbacks import register_callback_routes
 from routes.images import catalog_entries_for_ui, register_image_routes
+from routes.module_presets import register_module_preset_routes
 from routes.monitor import register_monitor_routes
 from routes.nodes import register_node_routes
 from routes.openwrt import register_openwrt_routes
@@ -76,6 +77,7 @@ register_ssh_routes(app)
 register_test_terminal_routes(app)
 register_monitor_routes(app)
 register_node_routes(app)
+register_module_preset_routes(app)
 
 
 if __name__ == "__main__":

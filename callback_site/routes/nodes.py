@@ -13,6 +13,7 @@ from flask import jsonify, request
 from domain_defaults import NODE_PROVISION_PROFILES
 
 from services.k3s_config import LONGFORM_CHECKS, _check_longform, _longform_input_errors
+from services.module_presets import _record_save
 from services.node_inventory import _node_ops_inventory_view, _ping_status
 from services.node_runs import _apply_node_provisioning, _send_webhook, _telegraf_influx_dummy_check
 from services.node_state import (
@@ -269,6 +270,8 @@ def register_node_routes(app: Any) -> None:
         node_inputs = state.setdefault("node_inputs", {})
         node_inputs[node_name] = _merge_node_profile_inputs(node_inputs.get(node_name), sanitized)
         _save_node_provisioning(state)
+        for module_id in sanitized:
+            _record_save(node_name, module_id, node_inputs[node_name].get(module_id, {}))
         return jsonify({"ok": True, "node": node_name, "ignored_unselected_modules": ignored})
 
     @app.post("/api/nodes/telegraf/test")

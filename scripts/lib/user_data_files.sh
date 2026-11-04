@@ -25,7 +25,17 @@ TS_KEY_FILE
       log() { echo "rack-tailscale: $*" >&2; }
 
       if ! command -v tailscale >/dev/null 2>&1; then
-        if ! curl -fsSL https://tailscale.com/install.sh | sh; then
+        # First boot races DNS, the clock and cloud-init's own apt run, so retry instead of giving up.
+        installed=false
+        for attempt in 1 2 3 4 5; do
+          if curl -fsSL https://tailscale.com/install.sh | sh; then
+            installed=true
+            break
+          fi
+          log "install attempt ${attempt} failed"
+          sleep 20
+        done
+        if [[ "$installed" != true ]]; then
           log "install failed; continuing without Tailscale"
           exit 0
         fi

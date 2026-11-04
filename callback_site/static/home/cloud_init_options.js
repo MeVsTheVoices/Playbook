@@ -65,7 +65,6 @@ function updateSdOptionsConfiguredCount() {
 
 function updateSdOptionActions() {
   const hasSelected = Boolean(String(sdOptionsProfileSelectEl.value || "").trim());
-  sdOptionsLoadBtn.disabled = !hasSelected;
   sdOptionsDeleteBtn.disabled = !hasSelected;
   sdOptionsSaveBtn.disabled = false;
 }
@@ -217,15 +216,8 @@ async function loadSdOptionProfiles() {
 }
 
 function loadSelectedSdOptionProfile() {
-  let name = String(sdOptionsProfileSelectEl.value || "").trim();
-  if (!name && sdOptionProfileOrder.length === 1) {
-    name = sdOptionProfileOrder[0];
-    sdOptionsProfileSelectEl.value = name;
-    sdOptionsProfileNameEl.value = name;
-    sdOptionsProfileStatusEl.textContent = `Auto-selected the only available template '${name}'.`;
-  }
+  const name = String(sdOptionsProfileSelectEl.value || "").trim();
   if (!name) {
-    sdOptionsProfileStatusEl.textContent = "Select a template to load.";
     return;
   }
   const profile = sdOptionProfiles[name];

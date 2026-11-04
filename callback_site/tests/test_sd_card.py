@@ -24,6 +24,8 @@ class SdCardTests(BaseCallbackSiteTest):
         self.assertIn("Cloud-Init Optional Settings", text)
         self.assertIn("Profile Selection", text)
         self.assertIn("Save Current As Template", text)
+        self.assertNotIn("Load Selected Template", text)
+        self.assertNotIn('id="sd-options-load"', text)
         self.assertIn("Delete Selected Template", text)
         self.assertIn("Apply Security Starter Defaults", text)
         self.assertIn("Reset Optional Fields", text)
@@ -86,12 +88,18 @@ class SdCardTests(BaseCallbackSiteTest):
         self.assertIn(str(entry.get("id", "")), text)
         self.assertIn(cache_path, text)
 
-    def test_home_page_auto_selects_single_cloud_init_profile(self) -> None:
+    def test_home_page_loads_cloud_init_profile_on_select(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         text = self.page_text(response)
-        self.assertIn("Auto-selected the only available template", text)
-        self.assertIn("sdOptionProfileOrder.length === 1", text)
+        self.assertNotIn("sdOptionsLoadBtn", text)
+        self.assertIn(
+            'sdOptionsProfileSelectEl.addEventListener("change", () => {\n'
+            '  const name = String(sdOptionsProfileSelectEl.value || "").trim();\n'
+            "  if (name && sdOptionProfiles[name]) {\n"
+            "    loadSelectedSdOptionProfile();",
+            text,
+        )
 
     def test_home_page_motd_banner_has_collapsed_variables_pulldown(self) -> None:
         response = self.client.get("/")

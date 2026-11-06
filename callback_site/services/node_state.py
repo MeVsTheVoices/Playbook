@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -11,6 +12,8 @@ from typing import Any, Dict, List
 from domain_defaults import NODE_PROVISION_PROFILES
 
 from services.storage import (
+    BOOT_LOGS_DIR,
+    CONNECTION_PROFILES_FILE,
     KEYS_DIR,
     KEY_ARCHIVE_DIR,
     KEY_ARCHIVE_INDEX_FILE,
@@ -257,6 +260,10 @@ def _reset_node_ops_settings() -> Dict[str, Any]:
     _atomic_write_text(NODE_PROVISION_FILE, json.dumps(node_prov, indent=2))
     # Saved configurations hold the same secrets as the node inputs they were taken from.
     _atomic_write_text(MODULE_PRESETS_FILE, "[]")
+    # Connection history and boot logs describe the nodes being reset.
+    _atomic_write_text(CONNECTION_PROFILES_FILE, json.dumps({"nodes": {}}, indent=2))
+    removed_boot_logs = sum(1 for _ in BOOT_LOGS_DIR.rglob("*.json")) if BOOT_LOGS_DIR.exists() else 0
+    shutil.rmtree(BOOT_LOGS_DIR, ignore_errors=True)
 
     deleted_ssh_files = _purge_files(KEYS_DIR)
     deleted_archive_files = _purge_files(KEY_ARCHIVE_DIR)
@@ -268,6 +275,8 @@ def _reset_node_ops_settings() -> Dict[str, Any]:
     return {
         "node_config": True,
         "node_provisioning": True,
+        "connection_profiles": True,
+        "boot_logs_removed": removed_boot_logs,
         "deleted_ssh_files": deleted_ssh_files,
         "deleted_archive_files": deleted_archive_files,
         "deleted_archive_index": not KEY_ARCHIVE_INDEX_FILE.exists(),

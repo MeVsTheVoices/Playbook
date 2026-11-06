@@ -753,6 +753,24 @@ button {
 .event-row-selected td {
   background: #ccfbf1 !important;
 }
+.events-table tbody tr.event-row-condensed td {
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  max-width: 9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.events-table tbody tr.event-row-condensed .payload-kv { display: none; }
+.events-table tbody tr.event-row-condensed .cert-pill { display: none; }
+.event-twisty {
+  cursor: pointer;
+  color: #0f766e;
+  font-weight: 700;
+  user-select: none;
+}
 @keyframes event-row-fade {
   from { background: #e0f2fe; }
   to { background: transparent; }

@@ -153,6 +153,10 @@ eventStageEl.addEventListener("change", () => {
 
 initSidebar();
 
+if (eventsToggleOlderBtn) {
+  eventsToggleOlderBtn.addEventListener("click", toggleOlderEvents);
+}
+
 ensureK3sConfigDefaults();
 
 rebuildCatalogFilters();

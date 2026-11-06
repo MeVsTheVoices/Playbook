@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -154,6 +155,158 @@ def _run_kubectl_json(args: List[str]) -> tuple[Dict[str, Any] | None, str]:
     return None, " | ".join(e for e in errors if e)[:1000] or "kubectl command failed"
 
 
+def _not_ready_minutes(conditions: List[Any]) -> int | None:
+    """Minutes since the Ready condition last changed, for a node that is not Ready."""
+    for cond in conditions:
+        if isinstance(cond, dict) and str(cond.get("type", "")) == "Ready":
+            raw = str(cond.get("lastTransitionTime", "")).strip()
+            try:
+                changed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            return max(0, int((datetime.now(timezone.utc) - changed).total_seconds() // 60))
+    return None
+
+
+def _node_row(item: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
+    labels = metadata.get("labels", {}) if isinstance(metadata.get("labels"), dict) else {}
+    status = item.get("status", {}) if isinstance(item.get("status"), dict) else {}
+    conditions = status.get("conditions", []) if isinstance(status.get("conditions"), list) else []
+    is_ready = any(
+        isinstance(cond, dict)
+        and str(cond.get("type", "")) == "Ready"
+        and str(cond.get("status", "")) == "True"
+        for cond in conditions
+    )
+    addresses = status.get("addresses", []) if isinstance(status.get("addresses"), list) else []
+    internal_ip = ""
+    external_ip = ""
+    for address in addresses:
+        if not isinstance(address, dict):
+            continue
+        address_type = str(address.get("type", ""))
+        address_value = str(address.get("address", ""))
+        if address_type == "InternalIP" and not internal_ip:
+            internal_ip = address_value
+        elif address_type == "ExternalIP" and not external_ip:
+            external_ip = address_value
+    node_info = status.get("nodeInfo", {}) if isinstance(status.get("nodeInfo"), dict) else {}
+    return {
+        "name": str(metadata.get("name", "")),
+        "ready": is_ready,
+        "not_ready_minutes": None if is_ready else _not_ready_minutes(conditions),
+        "role": "control-plane" if "node-role.kubernetes.io/control-plane" in labels or str(labels.get("role", "")) == "control-plane" else "worker",
+        "internal_ip": internal_ip,
+        "external_ip": external_ip,
+        "os_image": str(node_info.get("osImage", "")),
+        "kernel": str(node_info.get("kernelVersion", "")),
+        "container_runtime": str(node_info.get("containerRuntimeVersion", "")),
+        "labels": ", ".join(sorted(str(k) for k in labels.keys())[:6]),
+    }
+
+
+NODE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
+
+
+DEFAULT_STALE_MINUTES = 10
+
+
+def _stale_nodes(min_minutes: int = DEFAULT_STALE_MINUTES) -> Dict[str, Any]:
+    """Split NotReady nodes into those old enough to clear, those still within the grace period, and protected ones."""
+    doc, error = _run_kubectl_json(["get", "nodes"])
+    if doc is None:
+        return {"ok": False, "error": error}
+    items = doc.get("items", []) if isinstance(doc, dict) and isinstance(doc.get("items"), list) else []
+    local_name = socket.gethostname().strip().lower()
+    result: Dict[str, Any] = {"ok": True, "min_minutes": min_minutes, "candidates": [], "waiting": [], "protected": [], "ready": []}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        row = _node_row(item)
+        entry = {key: row[key] for key in ("name", "role", "internal_ip", "not_ready_minutes")}
+        if row["ready"]:
+            result["ready"].append(entry)
+        elif row["name"].lower() == local_name:
+            result["protected"].append({**entry, "reason": "this is the node the site runs on"})
+        elif row["not_ready_minutes"] is None or row["not_ready_minutes"] < min_minutes:
+            result["waiting"].append(entry)
+        else:
+            result["candidates"].append(entry)
+    return result
+
+
+def _delete_node(name: str) -> tuple[bool, str]:
+    if not NODE_NAME_RE.fullmatch(name or "") or len(name) > 253:
+        return False, "invalid node name"
+    commands: List[List[str]] = []
+    k3s_cmd = shutil.which("k3s")
+    if k3s_cmd:
+        commands.append([k3s_cmd, "kubectl"])
+    kubectl_cmd = shutil.which("kubectl")
+    if kubectl_cmd:
+        commands.append([kubectl_cmd])
+    if not commands:
+        return False, "k3s/kubectl command not available"
+    errors: List[str] = []
+    for base in commands:
+        try:
+            proc = subprocess.run([*base, "delete", "node", name], capture_output=True, text=True, check=False, timeout=30)
+        except Exception as exc:  # noqa: BLE001 - report any launch failure to the operator
+            errors.append(str(exc))
+            continue
+        if proc.returncode == 0:
+            return True, (proc.stdout or "").strip() or f"node {name} deleted"
+        errors.append((proc.stderr or proc.stdout or "").strip() or f"kubectl exited {proc.returncode}")
+    return False, " | ".join(e for e in errors if e)[:500]
+
+
+def _clear_stale_nodes(min_minutes: int = DEFAULT_STALE_MINUTES, dry_run: bool = True, names: List[str] | None = None) -> Dict[str, Any]:
+    """Delete NotReady node objects (only those past the grace period); Ready and local nodes are never touched."""
+    found = _stale_nodes(min_minutes)
+    if not found.get("ok"):
+        return found
+    candidates = found["candidates"]
+    skipped: List[Dict[str, Any]] = []
+    if names is not None:
+        wanted = {str(n) for n in names}
+        ready_names = {entry["name"] for entry in found["ready"]}
+        known = {entry["name"] for group in ("candidates", "waiting", "protected", "ready") for entry in found[group]}
+        candidate_names = {c["name"] for c in candidates}
+        for name in sorted(wanted - candidate_names):
+            if name not in known:
+                reason = "not found"
+            elif name in ready_names:
+                reason = "node is Ready"
+            else:
+                reason = "not eligible"
+            skipped.append({"name": name, "reason": reason})
+        candidates = [c for c in candidates if c["name"] in wanted]
+    result: Dict[str, Any] = {
+        "ok": True,
+        "dry_run": dry_run,
+        "min_minutes": min_minutes,
+        "waiting": found["waiting"],
+        "protected": found["protected"],
+        "skipped": skipped,
+    }
+    if dry_run:
+        result["would_remove"] = candidates
+        return result
+    removed: List[str] = []
+    failed: List[Dict[str, str]] = []
+    for entry in candidates:
+        done, message = _delete_node(entry["name"])
+        if done:
+            removed.append(entry["name"])
+        else:
+            failed.append({"name": entry["name"], "error": message})
+    result["removed"] = removed
+    result["failed"] = failed
+    result["ok"] = not failed
+    return result
+
+
 def _kubernetes_local_summary() -> Dict[str, Any]:
     runtime = _detect_kubernetes_runtime(force_refresh=False)
     summary: Dict[str, Any] = {
@@ -233,45 +386,7 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
     summary["nodes_ready"] = nodes_ready
     summary["control_plane_nodes"] = control_plane_nodes
 
-    node_rows: List[Dict[str, Any]] = []
-    for item in node_items:
-        if not isinstance(item, dict):
-            continue
-        metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
-        labels = metadata.get("labels", {}) if isinstance(metadata.get("labels"), dict) else {}
-        status = item.get("status", {}) if isinstance(item.get("status"), dict) else {}
-        conditions = status.get("conditions", []) if isinstance(status.get("conditions"), list) else []
-        is_ready = any(
-            isinstance(cond, dict)
-            and str(cond.get("type", "")) == "Ready"
-            and str(cond.get("status", "")) == "True"
-            for cond in conditions
-        )
-        addresses = status.get("addresses", []) if isinstance(status.get("addresses"), list) else []
-        internal_ip = ""
-        external_ip = ""
-        for address in addresses:
-            if not isinstance(address, dict):
-                continue
-            address_type = str(address.get("type", ""))
-            address_value = str(address.get("address", ""))
-            if address_type == "InternalIP" and not internal_ip:
-                internal_ip = address_value
-            elif address_type == "ExternalIP" and not external_ip:
-                external_ip = address_value
-        node_rows.append(
-            {
-                "name": str(metadata.get("name", "")),
-                "ready": is_ready,
-                "role": "control-plane" if "node-role.kubernetes.io/control-plane" in labels or str(labels.get("role", "")) == "control-plane" else "worker",
-                "internal_ip": internal_ip,
-                "external_ip": external_ip,
-                "os_image": str(status.get("nodeInfo", {}).get("osImage", "")) if isinstance(status.get("nodeInfo"), dict) else "",
-                "kernel": str(status.get("nodeInfo", {}).get("kernelVersion", "")) if isinstance(status.get("nodeInfo"), dict) else "",
-                "container_runtime": str(status.get("nodeInfo", {}).get("containerRuntimeVersion", "")) if isinstance(status.get("nodeInfo"), dict) else "",
-                "labels": ", ".join(sorted(str(k) for k in labels.keys())[:6]),
-            }
-        )
+    node_rows = [_node_row(item) for item in node_items if isinstance(item, dict)]
     summary["node_rows"] = node_rows
 
     if isinstance(pods_doc, dict):

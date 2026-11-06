@@ -62,6 +62,14 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         self.assertEqual(match[0].get("address_source"), "callback")
         self.assertTrue(match[0].get("last_callback"))
 
+    def test_node_ops_table_resyncs_with_the_back_end_on_every_monitor_refresh(self) -> None:
+        script = self.client.get("/static/nodes/summary.js").get_data(as_text=True)
+        refresh = script.split("async function refreshMonitor", 1)[1]
+        self.assertLess(refresh.index("await syncNodes()"), refresh.index('"/api/nodes/monitor"'))
+        # loadSummary must not wipe measured reachability, or every apply flips the table back to CHECKING.
+        load = script.split("async function loadSummary", 1)[1].split("async function syncNodes", 1)[0]
+        self.assertNotIn("reachable: null", load)
+
     def test_manual_node_crud_surfaces_in_nodes_summary(self) -> None:
         create = self.client.post(
             "/api/nodes/manual-nodes",

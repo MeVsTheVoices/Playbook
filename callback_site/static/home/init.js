@@ -8,6 +8,7 @@ document.getElementById("payload-inspect-clear").addEventListener("click", () =>
   inspectedSnapshot = null;
   payloadInspectMeta.textContent = "Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.";
   payloadInspectJson.textContent = "No payload selected yet.";
+  setTerminalHost("");
   eventsBodyEl.querySelectorAll("tr.event-row-selected").forEach((r) => r.classList.remove("event-row-selected"));
 });
 

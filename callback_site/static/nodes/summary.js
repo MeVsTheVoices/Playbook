@@ -31,35 +31,50 @@ async function pruneStaleNodes() {
   }
 }
 
-async function loadSummary() {
+async function fetchNodeState() {
   const sotRes = await fetch("/api/state/source-of-truth");
   const sotData = await sotRes.json();
   if (!sotRes.ok || !sotData.ok) {
-    monitorStatus.textContent = "Failed to load node summary.";
-    return;
+    return null;
   }
+  return sotData.state || {};
+}
 
-  const state = sotData.state || {};
+// Keeps reachability already measured for a node unless its address changed underneath it.
+function applyNodeState(state) {
   nodes = Array.isArray(state.nodes) ? state.nodes : [];
   profiles = Array.isArray(state.profiles) ? state.profiles : [];
   nodeInputs = (state.provisioning && typeof state.provisioning.node_inputs === "object") ? state.provisioning.node_inputs : {};
-  renderProfileSegmentOptions();
   manualNodes = (state.provisioning && typeof state.provisioning.manual_nodes === "object") ? state.provisioning.manual_nodes : {};
-  renderManualNodeSelector();
-  renderOpenwrtHosts();
 
+  const previous = statusByNode;
   statusByNode = {};
   for (const node of nodes) {
+    const prior = previous[node.name];
+    const sameAddress = prior && prior.address === node.address;
     statusByNode[node.name] = {
       name: node.name,
       address: node.address,
       address_source: node.address_source || "inventory",
-      reachable: null,
-      latency_ms: null,
+      reachable: sameAddress ? prior.reachable : null,
+      latency_ms: sameAddress ? prior.latency_ms : null,
       last_callback: node.last_callback || "",
-      error: "",
+      error: sameAddress ? prior.error : "",
     };
   }
+}
+
+async function loadSummary() {
+  const state = await fetchNodeState();
+  if (!state) {
+    monitorStatus.textContent = "Failed to load node summary.";
+    return;
+  }
+
+  applyNodeState(state);
+  renderProfileSegmentOptions();
+  renderManualNodeSelector();
+  renderOpenwrtHosts();
 
   const config = (state.provisioning && state.provisioning.config) || {};
   document.getElementById("username").value = config.username || "";
@@ -78,8 +93,28 @@ async function loadSummary() {
   renderRows();
 }
 
+// Periodic refresh: pulls new nodes, callbacks and check results from the back end without touching forms the operator may be editing.
+async function syncNodes() {
+  try {
+    const state = await fetchNodeState();
+    if (!state) return;
+    applyNodeState(state);
+    renderManualNodeSelector();
+    renderOpenwrtHosts();
+    const oldNode = provisionNode.value;
+    renderNodeSelector();
+    if (oldNode && nodes.some((n) => n.name === oldNode)) {
+      provisionNode.value = oldNode;
+    }
+  } catch (err) {
+    // Keep the table as it is; the monitor poll below still reports reachability.
+  }
+}
+
 async function refreshMonitor(sendWebhook) {
   monitorStatus.textContent = sendWebhook ? "Refreshing and sending webhook..." : "Refreshing monitoring...";
+  await syncNodes();
+  renderRows();
   const res = await fetch("/api/nodes/monitor", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

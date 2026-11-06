@@ -98,6 +98,10 @@
           <div class="panel kube-table-wrap">
             <h2>Nodes <span class="kube-badge">live inventory</span></h2>
             <p class="kube-subtle">Ready state, role, addresses, and runtime details for each node currently visible to the cluster.</p>
+            <div class="kube-actions">
+              <button type="button" class="kube-btn" id="kube-clear-old-nodes">Clear old nodes</button>
+              <span class="kube-subtle" id="kube-clear-status">Removes NotReady nodes that have been down for 10+ minutes. Ready nodes and this host are never removed.</span>
+            </div>
             <div style="max-height: 22rem; overflow: auto;">
               <table class="kube-table">
                 <thead>
@@ -111,10 +115,11 @@
                     <th>OS</th>
                     <th>Kernel</th>
                     <th>Runtime</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="kube-node-rows">
-                  <tr><td colspan="9">Loading nodes...</td></tr>
+                  <tr><td colspan="10">Loading nodes...</td></tr>
                 </tbody>
               </table>
             </div>

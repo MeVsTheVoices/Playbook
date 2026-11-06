@@ -256,3 +256,26 @@
   color: var(--muted);
   font-size: 0.84rem;
 }
+.kube-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.5rem 0;
+}
+.kube-btn {
+  padding: 0.3rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.kube-btn:hover:not(:disabled) {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+.kube-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

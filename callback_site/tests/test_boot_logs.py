@@ -85,6 +85,26 @@ class BootLogTests(BaseCallbackSiteTest):
             self.assertFalse(services.boot_logs._schedule_boot_log_fetch({**event, "hostname": "rpi5-11"}))
             thread.assert_not_called()
 
+    def test_node_can_push_its_own_boot_log_and_it_suppresses_the_ssh_pull(self) -> None:
+        response = self.client.post(
+            "/api/cloud-init/boot-log",
+            json={"hostname": "natted-pi", "instance_id": "i-1", "stage": "runcmd", "log": "=== node ===\nnatted-pi\n"},
+        )
+        self.assertEqual(response.status_code, 200)
+        listed = self.client.get("/api/nodes/natted-pi/boot-logs").get_json()["logs"]
+        self.assertEqual((listed[0]["trigger"], listed[0]["status"], listed[0]["stage"]), ("pushed", "ok", "runcmd"))
+        text = self.client.get(f"/api/nodes/natted-pi/boot-logs/{listed[0]['id']}").get_json()["text"]
+        self.assertIn("natted-pi", text)
+
+        self.assertTrue(services.boot_logs._pushed_recently("natted-pi"))
+        with patch("services.boot_logs.time.sleep"), patch("services.boot_logs._fetch_boot_logs") as fetch:
+            services.boot_logs._boot_log_auto_worker("natted-pi", "")
+        fetch.assert_not_called()
+
+    def test_pushed_boot_log_rejects_bad_requests(self) -> None:
+        self.assertEqual(self.client.post("/api/cloud-init/boot-log", json={"hostname": "x"}).status_code, 400)
+        self.assertEqual(self.client.post("/api/cloud-init/boot-log", json={"hostname": "../x", "log": "a"}).status_code, 400)
+
     def test_dashboard_has_boot_log_panel(self) -> None:
         page = self.client.get("/").get_data(as_text=True)
         self.assertIn('id="boot-log-panel"', page)

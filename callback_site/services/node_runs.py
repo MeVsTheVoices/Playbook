@@ -10,6 +10,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,8 @@ from services.ssh_keys import (
 from services.storage import BASE_DIR, INVENTORY_FILE, KEYS_DIR
 
 logger = logging.getLogger(__name__)
+
+_RESULTS_LOCK = threading.Lock()
 
 
 def _run_node_profile(
@@ -541,10 +544,12 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
         node_results["hardware_check_trigger"] = hardware_trigger_result
         ordered_result_ids.append("hardware_check_trigger")
 
-    state_results = state.setdefault("results", {})
+    # The run above can take minutes; re-read so results other runs saved meanwhile are not overwritten.
     current_results = {pid: node_results[pid] for pid in ordered_result_ids if pid in node_results}
-    state_results[node_name] = current_results
-    _save_node_provisioning(state)
+    with _RESULTS_LOCK:
+        latest_state = _load_node_provisioning()
+        latest_state.setdefault("results", {})[node_name] = current_results
+        _save_node_provisioning(latest_state)
 
     return {
         "node": node_name,

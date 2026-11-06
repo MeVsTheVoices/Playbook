@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import socket
+import subprocess
+import threading
+import time
 from typing import Any, Dict, List
 from urllib import parse as urlparse
 
@@ -99,6 +103,43 @@ def _is_tailscale_ip(ip: str) -> bool:
     return bool(parsed) and ipaddress.ip_address(parsed) in _TAILSCALE_NET
 
 
+_TAILNET_CACHE: Dict[str, Any] = {"at": -1e9, "peers": {}}
+
+
+_TAILNET_LOCK = threading.Lock()
+
+
+TAILNET_CACHE_SECONDS = 20
+
+
+def _tailscale_peers() -> Dict[str, str]:
+    """Online tailnet peers as lowercase hostname -> IPv4, from the local `tailscale status`."""
+    with _TAILNET_LOCK:
+        if time.monotonic() - float(_TAILNET_CACHE["at"]) < TAILNET_CACHE_SECONDS:
+            return dict(_TAILNET_CACHE["peers"])
+        try:
+            proc = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, timeout=5, check=False)
+            data = json.loads(proc.stdout or "{}")
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            data = {}
+        peers: Dict[str, str] = {}
+        for peer in (data.get("Peer") or {}).values():
+            if not isinstance(peer, dict) or not peer.get("Online"):
+                continue
+            ipv4 = next((ip for ip in peer.get("TailscaleIPs") or [] if ":" not in str(ip) and _is_tailscale_ip(str(ip))), "")
+            if not ipv4:
+                continue
+            for name in (str(peer.get("HostName", "")), str(peer.get("DNSName", "")).split(".")[0]):
+                if name.strip():
+                    peers.setdefault(name.strip().lower(), ipv4)
+        _TAILNET_CACHE.update({"at": time.monotonic(), "peers": peers})
+        return dict(peers)
+
+
+def _tailscale_peer_ip(node_name: str) -> str:
+    return _tailscale_peers().get(str(node_name or "").strip().lower(), "")
+
+
 def _is_usable_callback_ip(ip: str) -> bool:
     parsed = _normalize_ip(ip)
     if not parsed:
@@ -135,6 +176,11 @@ def _preferred_node_connect_target(node_name: str, inventory_address: str, callb
         return callback_source_ip, "callback"
     if _is_tailscale_ip(inventory_address):
         return inventory_address, "inventory"
+
+    # Callbacks only carry the LAN/NAT address; a node already on the tailnet is reachable at its tailnet IP.
+    tailnet_ip = _tailscale_peer_ip(node_name)
+    if tailnet_ip:
+        return tailnet_ip, "tailscale"
 
     if _is_usable_callback_ip(callback_source_ip):
         return callback_source_ip, "callback"

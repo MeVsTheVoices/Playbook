@@ -4,12 +4,32 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import jsonify
+from flask import jsonify, request
 
-from services.boot_logs import _fetch_boot_logs, _list_boot_logs, _read_boot_log, _safe_name
+from services.boot_logs import _fetch_boot_logs, _list_boot_logs, _read_boot_log, _safe_name, _store_pushed_boot_log
+
+MAX_PUSH_CHARS = 2_000_000
 
 
 def register_boot_log_routes(app: Any) -> None:
+    @app.post("/api/cloud-init/boot-log")
+    def boot_log_push() -> Any:
+        payload = request.get_json(silent=True) or {}
+        name = _safe_name(str(payload.get("hostname", "")))
+        text = payload.get("log")
+        if not name or not isinstance(text, str) or not text.strip():
+            return jsonify({"ok": False, "error": "hostname and log are required"}), 400
+        if len(text) > MAX_PUSH_CHARS:
+            return jsonify({"ok": False, "error": "log too large"}), 413
+        meta = _store_pushed_boot_log(
+            name,
+            text,
+            stage=str(payload.get("stage", "")).strip()[:40],
+            instance_id=str(payload.get("instance_id", "")).strip()[:120],
+            source=str(request.remote_addr or ""),
+        )
+        return jsonify({"ok": True, "id": meta["id"]})
+
     @app.get("/api/nodes/<node_name>/boot-logs")
     def boot_logs_list(node_name: str) -> Any:
         if not _safe_name(node_name):

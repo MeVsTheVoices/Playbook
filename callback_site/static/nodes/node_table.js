@@ -81,6 +81,9 @@ function renderRows() {
     const reachableClass = status.reachable === true ? "ok" : status.reachable === false ? "bad" : "checking";
     const reachableLabel = status.reachable === true ? "🟢 UP" : status.reachable === false ? "🔴 DOWN" : "🟡 CHECKING";
     const detailSummary = nodeDetailSummary(node);
+    const via = status.connect_target && status.connect_target !== node.address
+      ? `<div class="note">via ${escapeHtml(status.connect_target)} (${escapeHtml(status.connect_source || "")})</div>`
+      : "";
 
     const tr = document.createElement("tr");
     const removeBtn = node.manual_node
@@ -89,7 +92,7 @@ function renderRows() {
     tr.innerHTML = `
       <td>${node.name}</td>
       <td>${node.group}</td>
-      <td class="mono">${node.address || ""}</td>
+      <td class="mono">${node.address || ""}${via}</td>
       <td>${node.address_source || "inventory"}</td>
       <td><span class="status-chip ${reachableClass}">${reachableLabel}</span></td>
       <td>${status.latency_ms ?? "-"}</td>

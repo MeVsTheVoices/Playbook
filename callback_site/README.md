@@ -9,7 +9,8 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 - Distribution-aware imaging for `standard` and `k3s` flows.
 - Catalog management with cache checks and bulk pulls (select several presets, or pull everything missing).
 - Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
-- Boot log exchange: shortly after a node calls back the site pulls its boot logs over SSH (journal, cloud-init, dmesg) and keeps the last 10 per node; set `CALLBACK_AUTO_BOOT_LOGS=0` to turn the automatic pull off.
+- Boot log exchange: nodes flashed from this site send their own boot logs (journal, cloud-init, dmesg) to `/api/cloud-init/boot-log` after the final callback and on every power restore, which works behind NAT. For other nodes the site pulls them over SSH shortly after a callback (skipped when a push just arrived; `CALLBACK_AUTO_BOOT_LOGS=0` turns the automatic pull off). The last 10 per node are kept.
+- Node Ops connects to a node at its tailnet address when `tailscale status` on the site host lists it online, ahead of the LAN/NAT address a callback reports; the monitor pings the same target.
 - OpenWrt routers as Node Ops hosts (group `openwrt`) with SSH probe and key push, SSH key management, and Tailscale ACL planning.
 - Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
 

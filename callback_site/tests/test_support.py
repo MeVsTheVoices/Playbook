@@ -95,3 +95,6 @@ class BaseCallbackSiteTest(unittest.TestCase):
         tailnet_guard = patch_in("_tailscale_peer_ip", return_value="")
         tailnet_guard.start()
         self.addCleanup(tailnet_guard.stop)
+        fqdn_guard = patch_in("_tailscale_peer_fqdn", return_value="")
+        fqdn_guard.start()
+        self.addCleanup(fqdn_guard.stop)

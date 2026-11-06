@@ -9,7 +9,7 @@ import socket
 import subprocess
 import threading
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from urllib import parse as urlparse
 
 from flask import request
@@ -103,7 +103,7 @@ def _is_tailscale_ip(ip: str) -> bool:
     return bool(parsed) and ipaddress.ip_address(parsed) in _TAILSCALE_NET
 
 
-_TAILNET_CACHE: Dict[str, Any] = {"at": -1e9, "peers": {}}
+_TAILNET_CACHE: Dict[str, Any] = {"at": -1e9, "peers": {}, "fqdns": {}}
 
 
 _TAILNET_LOCK = threading.Lock()
@@ -112,32 +112,44 @@ _TAILNET_LOCK = threading.Lock()
 TAILNET_CACHE_SECONDS = 20
 
 
-def _tailscale_peers() -> Dict[str, str]:
-    """Online tailnet peers as lowercase hostname -> IPv4, from the local `tailscale status`."""
+def _load_tailnet() -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Online tailnet peers from the local `tailscale status`: lowercase hostname -> IPv4 and -> MagicDNS FQDN."""
     with _TAILNET_LOCK:
         if time.monotonic() - float(_TAILNET_CACHE["at"]) < TAILNET_CACHE_SECONDS:
-            return dict(_TAILNET_CACHE["peers"])
+            return dict(_TAILNET_CACHE["peers"]), dict(_TAILNET_CACHE.get("fqdns", {}))
         try:
             proc = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, timeout=5, check=False)
             data = json.loads(proc.stdout or "{}")
         except (OSError, ValueError, subprocess.TimeoutExpired):
             data = {}
         peers: Dict[str, str] = {}
+        fqdns: Dict[str, str] = {}
         for peer in (data.get("Peer") or {}).values():
             if not isinstance(peer, dict) or not peer.get("Online"):
                 continue
             ipv4 = next((ip for ip in peer.get("TailscaleIPs") or [] if ":" not in str(ip) and _is_tailscale_ip(str(ip))), "")
             if not ipv4:
                 continue
-            for name in (str(peer.get("HostName", "")), str(peer.get("DNSName", "")).split(".")[0]):
+            fqdn = str(peer.get("DNSName", "")).strip().rstrip(".").lower()
+            for name in (str(peer.get("HostName", "")), fqdn.split(".")[0]):
                 if name.strip():
                     peers.setdefault(name.strip().lower(), ipv4)
-        _TAILNET_CACHE.update({"at": time.monotonic(), "peers": peers})
-        return dict(peers)
+                    if fqdn:
+                        fqdns.setdefault(name.strip().lower(), fqdn)
+        _TAILNET_CACHE.update({"at": time.monotonic(), "peers": peers, "fqdns": fqdns})
+        return dict(peers), dict(fqdns)
+
+
+def _tailscale_peers() -> Dict[str, str]:
+    return _load_tailnet()[0]
 
 
 def _tailscale_peer_ip(node_name: str) -> str:
     return _tailscale_peers().get(str(node_name or "").strip().lower(), "")
+
+
+def _tailscale_peer_fqdn(node_name: str) -> str:
+    return _load_tailnet()[1].get(str(node_name or "").strip().lower(), "")
 
 
 def _is_usable_callback_ip(ip: str) -> bool:

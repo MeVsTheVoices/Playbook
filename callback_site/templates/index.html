@@ -583,6 +583,7 @@ server: https://local-machine-ip:6443
         <div class="section-head">
           <h1>Rack Cloud-Init Callback Dashboard 📡🙂</h1>
           <div class="actions-row callback-toolbar" style="margin-top: 0;">
+            <button type="button" id="events-toggle-older" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;" title="The newest callback per host is always shown in full">Expand older (0)</button>
             <a class="mini-link" href="/test-terminal" target="_blank" rel="noopener noreferrer">Open node terminal</a>
             <span class="status-chip"><span class="status-dot"></span> Live Event Feed</span>
           </div>
@@ -627,7 +628,7 @@ server: https://local-machine-ip:6443
           </div>
         </div>
         <p class="small-note" id="event-meta">Waiting for callback updates...</p>
-        <p class="small-note">Click any row to inspect its full payload below the table.</p>
+        <p class="small-note">Click any row to inspect its full payload below the table. Older callbacks from the same host are condensed; use the arrow on a row or the toolbar button to expand them.</p>
         <table class="events-table">
           <thead>
             <tr>

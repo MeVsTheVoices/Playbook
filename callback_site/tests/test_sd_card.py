@@ -88,6 +88,23 @@ class SdCardTests(BaseCallbackSiteTest):
         self.assertIn(str(entry.get("id", "")), text)
         self.assertIn(cache_path, text)
 
+    def test_callback_rows_condense_older_events_per_host(self) -> None:
+        from app import app as flask_app
+
+        events = [
+            {"hostname": "rpi5-01", "stage": "ready", "received_at": "2026-11-06T12:00:03+00:00"},
+            {"hostname": "rpi5-02", "stage": "ready", "received_at": "2026-11-06T12:00:02+00:00"},
+            {"hostname": "RPI5-01", "stage": "boot", "received_at": "2026-11-06T12:00:01+00:00"},
+        ]
+        with flask_app.test_request_context("/"):
+            html = flask_app.jinja_env.get_template("fragments/callback_rows.html").render(events=events)
+        self.assertEqual(html.count('class="event-row-condensed"'), 1)
+
+        page = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="events-toggle-older"', page)
+        script = self.client.get("/static/home/events.js").get_data(as_text=True)
+        self.assertIn("event-row-condensed", script)
+
     def test_home_page_loads_cloud_init_profile_on_select(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

@@ -150,6 +150,10 @@
           <div class="panel kube-table-wrap">
             <h2>Pods <span class="kube-badge">current phase</span></h2>
             <p class="kube-subtle">A live workload view with phase, node placement, readiness, and restart pressure.</p>
+            <div class="kube-actions">
+              <button type="button" class="kube-btn" id="kube-clear-old-pods">Clear old pods</button>
+              <span class="kube-subtle" id="kube-clear-pods-status">Removes finished (Completed/Failed/Evicted) pods and pods stuck terminating for 10+ minutes. Running and Pending pods are never removed.</span>
+            </div>
             <div style="max-height: 24rem; overflow: auto;">
               <table class="kube-table">
                 <thead>
@@ -161,10 +165,11 @@
                     <th>Ready</th>
                     <th>Restarts</th>
                     <th>Created</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="kube-pod-rows">
-                  <tr><td colspan="7">Loading pods...</td></tr>
+                  <tr><td colspan="8">Loading pods...</td></tr>
                 </tbody>
               </table>
             </div>

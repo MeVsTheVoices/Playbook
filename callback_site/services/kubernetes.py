@@ -155,16 +155,19 @@ def _run_kubectl_json(args: List[str]) -> tuple[Dict[str, Any] | None, str]:
     return None, " | ".join(e for e in errors if e)[:1000] or "kubectl command failed"
 
 
+def _minutes_since(raw: Any) -> int | None:
+    try:
+        changed = datetime.fromisoformat(str(raw or "").strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return max(0, int((datetime.now(timezone.utc) - changed).total_seconds() // 60))
+
+
 def _not_ready_minutes(conditions: List[Any]) -> int | None:
     """Minutes since the Ready condition last changed, for a node that is not Ready."""
     for cond in conditions:
         if isinstance(cond, dict) and str(cond.get("type", "")) == "Ready":
-            raw = str(cond.get("lastTransitionTime", "")).strip()
-            try:
-                changed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            except ValueError:
-                return None
-            return max(0, int((datetime.now(timezone.utc) - changed).total_seconds() // 60))
+            return _minutes_since(cond.get("lastTransitionTime"))
     return None
 
 
@@ -236,9 +239,7 @@ def _stale_nodes(min_minutes: int = DEFAULT_STALE_MINUTES) -> Dict[str, Any]:
     return result
 
 
-def _delete_node(name: str) -> tuple[bool, str]:
-    if not NODE_NAME_RE.fullmatch(name or "") or len(name) > 253:
-        return False, "invalid node name"
+def _kubectl_delete(args: List[str], done_message: str) -> tuple[bool, str]:
     commands: List[List[str]] = []
     k3s_cmd = shutil.which("k3s")
     if k3s_cmd:
@@ -251,14 +252,20 @@ def _delete_node(name: str) -> tuple[bool, str]:
     errors: List[str] = []
     for base in commands:
         try:
-            proc = subprocess.run([*base, "delete", "node", name], capture_output=True, text=True, check=False, timeout=30)
+            proc = subprocess.run([*base, "delete", *args], capture_output=True, text=True, check=False, timeout=30)
         except Exception as exc:  # noqa: BLE001 - report any launch failure to the operator
             errors.append(str(exc))
             continue
         if proc.returncode == 0:
-            return True, (proc.stdout or "").strip() or f"node {name} deleted"
+            return True, (proc.stdout or "").strip() or done_message
         errors.append((proc.stderr or proc.stdout or "").strip() or f"kubectl exited {proc.returncode}")
     return False, " | ".join(e for e in errors if e)[:500]
+
+
+def _delete_node(name: str) -> tuple[bool, str]:
+    if not NODE_NAME_RE.fullmatch(name or "") or len(name) > 253:
+        return False, "invalid node name"
+    return _kubectl_delete(["node", name], f"node {name} deleted")
 
 
 def _clear_stale_nodes(min_minutes: int = DEFAULT_STALE_MINUTES, dry_run: bool = True, names: List[str] | None = None) -> Dict[str, Any]:
@@ -301,6 +308,106 @@ def _clear_stale_nodes(min_minutes: int = DEFAULT_STALE_MINUTES, dry_run: bool =
             removed.append(entry["name"])
         else:
             failed.append({"name": entry["name"], "error": message})
+    result["removed"] = removed
+    result["failed"] = failed
+    result["ok"] = not failed
+    return result
+
+
+def _pod_cleanup_state(pod: Dict[str, Any]) -> tuple[str, int | None]:
+    """('finished' | 'terminating' | '', minutes) - only finished or stuck-terminating pods are ever cleanup targets."""
+    metadata = pod.get("metadata", {}) if isinstance(pod.get("metadata"), dict) else {}
+    status = pod.get("status", {}) if isinstance(pod.get("status"), dict) else {}
+    if metadata.get("deletionTimestamp"):
+        return "terminating", _minutes_since(metadata.get("deletionTimestamp"))
+    if str(status.get("phase", "")) in ("Succeeded", "Failed"):
+        finished = []
+        for cs in status.get("containerStatuses") or []:
+            terminated = cs.get("state", {}).get("terminated") if isinstance(cs, dict) and isinstance(cs.get("state"), dict) else None
+            if isinstance(terminated, dict) and terminated.get("finishedAt"):
+                finished.append(str(terminated["finishedAt"]))
+        raw = max(finished) if finished else (status.get("startTime") or metadata.get("creationTimestamp"))
+        return "finished", _minutes_since(raw)
+    return "", None
+
+
+def _stale_pods(min_minutes: int = DEFAULT_STALE_MINUTES) -> Dict[str, Any]:
+    """Split pods into cleanup candidates (finished or stuck terminating long enough), still-waiting ones, and active ones."""
+    doc, error = _run_kubectl_json(["get", "pods", "-A"])
+    if doc is None:
+        return {"ok": False, "error": error}
+    items = doc.get("items", []) if isinstance(doc, dict) and isinstance(doc.get("items"), list) else []
+    result: Dict[str, Any] = {"ok": True, "min_minutes": min_minutes, "candidates": [], "waiting": [], "active": []}
+    for pod in items:
+        if not isinstance(pod, dict):
+            continue
+        metadata = pod.get("metadata", {}) if isinstance(pod.get("metadata"), dict) else {}
+        status = pod.get("status", {}) if isinstance(pod.get("status"), dict) else {}
+        state, minutes = _pod_cleanup_state(pod)
+        entry = {
+            "namespace": str(metadata.get("namespace", "")),
+            "name": str(metadata.get("name", "")),
+            "phase": str(status.get("phase", "")),
+            "state": state,
+            "minutes": minutes,
+        }
+        if not state:
+            result["active"].append(entry)
+        elif minutes is None or minutes < min_minutes:
+            result["waiting"].append(entry)
+        else:
+            result["candidates"].append(entry)
+    return result
+
+
+def _delete_pod(namespace: str, name: str, force: bool = False) -> tuple[bool, str]:
+    for value in (namespace, name):
+        if not NODE_NAME_RE.fullmatch(value or "") or len(value) > 253:
+            return False, "invalid pod name"
+    args = ["pod", name, "-n", namespace]
+    if force:
+        args += ["--grace-period=0", "--force"]
+    return _kubectl_delete(args, f"pod {namespace}/{name} deleted")
+
+
+def _clear_stale_pods(
+    min_minutes: int = DEFAULT_STALE_MINUTES,
+    dry_run: bool = True,
+    targets: List[tuple[str, str]] | None = None,
+) -> Dict[str, Any]:
+    """Delete finished (Succeeded/Failed) or stuck-terminating pods; Running and Pending pods are never touched."""
+    found = _stale_pods(min_minutes)
+    if not found.get("ok"):
+        return found
+    candidates = found["candidates"]
+    skipped: List[Dict[str, Any]] = []
+    if targets is not None:
+        wanted = {(ns, nm) for ns, nm in targets}
+        candidate_keys = {(c["namespace"], c["name"]) for c in candidates}
+        active_keys = {(c["namespace"], c["name"]) for c in found["active"]}
+        known = candidate_keys | active_keys | {(c["namespace"], c["name"]) for c in found["waiting"]}
+        for key in sorted(wanted - candidate_keys):
+            if key not in known:
+                reason = "not found"
+            elif key in active_keys:
+                reason = "pod is still running"
+            else:
+                reason = "not eligible"
+            skipped.append({"namespace": key[0], "name": key[1], "reason": reason})
+        candidates = [c for c in candidates if (c["namespace"], c["name"]) in wanted]
+    result: Dict[str, Any] = {"ok": True, "dry_run": dry_run, "min_minutes": min_minutes, "waiting": found["waiting"], "skipped": skipped}
+    if dry_run:
+        result["would_remove"] = candidates
+        return result
+    removed: List[str] = []
+    failed: List[Dict[str, str]] = []
+    for entry in candidates:
+        label = f"{entry['namespace']}/{entry['name']}"
+        done, message = _delete_pod(entry["namespace"], entry["name"], force=entry["state"] == "terminating")
+        if done:
+            removed.append(label)
+        else:
+            failed.append({"name": label, "error": message})
     result["removed"] = removed
     result["failed"] = failed
     result["ok"] = not failed
@@ -420,11 +527,14 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
                     restart_count += int(container_status.get("restartCount", 0) or 0)
                 except (TypeError, ValueError):
                     continue
+            pod_state, pod_minutes = _pod_cleanup_state(pod)
             pod_rows.append(
                 {
                     "namespace": str(metadata.get("namespace", "")),
                     "name": str(metadata.get("name", "")),
                     "phase": phase,
+                    "cleanup": pod_state,
+                    "cleanup_minutes": pod_minutes,
                     "node": str(status.get("nodeName", "")),
                     "ready_containers": ready_count,
                     "restart_count": restart_count,

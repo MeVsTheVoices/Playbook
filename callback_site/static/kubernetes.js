@@ -61,13 +61,17 @@ function renderRows(items, columns) {
 
 function renderNodeRows(rows) {
   if (!Array.isArray(rows) || !rows.length) {
-    return `<tr><td colspan="9">No nodes returned.</td></tr>`;
+    return `<tr><td colspan="10">No nodes returned.</td></tr>`;
   }
   return rows.map((row) => {
     const ready = row.ready ? renderPill("Ready", "ok") : renderPill("Not Ready", "warn");
+    const down = !row.ready && Number.isFinite(row.not_ready_minutes) ? ` <span class="kube-subtle">${escapeHtml(row.not_ready_minutes)}m</span>` : "";
+    const action = row.ready
+      ? ""
+      : `<button type="button" class="kube-btn" data-remove-node="${escapeHtml(row.name || "")}" data-node-role="${escapeHtml(row.role || "")}">Remove</button>`;
     return `<tr>
       <td>${escapeHtml(row.name || "")}</td>
-      <td>${ready}</td>
+      <td>${ready}${down}</td>
       <td>${escapeHtml(row.role || "")}</td>
       <td>${escapeHtml(row.internal_ip || "")}</td>
       <td>${escapeHtml(row.external_ip || "")}</td>
@@ -75,6 +79,7 @@ function renderNodeRows(rows) {
       <td>${escapeHtml(row.os_image || "")}</td>
       <td>${escapeHtml(row.kernel || "")}</td>
       <td>${escapeHtml(row.container_runtime || "")}</td>
+      <td>${action}</td>
     </tr>`;
   }).join("");
 }
@@ -181,7 +186,7 @@ async function loadKubernetesSummary() {
 
     if (!data.available) {
       statusEl.textContent = `Kubernetes runtime is not currently active.\nReason: ${reason}`;
-      nodeRowsEl.innerHTML = `<tr><td colspan="9">Runtime inactive.</td></tr>`;
+      nodeRowsEl.innerHTML = `<tr><td colspan="10">Runtime inactive.</td></tr>`;
       podRowsEl.innerHTML = `<tr><td colspan="7">Runtime inactive.</td></tr>`;
       namespaceRowsEl.innerHTML = `<tr><td colspan="4">Runtime inactive.</td></tr>`;
       jobRowsEl.innerHTML = `<tr><td colspan="6">Runtime inactive.</td></tr>`;
@@ -222,6 +227,81 @@ async function loadKubernetesSummary() {
     rawJsonEl.textContent = statusEl.textContent;
   }
 }
+
+const clearNodesBtn = document.getElementById("kube-clear-old-nodes");
+const clearStatusEl = document.getElementById("kube-clear-status");
+const CONTROL_PLANE_WARNING = "Removing a control-plane node also removes its etcd member.";
+
+async function postClearNodes(dryRun) {
+  const res = await fetch("/api/kubernetes/nodes/clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun, min_minutes: 10 }),
+  });
+  return res.json();
+}
+
+async function clearOldNodes() {
+  clearNodesBtn.disabled = true;
+  clearStatusEl.textContent = "Checking for old nodes...";
+  try {
+    const preview = await postClearNodes(true);
+    if (!preview.ok) {
+      clearStatusEl.textContent = preview.error || "Could not list nodes.";
+      return;
+    }
+    const targets = Array.isArray(preview.would_remove) ? preview.would_remove : [];
+    if (!targets.length) {
+      const waiting = Array.isArray(preview.waiting) ? preview.waiting.length : 0;
+      clearStatusEl.textContent = waiting
+        ? `Nothing to clear yet; ${waiting} NotReady node(s) are still inside the 10 minute grace period.`
+        : "No old NotReady nodes to clear.";
+      return;
+    }
+    const lines = targets.map((n) => `- ${n.name} (${n.role}, down ${n.not_ready_minutes}m)`).join("\n");
+    const warn = targets.some((n) => n.role === "control-plane") ? `\n\n${CONTROL_PLANE_WARNING}` : "";
+    if (!window.confirm(`Remove these NotReady nodes from the cluster?\n\n${lines}${warn}`)) {
+      clearStatusEl.textContent = "Cancelled.";
+      return;
+    }
+    const done = await postClearNodes(false);
+    const removed = Array.isArray(done.removed) ? done.removed : [];
+    const failed = Array.isArray(done.failed) ? done.failed : [];
+    clearStatusEl.textContent = failed.length
+      ? `Removed ${removed.length}; failed: ${failed.map((f) => `${f.name} (${f.error})`).join(", ")}`
+      : `Removed ${removed.length} node(s): ${removed.join(", ") || "none"}`;
+    await loadKubernetesSummary();
+  } catch (err) {
+    clearStatusEl.textContent = `Clear failed: ${String(err && err.message ? err.message : err)}`;
+  } finally {
+    clearNodesBtn.disabled = false;
+  }
+}
+
+async function removeNode(button) {
+  const name = button.dataset.removeNode || "";
+  if (!name) return;
+  const warn = button.dataset.nodeRole === "control-plane" ? `\n\n${CONTROL_PLANE_WARNING}` : "";
+  if (!window.confirm(`Remove NotReady node ${name} from the cluster?${warn}`)) return;
+  button.disabled = true;
+  try {
+    const res = await fetch(`/api/kubernetes/nodes/${encodeURIComponent(name)}`, { method: "DELETE" });
+    const data = await res.json();
+    clearStatusEl.textContent = res.ok && data.ok
+      ? `Removed ${name}.`
+      : `Could not remove ${name}: ${data.error || (data.failed && data.failed[0] && data.failed[0].error) || res.status}`;
+    await loadKubernetesSummary();
+  } catch (err) {
+    clearStatusEl.textContent = `Remove failed: ${String(err && err.message ? err.message : err)}`;
+    button.disabled = false;
+  }
+}
+
+clearNodesBtn.addEventListener("click", clearOldNodes);
+nodeRowsEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-remove-node]");
+  if (button) removeNode(button);
+});
 
 initSidebar();
 loadKubernetesSummary();

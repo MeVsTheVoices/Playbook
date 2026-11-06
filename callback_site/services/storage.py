@@ -61,6 +61,9 @@ PROFILE_SEGMENTS_FILE = DATA_DIR / "profile_segments.json"
 MODULE_PRESETS_FILE = DATA_DIR / "module_presets.json"
 
 
+BOOT_LOGS_DIR = DATA_DIR / "boot_logs"
+
+
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 
 

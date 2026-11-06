@@ -25,6 +25,7 @@ callback_site/data/logs/
 callback_site/logs/
 callback_site/data/node_reports/
 callback_site/data/boot_logs/
+callback_site/data/connection_profiles.json
 callback_site/data/ssh_key_archive.jsonl
 callback_site/data/ssh_key_archive/
 callback_site/data/known_hosts

@@ -10,6 +10,7 @@ from flask import Flask
 from launch import maybe_reexec_with_sudo
 from routes.boot_logs import register_boot_log_routes
 from routes.callbacks import register_callback_routes
+from routes.connection_profiles import register_connection_profile_routes
 from routes.images import catalog_entries_for_ui, register_image_routes
 from routes.module_presets import register_module_preset_routes
 from routes.monitor import register_monitor_routes
@@ -80,6 +81,7 @@ register_monitor_routes(app)
 register_node_routes(app)
 register_module_preset_routes(app)
 register_boot_log_routes(app)
+register_connection_profile_routes(app)
 
 
 if __name__ == "__main__":

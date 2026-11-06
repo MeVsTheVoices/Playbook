@@ -348,6 +348,20 @@ async function refreshChecks() {
   }
 }
 
+// The dashboard links here with ?host=<node> so the form opens already pointed at that node.
+function applyHostFromQuery() {
+  const requested = (new URLSearchParams(window.location.search).get("host") || "").trim();
+  if (!requested) return;
+  const wanted = requested.toLowerCase();
+  const match = callbackTargets.find((t) => [t.hostname, t.fqdn, t.host, t.connect_host].some((v) => String(v || "").trim().toLowerCase() === wanted));
+  const connectHost = match ? String(match.connect_host || match.host || "").trim() : requested;
+  hostEl.value = connectHost;
+  if (Array.from(hostSelectEl.options).some((o) => o.value === connectHost)) {
+    hostSelectEl.value = connectHost;
+  }
+  jobStatusEl.textContent = match ? `Pre-selected ${requested} (${connectHost}).` : `'${requested}' is not a discovered target; using it as typed.`;
+}
+
 toggleBtn.addEventListener("click", () => {
   body.classList.toggle("sidebar-collapsed");
   localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
@@ -364,4 +378,4 @@ initSidebar();
 refreshKeys();
 refreshChecks();
 renderTargets();
-refreshTargets();
+refreshTargets().then(applyHostFromQuery);

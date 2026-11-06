@@ -102,7 +102,10 @@ async function fetchBootLogsNow() {
   }
 }
 
-bootLogHostEl.addEventListener("change", () => loadBootLogList());
+bootLogHostEl.addEventListener("change", () => {
+  if (bootLogHostEl.value) setTerminalHost(bootLogHostEl.value);
+  loadBootLogList();
+});
 
 bootLogSelectEl.addEventListener("change", async () => {
   const host = bootLogHostEl.value;

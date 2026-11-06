@@ -167,39 +167,10 @@ def _preferred_connect_ip_from_history(current_ip: str, ip_history: List[str]) -
 
 
 def _preferred_node_connect_target(node_name: str, inventory_address: str, callback_source_ip: str = "") -> tuple[str, str]:
-    node_name = str(node_name or "").strip()
-    inventory_address = str(inventory_address or "").strip()
-    callback_source_ip = str(callback_source_ip or "").strip()
+    # The strategy (services/connection_profiles.py) sits above this module, so import it late.
+    from services.connection_profiles import select_connection_target
 
-    # The NucBox cannot route to NATed LAN addresses; the tailnet address always works.
-    if _is_tailscale_ip(callback_source_ip):
-        return callback_source_ip, "callback"
-    if _is_tailscale_ip(inventory_address):
-        return inventory_address, "inventory"
-
-    # Callbacks only carry the LAN/NAT address; a node already on the tailnet is reachable at its tailnet IP.
-    tailnet_ip = _tailscale_peer_ip(node_name)
-    if tailnet_ip:
-        return tailnet_ip, "tailscale"
-
-    if _is_usable_callback_ip(callback_source_ip):
-        return callback_source_ip, "callback"
-
-    if inventory_address and not _is_transit_hop_ip(inventory_address):
-        return inventory_address, "inventory"
-
-    if callback_source_ip:
-        return callback_source_ip, "callback_recent"
-
-    resolved_ip, resolved_source = _resolve_lan_ip_from_names(node_name)
-    if resolved_ip:
-        return resolved_ip, resolved_source or "dns"
-
-    if inventory_address:
-        return inventory_address, "inventory_transit"
-    if node_name:
-        return node_name, "hostname"
-    return "", "none"
+    return select_connection_target(node_name, inventory_address, callback_source_ip)
 
 
 def _resolve_lan_ip_from_names(*names: str) -> tuple[str, str]:

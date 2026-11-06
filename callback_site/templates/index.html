@@ -628,7 +628,7 @@ server: https://local-machine-ip:6443
           </div>
         </div>
         <p class="small-note" id="event-meta">Waiting for callback updates...</p>
-        <p class="small-note">Click any row to inspect its full payload below the table. Older callbacks from the same host are condensed; use the arrow on a row or the toolbar button to expand them.</p>
+        <p class="small-note">Click a row to inspect it. Older callbacks per host are condensed (▸ expands).</p>
         <table class="events-table">
           <thead>
             <tr>
@@ -656,6 +656,26 @@ server: https://local-machine-ip:6443
         <p class="note" id="payload-inspect-meta">Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.</p>
         <pre id="payload-inspect-json" style="background:#0b1020; color:#d6deeb; border-radius:10px; padding:0.8rem; max-height:480px; overflow:auto; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; white-space:pre-wrap; margin:0;">No payload selected yet.</pre>
       </div>
+
+      <div class="panel" id="boot-log-panel">
+        <h2 style="margin:0 0 0.4rem;">Boot Logs 🥾</h2>
+        <p class="note">Shortly after a node calls back, the site logs in over SSH and stores its journal for this boot, cloud-init logs and dmesg (last 10 per node). Fetch again here at any time.</p>
+        <div class="filters-grid">
+          <div>
+            <label for="boot-log-host">Node</label>
+            <select id="boot-log-host"><option value="">Select a node...</option></select>
+          </div>
+          <div>
+            <label for="boot-log-select">Stored log</label>
+            <select id="boot-log-select"></select>
+          </div>
+          <div style="align-self:end;">
+            <button type="button" id="boot-log-fetch" style="width:auto;" disabled>Fetch boot logs now</button>
+          </div>
+        </div>
+        <p class="small-note" id="boot-log-status">Pick a node to see its stored boot logs.</p>
+        <pre id="boot-log-view" style="background:#0b1020; color:#d6deeb; border-radius:10px; padding:0.8rem; max-height:480px; overflow:auto; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; white-space:pre-wrap; margin:0.6rem 0 0;">No boot log selected.</pre>
+      </div>
     </div>
     </main>
     <script>
@@ -671,6 +691,7 @@ server: https://local-machine-ip:6443
     <script src="{{ url_for('static', filename='home/job_log.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/image_library.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/events.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='home/boot_logs.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/catalog_filters.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/k3s_roles.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/catalog_pull.js') }}" defer></script>

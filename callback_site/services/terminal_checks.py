@@ -35,6 +35,15 @@ TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
         "description": "Quick system health and networking status",
         "command": "systemctl is-system-running || true; systemctl --failed --no-legend || true; ip -brief address",
     },
+    "boot_log": {
+        "label": "Boot Log",
+        "description": "Failed units, this boot's journal and the cloud-init output log (last lines)",
+        "command": (
+            'printf "=== failed units ===\\n"; systemctl --failed --no-pager || true; '
+            'printf "\\n=== journal, this boot (last 300) ===\\n"; sudo -n journalctl -b --no-pager -o short-iso -n 300 || journalctl -b --no-pager -n 300 || true; '
+            'printf "\\n=== cloud-init-output.log (last 200) ===\\n"; sudo -n tail -n 200 /var/log/cloud-init-output.log || true'
+        ),
+    },
     "remote_inventory": {
         "label": "Remote Inventory",
         "description": "Collect hostname, OS, cloud-init, services, network, and storage state",

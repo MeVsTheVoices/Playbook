@@ -117,7 +117,7 @@ cat >> "$USER_DATA_OUT" <<EOF
       fi
       BOOT_LOG_URL="\${CALLBACK_URL:-${CALLBACK_URL}}"
       BOOT_LOG_URL="\${BOOT_LOG_URL%/callback}/boot-log"
-      STAGE="\${1:-boot-log}" INSTANCE_ID="\${INSTANCE_ID:-}" PROFILE="\${PROFILE:-}" python3 <<'PY' | curl --retry 3 --retry-delay 2 --connect-timeout 5 --max-time 90 -fsS -X POST -H 'Content-Type: application/json' --data-binary @- "\$BOOT_LOG_URL" || true
+      STAGE="\${1:-boot-log}" INSTANCE_ID="\${INSTANCE_ID:-}" PROFILE="\${PROFILE:-}" python3 <<'PY' | curl --retry 2 --retry-delay 2 --connect-timeout 5 --max-time 30 -fsS -X POST -H 'Content-Type: application/json' --data-binary @- "\$BOOT_LOG_URL" || true
       import json
       import os
       import socket

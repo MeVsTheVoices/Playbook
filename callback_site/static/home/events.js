@@ -335,6 +335,7 @@ async function loadEvents() {
     allEvents = Array.isArray(data.events) ? data.events : [];
     updateCallbackActivity(allEvents);
     updateEventFilterOptions(allEvents);
+    refreshBootLogHosts(allEvents);
     const visibleEvents = filterEvents(allEvents);
     updateEventStats(allEvents, visibleEvents);
     renderEvents(visibleEvents);

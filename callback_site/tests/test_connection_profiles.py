@@ -59,6 +59,48 @@ class ConnectionProfileTests(BaseCallbackSiteTest):
         with patch.dict("os.environ", {"CALLBACK_CONNECTION_STRATEGY": "no-such-strategy"}):
             self.assertEqual(cp.active_strategy_name(), cp.DEFAULT_STRATEGY)
 
+    def test_tailnet_fqdn_is_a_profile_and_a_strategy_can_prefer_it(self) -> None:
+        with patch_in("_tailscale_peer_ip", ["services.connection_profiles"], return_value="100.100.2.3"), patch_in(
+            "_tailscale_peer_fqdn", ["services.connection_profiles"], return_value="rack-beta.tail.ts.net"
+        ), patch_in("_name_resolves", ["services.connection_profiles"], return_value=True):
+            profiles = cp.gather_profiles("rack-beta", "192.168.174.222", "192.168.174.222")
+        by_id = {p.id: p for p in profiles}
+        self.assertEqual(by_id["tailnet_fqdn"].address, "rack-beta.tail.ts.net")
+        self.assertEqual(by_id["tailnet_fqdn"].source, "tailscale_fqdn")
+        self.assertEqual(by_id["tailnet"].fqdn, "rack-beta.tail.ts.net", "the IP profile carries the name HTTPS certificates need")
+        self.assertEqual(cp.select_profile(profiles).id, "tailnet")
+        self.assertEqual(cp.select_profile(profiles, "prefer_fqdn").id, "tailnet_fqdn")
+        with patch.dict("os.environ", {"CALLBACK_CONNECTION_STRATEGY": "prefer_fqdn"}):
+            self.assertEqual(cp.select_profile(profiles).address, "rack-beta.tail.ts.net")
+
+    def test_fqdn_this_host_cannot_resolve_is_never_chosen(self) -> None:
+        with patch_in("_tailscale_peer_ip", ["services.connection_profiles"], return_value="100.100.2.3"), patch_in(
+            "_tailscale_peer_fqdn", ["services.connection_profiles"], return_value="rack-beta.tail.ts.net"
+        ), patch_in("_name_resolves", ["services.connection_profiles"], return_value=False):
+            profiles = cp.gather_profiles("rack-beta", "192.168.174.222", "192.168.174.222")
+        fqdn = next(p for p in profiles if p.id == "tailnet_fqdn")
+        self.assertFalse(fqdn.usable)
+        self.assertEqual(cp.select_profile(profiles, "prefer_fqdn").id, "tailnet")
+
+    def test_name_resolution_check_is_cached_and_tolerates_failure(self) -> None:
+        cp._RESOLVE_CACHE.clear()
+        self.addCleanup(cp._RESOLVE_CACHE.clear)
+        with patch("services.connection_profiles.socket.getaddrinfo", side_effect=OSError("nxdomain")) as lookup:
+            self.assertFalse(cp._name_resolves("nope.tail.ts.net"))
+            self.assertFalse(cp._name_resolves("nope.tail.ts.net"))
+        self.assertEqual(lookup.call_count, 1)
+
+    def test_tailnet_status_supplies_fqdns_without_the_trailing_dot(self) -> None:
+        import services.network as network
+
+        status = json.dumps({"Peer": {"a": {"HostName": "Rack-Beta", "DNSName": "rack-beta.tail.ts.net.", "Online": True, "TailscaleIPs": ["100.100.2.3"]}}})
+        self.addCleanup(network._TAILNET_CACHE.update, {"at": -1e9, "peers": {}, "fqdns": {}})
+        network._TAILNET_CACHE.update({"at": -1e9, "peers": {}, "fqdns": {}})
+        with patch("services.network.subprocess.run", return_value=type("R", (), {"stdout": status})()):
+            peers, fqdns = network._load_tailnet()
+        self.assertEqual(peers["rack-beta"], "100.100.2.3")
+        self.assertEqual(fqdns["rack-beta"], "rack-beta.tail.ts.net")
+
     def test_network_helper_delegates_to_the_active_strategy(self) -> None:
         import services.network
 

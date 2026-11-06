@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import threading
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -20,6 +22,7 @@ from services.network import (
     _is_transit_hop_ip,
     _is_usable_callback_ip,
     _resolve_lan_ip_from_names,
+    _tailscale_peer_fqdn,
     _tailscale_peer_ip,
 )
 from services.storage import CONNECTION_PROFILES_FILE, _atomic_write_text, _ensure_data_file
@@ -31,17 +34,46 @@ REFRESH_SECONDS = 300
 @dataclass
 class ConnectionProfile:
     id: str
-    kind: str  # callback | inventory | tailnet | dns | hostname
+    kind: str  # callback | inventory | tailnet | tailnet_fqdn | dns | hostname
     address: str
-    source: str  # label shown to the operator: callback, inventory, tailscale, callback_recent, ...
+    source: str  # label shown to the operator: callback, inventory, tailscale, tailscale_fqdn, callback_recent, ...
     tailnet: bool = False
     usable: bool = True
     port: int = 22
     user: str = ""
     key: str = ""
+    fqdn: str = ""  # the node's MagicDNS name when known; what a Tailscale HTTPS certificate is issued for
 
 
 Strategy = Callable[[List[ConnectionProfile]], Optional[ConnectionProfile]]
+
+
+_RESOLVE_CACHE: Dict[str, Tuple[float, bool]] = {}
+
+
+RESOLVE_CACHE_SECONDS = 60
+
+
+def _name_resolves(name: str) -> bool:
+    """Whether this host can resolve a name right now (MagicDNS may be off); bounded to 2s and cached."""
+    cached = _RESOLVE_CACHE.get(name)
+    if cached and time.monotonic() - cached[0] < RESOLVE_CACHE_SECONDS:
+        return cached[1]
+    result: List[bool] = []
+
+    def lookup() -> None:
+        try:
+            socket.getaddrinfo(name, None, socket.AF_INET)
+            result.append(True)
+        except OSError:
+            result.append(False)
+
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(2.0)
+    resolves = bool(result and result[0])
+    _RESOLVE_CACHE[name] = (time.monotonic(), resolves)
+    return resolves
 
 
 def gather_profiles(node_name: str, inventory_address: str = "", callback_source_ip: str = "", user: str = "", key: str = "") -> List[ConnectionProfile]:
@@ -59,8 +91,11 @@ def gather_profiles(node_name: str, inventory_address: str = "", callback_source
         usable = tailnet or not _is_transit_hop_ip(inventory_address)
         profiles.append(ConnectionProfile("inventory", "inventory", inventory_address, "inventory" if usable else "inventory_transit", tailnet, usable, **extra))
     peer = _tailscale_peer_ip(node_name)
+    fqdn = _tailscale_peer_fqdn(node_name)
     if peer:
-        profiles.append(ConnectionProfile("tailnet", "tailnet", peer, "tailscale", True, True, **extra))
+        profiles.append(ConnectionProfile("tailnet", "tailnet", peer, "tailscale", True, True, fqdn=fqdn, **extra))
+    if fqdn:
+        profiles.append(ConnectionProfile("tailnet_fqdn", "tailnet_fqdn", fqdn, "tailscale_fqdn", True, _name_resolves(fqdn), fqdn=fqdn, **extra))
 
     # DNS only matters when nothing better is known, and a lookup costs time on every poll.
     if not any(p.kind == "callback" or p.tailnet or (p.kind == "inventory" and p.usable) for p in profiles):
@@ -73,13 +108,19 @@ def gather_profiles(node_name: str, inventory_address: str = "", callback_source
 
 
 def _prefer_tailnet_rank(profile: ConnectionProfile) -> int:
+    if profile.kind == "tailnet_fqdn":
+        return 3 if profile.usable else 10
     if profile.tailnet:
         return {"callback": 0, "inventory": 1}.get(profile.kind, 2)
     if profile.kind == "callback":
-        return 3 if profile.usable else 5
+        return 4 if profile.usable else 6
     if profile.kind == "inventory":
-        return 4 if profile.usable else 7
-    return {"dns": 6}.get(profile.kind, 8)
+        return 5 if profile.usable else 8
+    return {"dns": 7}.get(profile.kind, 9)
+
+
+def _prefer_fqdn_rank(profile: ConnectionProfile) -> Tuple[int, int]:
+    return (0 if profile.kind == "tailnet_fqdn" and profile.usable else 1, _prefer_tailnet_rank(profile))
 
 
 def _lan_first_rank(profile: ConnectionProfile) -> Tuple[int, int]:
@@ -102,6 +143,7 @@ def register_strategy(name: str, strategy: Strategy) -> None:
 
 
 register_strategy("prefer_tailnet", ranked_strategy(_prefer_tailnet_rank))
+register_strategy("prefer_fqdn", ranked_strategy(_prefer_fqdn_rank))
 register_strategy("lan_first", ranked_strategy(_lan_first_rank))
 
 

@@ -155,6 +155,33 @@ let inspectedEventId = null;
 
 let inspectedSnapshot = null;
 
+const EVENTS_OLDER_KEY = "callback-older-expanded";
+
+let olderExpanded = localStorage.getItem(EVENTS_OLDER_KEY) === "1";
+
+const expandedEventIds = new Set();
+
+const eventsToggleOlderBtn = document.getElementById("events-toggle-older");
+
+function eventHostKey(event) {
+  return String(event.hostname || event.fqdn || event.instance_id || "").trim().toLowerCase();
+}
+
+function updateOlderToggle(olderCount) {
+  if (!eventsToggleOlderBtn) return;
+  eventsToggleOlderBtn.disabled = olderCount === 0;
+  eventsToggleOlderBtn.textContent = olderExpanded
+    ? `Condense older (${olderCount})`
+    : `Expand older (${olderCount})`;
+}
+
+function toggleOlderEvents() {
+  olderExpanded = !olderExpanded;
+  localStorage.setItem(EVENTS_OLDER_KEY, olderExpanded ? "1" : "0");
+  expandedEventIds.clear();
+  renderEvents(filterEvents(allEvents));
+}
+
 function eventIdentity(event) {
   return [
     String(event.received_at || ""),
@@ -195,14 +222,25 @@ function renderEvents(events) {
     td.textContent = "No events received yet.";
     tr.appendChild(td);
     eventsBodyEl.appendChild(tr);
+    updateOlderToggle(0);
     return;
   }
 
+  // Events arrive newest first: the first one per host stays full, the rest are older.
+  const seenHosts = new Set();
+  let olderCount = 0;
   for (const e of events.slice(0, 200)) {
+    const hostKey = eventHostKey(e);
+    const isOlder = Boolean(hostKey) && seenHosts.has(hostKey);
+    if (hostKey) seenHosts.add(hostKey);
+    if (isOlder) olderCount += 1;
     const tr = document.createElement("tr");
     tr.className = "event-row-new";
     const eventId = eventIdentity(e);
     tr.dataset.eventId = eventId;
+    const condensed = isOlder && !olderExpanded && !expandedEventIds.has(eventId);
+    if (condensed) tr.classList.add("event-row-condensed");
+    if (isOlder) tr.dataset.older = "1";
     if (inspectedEventId && inspectedEventId === eventId) {
       tr.classList.add("event-row-selected");
     }
@@ -225,6 +263,22 @@ function renderEvents(events) {
 
     values.forEach((v, idx) => {
       const td = document.createElement("td");
+      if (idx === 0 && isOlder) {
+        const twisty = document.createElement("span");
+        twisty.className = "event-twisty";
+        twisty.textContent = condensed ? "▸ " : "▾ ";
+        twisty.title = condensed ? "Expand this older callback" : "Condense this older callback";
+        twisty.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (expandedEventIds.has(eventId)) expandedEventIds.delete(eventId);
+          else expandedEventIds.add(eventId);
+          renderEvents(filterEvents(allEvents));
+        });
+        td.appendChild(twisty);
+        td.appendChild(document.createTextNode(v));
+        tr.appendChild(td);
+        return;
+      }
       if (idx === 4) {
         const span = document.createElement("span");
         span.className = "tag";
@@ -255,6 +309,7 @@ function renderEvents(events) {
     tr.addEventListener("click", () => showPayloadInspect(e));
     eventsBodyEl.appendChild(tr);
   }
+  updateOlderToggle(olderCount);
 
   if (inspectedEventId && inspectedSnapshot) {
     const match = events.find((e) => eventIdentity(e) === inspectedEventId);

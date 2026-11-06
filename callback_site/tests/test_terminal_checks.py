@@ -34,6 +34,16 @@ class TerminalCheckTests(BaseCallbackSiteTest):
         self.assertIn("identity", check_ids)
         self.assertIn("cloud_init", check_ids)
         self.assertIn("remote_inventory", check_ids)
+        self.assertIn("boot_log", check_ids)
+
+    def test_terminal_page_reads_host_from_query_and_dashboard_links_it(self) -> None:
+        script = self.client.get("/static/test_terminal.js").get_data(as_text=True)
+        self.assertIn("applyHostFromQuery", script)
+        self.assertIn('get("host")', script)
+        dashboard = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="open-terminal-link"', dashboard)
+        events_js = self.client.get("/static/home/events.js").get_data(as_text=True)
+        self.assertIn("/test-terminal?host=", events_js)
 
     def test_remote_inventory_check_command_covers_remote_attributes(self) -> None:
         check = services.terminal_checks.TERMINAL_CHECKS.get("remote_inventory")

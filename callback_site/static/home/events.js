@@ -167,6 +167,14 @@ function eventHostKey(event) {
   return String(event.hostname || event.fqdn || event.instance_id || "").trim().toLowerCase();
 }
 
+function setTerminalHost(host) {
+  const link = document.getElementById("open-terminal-link");
+  if (!link) return;
+  const name = String(host || "").trim();
+  link.href = name ? `/test-terminal?host=${encodeURIComponent(name)}` : "/test-terminal";
+  link.textContent = name ? `Open terminal for ${name}` : "Open node terminal";
+}
+
 function updateOlderToggle(olderCount) {
   if (!eventsToggleOlderBtn) return;
   eventsToggleOlderBtn.disabled = olderCount === 0;
@@ -192,6 +200,7 @@ function eventIdentity(event) {
 }
 
 function showPayloadInspect(event) {
+  setTerminalHost(event.hostname || event.fqdn || event.source_ip);
   const summary = payloadSummary(event);
   const id = eventIdentity(event);
   inspectedEventId = id;

@@ -85,6 +85,56 @@ class SdCloudInitRenderTests(unittest.TestCase):
         self.assertIn("CALLBACK_URL=http://192.168.174.1:8088/api/cloud-init/callback", env)
         self.assertIn("INSTANCE_ID=render-test-1", env)
 
+    def test_boot_log_script_posts_logs_to_the_callback_site_and_is_wired_in(self) -> None:
+        import json
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        code, data, err = self.render()
+        self.assertEqual(code, 0, err)
+        files = self.files(data)
+        self.assertIn("rack-boot-log runcmd", " ".join(self.runcmd(data)))
+        self.assertIn("/usr/local/bin/rack-boot-log power_restore", files["/usr/local/bin/rack-power-restored-callback"]["content"])
+
+        received: dict = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                received["path"] = self.path
+                received["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *args) -> None:
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        script = files["/usr/local/bin/rack-boot-log"]["content"].replace("/etc/rack-node.env", "/nonexistent-rack-node.env")
+        result = subprocess.run(
+            ["bash", "-c", script, "rack-boot-log", "runcmd"],
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": os.environ["PATH"],
+                "CALLBACK_URL": f"http://127.0.0.1:{server.server_address[1]}/api/cloud-init/callback",
+                "INSTANCE_ID": "render-test-1",
+                "PROFILE": "pi5",
+            },
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(received.get("path"), "/api/cloud-init/boot-log")
+        body = received["body"]
+        self.assertEqual((body["stage"], body["instance_id"], body["profile"]), ("runcmd", "render-test-1", "pi5"))
+        self.assertTrue(body["hostname"])
+        self.assertIn("=== node ===", body["log"])
+        self.assertIn("=== journalctl -b (last 1500) ===", body["log"])
+
     def test_boot_summary_runs_cleanly_with_the_baked_env(self) -> None:
         code, data, err = self.render()
         self.assertEqual(code, 0, err)

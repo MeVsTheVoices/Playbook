@@ -14,6 +14,7 @@ from domain_defaults import NODE_PROVISION_PROFILES
 
 from services.k3s_config import LONGFORM_CHECKS, _check_longform, _longform_input_errors
 from services.module_presets import _record_save
+from services.network import _preferred_node_connect_target
 from services.node_inventory import _node_ops_inventory_view, _ping_status
 from services.node_runs import _apply_node_provisioning, _send_webhook, _telegraf_influx_dummy_check
 from services.node_state import (
@@ -118,12 +119,16 @@ def register_node_routes(app: Any) -> None:
         nodes = _node_ops_inventory_view()
         statuses: List[Dict[str, Any]] = []
         for node in nodes:
-            status = _ping_status(node["address"])
+            callback_ip = str(node.get("callback_connect_ip", "") or node.get("callback_source_ip", "") or "")
+            connect_target, connect_source = _preferred_node_connect_target(node["name"], node["address"], callback_ip)
+            status = _ping_status(connect_target or node["address"])
             statuses.append(
                 {
                     "name": node["name"],
                     "group": node["group"],
                     "address": node["address"],
+                    "connect_target": connect_target,
+                    "connect_source": connect_source,
                     "address_source": node.get("address_source", "inventory"),
                     "reachable": status["reachable"],
                     "latency_ms": status["latency_ms"],

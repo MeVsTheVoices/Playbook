@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from datetime import timezone
+from types import SimpleNamespace
+from unittest.mock import patch
 
 try:
     from .test_support import BaseCallbackSiteTest, patch_in
@@ -581,6 +584,26 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         )
         self.assertEqual(target, "192.168.2.99")
         self.assertEqual(source, "inventory")
+
+    def test_preferred_node_connect_target_uses_tailnet_peer_before_nat_address(self) -> None:
+        with patch_in("_tailscale_peer_ip", ["services.network"], return_value="100.122.50.18"):
+            target, source = services.network._preferred_node_connect_target("rack-beta", "192.168.174.222", "192.168.174.222")
+        self.assertEqual((target, source), ("100.122.50.18", "tailscale"))
+
+    def test_tailscale_peers_come_from_online_peers_in_local_status(self) -> None:
+        status = json.dumps(
+            {
+                "Peer": {
+                    "a": {"HostName": "Rack-Beta", "DNSName": "rack-beta.tail.ts.net.", "Online": True, "TailscaleIPs": ["fd7a::1", "100.100.2.3"]},
+                    "b": {"HostName": "gone", "DNSName": "gone.tail.ts.net.", "Online": False, "TailscaleIPs": ["100.100.2.4"]},
+                }
+            }
+        )
+        self.addCleanup(services.network._TAILNET_CACHE.update, {"at": -1e9, "peers": {}})
+        services.network._TAILNET_CACHE.update({"at": -1e9, "peers": {}})
+        with patch("services.network.subprocess.run", return_value=SimpleNamespace(stdout=status)):
+            peers = services.network._tailscale_peers()
+        self.assertEqual(peers, {"rack-beta": "100.100.2.3"})
 
     def test_latest_hardware_by_host_keeps_most_recent_event(self) -> None:
         older = {

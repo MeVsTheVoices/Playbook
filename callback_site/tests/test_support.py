@@ -91,3 +91,7 @@ class BaseCallbackSiteTest(unittest.TestCase):
         version_guard = patch_in("_local_k3s_version", return_value="")
         version_guard.start()
         self.addCleanup(version_guard.stop)
+        # This machine's tailnet would otherwise change which address a node resolves to.
+        tailnet_guard = patch_in("_tailscale_peer_ip", ["services.network"], return_value="")
+        tailnet_guard.start()
+        self.addCleanup(tailnet_guard.stop)

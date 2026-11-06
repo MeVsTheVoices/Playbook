@@ -64,6 +64,9 @@ MODULE_PRESETS_FILE = DATA_DIR / "module_presets.json"
 BOOT_LOGS_DIR = DATA_DIR / "boot_logs"
 
 
+CONNECTION_PROFILES_FILE = DATA_DIR / "connection_profiles.json"
+
+
 INVENTORY_FILE = BASE_DIR.parent / "inventory.yml"
 
 

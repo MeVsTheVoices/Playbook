@@ -586,7 +586,7 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         self.assertEqual(source, "inventory")
 
     def test_preferred_node_connect_target_uses_tailnet_peer_before_nat_address(self) -> None:
-        with patch_in("_tailscale_peer_ip", ["services.network"], return_value="100.122.50.18"):
+        with patch_in("_tailscale_peer_ip", return_value="100.122.50.18"):
             target, source = services.network._preferred_node_connect_target("rack-beta", "192.168.174.222", "192.168.174.222")
         self.assertEqual((target, source), ("100.122.50.18", "tailscale"))
 

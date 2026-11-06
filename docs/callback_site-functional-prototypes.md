@@ -166,9 +166,10 @@ and _run_prepare_job() in services/sd_prepare.py.
 
 How Node Ops reaches a node is a replaceable strategy, not a hard-coded rule:
 
-- services/connection_profiles.py gathers a list of profiles per node, then a strategy picks one. `prefer_tailnet` (default) and `lan_first` exist; add one with `register_strategy(name, fn)` and select it with `CALLBACK_CONNECTION_STRATEGY`.
+- services/connection_profiles.py gathers a list of profiles per node (callback, inventory, tailnet IP, tailnet FQDN, dns, hostname), then a strategy picks one. `prefer_tailnet` (default, IP before FQDN), `prefer_fqdn` and `lan_first` exist; add one with `register_strategy(name, fn)` and select it with `CALLBACK_CONNECTION_STRATEGY`.
+- The tailnet FQDN comes from `tailscale status --json` (MagicDNS name) and is marked usable only when this host resolves it; tailnet profiles also carry `fqdn` so HTTPS can use the name a Tailscale certificate is issued for.
 - `_preferred_node_connect_target` in services/network.py is now a thin wrapper, so existing callers keep working.
-- Next steps, all planned: callers (Ansible runs, hardware check, boot logs, terminal) take the whole profile (user, port, key) instead of only an address; per-node pinned profile; try the next profile when one fails; a Node Ops view to inspect and edit profiles; more transports (Tailscale SSH, bastion).
+- Next steps, all planned: HTTPS through Tailscale certificates (`tailscale cert <fqdn>`, a `scheme` on profiles, the site and node services served over TLS); callers (Ansible runs, hardware check, boot logs, terminal) take the whole profile (user, port, key) instead of only an address; per-node pinned profile; try the next profile when one fails; a Node Ops view to inspect and edit profiles; more transports (Tailscale SSH, bastion).
 
 ## 6) Practical Functional Rules (Strict Mode)
 

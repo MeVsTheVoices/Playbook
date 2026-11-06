@@ -86,19 +86,23 @@ function renderNodeRows(rows) {
 
 function renderPodRows(rows) {
   if (!Array.isArray(rows) || !rows.length) {
-    return `<tr><td colspan="7">No pods returned.</td></tr>`;
+    return `<tr><td colspan="8">No pods returned.</td></tr>`;
   }
   return rows.map((row) => {
     const phaseKind = row.phase === "Running" ? "ok" : "warn";
     const created = row.created_at ? String(row.created_at).replace("T", " ").replace("Z", " UTC") : "-";
+    const action = row.cleanup
+      ? `<button type="button" class="kube-btn" data-remove-pod="${escapeHtml(row.name || "")}" data-pod-namespace="${escapeHtml(row.namespace || "")}">Remove</button>`
+      : "";
     return `<tr>
       <td>${escapeHtml(row.namespace || "")}</td>
       <td>${escapeHtml(row.name || "")}</td>
-      <td>${renderPill(row.phase || "", phaseKind)}</td>
+      <td>${renderPill(row.cleanup === "terminating" ? "Terminating" : (row.phase || ""), phaseKind)}</td>
       <td>${escapeHtml(row.node || "")}</td>
       <td>${escapeHtml(row.ready_containers || 0)}</td>
       <td>${escapeHtml(row.restart_count || 0)}</td>
       <td>${escapeHtml(created)}</td>
+      <td>${action}</td>
     </tr>`;
   }).join("");
 }
@@ -187,7 +191,7 @@ async function loadKubernetesSummary() {
     if (!data.available) {
       statusEl.textContent = `Kubernetes runtime is not currently active.\nReason: ${reason}`;
       nodeRowsEl.innerHTML = `<tr><td colspan="10">Runtime inactive.</td></tr>`;
-      podRowsEl.innerHTML = `<tr><td colspan="7">Runtime inactive.</td></tr>`;
+      podRowsEl.innerHTML = `<tr><td colspan="8">Runtime inactive.</td></tr>`;
       namespaceRowsEl.innerHTML = `<tr><td colspan="4">Runtime inactive.</td></tr>`;
       jobRowsEl.innerHTML = `<tr><td colspan="6">Runtime inactive.</td></tr>`;
       factsListEl.innerHTML = [
@@ -301,6 +305,76 @@ clearNodesBtn.addEventListener("click", clearOldNodes);
 nodeRowsEl.addEventListener("click", (event) => {
   const button = event.target.closest("[data-remove-node]");
   if (button) removeNode(button);
+});
+
+const clearPodsBtn = document.getElementById("kube-clear-old-pods");
+const clearPodsStatusEl = document.getElementById("kube-clear-pods-status");
+
+async function clearOldPods() {
+  clearPodsBtn.disabled = true;
+  clearPodsStatusEl.textContent = "Checking for old pods...";
+  try {
+    const post = async (dryRun) => {
+      const res = await fetch("/api/kubernetes/pods/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dry_run: dryRun, min_minutes: 10 }),
+      });
+      return res.json();
+    };
+    const preview = await post(true);
+    if (!preview.ok) {
+      clearPodsStatusEl.textContent = preview.error || "Could not list pods.";
+      return;
+    }
+    const targets = Array.isArray(preview.would_remove) ? preview.would_remove : [];
+    if (!targets.length) {
+      clearPodsStatusEl.textContent = "No old pods to clear.";
+      return;
+    }
+    const shown = targets.slice(0, 25).map((p) => `- ${p.namespace}/${p.name} (${p.state === "terminating" ? "terminating" : p.phase}, ${p.minutes}m)`).join("\n");
+    const more = targets.length > 25 ? `\n...and ${targets.length - 25} more` : "";
+    if (!window.confirm(`Remove ${targets.length} finished/stuck pod(s)? Completed pod logs are lost.\n\n${shown}${more}`)) {
+      clearPodsStatusEl.textContent = "Cancelled.";
+      return;
+    }
+    const done = await post(false);
+    const removed = Array.isArray(done.removed) ? done.removed : [];
+    const failed = Array.isArray(done.failed) ? done.failed : [];
+    clearPodsStatusEl.textContent = failed.length
+      ? `Removed ${removed.length}; failed: ${failed.map((f) => `${f.name} (${f.error})`).join(", ")}`
+      : `Removed ${removed.length} pod(s).`;
+    await loadKubernetesSummary();
+  } catch (err) {
+    clearPodsStatusEl.textContent = `Clear failed: ${String(err && err.message ? err.message : err)}`;
+  } finally {
+    clearPodsBtn.disabled = false;
+  }
+}
+
+async function removePod(button) {
+  const name = button.dataset.removePod || "";
+  const namespace = button.dataset.podNamespace || "";
+  if (!name || !namespace) return;
+  if (!window.confirm(`Remove pod ${namespace}/${name}?`)) return;
+  button.disabled = true;
+  try {
+    const res = await fetch(`/api/kubernetes/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: "DELETE" });
+    const data = await res.json();
+    clearPodsStatusEl.textContent = res.ok && data.ok
+      ? `Removed ${namespace}/${name}.`
+      : `Could not remove ${namespace}/${name}: ${data.error || (data.failed && data.failed[0] && data.failed[0].error) || res.status}`;
+    await loadKubernetesSummary();
+  } catch (err) {
+    clearPodsStatusEl.textContent = `Remove failed: ${String(err && err.message ? err.message : err)}`;
+    button.disabled = false;
+  }
+}
+
+clearPodsBtn.addEventListener("click", clearOldPods);
+podRowsEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-remove-pod]");
+  if (button) removePod(button);
 });
 
 initSidebar();

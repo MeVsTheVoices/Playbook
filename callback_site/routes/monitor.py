@@ -10,7 +10,12 @@ from flask import jsonify, request
 from domain_defaults import NODE_PROVISION_PROFILES
 
 from services.events import _read_events
-from services.kubernetes import NODE_NAME_RE, _clear_stale_nodes, _kubernetes_local_summary
+from services.kubernetes import (
+    NODE_NAME_RE,
+    _clear_stale_nodes,
+    _clear_stale_pods,
+    _kubernetes_local_summary,
+)
 from services.node_inventory import _ping_status
 from services.node_state import (
     _latest_node_cert,
@@ -20,6 +25,32 @@ from services.node_state import (
     _save_monitor_state,
 )
 from services.node_views import _monitor_nodes_summary, _prune_stale_nodes, _single_source_of_truth_summary
+
+
+def _clear_request_options() -> tuple[int, bool, Any]:
+    """(min_minutes, dry_run, error response or None) for the cluster cleanup endpoints; dry run is the default."""
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return 0, True, (jsonify({"ok": False, "error": "invalid payload"}), 400)
+    try:
+        min_minutes = int(payload.get("min_minutes", 10))
+    except (TypeError, ValueError):
+        return 0, True, (jsonify({"ok": False, "error": "min_minutes must be an integer"}), 400)
+    if min_minutes < 0 or min_minutes > 10080:
+        return 0, True, (jsonify({"ok": False, "error": "min_minutes must be between 0 and 10080"}), 400)
+    return min_minutes, payload.get("dry_run", True) is not False, None
+
+
+def _single_removal_response(result: dict) -> Any:
+    if not result.get("ok") and "removed" not in result:
+        return jsonify(result), 502
+    if result.get("removed"):
+        return jsonify(result)
+    if result.get("failed"):
+        return jsonify(result), 502
+    skipped = result.get("skipped") or [{}]
+    reason = str(skipped[0].get("reason", "not eligible"))
+    return jsonify({**result, "ok": False, "error": reason}), 404 if reason == "not found" else 409
 
 
 def register_monitor_routes(app: Any) -> None:
@@ -73,16 +104,9 @@ def register_monitor_routes(app: Any) -> None:
 
     @app.post("/api/kubernetes/nodes/clear")
     def kubernetes_clear_nodes() -> Any:
-        payload = request.get_json(silent=True) or {}
-        if not isinstance(payload, dict):
-            return jsonify({"ok": False, "error": "invalid payload"}), 400
-        try:
-            min_minutes = int(payload.get("min_minutes", 10))
-        except (TypeError, ValueError):
-            return jsonify({"ok": False, "error": "min_minutes must be an integer"}), 400
-        if min_minutes < 0 or min_minutes > 10080:
-            return jsonify({"ok": False, "error": "min_minutes must be between 0 and 10080"}), 400
-        dry_run = payload.get("dry_run", True) is not False
+        min_minutes, dry_run, error = _clear_request_options()
+        if error:
+            return error
         result = _clear_stale_nodes(min_minutes=min_minutes, dry_run=dry_run)
         return jsonify(result), 200 if result.get("ok") or "removed" in result else 502
 
@@ -90,17 +114,22 @@ def register_monitor_routes(app: Any) -> None:
     def kubernetes_remove_node(name: str) -> Any:
         if not NODE_NAME_RE.fullmatch(name) or len(name) > 253:
             return jsonify({"ok": False, "error": "invalid node name"}), 400
-        result = _clear_stale_nodes(min_minutes=0, dry_run=False, names=[name])
-        if not result.get("ok") and "removed" not in result:
-            return jsonify(result), 502
-        if result.get("removed"):
-            return jsonify(result)
-        failed = result.get("failed") or []
-        if failed:
-            return jsonify(result), 502
-        skipped = result.get("skipped") or [{}]
-        reason = str(skipped[0].get("reason", "not eligible"))
-        return jsonify({**result, "ok": False, "error": reason}), 404 if reason == "not found" else 409
+        return _single_removal_response(_clear_stale_nodes(min_minutes=0, dry_run=False, names=[name]))
+
+    @app.post("/api/kubernetes/pods/clear")
+    def kubernetes_clear_pods() -> Any:
+        min_minutes, dry_run, error = _clear_request_options()
+        if error:
+            return error
+        result = _clear_stale_pods(min_minutes=min_minutes, dry_run=dry_run)
+        return jsonify(result), 200 if result.get("ok") or "removed" in result else 502
+
+    @app.delete("/api/kubernetes/pods/<namespace>/<name>")
+    def kubernetes_remove_pod(namespace: str, name: str) -> Any:
+        for value in (namespace, name):
+            if not NODE_NAME_RE.fullmatch(value) or len(value) > 253:
+                return jsonify({"ok": False, "error": "invalid pod name"}), 400
+        return _single_removal_response(_clear_stale_pods(min_minutes=0, dry_run=False, targets=[(namespace, name)]))
 
     @app.post("/api/nodes/stale/prune")
     def prune_stale_nodes() -> Any:

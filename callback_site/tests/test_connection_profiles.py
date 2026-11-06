@@ -94,6 +94,17 @@ class ConnectionProfileTests(BaseCallbackSiteTest):
         self.assertTrue(stored["selected"])
         self.assertIn(stored["selected"], stored["profiles"])
 
+    def test_node_ops_reset_clears_connection_history_and_boot_logs(self) -> None:
+        cp.remember_profiles("node-r", [cp.ConnectionProfile("callback", "callback", "192.168.2.20", "callback")], "callback")
+        pushed = self.client.post("/api/cloud-init/boot-log", json={"hostname": "node-r", "log": "=== node ===\nnode-r\n"})
+        self.assertEqual(pushed.status_code, 200)
+        self.assertTrue(self.client.get("/api/nodes/node-r/boot-logs").get_json()["logs"])
+
+        reset = self.client.post("/api/settings/reset", json={"scope": "node_ops"}).get_json()["reset"]
+        self.assertGreaterEqual(reset["boot_logs_removed"], 1)
+        self.assertEqual(cp._read_node_profiles("node-r").get("profiles"), {})
+        self.assertEqual(self.client.get("/api/nodes/node-r/boot-logs").get_json()["logs"], [])
+
     def test_connection_profiles_endpoint_lists_candidates_and_history(self) -> None:
         self.client.post("/api/cloud-init/callback", json={"hostname": "rack-delta", "profile": "pi5", "stage": "phone_home", "source_ip": "192.168.174.78"})
         payload = self.client.get("/api/nodes/rack-delta/connection-profiles").get_json()

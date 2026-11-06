@@ -8,6 +8,7 @@ from typing import Any
 
 from flask import jsonify, render_template, request
 
+from services.boot_logs import _schedule_boot_log_fetch
 from services.callback_payload import (
     _extract_payload_profile,
     _normalize_hostname,
@@ -147,6 +148,7 @@ def register_callback_routes(app: Any) -> None:
     
         _trigger_initial_callback_closer(event)
         deduped = _store_callback_event(event)
+        _schedule_boot_log_fetch(event)
         return jsonify({"ok": True, "deduped": deduped})
 
     @app.get("/api/cloud-init/reports/<report_id>")

@@ -9,6 +9,7 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 - Distribution-aware imaging for `standard` and `k3s` flows.
 - Catalog management with cache checks and bulk pulls (select several presets, or pull everything missing).
 - Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
+- Boot log exchange: shortly after a node calls back the site pulls its boot logs over SSH (journal, cloud-init, dmesg) and keeps the last 10 per node; set `CALLBACK_AUTO_BOOT_LOGS=0` to turn the automatic pull off.
 - OpenWrt routers as Node Ops hosts (group `openwrt`) with SSH probe and key push, SSH key management, and Tailscale ACL planning.
 - Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
 
@@ -65,7 +66,7 @@ Open:
 - `callback_site/routes/` holds the HTTP endpoints, one module per area (pages, openwrt, settings, callbacks, sd, images, ssh, test_terminal, monitor, nodes). Each exposes a `register_*_routes(app)` function.
 - `callback_site/services/` holds the domain logic, layered so imports only point downward:
   - `storage`, `settings`, `sd_profiles`, `ssh_keys`, `openwrt`, `network`: paths, settings, keys and addressing.
-  - `events`, `images`, `image_catalog`, `reports`: callback events, the image library and catalog pulls.
+  - `events`, `images`, `image_catalog`, `reports`, `boot_logs`: callback events, the image library, catalog pulls and node boot logs.
   - `node_state`, `node_inventory`, `node_runs`, `node_views`: Node Ops state, inventory, Ansible runs and read models.
   - `sd_prepare`, `k3s_config`, `sd_devices`, `kubernetes`, `terminal_checks`, `provision_jobs`: SD preparation, config checks, devices, cluster summary and background jobs.
 - `callback_site/k3s_lightweight.py` (board and role registry) and `callback_site/tailscale_policy.py` (policy builder) are shared by the services, routes and templates.
@@ -125,6 +126,7 @@ That config is carried forward in the cloud-init payload and used by the post-bo
 - `callback_site/data/sd_option_profiles.json` — reusable cloud-init option templates
 - `callback_site/data/ssh_keys/` — generated SSH key material
 - `callback_site/data/node_reports/` — stored hardware-report payloads
+- `callback_site/data/boot_logs/` — boot logs pulled from nodes, one folder per node
 
 ## Testing
 

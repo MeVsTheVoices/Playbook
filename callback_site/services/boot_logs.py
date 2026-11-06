@@ -178,8 +178,47 @@ def _fetch_boot_logs(node_name: str, trigger: str = "manual", address: str | Non
     return _write_entry(name, meta, text)
 
 
+def _store_pushed_boot_log(node_name: str, text: str, stage: str = "", instance_id: str = "", source: str = "") -> Dict[str, Any]:
+    """Keep a log the node sent itself; works for nodes the site cannot SSH into."""
+    name = _safe_name(node_name)
+    if not name:
+        raise ValueError("invalid node name")
+    now = datetime.now(timezone.utc)
+    truncated = len(text) > MAX_LOG_CHARS
+    if truncated:
+        text = "[earlier output truncated]\n" + text[-MAX_LOG_CHARS:]
+    meta: Dict[str, Any] = {
+        "id": now.strftime("%Y%m%dT%H%M%S%fZ"),
+        "node": name,
+        "fetched_at": now.isoformat(),
+        "trigger": "pushed",
+        "status": "ok",
+        "bytes": len(text.encode("utf-8")),
+        "truncated": truncated,
+        "target": f"sent by the node{f' from {source}' if source else ''}",
+        "error": "",
+        "stage": stage,
+        "instance_id": instance_id,
+    }
+    logger.info("Stored pushed boot log for node=%s stage=%s (%s bytes)", name, stage, meta["bytes"])
+    return _write_entry(name, meta, text)
+
+
+def _pushed_recently(name: str) -> bool:
+    newest = next(iter(_list_boot_logs(name)), None)
+    if not newest or newest.get("trigger") != "pushed" or newest.get("status") != "ok":
+        return False
+    try:
+        fetched = datetime.fromisoformat(str(newest.get("fetched_at", "")))
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - fetched).total_seconds() < AUTO_COOLDOWN_SECONDS
+
+
 def _boot_log_auto_worker(name: str, address: str) -> None:
     time.sleep(AUTO_DELAY_SECONDS)
+    if _pushed_recently(name):
+        return
     try:
         _fetch_boot_logs(name, trigger="callback", address=address or None)
     except Exception:  # noqa: BLE001 - a background pull must never take the site down

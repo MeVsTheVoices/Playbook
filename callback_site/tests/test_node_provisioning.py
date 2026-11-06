@@ -632,6 +632,26 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         self.assertTrue(any(item.get("profile_id") == "hardware_check_trigger" for item in result["results"]))
         trigger_mock.assert_called_once()
 
+    def test_long_run_does_not_overwrite_results_saved_for_other_nodes_meanwhile(self) -> None:
+        services.node_state._save_node_provisioning({"node_configs": {}, "results": {}, "node_inputs": {}, "manual_nodes": {}})
+        self.addCleanup(services.node_state._save_node_provisioning, {"node_configs": {}, "results": {}, "node_inputs": {}, "manual_nodes": {}})
+
+        def slow_run(node_name, profile, **kwargs):
+            # Another node finishes and saves while this one is still running.
+            state = services.node_state._load_node_provisioning()
+            state["results"]["node-b"] = {"baseline": {"status": "ok", "checked_at": "2026-01-01T00:00:00+00:00"}}
+            services.node_state._save_node_provisioning(state)
+            return {"profile_id": "baseline", "status": "ok", "mode": "check", "checked_at": "2026-01-01T00:00:05+00:00", "output": ""}
+
+        with patch_in("_profile_map", return_value={"baseline": {"id": "baseline", "tags": ["baseline"]}}), patch_in(
+            "_node_ops_inventory_view", return_value=[{"name": "node-a", "group": "rpi5_active", "address": "192.0.2.10"}]
+        ), patch_in("_run_node_profile", side_effect=slow_run):
+            services.node_runs._apply_node_provisioning("node-a", ["baseline"], mode="apply", run_ansible=True)
+
+        results = services.node_state._load_node_provisioning()["results"]
+        self.assertIn("node-b", results)
+        self.assertIn("node-a", results)
+
     def test_run_hardware_check_callback_fails_fast_when_private_key_unreadable(self) -> None:
         with patch_in("_node_ops_inventory_view",
             return_value=[

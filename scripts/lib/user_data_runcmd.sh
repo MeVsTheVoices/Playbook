@@ -111,6 +111,7 @@ fi
 # Append final runcmd callback using a runtime payload generator so all values are expanded on the node, not during host-side template generation.
 cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
   - [ bash, -c, '. /etc/rack-node.env; SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD_JSON="$(INSTANCE_ID="$INSTANCE_ID" HOSTNAME="$HOSTNAME" PROFILE="$PROFILE" SOURCE_IP="$SOURCE_IP" NODE_REPORT_B64="$NODE_REPORT_B64" /usr/local/bin/rack-callback-payload)"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "$PAYLOAD_JSON" "$CALLBACK_URL"; then echo "rack callback POST failed after retries to $CALLBACK_URL" >&2; fi' ]
+  - [ sh, -c, '/usr/local/bin/rack-boot-log runcmd || true' ]
 
 RUNCMD_EOF
 

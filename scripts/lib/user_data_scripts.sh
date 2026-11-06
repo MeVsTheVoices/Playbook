@@ -106,6 +106,51 @@ cat >> "$USER_DATA_OUT" <<EOF
       if [[ -n "\${CALLBACK_URL:-}" ]]; then
         curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "\${CALLBACK_URL}" || true
       fi
+      /usr/local/bin/rack-boot-log power_restore || true
+  - path: /usr/local/bin/rack-boot-log
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Sends this node's boot and cloud-init logs to the callback site. The node opens the connection, so it works behind NAT.
+      if [[ -r /etc/rack-node.env ]]; then
+        . /etc/rack-node.env
+      fi
+      BOOT_LOG_URL="\${CALLBACK_URL:-${CALLBACK_URL}}"
+      BOOT_LOG_URL="\${BOOT_LOG_URL%/callback}/boot-log"
+      STAGE="\${1:-boot-log}" INSTANCE_ID="\${INSTANCE_ID:-}" PROFILE="\${PROFILE:-}" python3 <<'PY' | curl --retry 3 --retry-delay 2 --connect-timeout 5 --max-time 90 -fsS -X POST -H 'Content-Type: application/json' --data-binary @- "\$BOOT_LOG_URL" || true
+      import json
+      import os
+      import socket
+      import subprocess
+
+      SECTIONS = [
+        ("node", "hostname; uname -a; uptime -s"),
+        ("cloud-init status", "cloud-init status --long 2>&1"),
+        ("systemctl --failed", "systemctl --failed --no-pager 2>&1"),
+        ("journalctl -b (last 1500)", "journalctl -b --no-pager -o short-iso -n 1500 2>&1"),
+        ("/var/log/cloud-init.log (last 800)", "tail -n 800 /var/log/cloud-init.log 2>&1"),
+        ("/var/log/cloud-init-output.log (last 800)", "tail -n 800 /var/log/cloud-init-output.log 2>&1"),
+        ("dmesg (last 400)", "dmesg --time-format iso 2>&1 | tail -n 400"),
+        ("tailscale status", "tailscale status 2>&1 | head -n 20"),
+      ]
+
+
+      def run(cmd):
+        try:
+          return subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, timeout=60).stdout
+        except Exception:
+          return ""
+
+
+      text = "".join(f"=== {title} ===\n{run(cmd)}\n" for title, cmd in SECTIONS)
+      print(json.dumps({
+        "hostname": socket.gethostname(),
+        "instance_id": os.environ.get("INSTANCE_ID", ""),
+        "profile": os.environ.get("PROFILE", ""),
+        "stage": os.environ.get("STAGE", "boot-log"),
+        "log": text[-600000:],
+      }, separators=(",", ":")))
+      PY
   - path: /etc/systemd/system/rack-power-restored-callback.service
     permissions: "0644"
     content: |

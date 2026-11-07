@@ -2,6 +2,10 @@
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
 
 if [[ -z "$IMAGE_FILE" ]]; then
+  if [[ -z "$IMAGE_URL" && "$PROFILE" == "network-toolkit" ]]; then
+    IMAGE_URL="https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-10-06/2026-10-06-raspios-trixie-arm64-lite.img.xz"
+    IMAGE_SHA256="${IMAGE_SHA256:-483db18a48da399b5b7022ffae9a07bc6d99daab30e593aedac09b69ff422843}"
+  fi
   if [[ -z "$IMAGE_URL" && ( "$PROFILE" == "pi5" || "$PROFILE" == "pi4" || "$PROFILE" == "pi3bplus" ) ]]; then
     IMAGE_URL="https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-arm64+raspi.img.xz"
   fi

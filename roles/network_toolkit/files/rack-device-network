@@ -1,0 +1,30 @@
+#!/usr/bin/python3 -I
+"""Only change the dedicated Ethernet connection; never the Wi-Fi uplink."""
+
+import ipaddress
+import subprocess
+import sys
+
+args = sys.argv[1:]
+if args == ["show"]:
+    subprocess.run(["/usr/bin/nmcli", "device", "show", "eth0"], check=True)
+elif args == ["down"]:
+    subprocess.run(["/usr/bin/nmcli", "connection", "down", "rack-device"], check=True)
+elif len(args) == 2 and args[0] == "static":
+    try:
+        address = ipaddress.IPv4Interface(args[1])
+    except ValueError:
+        raise SystemExit("Use a valid IPv4 address/prefix, for example 192.168.1.2/24.")
+    if address.ip.is_multicast or address.ip.is_unspecified or address.ip.is_loopback or address.network.prefixlen < 8:
+        raise SystemExit("Use a unicast device-network address with a prefix of /8 or narrower.")
+    if address.network.overlaps(ipaddress.IPv4Network("100.64.0.0/10")):
+        raise SystemExit("The device network must not overlap the Tailscale address range.")
+    subprocess.run([
+        "/usr/bin/nmcli", "connection", "modify", "rack-device",
+        "ipv4.method", "manual", "ipv4.addresses", str(address),
+        "ipv4.gateway", "", "ipv4.dns", "", "ipv4.never-default", "yes",
+        "ipv6.method", "disabled",
+    ], check=True)
+    subprocess.run(["/usr/bin/nmcli", "--wait", "20", "connection", "up", "rack-device"], check=True)
+else:
+    raise SystemExit("Usage: sudo rack-device-network show | static ADDRESS/PREFIX | down")

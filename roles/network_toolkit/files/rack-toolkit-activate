@@ -1,0 +1,33 @@
+#!/bin/bash
+set -euo pipefail
+if [[ "$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("BackendState", ""))')" != Running ]]; then
+  echo "network-toolkit: join Tailscale before applying the private-SSH firewall" >&2
+  exit 1
+fi
+if ! id network-console >/dev/null 2>&1; then
+  useradd --system --user-group --create-home --home-dir /var/lib/network-console --shell /bin/bash --groups dialout network-console
+fi
+usermod --groups dialout --shell /bin/bash --home /var/lib/network-console --lock network-console
+install -d -o network-console -g network-console -m 0750 /var/lib/network-console
+install -d -o network-console -g network-console -m 0700 /var/lib/network-console/.screen
+chown root:www-data /etc/nginx/network-toolkit.htpasswd
+chmod 0640 /etc/nginx/network-toolkit.htpasswd
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+visudo -cf /etc/sudoers.d/network-toolkit
+systemctl daemon-reload
+nmcli connection reload
+CARRIER="$(nmcli -g WIRED-PROPERTIES.CARRIER device show eth0)"
+if [[ "$CARRIER" == on ]]; then
+  nmcli --wait 20 connection up rack-device
+else
+  echo "network-toolkit: Ethernet has no carrier; rack-device will activate when a cable is connected."
+fi
+sshd -t
+systemctl reload ssh.service
+systemctl enable --now rack-toolkit-terminal.service
+systemctl enable nginx.service
+systemctl restart nginx.service
+systemctl enable rack-toolkit-firewall.service
+systemctl restart rack-toolkit-firewall.service
+/usr/local/bin/rack-toolkit-check

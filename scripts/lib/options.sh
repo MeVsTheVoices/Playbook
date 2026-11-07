@@ -31,6 +31,17 @@ CLOUD_INIT_TAILSCALE_SSH="${CLOUD_INIT_TAILSCALE_SSH:-false}"
 CLOUD_INIT_TAILSCALE_ROUTES="${CLOUD_INIT_TAILSCALE_ROUTES:-}"
 CLOUD_INIT_TAILSCALE_EXIT_NODE="${CLOUD_INIT_TAILSCALE_EXIT_NODE:-}"
 
+if [[ "$PROFILE" == "network-toolkit" ]]; then
+  CLOUD_INIT_TAILSCALE_ENABLE="true"
+  CLOUD_INIT_TAILSCALE_TAGS="tag:network-toolkit"
+  CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH="true"
+  CLOUD_INIT_DISABLE_ROOT_SSH="true"
+  CLOUD_INIT_ENABLE_HARDWARE_CHECKS="true"
+  CLOUD_INIT_INSTALL_TELEGRAF="false"
+  CLOUD_INIT_FANCY_MOTD="false"
+  CLOUD_INIT_ENABLE_FIREWALL_BASELINE="false"
+fi
+
 if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
   if [[ -z "$CLOUD_INIT_TAILSCALE_TAGS" ]]; then
     # Same defaults the Ansible roles use, so first-boot and Node Ops agree.
@@ -146,6 +157,10 @@ elif [[ "$PROFILE" == "pi4" ]]; then
   PROFILE_ROLE="pi4"
   PROFILE_STORAGE="sd-or-usb"
   PROFILE_PACKAGES="curl git python3 python3-apt htop lshw"
+elif [[ "$PROFILE" == "network-toolkit" ]]; then
+  PROFILE_ROLE="network-toolkit"
+  PROFILE_STORAGE="sdcard"
+  PROFILE_PACKAGES="$(toolkit_render packages)"
 fi
 
 # Ubuntu 21.10 to 23.10 moved the vxlan module (flannel's overlay) out of the base raspi kernel package.

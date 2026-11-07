@@ -17,7 +17,7 @@ if (toggleBtn) {
 }
 
 const TEXT_FIELDS = ["rack_name", "tailnet", "admin_group", "admin_members", "homelab_tag", "traffic", "extra_ports", "subnets", "ssh_user"];
-const CHECK_FIELDS = ["pi_servers", "subnet_access", "exit_node", "ssh", "ssh_root", "tests", "deny_tests"];
+const CHECK_FIELDS = ["pi_servers", "subnet_access", "exit_node", "ssh", "ssh_root", "tests", "deny_tests", "toolkit_funnel"];
 const POLICY_DEBOUNCE_MS = 250;
 
 let policyRequestSeq = 0;
@@ -187,6 +187,7 @@ async function generatePolicy() {
         ssh_user: inputs.ssh_user,
         tests: inputs.tests,
         deny_tests: inputs.deny_tests,
+        toolkit_funnel: inputs.toolkit_funnel,
       }),
     });
     data = await res.json();

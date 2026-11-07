@@ -1,0 +1,26 @@
+[Unit]
+Description=Network Toolkit restricted browser terminal
+After=network.target
+
+[Service]
+User=network-console
+Group=network-console
+SupplementaryGroups=dialout
+WorkingDirectory=/var/lib/network-console
+Environment=SCREENDIR=/var/lib/network-console/.screen
+ExecStart=/usr/bin/ttyd --interface 127.0.0.1 --port 7682 --writable --check-origin --max-clients 2 /bin/bash -l
+Restart=on-failure
+MemoryMax=192M
+TasksMax=64
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/network-console /run/lock
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+RULESET=""
+if nft list table inet rack_toolkit >/dev/null 2>&1; then
+  RULESET="delete table inet rack_toolkit"$'\n'
+fi
+RULESET+="$(cat /etc/rack-toolkit.nft)"
+nft -c -f - <<< "$RULESET"
+nft -f - <<< "$RULESET"

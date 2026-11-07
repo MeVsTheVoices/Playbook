@@ -34,6 +34,10 @@ raspberry_pi5_k3s_version: ""
 # Keep storage_path configurable so future SD -> NVMe boot/storage moves only
 # require changing this path, not the workflow.
 raspberry_pi5_longhorn_storage_path: /var/lib/longhorn
+# Blank or "none" leaves storage_path a plain directory. "auto" formats and mounts the one blank disk, or name a device.
+raspberry_pi5_longhorn_storage_disk: ""
+# Which stable name rack_storage_disk reports for the disk: uuid or id.
+raspberry_pi5_longhorn_storage_identify_by: uuid
 raspberry_pi5_longhorn_default_replica_count: 2
 raspberry_pi5_longhorn_set_default_storage_class: true
 raspberry_pi5_longhorn_install_chart: true

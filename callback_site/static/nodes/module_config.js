@@ -46,19 +46,182 @@ function browserTimezone() {
 function appendModuleFieldWarning(spec, parent = moduleDetailEl) {
   if (!spec.warning) return;
   const warning = document.createElement("p");
-  warning.className = "note";
-  warning.style.color = "#b45309";
-  warning.textContent = `Warning: ${spec.warning}`;
+  warning.className = "module-warning";
+  warning.textContent = String(spec.warning);
   parent.appendChild(warning);
 }
 
 function appendModuleFieldHint(spec, parent = moduleDetailEl) {
   if (!spec || !spec.hint) return;
   const hint = document.createElement("p");
-  hint.className = "note";
-  hint.style.margin = "0 0 0.3rem 1.6rem";
+  hint.className = "module-hint";
   hint.textContent = String(spec.hint);
   parent.appendChild(hint);
+}
+
+// Live reads: what is actually set on the node, shown beside each saved value.
+const liveConfigCache = {};
+let liveConfigInFlight = "";
+let liveConfigRequestId = 0;
+
+function liveKey(nodeName, moduleId) {
+  return `${nodeName}|${moduleId}`;
+}
+
+// A field the user has edited is never overwritten by a late live read.
+function trackTouched(input) {
+  const mark = () => { input.dataset.touched = "1"; };
+  input.addEventListener("input", mark);
+  input.addEventListener("change", mark);
+}
+
+function appendLiveSlot(parent, fieldId) {
+  const slot = document.createElement("div");
+  slot.className = "module-live";
+  slot.setAttribute("data-live-for", fieldId);
+  parent.appendChild(slot);
+}
+
+function buildLiveBar() {
+  const bar = document.createElement("div");
+  bar.className = "module-live-bar";
+  const status = document.createElement("span");
+  status.id = "module-live-status";
+  status.className = "module-live-status idle";
+  const refresh = document.createElement("button");
+  refresh.type = "button";
+  refresh.id = "module-live-refresh";
+  refresh.className = "secondary module-live-refresh";
+  refresh.textContent = "Read from node";
+  refresh.addEventListener("click", () => loadLiveConfig());
+  bar.append(status, refresh);
+  return bar;
+}
+
+function liveAgo(iso) {
+  const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 10) return "just now";
+  if (seconds < 90) return `${seconds}s ago`;
+  return `${Math.round(seconds / 60)} min ago`;
+}
+
+function setLiveStatus(text, state, title = "") {
+  const el = document.getElementById("module-live-status");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `module-live-status ${state}`;
+  el.title = title;
+}
+
+function fieldValueOf(input) {
+  return input.getAttribute("data-module-type") === "checkbox" ? (input.checked ? "true" : "false") : input.value.trim();
+}
+
+function setFieldValue(input, value) {
+  if (input.getAttribute("data-module-type") === "checkbox") input.checked = value === "true";
+  else input.value = value;
+}
+
+function applyLiveConfig(result) {
+  const fields = result.fields || {};
+  const readable = new Set(result.readable || []);
+  moduleDetailEl.querySelectorAll("[data-module-field]").forEach((input) => {
+    const id = input.getAttribute("data-module-field");
+    const slot = moduleDetailEl.querySelector(`[data-live-for="${id}"]`);
+    const host = input.closest(".module-field");
+    if (!slot || !host) return;
+    slot.className = "module-live";
+    slot.replaceChildren();
+    host.classList.remove("from-live");
+    if (!(id in fields)) {
+      // A missing checkbox only means that option does not apply here, so it gets no note.
+      if (readable.has(id) && input.getAttribute("data-module-type") !== "checkbox") {
+        slot.textContent = "Not found on the node";
+        slot.classList.add("muted");
+      }
+      return;
+    }
+    const live = fields[id];
+    if (!input.dataset.saved && !input.dataset.touched) {
+      setFieldValue(input, live);
+      host.classList.add("from-live");
+      slot.textContent = "Filled in from the node";
+      return;
+    }
+    if (fieldValueOf(input) === live) {
+      slot.textContent = "Matches the node";
+      slot.classList.add("match");
+      return;
+    }
+    slot.classList.add("differs");
+    const text = document.createElement("span");
+    text.textContent = `On the node now: ${live === "" ? "(blank)" : live}`;
+    const use = document.createElement("button");
+    use.type = "button";
+    use.className = "secondary module-live-use";
+    use.textContent = "Use this";
+    use.addEventListener("click", () => {
+      setFieldValue(input, live);
+      input.dataset.touched = "1";
+      applyLiveConfig(result);
+    });
+    slot.append(text, use);
+  });
+  applyModuleRoleVisibility();
+}
+
+// Paints whatever is known about the selected node and module: in flight, cached, or not read yet.
+function restoreLiveConfig() {
+  const nodeName = provisionNode.value;
+  const key = liveKey(nodeName, selectedModuleId);
+  const refresh = document.getElementById("module-live-refresh");
+  if (liveConfigInFlight === key) {
+    setLiveStatus(`Reading ${nodeName}...`, "loading");
+    if (refresh) refresh.disabled = true;
+    return;
+  }
+  if (refresh) refresh.disabled = false;
+  const result = liveConfigCache[key];
+  if (!result) {
+    setLiveStatus("Not read from the node yet", "idle");
+    return;
+  }
+  if (!result.ok) {
+    const reason = String(result.error || "unknown error");
+    setLiveStatus(`Could not read ${nodeName}: ${reason.length > 120 ? `${reason.slice(0, 120)}...` : reason}`, "error", reason);
+    return;
+  }
+  const readable = Array.isArray(result.readable) ? result.readable : [];
+  if (!readable.length) {
+    setLiveStatus("Nothing in this module can be read from the node", "idle");
+    return;
+  }
+  const found = Object.keys(result.fields || {}).length;
+  setLiveStatus(`Read from the node ${liveAgo(result.read_at)} \u00b7 ${found} field${found === 1 ? "" : "s"} found`, "ok", result.target || "");
+  applyLiveConfig(result);
+}
+
+async function loadLiveConfig() {
+  const nodeName = provisionNode.value;
+  const moduleId = selectedModuleId;
+  if (!nodeName || !moduleId) return;
+  const key = liveKey(nodeName, moduleId);
+  const requestId = ++liveConfigRequestId;
+  liveConfigInFlight = key;
+  restoreLiveConfig();
+  let result;
+  try {
+    const res = await fetchJsonWithTimeout(`/api/nodes/live-config?node=${encodeURIComponent(nodeName)}&module=${encodeURIComponent(moduleId)}`, {}, 35000);
+    result = await res.json();
+    if (!res.ok && !result.error) result = { ok: false, error: `HTTP ${res.status}` };
+  } catch (err) {
+    result = { ok: false, error: err && err.name === "AbortError" ? "The read took too long." : String(err && err.message ? err.message : err) };
+  }
+  // A newer selection owns the screen now.
+  if (requestId !== liveConfigRequestId) return;
+  liveConfigInFlight = "";
+  liveConfigCache[key] = result;
+  if (liveKey(provisionNode.value, selectedModuleId) === key) restoreLiveConfig();
 }
 
 // Scroll the module list itself (not the page) so the module being edited stays in view.
@@ -82,6 +245,11 @@ function applyModuleRoleVisibility() {
   moduleDetailEl.querySelectorAll("[data-only-roles]").forEach((host) => {
     const roles = String(host.getAttribute("data-only-roles") || "").split(",").filter(Boolean);
     host.style.display = !role || roles.includes(role) ? "" : "none";
+  });
+  // An options block with every option hidden by the role would be a bare heading.
+  moduleDetailEl.querySelectorAll(".module-options-section").forEach((section) => {
+    const anyShown = Array.from(section.querySelectorAll(".module-field")).some((host) => host.style.display !== "none");
+    section.style.display = anyShown ? "" : "none";
   });
 }
 
@@ -119,10 +287,19 @@ function renderModuleSection() {
       <td>${activePill}</td>
       <td><button type='button' class='node-action-btn secondary module-configure-btn'>${profile.id === selectedModuleId ? "Editing" : "Configure"}</button></td>
     `;
-    tr.querySelector(".module-configure-btn").addEventListener("click", () => {
+    tr.className = profile.id === selectedModuleId ? "module-row module-row-selected" : "module-row";
+    const selectModule = () => {
       selectedModuleId = profile.id;
       moduleStatusEl.textContent = "";
       renderModuleSection();
+      loadLiveConfig();
+    };
+    tr.querySelector(".module-configure-btn").addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectModule();
+    });
+    tr.addEventListener("click", () => {
+      if (profile.id !== selectedModuleId) selectModule();
     });
     moduleStatusBodyEl.appendChild(tr);
     if (profile.id === selectedModuleId) selectedRow = tr;
@@ -146,31 +323,35 @@ function renderModuleSection() {
   const groupsHtml = groups.map((g) => `<span class="module-tag">${escapeHtml(g)}</span>`).join("");
 
   moduleDetailEl.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "module-head";
+  const headMain = document.createElement("div");
   const heading = document.createElement("h4");
   heading.textContent = profile.label || profile.id;
-  moduleDetailEl.appendChild(heading);
+  headMain.appendChild(heading);
+  const tagRow = document.createElement("div");
+  tagRow.className = "module-tags";
+  tagRow.innerHTML = tagsHtml + groupsHtml;
+  headMain.appendChild(tagRow);
+  head.append(headMain, buildLiveBar());
+  moduleDetailEl.appendChild(head);
   const desc = document.createElement("p");
-  desc.className = "note";
+  desc.className = "module-desc";
   desc.textContent = profile.description || "";
   moduleDetailEl.appendChild(desc);
   if (profile.id === "kubernetes") {
     const roleHint = document.createElement("p");
-    roleHint.className = "note";
+    roleHint.className = "module-callout";
     const boardName = selectedNode.group === "rpi_3bplus_active" ? "Pi 3B+" : (selectedNode.group === "rpi4_active" ? "Pi 4" : "Pi 5");
     roleHint.textContent = `Rack layout: the NucBox is the K3s server. This ${selectedNode.group === "rpi_3bplus_active" ? "Pi 3B+ defaults to 'light-worker' (a tainted K3s agent; it is too small to carry etcd)" : boardName + " defaults to 'worker'"}. Any Pi can instead be 'utility' (no Kubernetes) or 'control-plane' (a K3s server and etcd voter; keep the number of servers odd${selectedNode.group === "rpi4_active" ? "; boot a Pi 4 control-plane from an SSD, not an SD card" : ""}).`;
     moduleDetailEl.appendChild(roleHint);
   }
   if (profile.id === "longhorn") {
     const helper = document.createElement("p");
-    helper.className = "note";
-    helper.textContent = "Use a stable mounted path for Longhorn data now; when you move the Pi boot/storage layout to NVMe later, change only the storage path value rather than the workflow. Recommended first pass: keep the default replica count at 2 on a 2-node storage pair.";
+    helper.className = "module-callout";
+    helper.textContent = "Use a stable mounted path for Longhorn data now; when you move the Pi boot/storage layout to NVMe later, change only the storage path value rather than the workflow. Storage Disk 'auto' formats and mounts a single blank disk at that path for you (a disk that already holds data is never touched). Recommended first pass: keep the default replica count at 2 on a 2-node storage pair.";
     moduleDetailEl.appendChild(helper);
   }
-  const tagRow = document.createElement("div");
-  tagRow.className = "module-tags";
-  tagRow.innerHTML = tagsHtml + groupsHtml;
-  moduleDetailEl.appendChild(tagRow);
-
   if (!specs.length) {
     const empty = document.createElement("p");
     empty.className = "note";
@@ -182,42 +363,56 @@ function renderModuleSection() {
     "kubernetes.node_ip": String(savedTailscale.node_ip || ""),
     "baseline.timezone": browserTimezone(),
   };
+  const fieldsGrid = document.createElement("div");
+  fieldsGrid.className = "module-fields";
+  moduleDetailEl.appendChild(fieldsGrid);
+  const optionsGrid = document.createElement("div");
+  optionsGrid.className = "module-options";
+  const optionsSection = document.createElement("section");
+  optionsSection.className = "module-options-section";
+  const optionsTitle = document.createElement("h5");
+  optionsTitle.textContent = "Options";
+  optionsSection.append(optionsTitle, optionsGrid);
+  moduleDetailEl.appendChild(optionsSection);
   for (const spec of specs) {
     const fieldId = String(spec.id || "");
     if (!fieldId) continue;
     const inputType = String(spec.input_type || "text").toLowerCase();
     const savedValue = String(saved[fieldId] || "");
     const fieldHost = document.createElement("div");
+    fieldHost.className = "module-field";
     if (Array.isArray(spec.only_roles)) fieldHost.setAttribute("data-only-roles", spec.only_roles.join(","));
-    moduleDetailEl.appendChild(fieldHost);
+    const requiredMark = spec.required ? " <span class='required'>*</span>" : "";
 
     if (inputType === "checkbox") {
-      const row = document.createElement("div");
-      row.className = "checkbox-row";
-      row.style.marginTop = "0.35rem";
+      fieldHost.classList.add("module-toggle");
+      optionsGrid.appendChild(fieldHost);
+      const row = document.createElement("label");
+      row.className = "module-toggle-row";
       const input = document.createElement("input");
       input.type = "checkbox";
-      input.style.width = "auto";
       input.setAttribute("data-module-field", fieldId);
       input.setAttribute("data-module-type", "checkbox");
+      input.dataset.saved = savedValue ? "1" : "";
       input.checked = savedValue
         ? ["1", "true", "yes", "on"].includes(savedValue.toLowerCase())
         : ["1", "true", "yes", "on"].includes(String(groupDefault(spec, selectedNode.group)).toLowerCase());
-      const label = document.createElement("label");
-      label.style.margin = "0 0 0 0.4rem";
-      label.innerHTML = `${escapeHtml(spec.label || fieldId)}${spec.required ? " *" : ""}`;
-      row.appendChild(input);
-      row.appendChild(label);
-      if (spec.hint) row.title = String(spec.hint);
+      trackTouched(input);
+      const text = document.createElement("span");
+      text.innerHTML = `${escapeHtml(spec.label || fieldId)}${requiredMark}`;
+      row.append(input, text);
       fieldHost.appendChild(row);
       appendModuleFieldHint(spec, fieldHost);
       appendModuleFieldWarning(spec, fieldHost);
+      appendLiveSlot(fieldHost, fieldId);
       continue;
     }
 
+    fieldsGrid.appendChild(fieldHost);
+    if (inputType === "textarea" || String(spec.hint || "").length > 140) fieldHost.classList.add("wide");
     const label = document.createElement("label");
-    label.style.marginTop = "0.4rem";
-    label.innerHTML = `${escapeHtml(spec.label || fieldId)}${spec.required ? " *" : ""}`;
+    label.htmlFor = `module-field-${fieldId}`;
+    label.innerHTML = `${escapeHtml(spec.label || fieldId)}${requiredMark}`;
     fieldHost.appendChild(label);
 
     const configuredSecret = Boolean(spec.sensitive) && savedValue === CONFIGURED_SECRET_MARKER;
@@ -251,6 +446,9 @@ function renderModuleSection() {
     }
     input.setAttribute("data-module-field", fieldId);
     input.setAttribute("data-module-type", inputType);
+    input.id = `module-field-${fieldId}`;
+    input.dataset.saved = savedValue ? "1" : "";
+    trackTouched(input);
     fieldHost.appendChild(input);
     if (inputType === "select") {
       const groupDefault = spec.default_by_group && spec.default_by_group[selectedNode.group];
@@ -262,11 +460,12 @@ function renderModuleSection() {
     if (spec.check && window.attachLongformCheck) window.attachLongformCheck(input, spec.check);
     appendModuleFieldHint(spec, fieldHost);
     appendModuleFieldWarning(spec, fieldHost);
+    appendLiveSlot(fieldHost, fieldId);
   }
+  if (!optionsGrid.children.length) optionsSection.remove();
   if (profile.id === "telegraf") {
     const testRow = document.createElement("div");
-    testRow.className = "inline-actions";
-    testRow.style.marginTop = "0.6rem";
+    testRow.className = "inline-actions module-test-row";
     const testButton = document.createElement("button");
     testButton.type = "button";
     testButton.className = "secondary";
@@ -282,6 +481,7 @@ function renderModuleSection() {
   }
   applyModuleRoleVisibility();
   renderModulePresets();
+  restoreLiveConfig();
 }
 
 function collectModuleInputs() {

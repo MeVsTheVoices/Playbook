@@ -994,6 +994,12 @@
         if (provision_inputs | default({})) is mapping
         else raspberry_pi5_longhorn_storage_path
       }}
+    raspberry_pi5_longhorn_storage_disk_effective: >-
+      {{
+        (provision_inputs.storage_disk | default(raspberry_pi5_longhorn_storage_disk) | string | trim)
+        if (provision_inputs | default({})) is mapping
+        else raspberry_pi5_longhorn_storage_disk
+      }}
     raspberry_pi5_longhorn_default_replica_count_effective: >-
       {{
         ((provision_inputs.default_replica_count | default(raspberry_pi5_longhorn_default_replica_count) | string | trim) | int)
@@ -1055,6 +1061,34 @@
   when:
     - rack_manage_with_ansible | bool
     - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+- name: Prepare the Longhorn storage disk
+  rack_storage_disk:
+    path: "{{ raspberry_pi5_longhorn_storage_path_effective }}"
+    device: "{{ raspberry_pi5_longhorn_storage_disk_effective }}"
+    label: longhorn
+    identify_by: "{{ raspberry_pi5_longhorn_storage_identify_by }}"
+  register: raspberry_pi5_longhorn_disk
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+    - raspberry_pi5_longhorn_storage_disk_effective | lower not in ['', 'none', 'off', 'false']
+  tags:
+    - longhorn
+
+- name: Report the Longhorn storage path
+  ansible.builtin.debug:
+    msg: >-
+      Longhorn storage path {{ raspberry_pi5_longhorn_disk.path }} is on
+      {{ raspberry_pi5_longhorn_disk.device_ref }}
+      (UUID {{ raspberry_pi5_longhorn_disk.uuid | default('unknown until formatted') }},
+      by-id {{ raspberry_pi5_longhorn_disk.by_id | default('none') }},
+      {{ raspberry_pi5_longhorn_disk.formatted | ternary('formatted now', 'already prepared') }})
+  when:
+    - raspberry_pi5_longhorn_disk is defined
+    - raspberry_pi5_longhorn_disk is not skipped
   tags:
     - longhorn
 

@@ -163,10 +163,11 @@
             <div style="margin-top: 0.8rem;">
               <p id="module-connection-context" class="note"></p>
               <div id="module-detail" class="module-detail"></div>
-              <div class="inline-actions module-actions">
-                <button id="module-save-inputs" type="button">Save Module Inputs</button>
-                <button id="module-check" type="button" class="secondary">Check Module</button>
-                <button id="module-apply" type="button">Apply Module</button>
+              <div class="module-actions">
+                <button id="module-save-inputs" type="button" class="ghost" title="Store these inputs for the node without touching it">Save Module Inputs</button>
+                <span class="module-actions-gap"></span>
+                <button id="module-check" type="button" class="secondary" title="Dry run: shows what would change on the node">Check Module</button>
+                <button id="module-apply" type="button" title="Push this module to the node now">Apply Module</button>
               </div>
               <p id="module-status" class="note"></p>
               <div id="module-presets"></div>

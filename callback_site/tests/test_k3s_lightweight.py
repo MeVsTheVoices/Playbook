@@ -435,6 +435,14 @@ class NodeOpsFalseOkTests(BaseCallbackSiteTest):
         result = self.run_with_ansible_output(0, "PLAY RECAP\nnode-x : ok=12 changed=1 unreachable=0 failed=0\n")
         self.assertEqual(result["status"], "ok")
 
+    def test_other_boards_skipped_plays_do_not_fail_a_run_that_did_work(self) -> None:
+        result = self.run_with_ansible_output(
+            0,
+            "PLAY [Pi 5]\nok: [node-x]\n\nPLAY [Pi 4]\nskipping: no hosts matched\n\nPLAY [3B+]\nskipping: no hosts matched\n\n"
+            "PLAY RECAP\nnode-x : ok=9 changed=4 unreachable=0 failed=0 skipped=1\n",
+        )
+        self.assertEqual(result["status"], "ok")
+
 
 class LightweightAnsibleRoleTests(BaseCallbackSiteTest):
     # Task names differ per board; the harness runs the real role tasks, not a copy of their logic.

@@ -60,6 +60,8 @@ Open:
 - Longhorn is intentionally wired as an optional Pi 5 profile for now.
 - The first pass assumes the nodes still boot from SD card.
 - The storage path is configurable so you can later move Longhorn data to an NVMe-backed mount without changing the operator flow.
+- The Storage Disk input (default `auto`) runs the `rack_storage_disk` Ansible module (`library/`): it partitions, formats and mounts the one blank disk at the storage path by UUID, never touches a disk that holds data, and reports the path, UUID and by-id name in the run output. `none` keeps a plain directory.
+- The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
 - The K3s dashboard reports whether the `longhorn-system` namespace and pods are present and healthy.
 
 ## Architecture
@@ -70,6 +72,7 @@ Open:
   - `storage`, `settings`, `sd_profiles`, `ssh_keys`, `openwrt`, `network`: paths, settings, keys and addressing.
   - `events`, `images`, `image_catalog`, `reports`, `boot_logs`: callback events, the image library, catalog pulls and node boot logs.
   - `node_state`, `node_inventory`, `node_runs`, `node_views`: Node Ops state, inventory, Ansible runs and read models.
+  - `live_config`: read-only SSH reads of a module's current settings from a node (same layer as `node_runs`).
   - `sd_prepare`, `k3s_config`, `sd_devices`, `kubernetes`, `terminal_checks`, `provision_jobs`: SD preparation, config checks, devices, cluster summary and background jobs.
 - `callback_site/k3s_lightweight.py` (board and role registry) and `callback_site/tailscale_policy.py` (policy builder) are shared by the services, routes and templates.
 - Page CSS and JavaScript live in `callback_site/static/` (`home/`, `nodes/` and `monitor/` split the large scripts by area; templates only carry markup and a small data bootstrap).
@@ -111,7 +114,7 @@ That config is carried forward in the cloud-init payload and used by the post-bo
 - `GET /api/nodes/summary`
 - `POST /api/nodes/stale/prune`
 - `POST /api/nodes/provision`
-- `GET /api/nodes/module-presets?module=<id>&node=<name>` — saved configurations plus settings drawn from other nodes and SD profiles
+- `GET /api/nodes/live-config?node=<name>&module=<id>` — reads that module's current settings off the node over SSH (never secrets); a failed read is `ok: false` with the reason, not an HTTP error?module=<id>&node=<name>` — saved configurations plus settings drawn from other nodes and SD profiles
 - `POST /api/nodes/module-presets` — name a saved configuration (`id`, `name`) or save a node's current inputs under a name (`node`, `module`, `name`)
 - `POST /api/nodes/module-presets/load` — fill a node's module inputs from a source (`preset:<id>`, `node:<name>`, `sd:<profile>`)
 - `DELETE /api/nodes/module-presets/<id>`

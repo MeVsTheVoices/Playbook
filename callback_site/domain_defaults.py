@@ -356,6 +356,15 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "required": False,
             },
             {
+                "id": "storage_disk",
+                "label": "Storage Disk (auto = the one blank disk, a device like /dev/nvme0n1, or none for a plain directory)",
+                "placeholder": "auto",
+                "input_type": "text",
+                "default": "auto",
+                "warning": "A blank disk is partitioned, formatted and mounted at the storage path. Disks that already hold data are never touched.",
+                "required": False,
+            },
+            {
                 "id": "default_replica_count",
                 "label": "Default Replica Count",
                 "placeholder": "2",

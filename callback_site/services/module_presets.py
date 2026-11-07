@@ -218,6 +218,8 @@ def _sd_profile_inputs(module_id: str, profile: Dict[str, Any]) -> Dict[str, str
         return {}
     if module_id == "kubernetes" and profile.get("distribution") != "k3s":
         return {}
+    if module_id == "network-toolkit" and "toolkit_enable_funnel" not in options:
+        return {}
     if module_id == "telegraf" and not options.get("install_telegraf"):
         return {}
 

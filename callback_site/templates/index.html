@@ -95,6 +95,7 @@
                   <option value="pi5">pi5</option>
                   <option value="pi4">pi4</option>
                   <option value="pi3bplus">pi3bplus</option>
+                  <option value="network-toolkit">Network Toolkit (Pi 3B+)</option>
                 </select>
               </div>
               <div>
@@ -234,6 +235,19 @@
             <div class="option-profile-status" id="sd-options-profile-status">Templates let you reuse optional cloud-init settings across nodes. <span class="option-count" id="sd-options-config-count">0 fields set</span></div>
 
             <div class="segment-list" style="margin-top: 0.8rem;">
+              <details id="network-toolkit-section" class="segment" hidden>
+                <summary>Network Toolkit (Pi 3B+)</summary>
+                <p class="segment-hint">Pi OS Lite 64-bit, Wi-Fi uplink, dedicated Ethernet and USB serial console. Browser login: operator. Generate a hash from a strong, unique password with <code>openssl passwd -6 -stdin</code>. Secrets are not saved in SD templates; re-enter them for each card.</p>
+                <p class="segment-hint">SSH stays private on Tailscale. Funnel publishes the authenticated browser terminal only when explicitly enabled, and requires tag:network-toolkit permission in your tailnet policy. No Docker, Kubernetes or Telegraf is installed.</p>
+                <div class="form-grid">
+                  {% for spec in toolkit_specs %}
+                  <div data-os-option-wrapper="1">
+                    <label for="opt_{{ spec.id }}">{{ spec.label }}</label>
+                    <input id="opt_{{ spec.id }}" data-option-key="{{ spec.id }}" data-option-type="{{ spec.input_type }}" data-option-profile="network-toolkit" data-option-default="{{ spec.default | default('') }}" type="{{ 'checkbox' if spec.input_type == 'checkbox' else ('password' if spec.sensitive | default(false) else 'text') }}" value="{{ spec.default | default('') }}" placeholder="{{ spec.placeholder | default('') }}" autocomplete="off"{% if spec.required %} required{% endif %}>
+                  </div>
+                  {% endfor %}
+                </div>
+              </details>
               <details id="k3s-distribution-section" class="segment">
                 <summary>K3s Distribution</summary>
                 <p class="segment-hint">This section opens automatically for k3s images and defaults to a valid config block used by the later bootstrap step.</p>
@@ -312,6 +326,7 @@ server: https://local-machine-ip:6443
                       <option value="pi5">Pi 5</option>
                       <option value="pi4">Pi 4</option>
                       <option value="pi3bplus">Pi 3B+</option>
+                      <option value="network-toolkit">Network Toolkit (Pi 3B+)</option>
                     </select>
                   </div>
                   <p id="pi-model-no-options" class="segment-hint" style="display: none;">No board-specific boot options for this Pi model.</p>
@@ -551,7 +566,7 @@ server: https://local-machine-ip:6443
                       <summary class="segment-hint" style="cursor: pointer;">Embeddable variables</summary>
                       <ul class="segment-hint" style="margin: 0.4rem 0 0; padding-left: 1.1rem;">
                         <li><code>${HOSTNAME}</code> — node hostname</li>
-                        <li><code>${PROFILE}</code> — image profile (pi5 / pi4 / pi3bplus)</li>
+                        <li><code>${PROFILE}</code> — image profile (pi5 / pi4 / pi3bplus / network-toolkit)</li>
                         <li><code>${DISTRIBUTION}</code> — standard or k3s</li>
                         <li><code>${CALLBACK_URL}</code> — configured callback endpoint</li>
                       </ul>

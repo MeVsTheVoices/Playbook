@@ -27,6 +27,10 @@ echo "Injecting cloud-init files into boot partition"
 cp "$USER_DATA_OUT" "$TMP_DIR/boot/user-data"
 cp "$META_DATA_OUT" "$TMP_DIR/boot/meta-data"
 
+if [[ "$PROFILE" == "network-toolkit" ]]; then
+  toolkit_render network > "$TMP_DIR/boot/network-config"
+fi
+
 if [[ "$PROFILE" == "pi5" && "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
   for config_target in "$TMP_DIR/boot/config.txt" "$TMP_DIR/boot/boot/firmware/config.txt"; do
     if [[ -f "$config_target" ]]; then
@@ -55,6 +59,9 @@ fi
 if [[ -d "$TMP_DIR/boot/boot/firmware" ]]; then
   cp "$USER_DATA_OUT" "$TMP_DIR/boot/boot/firmware/user-data"
   cp "$META_DATA_OUT" "$TMP_DIR/boot/boot/firmware/meta-data"
+  if [[ "$PROFILE" == "network-toolkit" ]]; then
+    cp "$TMP_DIR/boot/network-config" "$TMP_DIR/boot/boot/firmware/network-config"
+  fi
 fi
 
 # Raspberry Pi OS starts without the memory cgroup, and K3s cannot start without it.

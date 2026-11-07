@@ -1,4 +1,13 @@
 function ensureK3sConfigDefaults() {
+  const toolkit = form.profile.value === "network-toolkit";
+  if (toolkit) form.distribution.value = "standard";
+  form.distribution.disabled = toolkit;
+  const toolkitSection = document.getElementById("network-toolkit-section");
+  if (toolkitSection) {
+    toolkitSection.hidden = !toolkit;
+    toolkitSection.open = toolkit;
+  }
+  if (toolkit) document.getElementById("cloud-init-optional-settings").open = true;
   const textarea = document.getElementById("opt_k3s_config");
   const section = document.getElementById("k3s-distribution-section");
   const isK3sSelected = String(form.distribution.value || "standard").trim().toLowerCase() === "k3s";
@@ -33,7 +42,8 @@ function gatherCloudInitOptions() {
       continue;
     }
 
-    const raw = String(el.value || "").trim();
+    const inputValue = String(el.value || "");
+    const raw = key === "toolkit_wifi_password" || key === "toolkit_wifi_ssid" ? inputValue : inputValue.trim();
     if (!raw) continue;
     if (kind === "csv") {
       const values = raw.split(",").map((v) => v.trim()).filter(Boolean);
@@ -54,6 +64,9 @@ function gatherCloudInitOptions() {
     } else {
       options.k3s_config = k3sValue;
     }
+  }
+  if (form.profile.value === "network-toolkit") {
+    options.toolkit_enable_funnel = document.getElementById("opt_toolkit_enable_funnel").checked;
   }
   return options;
 }
@@ -226,6 +239,10 @@ function loadSelectedSdOptionProfile() {
     return;
   }
   const isPiOnlyProfile = Boolean(profile.pi_only);
+  if (profile.profile === "network-toolkit") {
+    form.profile.value = "network-toolkit";
+    form.profile.dispatchEvent(new Event("change"));
+  }
   const profileDistribution = String(profile.distribution || "").trim().toLowerCase();
   if (!isPiOnlyProfile && (profileDistribution === "k3s" || profileDistribution === "standard")) {
     form.distribution.value = profileDistribution;
@@ -259,6 +276,7 @@ async function saveCurrentSdOptionProfile() {
     pi_only: Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked),
     options: gatherCloudInitOptions(),
   };
+  if (form.profile.value === "network-toolkit") payload.profile = "network-toolkit";
   const res = await fetch("/api/sd/options-profiles", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

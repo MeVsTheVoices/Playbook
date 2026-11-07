@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+if [[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:7681/)" != 401 ]]; then
+  echo "network-toolkit: refusing Funnel because the proxy did not require authentication" >&2
+  exit 1
+fi
+systemctl is-active --quiet rack-toolkit-terminal.service

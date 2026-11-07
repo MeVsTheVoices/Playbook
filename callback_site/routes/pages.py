@@ -19,6 +19,7 @@ from services.network import _default_callback_url
 from services.sd_devices import _ensure_device_monitor_started, _list_sd_devices
 from services.sd_profiles import _load_sd_option_profiles
 from services.settings import _load_app_settings, _tailscale_policy_defaults
+from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS
 
 
 def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[Dict[str, Any]]]) -> None:
@@ -49,6 +50,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
             k3s_role_defaults=k3s_role_ui_defaults(),
             k3s_role_taints=K3S_ROLE_TAINTS,
             image_catalog=image_catalog,
+            toolkit_specs=TOOLKIT_SPECS,
         )
 
     @pages.get("/tailscale-acl")

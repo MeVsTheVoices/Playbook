@@ -16,6 +16,13 @@
 - Active hosts are in `rpi5_active`, `rpi4_active` and `rpi_3bplus_active` and are targeted by `site.yml` (roles `raspberry_pi5`, `raspberry_pi4`, `raspberry_pi_3bplus`). The Pi 4 role is the Pi 5 role without the Longhorn tasks; Longhorn stays Pi 5 only.
 - Planned hosts are tracked in `rpi5_planned` but not targeted by default.
 - Router and switch are represented in inventory as infrastructure placeholders and marked unmanaged.
+- `network_toolkit_active` is a separate Pi 3B+ appliance class, with Wi-Fi uplink,
+  device-only Ethernet, USB serial tools, and an authenticated browser terminal.
+  It uses Pi OS Trixie Lite 64-bit and does not join K3s. Its defaults are Baseline,
+  Tailscale and Network Toolkit, and its sole tag is `tag:network-toolkit`.
+  Public Funnel access is opt-in, not enabled merely by installing Tailscale.
+  See [Network Toolkit setup and access](../callback_site/README.md#network-toolkit-pi-3b)
+  for required credentials, tailnet policy, device commands and safe shutdown.
 
 ## K3s Topology And Join Preflight
 - The NucBox is the K3s server. Pi 5 nodes default to workers and can be made control-plane nodes: NVMe storage and more RAM make them far better etcd voters than a Pi 3B+, and the NucBox plus two control-plane Pi 5 makes three servers, which is the odd count etcd wants. A Pi 3B+ is a light worker by default: it has about 900 MB of RAM and an SD card, below the 2 GB K3s documents for a server, and two of them as etcd voters took the cluster down twice. Control-plane remains selectable on a Pi 3B+ but is not recommended. A Pi 4 behaves like a Pi 5 here (worker by default, control-plane selectable, same option defaults), but K3s documents that SD cards and eMMC cannot handle etcd's IO, so only make a Pi 4 a control-plane node when it boots from an SSD, and consider the lightweight server options on a 1 to 2 GB model.

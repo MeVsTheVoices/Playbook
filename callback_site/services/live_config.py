@@ -36,6 +36,9 @@ yesno() { if "$@" >/dev/null 2>&1; then echo true; else echo false; fi; }
 '''
 
 _READERS: Dict[str, str] = {
+    "network-toolkit": r'''
+emit toolkit_enable_funnel "$(yesno systemctl is-enabled --quiet rack-toolkit-funnel.service)"
+''',
     "baseline": r'''
 emit timezone "$(timedatectl show -p Timezone --value 2>/dev/null)"
 emit ntp_servers "$(cat /etc/systemd/timesyncd.conf /etc/systemd/timesyncd.conf.d/*.conf 2>/dev/null | sed -n 's/^NTP=//p' | tail -n1 | tr -s ' ' ',')"

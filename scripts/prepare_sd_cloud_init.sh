@@ -91,7 +91,7 @@ if [[ -z "$PROFILE" || -z "$HOSTNAME" || -z "$DEVICE" || -z "$SSH_KEY_FILE" || -
   exit 1
 fi
 
-if [[ "$PROFILE" != "pi5" && "$PROFILE" != "pi4" && "$PROFILE" != "pi3bplus" ]]; then
+if [[ "$PROFILE" != "pi5" && "$PROFILE" != "pi4" && "$PROFILE" != "pi3bplus" && "$PROFILE" != "network-toolkit" ]]; then
   echo "Invalid --profile value: $PROFILE" >&2
   exit 1
 fi
@@ -112,6 +112,26 @@ case "$DISTRIBUTION" in
     exit 1
     ;;
 esac
+
+if [[ "$PROFILE" == "network-toolkit" ]]; then
+  if [[ "$DISTRIBUTION" != "standard" ]]; then
+    echo "network-toolkit requires the standard distribution, not K3s." >&2
+    exit 1
+  fi
+  if [[ ! "${CLOUD_INIT_TOOLKIT_ENABLE_FUNNEL:-false}" =~ ^(true|false)$ ]]; then
+    echo "CLOUD_INIT_TOOLKIT_ENABLE_FUNNEL must be true or false." >&2
+    exit 1
+  fi
+  toolkit_render packages >/dev/null
+  if [[ ! "${CLOUD_INIT_TAILSCALE_AUTH_KEY:-}" =~ ^tskey-[A-Za-z0-9_-]+$ ]]; then
+    echo "network-toolkit requires a Tailscale auth key before imaging." >&2
+    exit 1
+  fi
+  if [[ -n "${CLOUD_INIT_TAILSCALE_ROUTES:-}" || -n "${CLOUD_INIT_TAILSCALE_EXIT_NODE:-}" || "${CLOUD_INIT_SSH_PORT:-22}" != "22" || "${CLOUD_INIT_USERNAME:-}" == "network-console" || "${CLOUD_INIT_USERNAME:-}" == "root" ]]; then
+    echo "network-toolkit requires private SSH on port 22, a separate administrative user and no Tailscale routes or exit node." >&2
+    exit 1
+  fi
+fi
 
 if [[ ! -b "$DEVICE" ]]; then
   echo "Device does not exist or is not a block device: $DEVICE" >&2

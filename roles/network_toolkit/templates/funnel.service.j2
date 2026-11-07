@@ -1,0 +1,18 @@
+[Unit]
+Description=Publish authenticated Network Toolkit terminal via Tailscale Funnel
+Requires=tailscaled.service nginx.service rack-toolkit-terminal.service rack-toolkit-firewall.service
+After=tailscaled.service nginx.service rack-toolkit-terminal.service rack-toolkit-firewall.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/local/bin/rack-toolkit-check
+ExecStart=/usr/bin/tailscale funnel --bg --https=443 http://127.0.0.1:7681
+ExecStop=/usr/bin/tailscale funnel --https=443 off
+RemainAfterExit=true
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

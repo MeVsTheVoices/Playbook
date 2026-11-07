@@ -59,9 +59,8 @@ def register_module_preset_routes(app: Any) -> None:
                 record = _record_save(node["name"], module_id, saved if isinstance(saved, dict) else {})
                 if record is None:
                     return jsonify({"ok": False, "error": "nothing is saved for this module yet; save its inputs first"}), 400
-                if not str(payload.get("name", "")).strip():
-                    return jsonify({"ok": False, "error": "name is required"}), 400
-                preset = _name_preset(record["id"], payload.get("name", ""))
+                # A blank name keeps the configuration under the name the site suggested for it.
+                preset = _name_preset(record["id"], payload.get("name", "") or record["auto_name"])
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except KeyError:

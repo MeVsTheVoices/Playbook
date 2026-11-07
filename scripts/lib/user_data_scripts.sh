@@ -25,6 +25,7 @@ cat >> "$USER_DATA_OUT" <<EOF
       #!/bin/bash
       # Rack hardware detection and reporting
       PI_MODEL="\$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || echo 'unknown')"
+      ARCHITECTURE="\$(uname -m)"
       RAM_MB="\$(awk '/MemTotal/ {print int(\$2/1024)}' /proc/meminfo 2>/dev/null || echo '0')"
       SD_CAPACITY="\$(lsblk -b --output SIZE -n /dev/mmcblk0 2>/dev/null | awk '{print int(\$1/1024/1024/1024)}' || echo '0')"
       NVME_PRESENT="false"
@@ -35,7 +36,7 @@ cat >> "$USER_DATA_OUT" <<EOF
       [[ -f /sys/class/pwm/pwmchip0/device/dtoverlay ]] && POE_ENABLED="true"
       SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
       NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
-      PAYLOAD_JSON="\$(PI_MODEL=\"\$PI_MODEL\" RAM_MB=\"\$RAM_MB\" SD_CAPACITY=\"\$SD_CAPACITY\" NVME_PRESENT=\"\$NVME_PRESENT\" HAT_PRESENT=\"\$HAT_PRESENT\" POE_ENABLED=\"\$POE_ENABLED\" SOURCE_IP=\"\$SOURCE_IP\" NODE_REPORT_B64=\"\$NODE_REPORT_B64\" PROFILE='${PROFILE}' python3 <<'PY'
+      PAYLOAD_JSON="\$(PI_MODEL=\"\$PI_MODEL\" ARCHITECTURE="\$ARCHITECTURE" RAM_MB=\"\$RAM_MB\" SD_CAPACITY=\"\$SD_CAPACITY\" NVME_PRESENT=\"\$NVME_PRESENT\" HAT_PRESENT=\"\$HAT_PRESENT\" POE_ENABLED=\"\$POE_ENABLED\" SOURCE_IP=\"\$SOURCE_IP\" NODE_REPORT_B64=\"\$NODE_REPORT_B64\" PROFILE='${PROFILE}' python3 <<'PY'
       import json
       import os
       import socket
@@ -61,6 +62,7 @@ cat >> "$USER_DATA_OUT" <<EOF
         "node_report_b64": os.getenv("NODE_REPORT_B64", ""),
         "hardware": {
           "model": os.getenv("PI_MODEL", "unknown"),
+          "architecture": os.getenv("ARCHITECTURE", ""),
           "ram_mb": as_int(os.getenv("RAM_MB", "0")),
           "sd_capacity_gb": as_int(os.getenv("SD_CAPACITY", "0")),
           "nvme": as_bool(os.getenv("NVME_PRESENT", "false")),

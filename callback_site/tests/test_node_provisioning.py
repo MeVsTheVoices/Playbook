@@ -729,11 +729,14 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         ), patch.object(
             subprocess,
             "run",
-            return_value=SimpleNamespace(returncode=0, stdout='{"ansible_facts": {"ansible_memtotal_mb": 2048, "ansible_product_name": "RPi 5"}}', stderr=""),
-        ) as run_mock:
+            return_value=SimpleNamespace(returncode=0, stdout='{"ansible_facts": {"ansible_memtotal_mb": 2048, "ansible_product_name": "RPi 5", "ansible_architecture": "aarch64"}}', stderr=""),
+        ) as run_mock, patch("services.node_runs.urlrequest.urlopen") as callback_mock:
+            callback_mock.return_value.__enter__.return_value.read.return_value = b'{"ok":true}'
             result = services.node_runs._run_hardware_check_callback("node-01", node_group="rpi5_active", node_address="192.0.2.10")
 
         self.assertEqual(result.get("status"), "ok")
+        payload = json.loads(callback_mock.call_args.args[0].data)
+        self.assertEqual(payload["hardware"]["architecture"], "aarch64")
         command_texts = [" ".join(str(part) for part in call.args[0]) for call in run_mock.call_args_list]
         setup_cmd = next((text for text in command_texts if "ansible.builtin.setup" in text), "")
         self.assertTrue(setup_cmd, f"Expected ansible setup command in calls: {command_texts}")

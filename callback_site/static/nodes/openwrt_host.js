@@ -38,7 +38,7 @@ function addOpenwrtHost() {
   manualNodeSelectorEl.value = "";
   resetManualNodeForm();
   manualNodeNameEl.value = "openwrt-router";
-  manualNodeGroupEl.value = "openwrt";
+  setManualNodeGroup("openwrt");
   manualNodeUsernameEl.value = "root";
   manualNodeShellEl.value = "/bin/ash";
   manualNodeStatus.textContent = "OpenWrt host template loaded: set the router IP and certificate, then use Add / Update Manual Node.";

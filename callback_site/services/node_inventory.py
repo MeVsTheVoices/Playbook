@@ -4,15 +4,41 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from typing import Any, Dict, List
 
-from k3s_lightweight import group_for_profile as _k3s_group_for_profile, NODE_GROUPS as K3S_NODE_GROUPS
+from k3s_lightweight import BOARDS, group_for_profile as _k3s_group_for_profile, NODE_GROUPS as K3S_NODE_GROUPS
 
 from services.events import _parse_event_time, _read_events
 from services.network import _is_usable_callback_ip, _preferred_connect_ip_from_history
 from services.node_state import _load_node_provisioning, _node_aliases
-from services.storage import DATA_FILE, INVENTORY_FILE
+from services.storage import BASE_DIR, DATA_FILE, INVENTORY_FILE
+
+
+def _node_group_options() -> List[Dict[str, str]]:
+    """Groups a node can be assigned to: the module families, the built-in manual and openwrt groups, then the rest of the inventory."""
+    boards = {board["group"]: board["label"] for board in BOARDS.values()}
+    options = [{"name": group, "description": f"{boards.get(group, group)} nodes, modules available"} for group in K3S_NODE_GROUPS]
+    options.append({"name": "manual", "description": "no modules, listed in Node Ops only"})
+    options.append({"name": "openwrt", "description": "routers, listed in the OpenWrt panel"})
+
+    try:
+        # The app often runs without the venv on PATH, like the ansible-playbook lookup in node_runs.
+        venv_inventory = BASE_DIR.parent / ".venv" / "bin" / "ansible-inventory"
+        command = shutil.which("ansible-inventory") or (str(venv_inventory) if venv_inventory.is_file() else "ansible-inventory")
+        result = subprocess.run([command, "-i", str(INVENTORY_FILE), "--list"], check=True, capture_output=True, text=True)
+        inventory = json.loads(result.stdout)
+    except Exception:
+        inventory = {}
+    seen = {option["name"] for option in options}
+    for name in sorted(inventory):
+        group = inventory.get(name)
+        if name in seen or name in {"_meta", "all", "ungrouped"} or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+            continue
+        if isinstance(group, dict) and (group.get("hosts") or group.get("children")):
+            options.append({"name": name, "description": "inventory group"})
+    return options
 
 
 def _inventory_nodes() -> List[Dict[str, Any]]:

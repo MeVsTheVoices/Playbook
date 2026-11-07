@@ -41,6 +41,13 @@ logger = logging.getLogger(__name__)
 
 _RESULTS_LOCK = threading.Lock()
 
+OUTPUT_LIMIT = 100_000
+
+
+def _clip_output(text: str, limit: int = OUTPUT_LIMIT) -> str:
+    """Keep the end of a long run, which holds the recap, and say that the start was dropped."""
+    return text if len(text) <= limit else "[earlier output truncated]\n" + text[-limit:]
+
 
 def _run_node_profile(
     node_name: str,
@@ -198,7 +205,7 @@ def _run_node_profile(
                 "command": cmd_for_log,
                 "exit_code": proc.returncode,
                 "inputs": _redact_profile_inputs(profile_id, profile_inputs),
-                "output": output[-12000:] or "Ansible failed before provisioning completed. Check vault/password prompts and credentials.",
+                "output": _clip_output(output) or "Ansible failed before provisioning completed. Check vault/password prompts and credentials.",
             }
         if proc.returncode != 0 and (
             "permission denied" in output.lower()
@@ -217,7 +224,7 @@ def _run_node_profile(
                 "command": cmd_for_log,
                 "exit_code": proc.returncode,
                 "inputs": _redact_profile_inputs(profile_id, profile_inputs),
-                "output": f"{output[-12000:]}\n\n{ssh_hint}",
+                "output": f"{_clip_output(output)}\n\n{ssh_hint}",
             }
         lowered_output = output.lower()
         # site.yml has one play per board, so the other boards' plays always print 'no hosts matched'; a host recap means tasks ran.
@@ -236,7 +243,7 @@ def _run_node_profile(
                 "exit_code": proc.returncode,
                 "inputs": _redact_profile_inputs(profile_id, profile_inputs),
                 "output": (
-                    f"{output[-12000:]}\n\nNo hosts matched, so nothing was applied to this node. "
+                    f"{_clip_output(output)}\n\nNo hosts matched, so nothing was applied to this node. "
                     "Check the node address and its inventory group."
                 ),
             }
@@ -248,7 +255,7 @@ def _run_node_profile(
             "command": cmd_for_log,
             "exit_code": proc.returncode,
             "inputs": _redact_profile_inputs(profile_id, profile_inputs),
-            "output": output[-12000:],
+            "output": _clip_output(output),
         }
     except FileNotFoundError:
         return {
@@ -272,7 +279,7 @@ def _run_node_profile(
             "command": cmd_for_log,
             "exit_code": None,
             "inputs": _redact_profile_inputs(profile_id, profile_inputs),
-            "output": ((stdout + "\n" + stderr).strip() or "Provisioning run timed out.")[-12000:],
+            "output": _clip_output((stdout + "\n" + stderr).strip() or "Provisioning run timed out."),
         }
 
 

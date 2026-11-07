@@ -7,7 +7,7 @@ Prepare an SD card with a cloud-init enabled Raspberry Pi image and callback met
 
 Usage:
   scripts/prepare_sd_cloud_init.sh \
-    --profile pi5|pi4|pi3bplus \
+    --profile pi5|pi4|pi3bplus|network-toolkit \
     --hostname HOSTNAME \
     --device /dev/sdX \
     --ssh-key-file ~/.ssh/id_ed25519.pub \
@@ -22,6 +22,7 @@ Notes:
 - This script will ERASE the selected device.
 - For Pi 5, --image-url is optional and defaults to Ubuntu 24.04 preinstalled server ARM64.
 - For Pi B+, pass --image-url or --image-file for your cloud-init compatible image.
+- Network Toolkit defaults to Pi OS Lite 64-bit Trixie; set its Wi-Fi, browser password hash and Tailscale auth key before imaging.
 EOF
 }
 
@@ -30,6 +31,14 @@ require_cmd() {
     echo "Missing required command: $1" >&2
     exit 1
   fi
+}
+
+toolkit_render() {
+  local interpreter="$SCRIPT_DIR/../.venv/bin/python"
+  if [[ ! -x "$interpreter" ]]; then
+    interpreter="$(command -v python3)"
+  fi
+  "$interpreter" "$SCRIPT_DIR/../callback_site/network_toolkit.py" "$1"
 }
 
 validate_http_url() {

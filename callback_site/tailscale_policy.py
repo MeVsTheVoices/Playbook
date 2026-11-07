@@ -134,7 +134,7 @@ def _port_covers(granted: List[str], proto: str, port: int) -> bool:
 
 def _ordered(policy: Dict[str, Any]) -> Dict[str, Any]:
     """Sections in the order people read a policy (the API JSON encoder would sort them alphabetically)."""
-    order = ("groups", "tagOwners", "grants", "ssh", "autoApprovers", "tests", "sshTests")
+    order = ("groups", "tagOwners", "nodeAttrs", "grants", "ssh", "autoApprovers", "tests", "sshTests")
     return {key: policy[key] for key in order if key in policy}
 
 
@@ -205,6 +205,11 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
         errors.append("The SSH test user must not be root; root login is controlled by the 'allow root' option.")
     include_tests = _bool(options.get("tests"), True)
     deny_tests = _bool(options.get("deny_tests"), False)
+    toolkit_funnel = _bool(options.get("toolkit_funnel"), False)
+    if toolkit_funnel and ssh_user == "network-console":
+        errors.append("Use a separate administrative SSH user, not the browser's network-console account.")
+    if toolkit_funnel and "tag:network-toolkit" in (*used_board_tags.values(), homelab):
+        errors.append("tag:network-toolkit must remain separate from the board and homelab tags.")
 
     if errors:
         return {"ok": False, "policy": None, "rules": [], "warnings": [], "errors": errors, "summary": {}}
@@ -226,6 +231,16 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
     policy["tagOwners"] = {tag: [admin] for tag in rack_tags}
 
     grants: List[Dict[str, Any]] = []
+    if toolkit_funnel:
+        policy["tagOwners"]["tag:network-toolkit"] = [admin]
+        policy["nodeAttrs"] = [{"target": ["tag:network-toolkit"], "attr": ["funnel"]}]
+        grants.append({"src": [admin], "dst": ["tag:network-toolkit"], "ip": ["tcp:22"]})
+        rules.append({
+            "name": "Network Toolkit private SSH",
+            "src": [admin], "dst": ["tag:network-toolkit"], "ports": ["tcp:22"],
+            "why": "Dedicated Pi 3B+ appliance; no rack-to-rack or subnet access. Funnel HTTPS still requires its browser login.",
+        })
+        warn("Network Toolkit Funnel publishes a service to the internet. Enable it on the node only after setting a strong browser password. MagicDNS and HTTPS must also be enabled.", "info")
     grants.append({"src": [admin], "dst": rack_tags + subnets, "ip": ["*"]})
     rules.append({
         "name": "Admin access",
@@ -279,6 +294,10 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
     if ssh_enabled:
         users = ["autogroup:nonroot"] + (["root"] if ssh_root else [])
         policy["ssh"] = [{"action": "accept", "src": [admin], "dst": rack_tags, "users": users}]
+        if toolkit_funnel and ssh_user:
+            policy["ssh"].append({"action": "accept", "src": [admin], "dst": ["tag:network-toolkit"], "users": [ssh_user]})
+        elif toolkit_funnel:
+            warn("Set the SSH Test User to the toolkit's administrative login before enabling Tailscale SSH on it. The browser's network-console user is intentionally not granted Tailscale SSH.", "info")
         rules.append({
             "name": "Tailscale SSH", "src": [admin], "dst": rack_tags, "ports": ["ssh: " + ", ".join(users)],
             "why": "Works only on nodes running tailscale up --ssh (Node Ops Tailscale module or the SD form option).",
@@ -350,7 +369,7 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
     )
 
     summary = {
-        "tags": rack_tags,
+        "tags": list(policy["tagOwners"]),
         "grants": len(grants),
         "routes": len(subnets),
         "tests": test_count,

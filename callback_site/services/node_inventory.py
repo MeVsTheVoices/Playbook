@@ -9,6 +9,7 @@ import subprocess
 from typing import Any, Dict, List
 
 from k3s_lightweight import BOARDS, group_for_profile as _k3s_group_for_profile, NODE_GROUPS as K3S_NODE_GROUPS
+from network_toolkit import GROUP as TOOLKIT_GROUP, PROFILE as TOOLKIT_PROFILE
 
 from services.events import _parse_event_time, _read_events
 from services.network import _is_usable_callback_ip, _preferred_connect_ip_from_history
@@ -20,6 +21,7 @@ def _node_group_options() -> List[Dict[str, str]]:
     """Groups a node can be assigned to: the module families, the built-in manual and openwrt groups, then the rest of the inventory."""
     boards = {board["group"]: board["label"] for board in BOARDS.values()}
     options = [{"name": group, "description": f"{boards.get(group, group)} nodes, modules available"} for group in K3S_NODE_GROUPS]
+    options.append({"name": TOOLKIT_GROUP, "description": "Pi 3B+ Network Toolkit appliance, no Kubernetes"})
     options.append({"name": "manual", "description": "no modules, listed in Node Ops only"})
     options.append({"name": "openwrt", "description": "routers, listed in the OpenWrt panel"})
 
@@ -54,7 +56,7 @@ def _inventory_nodes() -> List[Dict[str, Any]]:
         return _inventory_nodes_from_yaml_fallback()
 
     hostvars = inv.get("_meta", {}).get("hostvars", {})
-    groups = list(K3S_NODE_GROUPS)
+    groups = [*K3S_NODE_GROUPS, TOOLKIT_GROUP]
     nodes: List[Dict[str, Any]] = []
     for group in groups:
         for host in inv.get(group, {}).get("hosts", []):
@@ -78,7 +80,7 @@ def _inventory_nodes_from_yaml_fallback() -> List[Dict[str, Any]]:
 
     text = INVENTORY_FILE.read_text(encoding="utf-8")
     lines = text.splitlines()
-    target_groups = set(K3S_NODE_GROUPS)
+    target_groups = {*K3S_NODE_GROUPS, TOOLKIT_GROUP}
 
     nodes: List[Dict[str, Any]] = []
     current_group = ""
@@ -367,7 +369,7 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
             # Avoid duplicate rows when both fqdn and short hostname aliases exist.
             continue
         profile = str(details.get("profile", "")).strip().lower()
-        group = _k3s_group_for_profile(profile, "callback")
+        group = TOOLKIT_GROUP if profile == TOOLKIT_PROFILE else _k3s_group_for_profile(profile, "callback")
         inventory_by_name[node_name] = {
             "name": node_name,
             "group": group,

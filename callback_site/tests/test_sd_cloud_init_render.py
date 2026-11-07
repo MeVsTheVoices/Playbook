@@ -26,12 +26,15 @@ def _harness_text() -> str:
     """The user-data rendering section of the real script, without any device access."""
     text = read_sd_script()
     func = re.search(r"^validate_ssh_public_key_lines\(\) \{\n.*?^\}\n", text, re.S | re.M)
+    toolkit_func = re.search(r"^toolkit_render\(\) \{\n.*?^\}\n", text, re.S | re.M)
     body = re.search(r"^CLOUD_INIT_USERNAME=.*?(?=^cat > \"\$META_DATA_OUT\")", text, re.S | re.M)
-    assert func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
+    assert func and toolkit_func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
     return (
         "set -euo pipefail\n"
         + func.group(0)
+        + toolkit_func.group(0)
         + 'PROFILE="${R_PROFILE:-pi3bplus}"\nHOSTNAME="render-test"\nDISTRIBUTION="${R_DIST:-k3s}"\n'
+        + f'SCRIPT_DIR="{Path(__file__).resolve().parents[2] / "scripts"}"\n'
         'CALLBACK_URL="http://192.168.174.1:8088/api/cloud-init/callback"\n'
         'SSH_KEY_CONTENT="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest test"\n'
         'DEFAULT_K3S_SERVER_HOST="100.65.24.76"\nVALIDATE_CLOUD_INIT_SCHEMA=false\n'

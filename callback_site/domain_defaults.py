@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from k3s_lightweight import node_ops_specs as lightweight_node_ops_specs
 from k3s_lightweight import node_role_spec_parts
 from tailscale_policy import policy_defaults
+from network_toolkit import GROUP as TOOLKIT_GROUP, INPUT_SPECS as TOOLKIT_INPUT_SPECS
 
 BASE_DIR = Path(__file__).resolve().parent
 _DEFAULT_IMAGE_CATALOG_FILE = BASE_DIR / "catalogs" / "image_catalog.yml"
@@ -152,11 +153,19 @@ K3S_API_ENDPOINT_DEFAULT = "https://100.65.24.76:6443"
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
+        "id": "network-toolkit",
+        "label": "Network Toolkit (Pi 3B+)",
+        "description": "Serial/Ethernet tools, a restricted browser terminal and opt-in authenticated Tailscale Funnel. Wi-Fi uplink; no forwarding.",
+        "tags": ["network-toolkit"],
+        "groups": [TOOLKIT_GROUP],
+        "input_specs": TOOLKIT_INPUT_SPECS,
+    },
+    {
         "id": "baseline",
         "label": "Baseline",
         "description": "Core system baseline and host-level defaults.",
         "tags": ["baseline"],
-        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", TOOLKIT_GROUP],
         "input_specs": [
             {
                 "id": "timezone",
@@ -205,7 +214,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Tailscale",
         "description": "Tailnet agent and related ACL tag setup.",
         "tags": ["tailscale"],
-        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", TOOLKIT_GROUP],
         "input_specs": [
             {
                 "id": "auth_key",

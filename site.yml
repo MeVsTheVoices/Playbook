@@ -22,3 +22,10 @@
   become_user: root
   roles:
     - role: raspberry_pi_3bplus
+
+- name: Configure Network Toolkit Pi 3B+ appliances
+  hosts: network_toolkit_active
+  become: true
+  roles:
+    - role: raspberry_pi_3bplus
+    - role: network_toolkit

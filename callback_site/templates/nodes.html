@@ -53,75 +53,88 @@
             <p class="section-kicker">Access</p>
             <h2>Node Access Defaults + Webhook 🔐</h2>
             <p class="note">These are global defaults for checks/webhooks. Add per-node identity details below when enrolling manual nodes.</p>
-            <div class="grid">
-              <div>
-                <label for="username">Username</label>
-                <input id="username" placeholder="ops">
+            <section class="access-card">
+              <div class="access-card-head">
+                <h3>Defaults</h3>
+                <p class="module-desc">Used for node checks and the monitor webhook unless a node has its own identity.</p>
               </div>
-              <div>
-                <label for="password">Password / Token</label>
-                <input id="password" type="password" placeholder="optional">
+              <div class="module-fields">
+                <div class="module-field">
+                  <label for="username">Username</label>
+                  <input id="username" placeholder="ops">
+                  <p class="module-hint">SSH user for checks when a node has none of its own.</p>
+                </div>
+                <div class="module-field">
+                  <label for="password">Password / Token</label>
+                  <input id="password" type="password" placeholder="optional">
+                </div>
+                <div class="module-field">
+                  <label for="webhook_url">Webhook URL</label>
+                  <input id="webhook_url" placeholder="https://example/webhook">
+                  <p class="module-hint">Receives the node monitor summary.</p>
+                </div>
+                <div class="module-field">
+                  <label for="verify_tls">Verify TLS</label>
+                  <input id="verify_tls" value="true" placeholder="true or false">
+                  <p class="module-hint">Type true or false.</p>
+                </div>
               </div>
-              <div>
-                <label for="webhook_url">Webhook URL</label>
-                <input id="webhook_url" placeholder="https://example/webhook">
+              <div class="module-actions">
+                <button id="save-config" type="button">Save Config</button>
+                <span id="config-status" class="module-actions-status"></span>
               </div>
-              <div>
-                <label for="verify_tls">Verify TLS (true/false)</label>
-                <input id="verify_tls" value="true">
-              </div>
-            </div>
-            <div style="margin-top: 0.8rem;">
-              <button id="save-config">Save Config</button>
-            </div>
-            <p id="config-status" class="note"></p>
+            </section>
 
-            <hr style="border: 0; border-top: 1px solid var(--line); margin: 1rem 0;">
-            <h3 style="margin: 0 0 0.5rem; font-size: 1rem;">Add / Edit Node Manually</h3>
-            <div class="grid">
-              <div>
-                <label for="manual-node-selector">Existing Node</label>
-                <select id="manual-node-selector">
-                  <option value="">Create new node</option>
-                </select>
-                <p id="manual-node-helper" class="note">Choose a discovered or saved node to edit its identity, or leave this blank to add a fresh one.</p>
+            <section class="access-card">
+              <div class="access-card-head">
+                <h3>Add / Edit Node Manually</h3>
+                <p class="module-desc">Enroll a node the callback flow has not seen, or fix the identity of one it has.</p>
               </div>
-              <div>
-                <label for="manual-node-name">Node Name</label>
-                <input id="manual-node-name" placeholder="node-1-jd">
+              <div class="module-fields">
+                <div class="module-field wide">
+                  <label for="manual-node-selector">Existing Node</label>
+                  <select id="manual-node-selector">
+                    <option value="">Create new node</option>
+                  </select>
+                  <p id="manual-node-helper" class="module-hint">Choose a discovered or saved node to edit its identity, or leave this blank to add a fresh one.</p>
+                </div>
+                <div class="module-field">
+                  <label for="manual-node-name">Node Name</label>
+                  <input id="manual-node-name" placeholder="node-1-jd">
+                </div>
+                <div class="module-field">
+                  <label for="manual-node-group">Group</label>
+                  <input id="manual-node-group" value="manual" placeholder="manual">
+                </div>
+                <div class="module-field">
+                  <label for="manual-node-address">IP / Hostname</label>
+                  <input id="manual-node-address" placeholder="192.168.174.238">
+                </div>
+                <div class="module-field">
+                  <label for="manual-node-username">Node Username</label>
+                  <input id="manual-node-username" placeholder="jdizzle">
+                </div>
+                <div class="module-field">
+                  <label for="manual-node-password">Node Password (optional)</label>
+                  <input id="manual-node-password" type="password" placeholder="optional">
+                </div>
+                <div class="module-field">
+                  <label for="manual-node-shell">Default Shell (optional)</label>
+                  <input id="manual-node-shell" placeholder="/bin/bash">
+                </div>
+                <div class="module-field">
+                  <label for="manual-node-certificate">Certificate / SSH Key <span class="required">*</span></label>
+                  <select id="manual-node-certificate" required>
+                    <option value="">Select a certificate</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label for="manual-node-group">Group</label>
-                <input id="manual-node-group" value="manual" placeholder="manual">
+              <div class="module-actions">
+                <button id="add-manual-node" type="button">Add / Update Manual Node</button>
+                <button id="refresh-certificates" class="ghost" type="button">Refresh Certificates</button>
+                <span id="manual-node-status" class="module-actions-status"></span>
               </div>
-              <div>
-                <label for="manual-node-address">IP / Hostname</label>
-                <input id="manual-node-address" placeholder="192.168.174.238">
-              </div>
-              <div>
-                <label for="manual-node-username">Node Username</label>
-                <input id="manual-node-username" placeholder="jdizzle">
-              </div>
-              <div>
-                <label for="manual-node-password">Node Password (optional)</label>
-                <input id="manual-node-password" type="password" placeholder="optional">
-              </div>
-              <div>
-                <label for="manual-node-shell">Default Shell (optional)</label>
-                <input id="manual-node-shell" placeholder="/bin/bash">
-              </div>
-              <div>
-                <label for="manual-node-certificate">Certificate / SSH Key (required)</label>
-                <select id="manual-node-certificate" required>
-                  <option value="">Select a certificate</option>
-                </select>
-              </div>
-            </div>
-            <div class="inline-actions" style="margin-top: 0.8rem;">
-              <button id="add-manual-node" type="button">Add / Update Manual Node</button>
-              <button id="refresh-certificates" class="secondary" type="button">Refresh Certificates</button>
-            </div>
-            <p id="manual-node-status" class="note"></p>
+            </section>
           </div>
         </div>
 

@@ -53,11 +53,15 @@
             <p class="section-kicker">Access</p>
             <h2>Node Access Defaults + Webhook 🔐</h2>
             <p class="note">These are global defaults for checks/webhooks. Add per-node identity details below when enrolling manual nodes.</p>
-            <section class="access-card">
-              <div class="access-card-head">
-                <h3>Defaults</h3>
-                <p class="module-desc">Used for node checks and the monitor webhook unless a node has its own identity.</p>
-              </div>
+            <details class="access-card" id="access-defaults">
+              <summary>
+                <div class="access-card-head">
+                  <h3>Defaults</h3>
+                  <p class="module-desc">Fallback SSH username for checks and Ansible runs on nodes that have none of their own, plus the webhook that receives the node monitor summary. Connections use SSH keys, not a password.</p>
+                </div>
+                <span class="collapsible-indicator" aria-hidden="true">›</span>
+              </summary>
+              <div class="access-card-body">
               <div class="module-fields">
                 <div class="module-field">
                   <label for="username">Username</label>
@@ -67,6 +71,7 @@
                 <div class="module-field">
                   <label for="password">Password / Token</label>
                   <input id="password" type="password" placeholder="optional">
+                  <p class="module-hint">Saved with these defaults. Node logins use SSH keys, so it is not used to sign in.</p>
                 </div>
                 <div class="module-field">
                   <label for="webhook_url">Webhook URL</label>
@@ -83,13 +88,18 @@
                 <button id="save-config" type="button">Save Config</button>
                 <span id="config-status" class="module-actions-status"></span>
               </div>
-            </section>
-
-            <section class="access-card">
-              <div class="access-card-head">
-                <h3>Add / Edit Node Manually</h3>
-                <p class="module-desc">Enroll a node the callback flow has not seen, or fix the identity of one it has.</p>
               </div>
+            </details>
+
+            <details class="access-card" id="access-manual-node">
+              <summary>
+                <div class="access-card-head">
+                  <h3>Add / Edit Node Manually</h3>
+                  <p class="module-desc">Enroll a node the callback flow has not seen, or fix the identity of one it has.</p>
+                </div>
+                <span class="collapsible-indicator" aria-hidden="true">›</span>
+              </summary>
+              <div class="access-card-body">
               <div class="module-fields">
                 <div class="module-field wide">
                   <label for="manual-node-selector">Existing Node</label>
@@ -134,7 +144,8 @@
                 <button id="refresh-certificates" class="ghost" type="button">Refresh Certificates</button>
                 <span id="manual-node-status" class="module-actions-status"></span>
               </div>
-            </section>
+              </div>
+            </details>
           </div>
         </div>
 

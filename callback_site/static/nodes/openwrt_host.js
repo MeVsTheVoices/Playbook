@@ -33,6 +33,8 @@ function renderOpenwrtHosts() {
 }
 
 function addOpenwrtHost() {
+  const card = document.getElementById("access-manual-node");
+  if (card) card.open = true;
   manualNodeSelectorEl.value = "";
   resetManualNodeForm();
   manualNodeNameEl.value = "openwrt-router";

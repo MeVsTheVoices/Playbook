@@ -143,4 +143,6 @@ class LiveConfigPageTests(BaseCallbackSiteTest):
         self.assertIn("module-expand", text)
         self.assertIn('class="module-picker"', text)
         self.assertEqual(text.count('class="access-card"'), 2)
+        self.assertNotRegex(text, r'<details class="access-card"[^>]*\bopen\b')
+        self.assertIn('getElementById("access-manual-node")', text)
         self.assertNotIn("style.color = \"#b45309\"", text)

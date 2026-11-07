@@ -173,8 +173,39 @@ class ModulePresetTests(BaseCallbackSiteTest):
         self.assertEqual(missing_node.status_code, 404)
         gone = self.client.post("/api/nodes/module-presets/load", json={"node": NODE_A, "module": "tailscale", "source": "preset:missing"})
         self.assertEqual(gone.status_code, 404)
-        no_name = self.client.post("/api/nodes/module-presets", json={"node": NODE_A, "module": "tailscale", "name": ""})
-        self.assertEqual(no_name.status_code, 400)
+
+    def test_every_save_gets_a_readable_suggested_name_and_never_leaks_a_secret(self) -> None:
+        self.save_tailscale(NODE_A, tailnet="a.ts.net", hostname="rack-a", auth_key=SECRET)
+        self.save_tailscale(NODE_A, tailnet="b.ts.net", hostname="rack-a", auth_key=SECRET)
+        self.save_tailscale(NODE_B, tailnet="a.ts.net")
+        mine = [p for p in self.listing("tailscale", NODE_A)["presets"] if p["node"] == NODE_A]
+        names = [p["auto_name"] for p in mine]
+        self.assertEqual(sorted(names), [f"tailnet as rack-a on {NODE_A}", f"tailnet as rack-a on {NODE_A} (2)"])
+        theirs = next(p for p in self.listing("tailscale", NODE_A)["presets"] if p["node"] == NODE_B)
+        self.assertEqual(theirs["auto_name"], f"Tailscale on {NODE_B}")
+        self.assertNotIn(SECRET, " ".join(names))
+        self.assertTrue(all(p["name"] == "" for p in mine), "a suggestion is not a user name")
+
+    def test_suggested_names_read_well_for_other_modules(self) -> None:
+        suggest = services.module_presets._suggest_name
+        self.assertEqual(suggest("kubernetes", "alpha", {"node_role": "worker"}, set()), "worker on alpha")
+        self.assertEqual(suggest("longhorn", "alpha", {"storage_path": "/var/lib/longhorn"}, set()), "storage /var/lib/longhorn on alpha")
+        self.assertEqual(suggest("telegraf", "alpha", {"influx_bucket": "homelab"}, set()), "homelab bucket on alpha")
+        self.assertLessEqual(len(suggest("docker", "n" * 80, {"docker_data_root": "/mnt/" + "x" * 60}, set())), services.module_presets.NAME_MAX)
+
+    def test_a_blank_name_keeps_the_configuration_under_its_suggested_name(self) -> None:
+        self.save_tailscale(NODE_A, tailnet="a.ts.net", hostname="rack-a")
+        suggested = self.listing("tailscale", NODE_A)["presets"][0]["auto_name"]
+        kept = self.client.post("/api/nodes/module-presets", json={"node": NODE_A, "module": "tailscale", "name": ""})
+        self.assertEqual(kept.status_code, 200)
+        self.assertEqual(kept.get_json()["name"], suggested)
+        self.assertEqual(self.listing("tailscale", NODE_A)["presets"][0]["name"], suggested)
+
+        self.save_tailscale(NODE_A, tailnet="b.ts.net", hostname="rack-a")
+        own = self.client.post("/api/nodes/module-presets", json={"node": NODE_A, "module": "tailscale", "name": "my lab"})
+        self.assertEqual(own.get_json()["name"], "my lab")
+        nothing = self.client.post("/api/nodes/module-presets", json={"node": NODE_B, "module": "tailscale", "name": ""})
+        self.assertEqual(nothing.status_code, 400, "nothing saved on that node yet")
 
     def test_node_ops_reset_clears_saved_configurations(self) -> None:
         self.save_tailscale(NODE_A, tailnet="a.ts.net", auth_key=SECRET)
@@ -187,3 +218,5 @@ class ModulePresetTests(BaseCallbackSiteTest):
         self.assertIn('id="module-presets"', text)
         self.assertIn("Save as named configuration", text)
         self.assertIn("Draw from existing settings", text)
+        self.assertIn("suggested name", text)
+        self.assertIn(".module-actions", text)

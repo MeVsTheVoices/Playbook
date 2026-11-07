@@ -70,6 +70,38 @@ def _validate_name(raw: Any) -> str:
     return name
 
 
+# The first input found per module becomes the readable part of a suggested name; secrets are never used.
+_NAME_PARTS: Dict[str, List[Tuple[str, str]]] = {
+    "baseline": [("timezone", "{} timezone")],
+    "tailscale": [("hostname", "tailnet as {}"), ("advertise_tags", "tags {}")],
+    "docker": [("docker_data_root", "data root {}"), ("registry_mirror", "mirror {}")],
+    "kubernetes": [("node_role", "{}")],
+    "longhorn": [("storage_path", "storage {}")],
+    "telegraf": [("influx_bucket", "{} bucket"), ("influx_org", "org {}")],
+}
+
+
+def _suggest_name(module_id: str, node_name: str, inputs: Dict[str, str], taken: set) -> str:
+    """A short readable label such as 'worker on alpha', made unique among this module's saves."""
+    detail = ""
+    for field_id, template in _NAME_PARTS.get(module_id, []):
+        value = str(inputs.get(field_id, "")).strip()
+        if value:
+            detail = template.format(value if len(value) <= 28 else value[:25] + "...")
+            break
+    label = str((_profile_map().get(module_id) or {}).get("label", module_id))
+    base = (f"{detail} on {node_name}" if detail else f"{label} on {node_name}")[: NAME_MAX - 5]
+    name, count = base, 2
+    while name in taken:
+        name = f"{base} ({count})"
+        count += 1
+    return name
+
+
+def _taken_names(presets: List[Dict[str, Any]], module_id: str) -> set:
+    return {str(p.get("name") or p.get("auto_name") or "") for p in presets if p.get("module") == module_id}
+
+
 def _trim_history(presets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     keep_unnamed: Dict[str, int] = {}
     kept: List[Dict[str, Any]] = []
@@ -92,12 +124,15 @@ def _record_save(node_name: str, module_id: str, inputs: Dict[str, str]) -> Dict
     for preset in presets:
         if preset.get("module") == module_id and preset.get("node") == node_name and preset.get("inputs") == inputs:
             preset["saved_at"] = _now()
+            if not preset.get("auto_name"):
+                preset["auto_name"] = _suggest_name(module_id, node_name, inputs, _taken_names(presets, module_id))
             _save_presets(presets)
             return preset
     record = {
         "id": uuid.uuid4().hex[:12],
         "module": module_id,
         "name": "",
+        "auto_name": _suggest_name(module_id, node_name, inputs, _taken_names(presets, module_id)),
         "node": node_name,
         "saved_at": _now(),
         "inputs": inputs,
@@ -152,6 +187,7 @@ def _public_preset(preset: Dict[str, Any]) -> Dict[str, Any]:
         "source": f"preset:{preset['id']}",
         "module": module_id,
         "name": str(preset.get("name", "")),
+        "auto_name": str(preset.get("auto_name") or _suggest_name(module_id, str(preset.get("node", "")), preset["inputs"], set())),
         "node": str(preset.get("node", "")),
         "saved_at": str(preset.get("saved_at", "")),
         "origin": "node-ops",
@@ -247,7 +283,7 @@ def _resolve_source(module_id: str, source: str) -> Tuple[str, Dict[str, str]]:
         preset = next((p for p in _load_presets() if p.get("id") == ref and p.get("module") == module_id), None)
         if preset is None:
             raise KeyError(source)
-        return str(preset.get("name") or f"saved on {preset.get('node', '?')}"), dict(preset["inputs"])
+        return str(preset.get("name") or preset.get("auto_name") or f"saved on {preset.get('node', '?')}"), dict(preset["inputs"])
     if kind == "node":
         values = _clean_inputs(module_id, _load_node_provisioning().get("node_inputs", {}).get(ref, {}).get(module_id))
         if not any(values.values()):

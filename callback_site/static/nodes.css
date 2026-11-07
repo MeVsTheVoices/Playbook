@@ -539,6 +539,31 @@ tr.module-row-selected td:first-child {
   background: #f0f9ff;
   box-shadow: none;
 }
+.access-card {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+.access-card-head h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+}
+.access-card .module-desc {
+  margin: 0 0 0.9rem;
+}
+.access-card .module-actions {
+  margin-top: 1rem;
+}
+.module-actions-status {
+  flex: 1 1 12rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.module-actions-status:empty {
+  display: none;
+}
 .module-picker {
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);

@@ -25,6 +25,7 @@ from services.node_state import (
     _merge_node_profile_inputs,
     _missing_required_inputs,
     _profile_map,
+    _profiles_to_run,
     _redact_node_profile_inputs,
     _reset_node_ops_settings,
     _sanitize_node_profile_inputs,
@@ -363,10 +364,10 @@ def register_node_routes(app: Any) -> None:
         missing_by_node: List[Dict[str, Any]] = []
 
         for node in target_nodes:
-            profile_ids = _effective_node_profiles(node, state)
-            if profile_filter:
-                allowed = set(profile_filter)
-                profile_ids = [pid for pid in profile_ids if pid in allowed]
+            profile_ids = _profiles_to_run(node, state, profile_filter)
+            if node_name and profile_filter and not profile_ids:
+                labels = ", ".join(str(_profile_map()[pid].get("label", pid)) for pid in profile_filter)
+                return jsonify({"ok": False, "error": f"{labels} does not apply to {node['name']} (group {node.get('group') or 'none'})."}), 400
             missing = _missing_required_inputs(node["name"], profile_ids, state)
             if missing and mode == "apply":
                 missing_by_node.append(
@@ -384,6 +385,18 @@ def register_node_routes(app: Any) -> None:
                     "missing_inputs": missing_by_node,
                 }
             ), 400
+
+        if mode == "apply" and profile_filter:
+            # Applying a module makes it part of the node, like saving its inputs does.
+            remembered = False
+            for node in target_nodes:
+                selected = _effective_node_profiles(node, state)
+                added = [pid for pid in _profiles_to_run(node, state, profile_filter) if pid not in selected]
+                if added:
+                    state.setdefault("node_configs", {})[node["name"]] = selected + added
+                    remembered = True
+            if remembered:
+                _save_node_provisioning(state)
 
         if run_ansible:
             job_id = uuid.uuid4().hex
@@ -409,10 +422,7 @@ def register_node_routes(app: Any) -> None:
 
         results: List[Dict[str, Any]] = []
         for node in target_nodes:
-            profile_ids = _effective_node_profiles(node, state)
-            if profile_filter:
-                allowed = set(profile_filter)
-                profile_ids = [pid for pid in profile_ids if pid in allowed]
+            profile_ids = _profiles_to_run(node, state, profile_filter)
             results.append(_apply_node_provisioning(node["name"], profile_ids, mode=mode, run_ansible=run_ansible))
 
         return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "results": results})

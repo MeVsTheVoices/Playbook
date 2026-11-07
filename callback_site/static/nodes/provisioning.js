@@ -17,8 +17,8 @@ function formatProvisionResult(result) {
       if (item.output) {
         const output = String(item.output).trim();
         if (output) {
-          const shortOutput = output.length > 500 ? `${output.slice(0, 500)}…` : output;
-          lines.push(`  ${item.profile_id || "profile"}: ${shortOutput}`);
+          lines.push(`  ${item.profile_id || "profile"}:`);
+          lines.push(output.split("\n").map((line) => `    ${line}`).join("\n"));
         }
       }
     }

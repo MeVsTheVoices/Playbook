@@ -428,6 +428,17 @@ def _effective_node_profiles(node: Dict[str, Any], state: Dict[str, Any]) -> Lis
     return _default_profiles_for_group(node.get("group", ""))
 
 
+def _profiles_to_run(node: Dict[str, Any], state: Dict[str, Any], profile_filter: List[str] | None) -> List[str]:
+    """The node's selected modules, or the named ones when a filter is given."""
+    selected = _effective_node_profiles(node, state)
+    if not profile_filter:
+        return selected
+    # A module asked for by name runs even when it is not ticked for the node, if it applies to the node's group.
+    group = str(node.get("group", "") or "")
+    profile_by_id = _profile_map()
+    return [pid for pid in profile_filter if pid in selected or group in (profile_by_id.get(pid, {}).get("groups") or [])]
+
+
 def _latest_node_check(node_name: str, state: Dict[str, Any]) -> Dict[str, Any]:
     node_results = state.get("results", {}).get(node_name, {})
     if not isinstance(node_results, dict):

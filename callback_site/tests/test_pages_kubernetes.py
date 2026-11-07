@@ -21,6 +21,20 @@ class KubernetesPageTests(BaseCallbackSiteTest):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"expected 200 for {path}")
 
+    def test_dashboard_contains_mobile_layout_rules_and_scrollable_callbacks(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('<div class="table-wrap">\n        <table class="events-table">', html)
+        with self.client.get("/static/home.css") as stylesheet:
+            css = stylesheet.get_data(as_text=True)
+        self.assertIn("minmax(min(240px, 100%), 1fr)", css)
+        self.assertIn(
+            ".key-picker-row,\n  .key-preset-row,\n  .key-upload-row,\n  .inline-row {\n"
+            "    grid-template-columns: minmax(0, 1fr);",
+            css,
+        )
+
     def test_sidebar_hides_kubernetes_link_when_runtime_unavailable(self) -> None:
         with patch_in("_detect_kubernetes_runtime",
             return_value={"available": False, "active_service": "", "reason": "inactive"},

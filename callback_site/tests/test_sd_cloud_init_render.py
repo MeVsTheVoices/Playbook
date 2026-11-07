@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -74,6 +75,22 @@ class SdCloudInitRenderTests(unittest.TestCase):
                 checked += 1
         self.assertGreaterEqual(checked, 8)
 
+    def test_hardware_callback_includes_architecture(self) -> None:
+        code, data, err = self.render(CLOUD_INIT_ENABLE_HARDWARE_CHECKS="true")
+        self.assertEqual(code, 0, err)
+        script = self.files(data)["/usr/local/bin/rack-hardware-check"]["content"]
+        self.assertIn('ARCHITECTURE="$(uname -m)"', script)
+        self.assertIn('ARCHITECTURE="$ARCHITECTURE" ', script)
+        payload_script = script.split("python3 <<'PY'\n", 1)[1].split("\nPY", 1)[0]
+        for architecture in ("aarch64", "x86_64"):
+            with self.subTest(architecture=architecture):
+                result = subprocess.run(
+                    ["python3", "-"], input=payload_script, text=True, capture_output=True,
+                    env={**os.environ, "ARCHITECTURE": architecture}, timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["hardware"]["architecture"], architecture)
+
     def test_final_callback_runs_at_boot_with_real_values_not_literal_escapes(self) -> None:
         code, data, err = self.render()
         self.assertEqual(code, 0, err)
@@ -84,6 +101,52 @@ class SdCloudInitRenderTests(unittest.TestCase):
         env = self.files(data)["/etc/rack-node.env"]["content"]
         self.assertIn("CALLBACK_URL=http://192.168.174.1:8088/api/cloud-init/callback", env)
         self.assertIn("INSTANCE_ID=render-test-1", env)
+
+    def test_bootstrap_reboot_is_deferred_until_cloud_init_finishes(self) -> None:
+        for distribution in ("standard", "k3s"):
+            for reboot in ("true", "false"):
+                for callback in ("true", "false"):
+                    with self.subTest(distribution=distribution, reboot=reboot, callback=callback):
+                        code, data, err = self.render(
+                            R_DIST=distribution,
+                            CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP=reboot,
+                            CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK=callback,
+                        )
+                        self.assertEqual(code, 0, err)
+                        commands = self.runcmd(data)
+                        self.assertFalse(any("reboot" in command or "shutdown" in command for command in commands))
+                        if reboot == "true":
+                            self.assertEqual(data["power_state"], {
+                                "mode": "reboot", "delay": "now", "timeout": 600, "condition": True,
+                            })
+                        else:
+                            self.assertNotIn("power_state", data)
+                        service_commands = [c for c in commands if "rack-power-restored-callback.service" in c]
+                        self.assertEqual(len(service_commands), 1 if callback == "true" else 0)
+                        if service_commands:
+                            self.assertEqual(commands[-1], service_commands[0])
+                            self.assertIn("systemctl enable --now", service_commands[0])
+
+    def test_power_restore_service_setup_reports_systemctl_failures(self) -> None:
+        code, data, err = self.render(CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK="true")
+        self.assertEqual(code, 0, err)
+        command = next(c for c in data["runcmd"] if "rack-power-restored-callback.service" in c[-1])
+        with tempfile.TemporaryDirectory() as tmp:
+            systemctl = Path(tmp) / "systemctl"
+            systemctl.write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = "$FAIL_COMMAND" ]; then echo "systemctl failed: $1" >&2; exit 1; fi\n',
+                encoding="utf-8",
+            )
+            systemctl.chmod(0o755)
+            for failure in ("daemon-reload", "enable"):
+                with self.subTest(failure=failure):
+                    result = subprocess.run(
+                        command, capture_output=True, text=True, timeout=10,
+                        env={"PATH": f"{tmp}:{os.environ['PATH']}", "FAIL_COMMAND": failure},
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f"systemctl failed: {failure}", result.stderr)
 
     def test_boot_log_script_posts_logs_to_the_callback_site_and_is_wired_in(self) -> None:
         import json

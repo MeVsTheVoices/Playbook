@@ -21,6 +21,7 @@ function parsedHardwareProfile(node) {
     },
     hardware_profile: {
       model: hw.model || "",
+      architecture: hw.architecture || "",
       ram_mb: hw.ram_mb ?? null,
       ram_gb_approx: ramGb,
       sd_capacity_gb: hw.sd_capacity_gb ?? null,
@@ -56,6 +57,7 @@ function rawHardwareView(node) {
       received_at: hw.received_at || "",
       source_ip: hw.source_ip || "",
       model: hw.model || "",
+      architecture: hw.architecture || "",
       ram_mb: hw.ram_mb ?? null,
       sd_capacity_gb: hw.sd_capacity_gb ?? null,
       nvme: hw.nvme ?? null,
@@ -125,7 +127,7 @@ function renderHardwareTable() {
   hwBodyEl.innerHTML = "";
   const hwNodes = nodes.filter((n) => n.hardware && n.hardware.received_at);
   if (!hwNodes.length) {
-    hwBodyEl.innerHTML = "<tr><td colspan='6' style='color:var(--muted)'>No hardware-check callbacks received yet. Run <em>Get Hardware Profile</em> in Node Ops to trigger one.</td></tr>";
+    hwBodyEl.innerHTML = "<tr><td colspan='7' style='color:var(--muted)'>No hardware-check callbacks received yet. Run <em>Get Hardware Profile</em> in Node Ops to trigger one.</td></tr>";
     return;
   }
   for (const [index, node] of hwNodes.entries()) {
@@ -162,6 +164,7 @@ function renderHardwareTable() {
         </button>
       </td>
       <td class='mono'>${escapeHtml(hw.source_ip || node.address || "-")}</td>
+      <td class='mono'>${escapeHtml(hw.architecture || "-")}</td>
       <td><div class='summary-stack'><div class='summary-main'>${escapeHtml(hardwareSummary[0] || "-")}</div><div class='summary-sub'>${escapeHtml(hardwareSummary.slice(1).join(" • ") || "No summary")}</div></div></td>
       <td>
         <div class='summary-stack'>
@@ -184,7 +187,7 @@ function renderHardwareTable() {
     detailRow.id = detailRowId;
     detailRow.hidden = true;
     detailRow.innerHTML = `
-      <td colspan='6'>
+      <td colspan='7'>
         <div class='hw-detail-grid'>
           <div class='hw-detail-card'>
             <h4>Node and Callback Summary</h4>

@@ -629,6 +629,7 @@ server: https://local-machine-ip:6443
         </div>
         <p class="small-note" id="event-meta">Waiting for callback updates...</p>
         <p class="small-note">Click a row to inspect it. Older callbacks per host are condensed (▸ expands).</p>
+        <div class="table-wrap">
         <table class="events-table">
           <thead>
             <tr>
@@ -646,6 +647,7 @@ server: https://local-machine-ip:6443
             {% include "fragments/callback_rows.html" %}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div class="panel" id="payload-inspect-panel">

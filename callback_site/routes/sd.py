@@ -12,6 +12,7 @@ from typing import Any, Dict
 from flask import jsonify, request, Response, stream_with_context
 
 from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
+from network_toolkit import PROFILE as TOOLKIT_PROFILE
 
 from services.k3s_config import _check_longform
 from services.sd_devices import (
@@ -70,6 +71,8 @@ def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
         "options": options,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if payload.get("profile") == TOOLKIT_PROFILE:
+        profiles[next_name]["profile"] = TOOLKIT_PROFILE
     _save_sd_option_profiles(profiles)
     _set_preferred_sd_option_profile(next_name)
     return next_name
@@ -104,9 +107,11 @@ def register_sd_routes(app: Any) -> None:
             "description": description,
             "distribution": distribution,
             "pi_only": pi_only,
-            "options": options,
+            "options": _redact_sd_secret_options(options),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        if payload.get("profile") == TOOLKIT_PROFILE:
+            profiles[name]["profile"] = TOOLKIT_PROFILE
         _save_sd_option_profiles(profiles)
         if bool(payload.get("set_preferred", False)):
             _set_preferred_sd_option_profile(name)
@@ -173,15 +178,19 @@ def register_sd_routes(app: Any) -> None:
         if missing:
             return jsonify({"ok": False, "errors": [f"Missing fields: {', '.join(missing)}"]}), 400
 
-        if payload["profile"] not in K3S_ROLE_PROFILES:
-            return jsonify({"ok": False, "errors": [f"profile must be one of: {', '.join(K3S_ROLE_PROFILES)}"]}), 400
+        sd_profiles = (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE)
+        if payload["profile"] not in sd_profiles:
+            return jsonify({"ok": False, "errors": [f"profile must be one of: {', '.join(sd_profiles)}"]}), 400
 
         distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
         if distribution not in {"standard", "k3s"}:
             return jsonify({"ok": False, "errors": ["distribution must be standard or k3s"]}), 400
         payload["distribution"] = distribution
         if payload.get("config_errors"):
-            return jsonify({"ok": False, "errors": [f"K3s lightweight options: {err}" for err in payload["config_errors"]]}), 400
+            errors = payload["config_errors"]
+            if payload["profile"] != TOOLKIT_PROFILE:
+                errors = [f"K3s lightweight options: {err}" for err in errors]
+            return jsonify({"ok": False, "errors": errors}), 400
         if distribution == "k3s":
             k3s_check = _check_longform("k3s_config", payload["cloud_init_options"].get("k3s_config", ""))
             if not k3s_check["ok"]:

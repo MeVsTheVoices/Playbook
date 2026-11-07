@@ -1,0 +1,12 @@
+[Unit]
+Description=Network Toolkit private SSH and no forwarding
+After=tailscaled.service
+Before=rack-toolkit-funnel.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rack-toolkit-firewall
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target

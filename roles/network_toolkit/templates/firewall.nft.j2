@@ -1,0 +1,14 @@
+table inet rack_toolkit {
+    chain input {
+        type filter hook input priority -10; policy drop;
+        iifname "lo" accept
+        ct state established,related accept
+        iifname "tailscale0" accept
+        udp dport 41641 accept
+        iifname "wlan0" udp sport 67 udp dport 68 accept
+        meta l4proto { icmp, ipv6-icmp } accept
+    }
+    chain forward {
+        type filter hook forward priority -10; policy drop;
+    }
+}

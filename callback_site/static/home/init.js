@@ -106,6 +106,8 @@ document.getElementById("opt_k3s_role")?.addEventListener("change", () => {
 document.getElementById("ssh_key_name").addEventListener("input", refreshKeyLinks);
 
 form.profile.addEventListener("change", () => {
+  ensureK3sConfigDefaults();
+  form.image_sha256.value = "";
   rebuildCatalogFilters();
   updatePiScopedOptionsVisibility();
   applyK3sRoleDefaults();

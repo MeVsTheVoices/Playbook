@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+from network_toolkit import PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS
 
 from services.storage import (
     PROFILE_SEGMENTS_FILE,
@@ -40,9 +41,11 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
             "description": str(profile.get("description", "")).strip(),
             "distribution": distribution,
             "pi_only": bool(profile.get("pi_only", False)),
-            "options": options,
+            "options": {key: value for key, value in options.items() if key not in TOOLKIT_SECRETS},
             "updated_at": str(profile.get("updated_at", "")).strip(),
         }
+        if profile.get("profile") == TOOLKIT_PROFILE:
+            out[profile_name]["profile"] = TOOLKIT_PROFILE
     return out
 
 

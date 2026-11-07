@@ -180,3 +180,7 @@ if [[ "$CLOUD_INIT_ENABLE_SYSCTL_HARDENING" == "true" ]]; then
       fs.suid_dumpable = 0
 SYSCTL_HARDEN_FILE
 fi
+# Network Toolkit uses the same service and device helpers as its Ansible role.
+if [[ "$PROFILE" == "network-toolkit" ]]; then
+  toolkit_render files >> "$USER_DATA_OUT"
+fi

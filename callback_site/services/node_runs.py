@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 from urllib import error as urlerror, parse as urlparse, request as urlrequest
 
 from k3s_lightweight import profile_for_group as _k3s_profile_for_group
+from network_toolkit import GROUP as TOOLKIT_GROUP, PROFILE as TOOLKIT_PROFILE, validate_options as validate_toolkit_options
 
 from services.network import _default_callback_url, _preferred_node_connect_target
 from services.node_inventory import _node_ops_inventory_view
@@ -82,6 +83,24 @@ def _run_node_profile(
             "exit_code": None,
             "inputs": _redact_profile_inputs(profile_id, profile_inputs),
             "output": "Ansible execution disabled for this run (plan-only).",
+        }
+
+    toolkit_errors = []
+    if profile_id == TOOLKIT_PROFILE:
+        toolkit_errors = validate_toolkit_options(profile_inputs)
+    elif node_group == TOOLKIT_GROUP and profile_id == "tailscale":
+        tags_input = str(profile_inputs.get("advertise_tags") or "").strip()
+        if tags_input and tags_input != "tag:network-toolkit":
+            toolkit_errors.append("Network Toolkit uses only tag:network-toolkit, not the rack tags.")
+        if str(profile_inputs.get("advertise_exit_node") or "").lower() == "true":
+            toolkit_errors.append("Network Toolkit cannot advertise an exit node.")
+    if toolkit_errors:
+        logger.warning("Invalid Network Toolkit settings for node=%s: %s", node_name, "; ".join(toolkit_errors))
+        return {
+            "profile_id": profile_id, "status": "failed", "mode": mode,
+            "checked_at": checked_at, "command": [], "exit_code": None,
+            "inputs": _redact_profile_inputs(profile_id, profile_inputs),
+            "output": "; ".join(toolkit_errors),
         }
 
     ansible_cmd = shutil.which("ansible-playbook")
@@ -351,7 +370,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
     temp_inventory.close()
 
     group_l = str(node_group or "").lower()
-    profile_value = _k3s_profile_for_group(group_l, "pi5")
+    profile_value = TOOLKIT_PROFILE if group_l == TOOLKIT_GROUP else _k3s_profile_for_group(group_l, "pi5")
     callback_url = _default_callback_url()
     cmd = [
         ansible_cmd or "ansible",

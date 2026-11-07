@@ -53,6 +53,8 @@ refreshProfileSegments();
 
 refreshCertificates();
 
+refreshNodeGroups();
+
 loadSummary().then(() => refreshMonitor(false));
 
 setInterval(() => {

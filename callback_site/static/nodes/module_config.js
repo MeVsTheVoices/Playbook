@@ -308,6 +308,7 @@ function renderModuleSection() {
 
   const profile = profiles.find((p) => p.id === selectedModuleId);
   if (!profile) {
+    moduleDetailEl.classList.add("collapsed");
     moduleDetailEl.innerHTML = "<p class='note'>Select a module from the table to view its parameter template.</p>";
     renderModulePresets();
     return;
@@ -322,6 +323,7 @@ function renderModuleSection() {
   const tagsHtml = (Array.isArray(profile.tags) ? profile.tags : []).map((t) => `<span class="module-tag">${escapeHtml(t)}</span>`).join("");
   const groupsHtml = groups.map((g) => `<span class="module-tag">${escapeHtml(g)}</span>`).join("");
 
+  moduleDetailEl.classList.remove("collapsed");
   moduleDetailEl.innerHTML = "";
   const head = document.createElement("div");
   head.className = "module-head";

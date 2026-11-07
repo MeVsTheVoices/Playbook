@@ -138,4 +138,7 @@ class LiveConfigPageTests(BaseCallbackSiteTest):
         self.assertIn(".module-fields", text)
         self.assertIn(".module-options-section", text)
         self.assertIn("Use this", text)
+        self.assertIn('class="module-detail collapsed"', text)
+        self.assertIn('classList.remove("collapsed")', text)
+        self.assertIn("module-expand", text)
         self.assertNotIn("style.color = \"#b45309\"", text)

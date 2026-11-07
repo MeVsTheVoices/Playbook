@@ -280,6 +280,28 @@ th, td {
   background: #ffffff;
   min-height: 160px;
 }
+.module-detail:not(.collapsed) {
+  animation: module-expand 0.22s ease-out;
+}
+.module-detail.collapsed {
+  min-height: 0;
+  padding: 0.5rem 0.9rem;
+  border-style: dashed;
+  background: #f8fafc;
+}
+.module-detail.collapsed .note {
+  margin: 0;
+}
+@keyframes module-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 tr.module-row {
   cursor: pointer;
 }

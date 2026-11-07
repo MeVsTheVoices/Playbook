@@ -129,6 +129,44 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         saved_node = manual_nodes["manual-node-password-01"]
         self.assertEqual(str(saved_node.get("password", "")), "expected-password-value")
 
+    def test_group_options_list_module_families_builtins_and_inventory_groups(self) -> None:
+        inventory = {
+            "_meta": {"hostvars": {}},
+            "all": {"children": ["ungrouped", "rack10_infra"]},
+            "rack10_infra": {"hosts": ["glinet-openwrt-01"]},
+            "rpi5_active": {"hosts": ["a"]},
+            "empty_group": {},
+            "bad group": {"hosts": ["x"]},
+        }
+        with patch.object(services.node_inventory.subprocess, "run", return_value=SimpleNamespace(stdout=json.dumps(inventory))):
+            response = self.client.get("/api/nodes/groups")
+        self.assertEqual(response.status_code, 200)
+        names = [g["name"] for g in response.get_json()["groups"]]
+        self.assertEqual(names[:3], list(services.node_inventory.K3S_NODE_GROUPS), "module families come first")
+        for expected in ("rpi5_active", "rpi4_active", "rpi_3bplus_active", "manual", "openwrt", "rack10_infra"):
+            self.assertIn(expected, names)
+        self.assertEqual(len(names), len(set(names)), "no group is listed twice")
+        for excluded in ("all", "ungrouped", "_meta", "empty_group", "bad group"):
+            self.assertNotIn(excluded, names)
+        self.assertLess(names.index("openwrt"), names.index("rack10_infra"), "built-ins come before other inventory groups")
+
+    def test_group_options_survive_a_missing_ansible_inventory(self) -> None:
+        with patch.object(services.node_inventory.subprocess, "run", side_effect=FileNotFoundError):
+            names = [g["name"] for g in self.client.get("/api/nodes/groups").get_json()["groups"]]
+        self.assertIn("openwrt", names)
+        self.assertIn("rpi5_active", names)
+
+    def test_a_manual_node_assigned_to_the_openwrt_group_appears_in_it(self) -> None:
+        response = self.client.post(
+            "/api/nodes/manual-nodes",
+            json={"name": "router-group-test", "group": "openwrt", "address": "192.0.2.1", "username": "root", "certificate": "rack-bootstrap-ed25519"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.addCleanup(self.client.delete, "/api/nodes/manual-nodes/router-group-test")
+        view = services.node_inventory._node_ops_inventory_view()
+        match = [n for n in view if n["name"] == "router-group-test"]
+        self.assertEqual(match[0]["group"], "openwrt")
+
     def test_manual_node_delete_missing_returns_404(self) -> None:
         response = self.client.delete("/api/nodes/manual-nodes/does-not-exist")
         self.assertEqual(response.status_code, 404)

@@ -145,4 +145,6 @@ class LiveConfigPageTests(BaseCallbackSiteTest):
         self.assertEqual(text.count('class="access-card"'), 2)
         self.assertNotRegex(text, r'<details class="access-card"[^>]*\bopen\b')
         self.assertIn('getElementById("access-manual-node")', text)
+        self.assertIn('<select id="manual-node-group">', text)
+        self.assertIn("/api/nodes/groups", text)
         self.assertNotIn("style.color = \"#b45309\"", text)

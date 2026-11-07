@@ -16,7 +16,7 @@ from services.k3s_config import LONGFORM_CHECKS, _check_longform, _longform_inpu
 from services.module_presets import _record_save
 from services.connection_profiles import gather_profiles, remember_profiles, select_profile
 from services.live_config import read_live_config
-from services.node_inventory import _node_ops_inventory_view, _ping_status
+from services.node_inventory import _node_group_options, _node_ops_inventory_view, _ping_status
 from services.node_runs import _apply_node_provisioning, _send_webhook, _telegraf_influx_dummy_check
 from services.node_state import (
     _effective_node_profiles,
@@ -175,6 +175,10 @@ def register_node_routes(app: Any) -> None:
                 "manual_nodes": state.get("manual_nodes", {}),
             }
         )
+
+    @app.get("/api/nodes/groups")
+    def nodes_groups() -> Any:
+        return jsonify({"ok": True, "groups": _node_group_options()})
 
     @app.post("/api/nodes/manual-nodes")
     def nodes_manual_node_upsert() -> Any:

@@ -1,6 +1,38 @@
+// A node's current group is always selectable, even if the backend list does not name it.
+function setManualNodeGroup(value) {
+  const group = String(value || "").trim() || "manual";
+  if (!Array.from(manualNodeGroupEl.options).some((option) => option.value === group)) {
+    const opt = document.createElement("option");
+    opt.value = group;
+    opt.textContent = group;
+    manualNodeGroupEl.appendChild(opt);
+  }
+  manualNodeGroupEl.value = group;
+}
+
+async function refreshNodeGroups() {
+  const keep = manualNodeGroupEl.value || "manual";
+  try {
+    const res = await fetch("/api/nodes/groups");
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Failed to load groups");
+    manualNodeGroupEl.innerHTML = "";
+    for (const group of data.groups || []) {
+      const opt = document.createElement("option");
+      opt.value = group.name;
+      opt.textContent = group.description ? `${group.name} \u2014 ${group.description}` : group.name;
+      manualNodeGroupEl.appendChild(opt);
+    }
+  } catch (err) {
+    manualNodeStatus.textContent = `Group list error: ${String(err.message || err)}`;
+    return;
+  }
+  setManualNodeGroup(keep);
+}
+
 function resetManualNodeForm() {
   manualNodeNameEl.value = "";
-  manualNodeGroupEl.value = "manual";
+  setManualNodeGroup("manual");
   manualNodeAddressEl.value = "";
   manualNodeUsernameEl.value = "";
   manualNodePasswordEl.value = "";
@@ -56,7 +88,7 @@ function fillManualNodeForm(nodeName) {
     return;
   }
   manualNodeNameEl.value = source.name || nodeName || "";
-  manualNodeGroupEl.value = source.group || entry?.group || "manual";
+  setManualNodeGroup(source.group || entry?.group);
   manualNodeAddressEl.value = source.address || "";
   manualNodeUsernameEl.value = source.username || source.node_username || "";
   manualNodePasswordEl.value = "";

@@ -76,6 +76,7 @@ Open:
   - `live_config`: read-only SSH reads of a module's current settings from a node (same layer as `node_runs`).
   - `sd_prepare`, `k3s_config`, `sd_devices`, `kubernetes`, `terminal_checks`, `provision_jobs`: SD preparation, config checks, devices, cluster summary and background jobs.
 - `callback_site/k3s_lightweight.py` (board and role registry) and `callback_site/tailscale_policy.py` (policy builder) are shared by the services, routes and templates.
+- `callback_site/network_toolkit.py` defines the Pi 3B+ appliance class; it renders the same runtime assets that `roles/network_toolkit` installs with Ansible.
 - Page CSS and JavaScript live in `callback_site/static/` (`home/`, `nodes/` and `monitor/` split the large scripts by area; templates only carry markup and a small data bootstrap).
 
 ## SD and Cloud-Init Flow
@@ -95,6 +96,81 @@ server: https://<local-machine-ip>:6443
 ```
 
 That config is carried forward in the cloud-init payload and used by the post-boot K3s bootstrap path.
+
+### Network Toolkit (Pi 3B+)
+
+Select **Network Toolkit (Pi 3B+)** in the SD Profile selector. This is a separate
+`network-toolkit` class, not a K3s role. It uses the pinned, checksum-verified
+Raspberry Pi OS **Trixie Lite 64-bit** image (which supports cloud-init), forces
+Standard distribution, and installs no desktop, Docker, K3s or Telegraf.
+Do not substitute legacy Bookworm images, which lack this first-boot workflow.
+
+The profile-specific form requires:
+
+- Wi-Fi SSID, password and country code for the `wlan0` uplink.
+- A browser password **hash**, generated locally with `openssl passwd -6 -stdin`.
+  Use a long, unique, randomly generated password; the browser login is `operator`.
+- A preauthorized Tailscale auth key in the Tailscale section, authorized for
+  **`tag:network-toolkit`**. This class uses only that tag, not the rack tags.
+- A non-root administrative user and SSH public key for private management.
+
+The **Publish authenticated terminal** checkbox is off by default. Before enabling
+it, enable MagicDNS and HTTPS in the tailnet, use the Tailscale ACL planner's
+**Network Toolkit Funnel permission** checkbox, and apply its generated policy.
+Funnel exposes HTTPS 443 to the authenticated loopback nginx proxy on 7681;
+ttyd itself listens only on loopback 7682. The browser terminal runs as
+`network-console`, with serial access but no general-purpose sudo. Only
+the dedicated Ethernet configuration and bounded packet-capture helpers are allowed.
+SSH password and root logins are disabled; the firewall allows inbound SSH only
+over Tailscale, and blocks forwarding. No router port-forward is needed.
+Funnel is public, not tailnet-authenticated: anyone on the internet can reach
+the login prompt. Follow your organization's policy before publishing it.
+
+`eth0` is dedicated to equipment, uses link-local addressing initially, and never
+provides a default route. USB serial adapters appear under `/dev/serial/by-id/`
+(or `/dev/ttyUSB*` and `/dev/ttyACM*`). Examples from the browser terminal:
+
+```bash
+ls -l /dev/serial/by-id/
+picocom --baud 9600 --flow n /dev/ttyUSB0
+sudo rack-device-network show
+sudo rack-device-network static 192.168.1.2/24
+ping 192.168.1.1
+ssh admin@192.168.1.1
+sudo rack-device-capture
+```
+
+Choose a device subnet that does **not** overlap your Wi-Fi uplink or Tailscale;
+the helper rejects Tailscale-range overlap and prefixes wider than /8.
+Serial baud/flow settings depend on the equipment. Use the appropriate
+USB serial adapter (RS-232 versus TTL); GPIO UART is not enabled by this class.
+Telnet and TFTP clients are included for legacy equipment, but transmit data
+without encryption: use them only on an authorized, isolated device connection.
+Packet capture is restricted to `eth0`, 60 seconds or 1000 packets.
+
+Callbacks retain `profile: network-toolkit` and discover nodes in
+`network_toolkit_active`. Node Ops defaults to Baseline, Tailscale and Network
+Toolkit only. The Network Toolkit module reuses the same credential hash and
+Funnel toggle; Wi-Fi is boot-only and can be changed privately with `nmcli`.
+Saved SD templates retain the class and non-secret settings, but omit the Wi-Fi
+password, browser hash and join key. Re-enter them for every new card.
+Treat the flashed card's boot files as sensitive; Wi-Fi and join credentials
+are necessarily present there during first boot.
+
+To manage an existing appliance, add it under `network_toolkit_active` in inventory
+with its Tailscale address and non-root administrative user. Check then apply the
+Network Toolkit module after entering its hash. The role deliberately changes
+Ethernet and enforces private SSH; do not use it on a general-purpose Pi or an
+existing cluster member. Reimage a former cluster node only after safely removing
+it from the cluster.
+
+Inspect `systemctl status rack-toolkit-terminal rack-toolkit-funnel` and
+`tailscale funnel status` over private SSH. The public URL is the node's
+`https://<hostname>.<tailnet>.ts.net/`. Disable publication with
+`sudo systemctl disable --now rack-toolkit-funnel.service` (or clear the toggle
+and apply the module). The proxy/terminal remain local. Failed Funnel policy
+authorization or terminal setup is reported by systemd/cloud-init; publication
+is not replaced with an unauthenticated fallback.
 
 ## Source of Truth
 

@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+if [[ $# != 0 ]]; then
+  echo "Usage: sudo rack-device-capture (eth0, up to 60 seconds or 1000 packets)" >&2
+  exit 1
+fi
+exec /usr/bin/timeout 60 /usr/bin/tcpdump -ni eth0 -c 1000 -Z network-console

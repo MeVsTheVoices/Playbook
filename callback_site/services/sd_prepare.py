@@ -28,6 +28,7 @@ from services.k3s_config import _default_k3s_config, _normalize_k3s_node_name
 from services.kubernetes import _local_k3s_version
 from services.ssh_keys import _archive_ssh_public_key
 from services.storage import INVENTORY_FILE, SCRIPT_PATH
+from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,30 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     cloud_options = cleaned["cloud_init_options"]
     distribution = str(cleaned.get("distribution", "standard")).strip().lower() or "standard"
     k3s_config = str(cloud_options.get("k3s_config", "") or "").strip()
-    if distribution != "k3s" and k3s_config:
+    if cleaned.get("profile") == TOOLKIT_PROFILE:
+        errors = validate_toolkit_options(cloud_options, boot=True)
+        if not re.fullmatch(r"tskey-[A-Za-z0-9_-]+", str(cloud_options.get("tailscale_auth_key") or "")):
+            errors.append("network-toolkit requires a Tailscale auth key authorized for tag:network-toolkit.")
+        if distribution != "standard":
+            errors.append("network-toolkit requires the standard distribution, not K3s.")
+        if cloud_options.get("tailscale_advertise_routes") or cloud_options.get("tailscale_exit_node"):
+            errors.append("network-toolkit cannot advertise routes or use an exit node; Ethernet is for device configuration.")
+        if str(cloud_options.get("ssh_port") or "22") != "22":
+            errors.append("network-toolkit keeps private SSH on port 22.")
+        if str(cloud_options.get("username") or "") in {"root", "network-console"}:
+            errors.append("Use a separate non-root administrative user, not network-console.")
+        cloud_options.pop("k3s_config", None)
+        cloud_options.setdefault("toolkit_enable_funnel", False)
+        cloud_options.update({
+            "tailscale_enable": True, "disable_ssh_password_auth": True,
+            "disable_root_ssh": True, "enable_hardware_checks": True,
+            "tailscale_advertise_tags": ["tag:network-toolkit"],
+            "fancy_motd": False, "install_telegraf": False,
+            "enable_firewall_baseline": False,
+        })
+        if errors:
+            cleaned["config_errors"] = errors
+    elif distribution != "k3s" and k3s_config:
         # If the UI sent an explicit k3s config block, treat this as k3s intent
         # even if the distribution select was left on standard.
         distribution = "k3s"
@@ -144,18 +168,27 @@ def _apply_k3s_lightweight_to_payload(cleaned: Dict[str, Any]) -> None:
 
 
 def _redact_sd_secret_options(options: Any) -> Dict[str, Any]:
-    """Copy of SD cloud-init options without the Tailscale auth key.
+    """Copy of SD cloud-init options without join or toolkit credentials.
 
     Job records and auto-saved templates are readable through the unauthenticated API
     and stored in plaintext; an auth key can join tagged devices, so it never goes there.
     """
     if not isinstance(options, dict):
         return {}
-    return {key: value for key, value in options.items() if key != "tailscale_auth_key"}
+    return {key: value for key, value in options.items() if key not in {"tailscale_auth_key", *TOOLKIT_SECRETS}}
 
 
 def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud_init_options: Dict[str, Any]) -> List[str]:
     enabled_options: List[str] = []
+    for spec in TOOLKIT_SPECS:
+        key = spec["id"]
+        if key in cloud_init_options:
+            value = cloud_init_options[key]
+            if spec["input_type"] == "checkbox":
+                env[f"CLOUD_INIT_{key.upper()}"] = "true" if str(value).lower() == "true" else "false"
+            else:
+                env[f"CLOUD_INIT_{key.upper()}"] = str(value)
+            enabled_options.append(key)
 
     bool_env_fields = {
         "disable_ssh_password_auth": "CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH",

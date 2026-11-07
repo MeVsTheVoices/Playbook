@@ -1,0 +1,39 @@
+---
+toolkit_enable_funnel: false
+toolkit_terminal_password_hash: ""
+toolkit_packages:
+  - ca-certificates
+  - curl
+  - python3
+  - python3-apt
+  - openssh-client
+  - openssh-server
+  - network-manager
+  - netplan.io
+  - iw
+  - rfkill
+  - iproute2
+  - iputils-ping
+  - iputils-arping
+  - dnsutils
+  - traceroute
+  - mtr-tiny
+  - tcpdump
+  - ethtool
+  - netcat-openbsd
+  - nmap
+  - tftp-hpa
+  - inetutils-telnet
+  - socat
+  - picocom
+  - minicom
+  - screen
+  - usbutils
+  - lsof
+  - jq
+  - less
+  - nano
+  - ttyd
+  - nginx-light
+  - nftables
+  - sudo

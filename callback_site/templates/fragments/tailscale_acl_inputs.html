@@ -94,6 +94,10 @@
 <h3 class="group-title">SSH and tests</h3>
 <div class="grid input-grid">
   <div class="field-card check-card">
+    <label class="check-row"><input id="toolkit_funnel" type="checkbox"> Network Toolkit (Pi 3B+) Funnel permission</label>
+    <p class="field-hint">Defines <code>tag:network-toolkit</code>, grants the admin private SSH, and permits public HTTPS Funnel. The appliance still requires a browser password and an explicit publish opt-in. It does not inherit rack-to-rack access.</p>
+  </div>
+  <div class="field-card check-card">
     <label class="check-row"><input id="ssh" type="checkbox" checked> Tailscale SSH for the admin</label>
     <p class="field-hint">Only works on nodes brought up with <code>--ssh</code> (the "Enable Tailscale SSH" option).</p>
   </div>

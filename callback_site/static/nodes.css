@@ -539,6 +539,39 @@ tr.module-row-selected td:first-child {
   background: #f0f9ff;
   box-shadow: none;
 }
+.module-picker {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 1rem 1.2rem;
+  align-items: start;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+.module-picker-side {
+  display: grid;
+  gap: 0.55rem;
+}
+@media (max-width: 760px) {
+  .module-picker {
+    grid-template-columns: 1fr;
+  }
+}
+.module-picker-side > label {
+  margin: 0;
+  color: #334155;
+  font-weight: 600;
+}
+.module-picker-side .module-hint {
+  margin: 0;
+}
+.module-picker-side .module-hint:empty {
+  display: none;
+}
+#module-connection-context:empty {
+  display: none;
+}
 .module-list-scroll {
   /* Fits today's six modules as they were; a longer list scrolls under the sticky header. */
   max-height: 24rem;

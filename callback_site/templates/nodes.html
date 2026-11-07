@@ -135,14 +135,15 @@
           </summary>
           <div class="collapsible-body">
             <p class="note">Modules are the provisioning profiles defined for this rack. The table shows which modules are active on the selected node; pick one to edit its parameters and push changes individually.</p>
-            <div class="grid" style="grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); align-items: start;">
-              <div>
+            <div class="module-picker">
+              <div class="module-picker-side">
                 <label for="provision-node">Node</label>
                 <select id="provision-node"></select>
-                <div style="margin-top: 0.55rem;">
-                  <label><input type="checkbox" id="run-ansible" checked style="width:auto; margin-right:0.4rem;">Run ansible-playbook now</label>
+                <div class="module-toggle">
+                  <label class="module-toggle-row"><input type="checkbox" id="run-ansible" checked><span>Run ansible-playbook now</span></label>
+                  <p class="module-hint">Off plans the run without touching the node.</p>
                 </div>
-                <p id="provision-status" class="note" style="margin-top: 0.55rem;"></p>
+                <p id="provision-status" class="module-hint"></p>
               </div>
               <div class="module-list-scroll" id="module-list-scroll">
                 <table>
@@ -161,7 +162,7 @@
               </div>
             </div>
             <div style="margin-top: 0.8rem;">
-              <p id="module-connection-context" class="note"></p>
+              <p id="module-connection-context" class="module-callout"></p>
               <div id="module-detail" class="module-detail collapsed"></div>
               <div class="module-actions">
                 <button id="module-save-inputs" type="button" class="ghost" title="Store these inputs for the node without touching it">Save Module Inputs</button>

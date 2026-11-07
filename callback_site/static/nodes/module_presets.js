@@ -40,7 +40,7 @@ async function loadModuleSource(entry, thenApply) {
 }
 
 async function renamePreset(entry) {
-  const name = window.prompt("Name for this configuration (leave empty to unname it):", entry.name || "");
+  const name = window.prompt("Name for this configuration (leave empty to go back to the suggested name):", entry.name || entry.auto_name || "");
   if (name === null) return;
   const { ok, data } = await postJson("/api/nodes/module-presets", { id: entry.id, name });
   moduleStatusEl.textContent = ok ? (data.name ? `Named configuration '${data.name}'.` : "Configuration unnamed.") : (data.error || "Could not rename.");
@@ -55,10 +55,6 @@ async function deletePreset(entry) {
 }
 
 async function saveNamedConfiguration(name) {
-  if (!name) {
-    moduleStatusEl.textContent = "Enter a name for the configuration first.";
-    return;
-  }
   const saved = await saveModuleInputs();
   if (!saved) return;
   const { ok, data } = await postJson("/api/nodes/module-presets", { node: provisionNode.value, module: selectedModuleId, name });
@@ -83,13 +79,14 @@ function presetTable(entries, { editable }) {
     const tr = document.createElement("tr");
     const title = document.createElement("td");
     const strong = document.createElement("strong");
-    strong.textContent = editable ? (entry.name || "Unnamed save") : entry.label;
+    strong.textContent = editable ? (entry.name || entry.auto_name || "Unnamed save") : entry.label;
     title.appendChild(strong);
     const meta = document.createElement("div");
     meta.className = "note";
     const origin = PRESET_ORIGIN_LABELS[entry.origin] || entry.origin;
     const where = editable && entry.node ? ` · saved on ${entry.node}` : "";
-    meta.textContent = [origin + where, presetWhen(entry.saved_at)].filter(Boolean).join(" · ");
+    const suggested = editable && !entry.name ? " · suggested name" : "";
+    meta.textContent = [origin + where + suggested, presetWhen(entry.saved_at)].filter(Boolean).join(" · ");
     title.appendChild(meta);
 
     const values = document.createElement("td");
@@ -145,14 +142,14 @@ async function renderModulePresets() {
 
   modulePresetsEl.innerHTML = "";
   modulePresetsEl.style.marginTop = "1rem";
-  modulePresetsEl.appendChild(presetHeading("Saved configurations", "Every save of this module's inputs is remembered. Name one to keep it; Load fills this node's form, Apply also pushes it to the node."));
+  modulePresetsEl.appendChild(presetHeading("Saved configurations", "Every save of this module's inputs is remembered under a suggested name. Give one your own name to keep it; Load fills this node's form, Apply also pushes it to the node."));
 
   const nameRow = document.createElement("div");
   nameRow.className = "inline-actions";
   const nameInput = document.createElement("input");
   nameInput.type = "text";
   nameInput.id = "module-preset-name";
-  nameInput.placeholder = "Name the current inputs";
+  nameInput.placeholder = "Name (blank = suggested name)";
   nameInput.maxLength = 60;
   nameInput.style.maxWidth = "18rem";
   nameRow.append(nameInput, presetButton("Save as named configuration", () => saveNamedConfiguration(nameInput.value.trim()), false));

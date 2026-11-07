@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from services.node_inventory import _node_ops_inventory_view
 from services.node_runs import _apply_node_provisioning
-from services.node_state import _effective_node_profiles, _load_node_provisioning, _missing_required_inputs
+from services.node_state import _load_node_provisioning, _missing_required_inputs, _profiles_to_run
 
 
 PROVISION_JOBS: Dict[str, Dict[str, Any]] = {}
@@ -45,10 +45,7 @@ def _run_node_provision_job(
             if not node:
                 continue
             state = _load_node_provisioning()
-            profile_ids = _effective_node_profiles(node, state)
-            if profile_filter:
-                allowed = set(profile_filter)
-                profile_ids = [pid for pid in profile_ids if pid in allowed]
+            profile_ids = _profiles_to_run(node, state, profile_filter)
             if mode == "apply":
                 missing = _missing_required_inputs(node_name, profile_ids, state)
                 if missing:

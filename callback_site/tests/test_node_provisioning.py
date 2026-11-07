@@ -420,6 +420,34 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         node_results = payload["results"][0]["results"]
         self.assertEqual([item["profile_id"] for item in node_results], ["baseline"])
 
+    def test_a_module_named_by_the_user_runs_even_when_not_selected_for_the_node(self) -> None:
+        name = "named-module-node"
+        added = self.client.post("/api/nodes/manual-nodes", json={"name": name, "group": "rpi5_active", "certificate": "test-cert"})
+        self.assertEqual(added.status_code, 200)
+        self.addCleanup(self.client.delete, f"/api/nodes/manual-nodes/{name}")
+        self.client.post("/api/nodes/node-configs", json={"node": name, "profile_ids": ["baseline"]})
+
+        checked = self.client.post("/api/nodes/provision", json={"node": name, "mode": "check", "run_ansible": False, "profile_ids": ["longhorn"]})
+        self.assertEqual(checked.status_code, 200)
+        self.assertEqual([r["profile_id"] for r in checked.get_json()["results"][0]["results"]], ["longhorn"])
+        self.assertEqual(services.node_state._load_node_provisioning()["node_configs"][name], ["baseline"], "a check does not change the selection")
+
+        applied = self.client.post("/api/nodes/provision", json={"node": name, "mode": "apply", "run_ansible": False, "profile_ids": ["longhorn"]})
+        self.assertEqual(applied.status_code, 200)
+        self.assertEqual([r["profile_id"] for r in applied.get_json()["results"][0]["results"]], ["longhorn"])
+        self.assertEqual(services.node_state._load_node_provisioning()["node_configs"][name], ["baseline", "longhorn"])
+
+    def test_a_module_that_does_not_apply_to_the_nodes_group_is_refused_with_a_reason(self) -> None:
+        name = "wrong-group-node"
+        added = self.client.post("/api/nodes/manual-nodes", json={"name": name, "group": "manual", "certificate": "test-cert"})
+        self.assertEqual(added.status_code, 200)
+        self.addCleanup(self.client.delete, f"/api/nodes/manual-nodes/{name}")
+        response = self.client.post("/api/nodes/provision", json={"node": name, "mode": "apply", "run_ansible": False, "profile_ids": ["longhorn"]})
+        self.assertEqual(response.status_code, 400)
+        error = response.get_json()["error"]
+        self.assertIn("Longhorn", error)
+        self.assertIn("group manual", error)
+
     def test_node_provision_rejects_non_array_profile_filter(self) -> None:
         response = self.client.post(
             "/api/nodes/provision",

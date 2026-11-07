@@ -40,6 +40,10 @@ class MonitorTests(BaseCallbackSiteTest):
         self.assertIn('id="sot-body"', text)
         self.assertIn("Discovered node", text)
         self.assertIn("Storage (GB)", text)
+        self.assertIn("<th>Architecture</th>", text)
+        self.assertIn('escapeHtml(hw.architecture || "-")', text)
+        self.assertIn('colspan="7"', text)
+        self.assertIn("colspan='7'", text)
         self.assertIn("GB total", text)
         self.assertIn("GB SD", text)
         self.assertIn("GB NVMe", text)
@@ -76,11 +80,10 @@ class MonitorTests(BaseCallbackSiteTest):
                 "hostname": "truth-node-01",
                 "profile": "pi5",
                 "stage": "hardware-check",
-                "raw": {
-                    "hardware": {
-                        "model": "Raspberry Pi 5",
-                        "ram_mb": 8192,
-                    }
+                "hardware": {
+                    "model": "Raspberry Pi 5",
+                    "architecture": "aarch64",
+                    "ram_mb": 8192,
                 },
             },
             headers={"X-Forwarded-For": "198.51.100.20"},
@@ -106,6 +109,12 @@ class MonitorTests(BaseCallbackSiteTest):
         self.assertIn("baseline", match.get("selected_profiles", []))
         self.assertEqual(match.get("callback_source_ip"), "198.51.100.20")
         self.assertIn("hardware", match)
+        self.assertEqual(match["hardware"]["architecture"], "aarch64")
+
+        summary = self.client.get("/api/monitor/summary")
+        self.assertEqual(summary.status_code, 200)
+        monitor_node = next(node for node in summary.get_json()["nodes"] if node["name"] == "truth-node-01")
+        self.assertEqual(monitor_node["hardware"]["architecture"], "aarch64")
 
         image = (match or {}).get("image", {})
         self.assertEqual(image.get("source"), "image_url")

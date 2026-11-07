@@ -656,13 +656,14 @@ class NodeInventoryTests(BaseCallbackSiteTest):
             "received_at": "2025-01-01T00:05:00+00:00",
             "hostname": "node-01",
             "fqdn": "node-01.example",
-            "raw": {"hardware": {"model": "new", "ram_mb": 2048, "nvme_capacity_gb": 953}},
+            "raw": {"hardware": {"model": "new", "architecture": "aarch64", "ram_mb": 2048, "nvme_capacity_gb": 953}},
         }
         with patch_in("_read_events", return_value=[older, newer]), patch_in("_first_callback_by_host",
             return_value={"node-01": "2024-12-31T23:59:58+00:00"},
         ):
             result = services.node_inventory._latest_hardware_by_host(limit=10)
         self.assertEqual(result["node-01"]["model"], "new")
+        self.assertEqual(result["node-01"]["architecture"], "aarch64")
         self.assertEqual(result["node-01"]["ram_mb"], 2048)
         self.assertEqual(result["node-01"]["nvme_capacity_gb"], 953)
         self.assertEqual(result["node-01"]["first_callback"], "2024-12-31T23:59:58+00:00")

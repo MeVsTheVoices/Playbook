@@ -187,8 +187,14 @@ code {
 }
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 0.8rem;
+}
+.form-grid > *,
+.key-picker-row > *,
+.key-preset-row > *,
+.key-upload-row > * {
+  min-width: 0;
 }
 .fieldset {
   border: 1px solid var(--line);
@@ -965,5 +971,26 @@ button {
   .actions-row button {
     width: 100%;
     min-width: 0;
+  }
+}
+@media (max-width: 760px) {
+  .content {
+    overflow-wrap: anywhere;
+  }
+  .panel {
+    padding: 0.8rem;
+  }
+  .key-picker-row,
+  .key-preset-row,
+  .key-upload-row,
+  .inline-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fieldset > summary {
+    flex-wrap: wrap;
+  }
+  #payload-inspect-panel > div {
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 }

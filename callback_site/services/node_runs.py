@@ -454,6 +454,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
             "node_report_b64": "",
             "hardware": {
                 "model": model or "unknown",
+                "architecture": str(fact_payload.get("ansible_architecture") or "").strip(),
                 "ram_mb": ram_mb,
                 "sd_capacity_gb": sd_capacity_gb,
                 "nvme": nvme_present,

@@ -236,6 +236,7 @@ def _latest_hardware_by_host(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
         payload: Dict[str, Any] = {
             "received_at": str(event.get("received_at", "")).strip(),
             "model": str(hw_block.get("model", "")).strip(),
+            "architecture": str(hw_block.get("architecture") or "").strip(),
             "ram_mb": hw_block.get("ram_mb"),
             "sd_capacity_gb": hw_block.get("sd_capacity_gb"),
             "nvme": hw_block.get("nvme"),

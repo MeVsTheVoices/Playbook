@@ -115,15 +115,21 @@ cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
 
 RUNCMD_EOF
 
-if [[ "$CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP" == "true" ]]; then
+if [[ "$CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ sh, -c, 'sleep 2; reboot' ]
+  - [ sh, -c, 'systemctl daemon-reload && systemctl enable --now rack-power-restored-callback.service' ]
 RUNCMD_EOF
 fi
 
-if [[ "$CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK" == "true" ]]; then
+# Let cloud-init finish its final modules before requesting shutdown.
+if [[ "$CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ sh, -c, 'systemctl daemon-reload && systemctl enable --now rack-power-restored-callback.service || true' ]
+
+power_state:
+  mode: reboot
+  delay: now
+  timeout: 600
+  condition: true
 RUNCMD_EOF
 fi
 

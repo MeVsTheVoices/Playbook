@@ -17,6 +17,7 @@ ROLES = {"pi5": ("raspberry_pi5", "Pi 5"), "pi4": ("raspberry_pi4", "Pi 4"), "pi
 # Tasks that exist on one board only, on purpose.
 PI5_ONLY = {"Resolve Longhorn inputs from provisioning payload", "Ensure Longhorn prerequisite packages are installed",
             "Ensure iscsid service is enabled and running", "Ensure open-iscsi service is enabled and running",
+            "Prepare the Longhorn storage disk", "Report the Longhorn storage path",
             "Ensure Longhorn storage path exists", "Check whether this node is a K3s server",
             "Install or update Longhorn via K3s HelmChart manifest"}
 # The Docker module targets Pi 4 and Pi 5 only (see its groups in NODE_PROVISION_PROFILES).

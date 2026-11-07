@@ -3,7 +3,10 @@ toggleBtn.addEventListener("click", () => {
   localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");
 });
 
-provisionNode.addEventListener("change", renderModuleSection);
+provisionNode.addEventListener("change", () => {
+  renderModuleSection();
+  loadLiveConfig();
+});
 
 document.getElementById("module-save-inputs").addEventListener("click", saveModuleInputs);
 

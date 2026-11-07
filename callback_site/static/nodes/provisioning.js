@@ -56,6 +56,7 @@ async function pollProvisionJob(jobId, mode) {
           : `${mode === "check" ? "Check" : "Apply"} finished successfully.`;
         provisionLog.textContent = formatProvisionResult({ results });
         await loadSummary();
+        if (mode === "apply") loadLiveConfig();
         return;
       }
       if (job.status === "failed") {
@@ -112,6 +113,7 @@ async function runProvision(node, mode, profileIds) {
       : `${mode === "check" ? "Check" : "Apply"} finished successfully.`;
     provisionLog.textContent = formatProvisionResult(data);
     await loadSummary();
+    if (mode === "apply") loadLiveConfig();
   } catch (err) {
     if (err && err.name === "AbortError") {
       provisionStatus.textContent = `${mode === "check" ? "Check" : "Apply"} is still running in the background; refresh the node summary to see the result.`;

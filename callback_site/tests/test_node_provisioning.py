@@ -448,6 +448,20 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         self.assertIn("Longhorn", error)
         self.assertIn("group manual", error)
 
+    def test_long_run_output_keeps_its_end_and_says_the_start_was_dropped(self) -> None:
+        clip = services.node_runs._clip_output
+        self.assertEqual(clip("short"), "short")
+        tail = "PLAY RECAP\nnode : ok=9"
+        clipped = clip("x" * 500 + tail, limit=100)
+        self.assertTrue(clipped.startswith("[earlier output truncated]"))
+        self.assertTrue(clipped.endswith(tail))
+        self.assertGreater(services.node_runs.OUTPUT_LIMIT, 12000)
+
+    def test_provision_log_shows_each_modules_output_in_full(self) -> None:
+        script = self.client.get("/static/nodes/provisioning.js").get_data(as_text=True)
+        self.assertNotIn("slice(0, 500)", script)
+        self.assertNotIn("shortOutput", script)
+
     def test_node_provision_rejects_non_array_profile_filter(self) -> None:
         response = self.client.post(
             "/api/nodes/provision",

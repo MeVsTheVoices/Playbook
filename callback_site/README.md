@@ -49,8 +49,9 @@ Open:
 ## Pages
 
 - `/` — SD image prep, SSH keys, optional cloud-init settings, and saved templates.
+  On mobile, SSH key controls stack and callback tables scroll within their panel so the dashboard stays within the viewport.
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
-- `/monitor` — callback event feed, hardware snapshots, and certificate pull helpers.
+- `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
 - `/openwrt` — redirects to the OpenWrt routers panel in `/nodes`.
 - `/tailscale-acl` — rack tailnet policy builder (grants, K3s ports, SSH, routes, tests).
@@ -82,6 +83,7 @@ Open:
 - The imaging script is `scripts/prepare_sd_cloud_init.sh`.
 - Required inputs: `profile`, `hostname`, `device`, `ssh_public_key`, `callback_url`.
 - Optional metadata is passed via `cloud_init_options` and saved template profiles.
+- `reboot_after_bootstrap` uses cloud-init's `power_state` module rather than rebooting inside `runcmd`, so the power-restore callback service is enabled and the final cloud-init modules can finish before shutdown. This applies to newly generated SD user-data; already-flashed nodes need updated user-data before repeating bootstrap. Old cloud-init log errors remain in the log history.
 - The optional settings panel includes an integrated security starter action (`Apply Security Starter Defaults`) that disables SSH password auth, disables root SSH login, enables fail2ban, and enables unattended upgrades.
 - Additional SSH hardening options are supported through cloud-init options, including `ssh_port`, `ssh_allow_groups`, and extra authorized keys.
 - `distribution` supports `standard` and `k3s`.

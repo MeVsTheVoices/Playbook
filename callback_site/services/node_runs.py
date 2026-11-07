@@ -220,7 +220,9 @@ def _run_node_profile(
                 "output": f"{output[-12000:]}\n\n{ssh_hint}",
             }
         lowered_output = output.lower()
-        if proc.returncode == 0 and (
+        # site.yml has one play per board, so the other boards' plays always print 'no hosts matched'; a host recap means tasks ran.
+        host_recap_present = re.search(r"\bok=\d+", output) is not None
+        if proc.returncode == 0 and not host_recap_present and (
             "skipping: no hosts matched" in lowered_output
             or "could not match supplied host pattern" in lowered_output
         ):

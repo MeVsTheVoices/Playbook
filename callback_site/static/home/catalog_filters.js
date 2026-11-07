@@ -176,11 +176,12 @@ function applyOsPreset() {
 function currentDistroFamilyForOptionScopes() {
   const selected = form.os_preset?.selectedOptions?.[0];
   const fromPreset = String(selected?.dataset?.distro || "").trim().toLowerCase();
-  if (fromPreset) return fromPreset;
-  return String(form.distro_family?.value || "").trim().toLowerCase();
+  const family = fromPreset || String(form.distro_family?.value || "").trim().toLowerCase();
+  return family === "raspberry pi os" ? "debian" : family;
 }
 
 function optionScopeMatches(el) {
+  if (!cloudInitProfileScopeMatches(el)) return false;
   const distroFamily = currentDistroFamilyForOptionScopes();
   const allowedOsRaw = String(el.dataset.optionOs || "").trim().toLowerCase();
   if (allowedOsRaw) {

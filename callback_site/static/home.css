@@ -763,6 +763,7 @@ button {
   padding-top: 0.2rem;
   padding-bottom: 0.2rem;
   font-size: 0.72rem;
+  line-height: 1.2;
   color: var(--muted);
   max-width: 9rem;
   white-space: nowrap;
@@ -771,6 +772,17 @@ button {
 }
 .events-table tbody tr.event-row-condensed .payload-kv { display: none; }
 .events-table tbody tr.event-row-condensed .cert-pill { display: none; }
+.events-table tbody tr.event-row-condensed code {
+  font-size: inherit;
+  white-space: nowrap;
+  word-break: normal;
+}
+.events-table tbody tr.event-row-condensed .tag,
+.events-table tbody tr.event-row-condensed .stage-pill {
+  padding: 0 0.3rem;
+  font-size: inherit;
+  line-height: inherit;
+}
 .event-twisty {
   cursor: pointer;
   color: #0f766e;

@@ -21,7 +21,7 @@ class SdCardTests(BaseCallbackSiteTest):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
-        self.assertIn("Cloud-Init Optional Settings", text)
+        self.assertIn("Cloud-Init Settings", text)
         self.assertIn("Profile Selection", text)
         self.assertIn("Save Current As Template", text)
         self.assertNotIn("Load Selected Template", text)
@@ -478,7 +478,7 @@ class SdCardTests(BaseCallbackSiteTest):
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
         self.assertIn('<details class="fieldset" id="cloud-init-optional-settings">', text)
-        self.assertIn("Saved templates, k3s config, identity, network, and bootstrap toggles", text)
+        self.assertIn("Settings relevant to the selected profile and distribution", text)
         self.assertNotIn('<details class="fieldset" open id="cloud-init-optional-settings">', text)
 
     def test_home_page_places_activity_dock_before_sd_form(self) -> None:

@@ -203,8 +203,8 @@
 
           <details class="fieldset" id="cloud-init-optional-settings">
             <summary>
-              <span class="fieldset-title">Cloud-Init Optional Settings <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
-              <span class="fieldset-summary-note">Saved templates, k3s config, identity, network, and bootstrap toggles</span>
+              <span class="fieldset-title">Cloud-Init Settings <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
+              <span class="fieldset-summary-note">Settings relevant to the selected profile and distribution</span>
             </summary>
             <div class="form-grid">
               <div>
@@ -235,7 +235,7 @@
             <div class="option-profile-status" id="sd-options-profile-status">Templates let you reuse optional cloud-init settings across nodes. <span class="option-count" id="sd-options-config-count">0 fields set</span></div>
 
             <div class="segment-list" style="margin-top: 0.8rem;">
-              <details id="network-toolkit-section" class="segment" hidden>
+              <details id="network-toolkit-section" data-cloud-init-section="toolkit" class="segment" hidden>
                 <summary>Network Toolkit (Pi 3B+)</summary>
                 <p class="segment-hint">Pi OS Lite 64-bit, Wi-Fi uplink, dedicated Ethernet and USB serial console. Browser login: operator. Generate a hash from a strong, unique password with <code>openssl passwd -6 -stdin</code>. Secrets are not saved in SD templates; re-enter them for each card.</p>
                 <p class="segment-hint">SSH stays private on Tailscale. Funnel publishes the authenticated browser terminal only when explicitly enabled, and requires tag:network-toolkit permission in your tailnet policy. No Docker, Kubernetes or Telegraf is installed.</p>
@@ -248,7 +248,7 @@
                   {% endfor %}
                 </div>
               </details>
-              <details id="k3s-distribution-section" class="segment">
+              <details id="k3s-distribution-section" data-cloud-init-section="k3s" class="segment">
                 <summary>K3s Distribution</summary>
                 <p class="segment-hint">This section opens automatically for k3s images and defaults to a valid config block used by the later bootstrap step.</p>
                 <div class="form-grid">
@@ -316,7 +316,7 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details id="pi-specific-section" class="segment">
+              <details id="pi-specific-section" data-cloud-init-section="pi" class="segment">
                 <summary>Pi-specific Bootstrap</summary>
                 <p class="segment-hint">Shown for Pi-specific templates. Pick the board; only options that apply to it are listed.</p>
                 <div class="form-grid">
@@ -345,7 +345,7 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details class="segment" open>
+              <details data-cloud-init-section="identity" class="segment" open>
                 <summary>Identity and Locale</summary>
                 <p class="segment-hint">Set identity details for first boot user defaults.</p>
                 <div class="form-grid">
@@ -364,7 +364,7 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details class="segment">
+              <details data-cloud-init-section="network" class="segment">
                 <summary>Network Bootstrap</summary>
                 <p class="segment-hint">Optional wireless and resolver values to embed in cloud-init metadata.</p>
                 <div class="form-grid">
@@ -387,7 +387,7 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details class="segment">
+              <details data-cloud-init-section="packages" class="segment">
                 <summary>Packages and First-Boot Commands</summary>
                 <p class="segment-hint">Define package bootstrap and simple cloud-init command lists.</p>
                 <div class="form-grid">
@@ -406,7 +406,7 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details class="segment">
+              <details data-cloud-init-section="hardening" class="segment">
                 <summary>Hardening Flags</summary>
                 <p class="segment-hint">Optional safety toggles for SSH and reboot behavior.</p>
                 <div class="form-grid">
@@ -425,7 +425,7 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details class="segment">
+              <details data-cloud-init-section="access" class="segment">
                 <summary>Identity Extras and Access</summary>
                 <p class="segment-hint">Common first-boot identity and SSH access controls.</p>
                 <div class="form-grid">
@@ -456,9 +456,9 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details class="segment">
+              <details data-cloud-init-section="tailscale" class="segment">
                 <summary>Tailscale Bootstrap</summary>
-                <p class="segment-hint">Optional fields for first-boot Tailscale join and tags.</p>
+                <p id="tailscale-bootstrap-hint" class="segment-hint">Optional fields for first-boot Tailscale join and tags.</p>
                 <div class="form-grid">
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_tailscale_enable" data-option-key="tailscale_enable" data-option-type="checkbox" type="checkbox">
@@ -495,9 +495,9 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
-              <details class="segment">
-                <summary>Hardware Detection and Telemetry</summary>
-                <p class="segment-hint">Enable basic hardware checks and reporting, or optional hardening controls by OS family.</p>
+              <details data-cloud-init-section="telemetry" class="segment">
+                <summary id="telemetry-section-title">Hardware Detection and Telemetry</summary>
+                <p id="telemetry-section-hint" class="segment-hint">Enable basic hardware checks and reporting, or optional hardening controls by OS family.</p>
                 <div class="form-grid">
                   <div class="checkbox-row" style="margin-top: 0.2rem;">
                     <input id="opt_enable_power_restore_callback" data-option-key="enable_power_restore_callback" data-option-type="checkbox" data-option-default="true" type="checkbox" checked>

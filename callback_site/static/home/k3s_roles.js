@@ -56,17 +56,19 @@ function applyK3sRoleDefaults() {
 }
 
 function updateOsScopedOptionsVisibility() {
+  updateCloudInitSectionsVisibility();
   for (const el of sdOptionsInputEls) {
-    const wrapper = el.closest("[data-os-option-wrapper='1']");
-    if (!wrapper) continue;
+    if (el.closest("[data-pi-option-wrapper='1']")) continue;
+    const wrapper = el.closest("[data-os-option-wrapper='1']") || el.parentElement;
     const visible = optionScopeMatches(el);
     wrapper.style.display = visible ? "" : "none";
     el.disabled = !visible;
     // Profile-scoped options keep their value while hidden; gather skips them, so
     // nothing is sent for the wrong board and the choice returns when switching back.
-    if (!visible && !el.dataset.optionProfile && String(el.dataset.optionType || "") === "checkbox") {
+    if (!visible && cloudInitProfileScopeMatches(el) && !el.dataset.optionProfile && String(el.dataset.optionType || "") === "checkbox") {
       el.checked = false;
     }
   }
+  updatePiScopedOptionsVisibility();
   updateSdOptionsConfiguredCount();
 }

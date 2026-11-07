@@ -50,6 +50,8 @@ Open:
 
 - `/` — SD image prep, SSH keys, optional cloud-init settings, and saved templates.
   On mobile, SSH key controls stack and callback tables scroll within their panel so the dashboard stays within the viewport.
+  Older callbacks per host use single-line compact rows, including certificate
+  text and badges; expand a row or use Expand older to see full details.
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
 - `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
@@ -84,6 +86,11 @@ Open:
 - The imaging script is `scripts/prepare_sd_cloud_init.sh`.
 - Required inputs: `profile`, `hostname`, `device`, `ssh_public_key`, `callback_url`.
 - Optional metadata is passed via `cloud_init_options` and saved template profiles.
+- Cloud-init sections follow a per-profile matrix in `static/home/cloud_init_options.js`.
+  K3s settings appear only for the K3s distribution; Pi-specific boot controls
+  appear only for Pi 5 templates, the only board with such controls.
+  Profile-hidden fields retain their values when switching profiles but are disabled
+  and excluded from submissions and saved templates.
 - `reboot_after_bootstrap` uses cloud-init's `power_state` module rather than rebooting inside `runcmd`, so the power-restore callback service is enabled and the final cloud-init modules can finish before shutdown. This applies to newly generated SD user-data; already-flashed nodes need updated user-data before repeating bootstrap. Old cloud-init log errors remain in the log history.
 - The optional settings panel includes an integrated security starter action (`Apply Security Starter Defaults`) that disables SSH password auth, disables root SSH login, enables fail2ban, and enables unattended upgrades.
 - Additional SSH hardening options are supported through cloud-init options, including `ssh_port`, `ssh_allow_groups`, and extra authorized keys.
@@ -105,6 +112,12 @@ Raspberry Pi OS **Trixie Lite 64-bit** image (which supports cloud-init), forces
 Standard distribution, and installs no desktop, Docker, K3s or Telegraf.
 Do not substitute legacy Bookworm images, which lack this first-boot workflow.
 
+Its cloud-init panel shows only Toolkit, Identity and Locale, administrative
+Access, Tailscale, and Boot Reporting and Updates. Generic Wi-Fi, K3s, package
+bootstrap and hardening sections are omitted. Redundant SSH/firewall, routing,
+MOTD and Telegraf controls are hidden; the appliance enforces its own defaults.
+The Tailscale join key is explicitly required, even with Funnel turned off.
+
 The profile-specific form requires:
 
 - Wi-Fi SSID, password and country code for the `wlan0` uplink.
@@ -113,6 +126,14 @@ The profile-specific form requires:
 - A preauthorized Tailscale auth key in the Tailscale section, authorized for
   **`tag:network-toolkit`**. This class uses only that tag, not the rack tags.
 - A non-root administrative user and SSH public key for private management.
+
+Before booting a Pi 3B+, use a reliable 5 V / 2.5 A supply (more USB equipment may
+need a powered hub). The Wi-Fi form supports personal WPA/WPA2 PSK networks,
+not enterprise EAP credentials or captive-portal login. Verify that the callback
+URL is reachable from the Pi's Wi-Fi or tailnet, not a loopback address on the
+imaging machine. Ethernet is for equipment, not the internet uplink; keep its
+device subnet separate from Wi-Fi. Use a USB serial adapter with the electrical
+standard your equipment requires.
 
 The **Publish authenticated terminal** checkbox is off by default. Before enabling
 it, enable MagicDNS and HTTPS in the tailnet, use the Tailscale ACL planner's

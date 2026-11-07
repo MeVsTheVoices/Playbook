@@ -1,13 +1,67 @@
+const GENERAL_CLOUD_INIT_SECTIONS = [
+  "k3s", "identity", "network", "packages", "hardening", "access", "tailscale", "telemetry",
+];
+const CLOUD_INIT_PROFILE_MATRIX = {
+  pi5: { sections: [...GENERAL_CLOUD_INIT_SECTIONS, "pi"] },
+  pi4: { sections: GENERAL_CLOUD_INIT_SECTIONS },
+  pi3bplus: { sections: GENERAL_CLOUD_INIT_SECTIONS },
+  "network-toolkit": {
+    sections: ["toolkit", "identity", "access", "tailscale", "telemetry"],
+    optionKeys: [
+      "toolkit_terminal_password_hash", "toolkit_enable_funnel",
+      "toolkit_wifi_ssid", "toolkit_wifi_password", "toolkit_wifi_country",
+      "full_name", "timezone", "locale", "username", "shell", "extra_ssh_keys",
+      "tailscale_ssh", "tailscale_auth_key", "tailscale_hostname",
+      "enable_power_restore_callback", "boot_summary", "enable_unattended_upgrades",
+    ],
+  },
+};
+
+function cloudInitProfileScopeMatches(el) {
+  const matrix = CLOUD_INIT_PROFILE_MATRIX[form.profile.value];
+  const section = el.closest("[data-cloud-init-section]");
+  if (!matrix || !section || !matrix.sections.includes(section.dataset.cloudInitSection)) return false;
+  if (section.dataset.cloudInitSection === "k3s" && form.distribution.value !== "k3s") return false;
+  return !matrix.optionKeys || matrix.optionKeys.includes(el.dataset.optionKey);
+}
+
+function updateCloudInitSectionsVisibility() {
+  const matrix = CLOUD_INIT_PROFILE_MATRIX[form.profile.value];
+  const toolkit = form.profile.value === "network-toolkit";
+  for (const section of document.querySelectorAll("[data-cloud-init-section]")) {
+    const key = section.dataset.cloudInitSection;
+    section.hidden = !matrix?.sections.includes(key) || (key === "k3s" && form.distribution.value !== "k3s");
+  }
+  sdOptionsSecurityDefaultsBtn.hidden = toolkit;
+  const authKey = document.getElementById("opt_tailscale_auth_key");
+  authKey.required = toolkit;
+  document.querySelector("label[for='opt_tailscale_auth_key']").textContent = toolkit
+    ? "Tailscale Auth Key (required, authorized for tag:network-toolkit)"
+    : "Tailscale Auth Key (optional)";
+  document.getElementById("tailscale-bootstrap-hint").textContent = toolkit
+    ? "Tailscale is always installed with tag:network-toolkit. Private SSH uses your public key; enable Tailscale SSH only with an appropriate tailnet SSH policy. Routing and exit nodes are disabled."
+    : "Optional fields for first-boot Tailscale join and tags.";
+  document.getElementById("telemetry-section-title").textContent = toolkit
+    ? "Boot Reporting and Updates" : "Hardware Detection and Telemetry";
+  document.getElementById("telemetry-section-hint").textContent = toolkit
+    ? "Hardware detection is automatic. Keep boot callbacks and optional security updates without installing a telemetry agent."
+    : "Enable basic hardware checks and reporting, or optional hardening controls by OS family.";
+}
+
 function ensureK3sConfigDefaults() {
   const toolkit = form.profile.value === "network-toolkit";
   if (toolkit) form.distribution.value = "standard";
   form.distribution.disabled = toolkit;
+  updateCloudInitSectionsVisibility();
   const toolkitSection = document.getElementById("network-toolkit-section");
   if (toolkitSection) {
     toolkitSection.hidden = !toolkit;
     toolkitSection.open = toolkit;
   }
-  if (toolkit) document.getElementById("cloud-init-optional-settings").open = true;
+  if (toolkit) {
+    document.getElementById("cloud-init-optional-settings").open = true;
+    document.querySelector("[data-cloud-init-section='tailscale']").open = true;
+  }
   const textarea = document.getElementById("opt_k3s_config");
   const section = document.getElementById("k3s-distribution-section");
   const isK3sSelected = String(form.distribution.value || "standard").trim().toLowerCase() === "k3s";
@@ -87,7 +141,8 @@ function updatePiScopedOptionsVisibility() {
   const piOnlySelected = Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked);
   const selectedProfile = String(sdOptionsProfileSelectEl.value || "").trim();
   const selectedProfilePiOnly = Boolean(selectedProfile && sdOptionProfiles[selectedProfile] && sdOptionProfiles[selectedProfile].pi_only);
-  const visible = piOnlySelected || selectedProfilePiOnly;
+  const visible = (piOnlySelected || selectedProfilePiOnly) &&
+    Boolean(CLOUD_INIT_PROFILE_MATRIX[form.profile.value]?.sections.includes("pi"));
   const piModel = String(form.profile.value || "").trim().toLowerCase();
   const piModelSelectEl = document.getElementById("pi_model_select");
   if (piModelSelectEl && piModelSelectEl.value !== piModel) {
@@ -104,7 +159,7 @@ function updatePiScopedOptionsVisibility() {
     const wrapper = el.closest("[data-pi-option-wrapper='1']");
     if (!wrapper) continue;
     const wrapperModel = String(wrapper.dataset.piModel || "").trim().toLowerCase();
-    const wrapperVisible = visible && (!wrapperModel || wrapperModel === piModel);
+    const wrapperVisible = visible && (!wrapperModel || wrapperModel === piModel) && optionScopeMatches(el);
     wrapper.style.display = wrapperVisible ? "" : "none";
     el.disabled = !wrapperVisible;
     if (wrapperVisible) shownModelOptions += 1;

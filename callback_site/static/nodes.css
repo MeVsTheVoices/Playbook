@@ -275,10 +275,221 @@ th, td {
 }
 .module-detail {
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0.75rem;
+  border-radius: 12px;
+  padding: 1rem 1.1rem 1.1rem;
   background: #ffffff;
   min-height: 160px;
+}
+tr.module-row {
+  cursor: pointer;
+}
+tr.module-row-selected td {
+  background: #ecfeff;
+}
+tr.module-row-selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent-2);
+}
+.module-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem 1rem;
+  flex-wrap: wrap;
+}
+.module-head .module-tags {
+  margin: 0;
+}
+.module-desc {
+  margin: 0.55rem 0 0.9rem;
+  max-width: 72ch;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.module-callout {
+  margin: 0 0 0.9rem;
+  padding: 0.55rem 0.8rem;
+  border-left: 3px solid var(--accent-2);
+  border-radius: 0 8px 8px 0;
+  background: #f0f9ff;
+  color: #334155;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.module-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.95rem 1.1rem;
+  align-items: start;
+}
+.module-field {
+  min-width: 0;
+}
+.module-field.wide {
+  grid-column: 1 / -1;
+}
+.module-field > label {
+  margin-bottom: 0.3rem;
+  color: #334155;
+  font-weight: 600;
+}
+.module-field input:not([type="checkbox"]),
+.module-field select,
+.module-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 0.92rem;
+}
+.module-field textarea {
+  min-height: 7rem;
+  resize: vertical;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+}
+.module-field input:focus,
+.module-field select:focus,
+.module-field textarea:focus {
+  outline: 2px solid rgba(2, 132, 199, 0.25);
+  border-color: var(--accent-2);
+}
+.module-hint {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.module-warning {
+  margin: 0.4rem 0 0;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.module-options-section {
+  margin-top: 1.2rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--line);
+}
+.module-options-section h5 {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.module-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0.6rem 0.9rem;
+  align-items: start;
+}
+.module-toggle {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.module-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0;
+  color: #1e293b;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.module-toggle-row input {
+  flex: none;
+  width: auto;
+  margin: 0.2rem 0 0;
+}
+.module-toggle .module-hint {
+  margin-left: 1.6rem;
+}
+.module-live-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+.module-live-status {
+  max-width: 28rem;
+  padding: 0.22rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.module-live-status.ok {
+  border-color: #86efac;
+  background: var(--ok-bg);
+  color: #166534;
+}
+.module-live-status.error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+.module-live-status.loading {
+  border-color: #fcd34d;
+  background: var(--checking-bg);
+  color: #92400e;
+  animation: pulse-chip 1.8s ease-in-out infinite;
+}
+.module-live-refresh {
+  width: auto;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+}
+.module-live {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.module-live:empty {
+  display: none;
+}
+.module-live.match {
+  color: #166534;
+}
+.module-live.differs {
+  color: #92400e;
+}
+.module-live-use {
+  width: auto;
+  padding: 0.12rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+}
+.module-field.from-live input:not([type="checkbox"]),
+.module-field.from-live select {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.module-toggle.from-live {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.module-test-row {
+  margin-top: 1rem;
+}
+.module-actions {
+  margin-top: 0.8rem;
 }
 .module-list-scroll {
   /* Fits today's six modules as they were; a longer list scrolls under the sticky header. */

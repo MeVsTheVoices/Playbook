@@ -115,6 +115,7 @@ and _run_prepare_job() in services/sd_prepare.py.
   - /api/nodes/summary
   - /api/nodes/profiles
   - /api/nodes/node-inputs
+  - /api/nodes/live-config (selecting a module reads its current settings from the node over SSH)
   - /api/nodes/provision and /api/nodes/provision/jobs/<job_id>
 - Optional node profiles can add storage-oriented behavior such as Longhorn. The first-pass implementation assumes Pi 5 nodes still boot from SD card, but the Longhorn storage path remains configurable so future NVMe-backed data paths can be swapped in without changing the operator flow.
 

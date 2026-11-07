@@ -114,7 +114,11 @@
                 </div>
                 <div class="module-field">
                   <label for="manual-node-group">Group</label>
-                  <input id="manual-node-group" value="manual" placeholder="manual">
+                  <select id="manual-node-group">
+                    <option value="manual">manual</option>
+                    <option value="openwrt">openwrt</option>
+                  </select>
+                  <p class="module-hint">Decides which modules apply. Choose openwrt for a router so it shows in the OpenWrt panel.</p>
                 </div>
                 <div class="module-field">
                   <label for="manual-node-address">IP / Hostname</label>

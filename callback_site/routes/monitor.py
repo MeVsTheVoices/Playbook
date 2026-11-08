@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import logging
 from typing import Any
 
 from flask import jsonify, request
@@ -24,7 +25,10 @@ from services.node_state import (
     _sanitize_managed_node,
     _save_monitor_state,
 )
-from services.node_views import _monitor_nodes_summary, _prune_stale_nodes, _single_source_of_truth_summary
+from services.node_views import _monitor_nodes_summary, _single_source_of_truth_summary
+from services.node_archive import archived_nodes, set_archived, node_key, validate_node_name
+
+logger = logging.getLogger(__name__)
 
 
 def _clear_request_options() -> tuple[int, bool, Any]:
@@ -133,25 +137,33 @@ def register_monitor_routes(app: Any) -> None:
 
     @app.post("/api/nodes/stale/prune")
     def prune_stale_nodes() -> Any:
-        payload = request.get_json(silent=True) or {}
-        if payload and not isinstance(payload, dict):
-            return jsonify({"ok": False, "error": "invalid payload"}), 400
+        logger.warning("Retired stale-node prune API requested")
+        return jsonify(ok=False, error="Age-based pruning has been retired. Archive nodes explicitly instead."), 410
 
-        raw_hours = payload.get("max_age_hours", 168)
-        raw_dry_run = payload.get("dry_run", False)
-        if isinstance(raw_dry_run, str):
-            dry_run = raw_dry_run.strip().lower() in {"1", "true", "yes", "on"}
-        else:
-            dry_run = bool(raw_dry_run)
+    @app.get("/api/nodes/archive")
+    @app.put("/api/nodes/<name>/archive")
+    def node_archive(name: str = "") -> Any:
         try:
-            max_age_hours = int(raw_hours)
-        except (TypeError, ValueError):
-            return jsonify({"ok": False, "error": "max_age_hours must be an integer"}), 400
-        if max_age_hours < 1 or max_age_hours > 24 * 365:
-            return jsonify({"ok": False, "error": "max_age_hours must be between 1 and 8760"}), 400
-
-        result = _prune_stale_nodes(max_age_hours=max_age_hours, dry_run=dry_run)
-        return jsonify(result)
+            if request.method == "GET":
+                return jsonify(ok=True, nodes=archived_nodes())
+            validate_node_name(name)
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict) or not isinstance(payload.get("archived"), bool):
+                raise ValueError("archived must be true or false.")
+            if payload["archived"]:
+                candidates = _single_source_of_truth_summary()["nodes"] + _read_events(limit=2000) + archived_nodes()
+                if not any(node_key(item.get("name") or item.get("hostname") or item.get("fqdn", "")) == node_key(name) for item in candidates):
+                    return jsonify(ok=False, error="Node not found."), 404
+            elif not any(node_key(item["name"]) == node_key(name) for item in archived_nodes()):
+                return jsonify(ok=False, error="Archived node not found."), 404
+            set_archived(name, payload["archived"])
+            return jsonify(ok=True)
+        except ValueError as exc:
+            logger.warning("Node archive request rejected: %s", exc)
+            return jsonify(ok=False, error=str(exc)), 400
+        except (OSError, RuntimeError) as exc:
+            logger.error("Node archive failed: %s", exc)
+            return jsonify(ok=False, error=str(exc)), 500
 
     @app.post("/api/monitor/nodes")
     def monitor_node_upsert() -> Any:

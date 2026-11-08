@@ -4,7 +4,6 @@ const toggleBtn = document.getElementById("sidebar-toggle");
 
 const monitorStatus = document.getElementById("monitor-status");
 
-const pruneStaleMonitorBtn = document.getElementById("prune-stale-monitor");
 
 const nodeFormStatusEl = document.getElementById("node-form-status");
 

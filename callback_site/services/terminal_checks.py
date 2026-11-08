@@ -13,6 +13,7 @@ from services.events import _read_events
 from services.network import _is_usable_callback_ip, _normalize_ip
 from services.node_inventory import _node_ops_inventory_view
 from services.node_state import _node_aliases
+from services.node_archive import active_nodes
 
 
 TEST_TERMINAL_JOBS: Dict[str, Dict[str, Any]] = {}
@@ -210,7 +211,7 @@ def _append_terminal_target(
 
 
 def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
-    events = _read_events(limit=limit)
+    events = active_nodes(_read_events(limit=limit))
     nodes = _node_ops_inventory_view()
     targets: list[Dict[str, Any]] = []
     seen: set[str] = set()

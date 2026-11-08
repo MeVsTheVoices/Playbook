@@ -50,10 +50,11 @@ image_catalog:
       - pi4
       - pi3bplus
     recommended: false
+    cloud_init_supported: false
     image_url: https://downloads.raspberrypi.com/raspios_oldstable_lite_arm64/images/raspios_oldstable_lite_arm64-2026-06-19/2026-06-18-raspios-bookworm-arm64-lite.img.xz
     image_sha256: ""
     docs_url: https://www.raspberrypi.com/software/operating-systems/
-    notes: Legacy Bookworm Lite direct download for 64-bit Raspberry Pi hardware.
+    notes: Legacy Bookworm Lite lacks cloud-init; download only, not supported by SD provisioning.
   - id: raspios-bookworm-armhf-lite
     label: Raspberry Pi OS Lite (Legacy 32-bit, Bookworm)
     distro: Raspberry Pi OS
@@ -64,10 +65,11 @@ image_catalog:
       - pi4
       - pi3bplus
     recommended: true
+    cloud_init_supported: false
     image_url: https://downloads.raspberrypi.com/raspios_oldstable_lite_armhf/images/raspios_oldstable_lite_armhf-2026-06-19/2026-06-18-raspios-bookworm-armhf-lite.img.xz
     image_sha256: ""
     docs_url: https://www.raspberrypi.com/software/operating-systems/
-    notes: Legacy Bookworm Lite direct download for both Pi 5 and Pi B+ compatible nodes.
+    notes: Legacy Bookworm Lite lacks cloud-init; download only, not supported by SD provisioning.
   - id: ubuntu-24.04-pi-arm64
     label: Ubuntu Server 24.04 LTS (Raspberry Pi ARM64)
     distro: Ubuntu
@@ -202,6 +204,7 @@ image_catalog:
     profiles:
       - pi3bplus
     recommended: false
+    cloud_init_supported: false
     image_url: ""
     image_sha256: ""
     docs_url: https://www.raspberrypi.com/software/operating-systems/

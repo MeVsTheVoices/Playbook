@@ -1,0 +1,97 @@
+@use "../../abstracts/mixins";
+
+.grid {
+  @include mixins.auto-grid(230px, 0.82rem);
+}
+
+.field-card {
+  border: 1px solid #d7e2ee;
+  border-radius: 12px;
+  background: var(--panel-soft);
+  padding: 0.65rem;
+}
+
+.field-card.field-ready {
+  border-color: #b7e4d5;
+  background: #f4fdf9;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: #15a085;
+  box-shadow: 0 0 0 3px rgba(21, 160, 133, 0.14);
+}
+
+.field-hint {
+  margin: 0.48rem 0 0;
+  color: #607488;
+  font-size: 0.77rem;
+}
+
+.subnet-block {
+  margin-top: 0.9rem;
+  border: 1px solid #d7e2ee;
+  background: #f8fbff;
+  border-radius: 12px;
+  padding: 0.72rem;
+}
+
+.subnet-meta {
+  margin-top: 0.48rem;
+  @include mixins.action-row(0.55rem, center);
+  justify-content: space-between;
+}
+
+.button-row {
+  margin-top: 0.8rem;
+}
+
+.button-row.compact {
+  margin-top: 0;
+}
+
+.secondary-btn {
+  width: auto;
+  box-shadow: none;
+  @include mixins.state-colors(#eaf2fb, #1d3a59);
+  border: 1px solid #c9d8ea;
+}
+
+.secondary-btn:hover {
+  background: #dfebf8;
+}
+
+#policy_status {
+  margin-top: 0.52rem;
+}
+
+textarea.short {
+  min-height: 64px;
+}
+
+.group-title {
+  margin: 1.1rem 0 0.4rem;
+  font-size: 0.95rem;
+  color: #2d465c;
+}
+
+.check-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.check-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--primary);
+}

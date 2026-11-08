@@ -1,0 +1,40 @@
+@use "../abstracts/mixins";
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+th, td {
+  padding: 0.6rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+th {
+  @include mixins.state-colors(#f8fafc, var(--muted));
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tbody tr:hover > td {
+  background: #f8fafc;
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
+}
+
+code {
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

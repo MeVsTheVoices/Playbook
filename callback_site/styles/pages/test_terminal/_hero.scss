@@ -1,0 +1,49 @@
+@use "../../abstracts/mixins";
+
+.terminal-hero {
+  position: relative;
+  margin: -0.15rem -0.15rem 0.85rem;
+  padding: 1.4rem;
+  overflow: hidden;
+}
+
+.hero-chips {
+  margin-top: 0.45rem;
+  display: flex;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+}
+
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  @include mixins.state-colors(#eff6ff, #1d4ed8);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.16rem 0.52rem;
+}
+
+.eyebrow {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #0b7560;
+  margin: 0 0 0.5rem;
+}
+
+.step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 50%;
+  background: #dcf5ec;
+  color: #096e56;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}

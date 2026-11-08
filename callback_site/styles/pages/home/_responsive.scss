@@ -1,0 +1,31 @@
+@media (max-width: 900px) {
+  th:nth-child(4),
+  td:nth-child(4),
+  th:nth-child(7),
+  td:nth-child(7) {
+    display: none;
+  }
+
+  .actions-row button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .key-picker-row,
+  .key-preset-row,
+  .key-upload-row,
+  .inline-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fieldset > summary {
+    flex-wrap: wrap;
+  }
+
+  #payload-inspect-panel > div {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}

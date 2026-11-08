@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import patch
+import hashlib
+import os
+import subprocess
+import tempfile
+import shutil
 
 try:
     from .test_support import BaseCallbackSiteTest, APP_DIR, TEST_DATA_DIR, patch_in
@@ -37,6 +42,163 @@ class ImageLibraryTests(BaseCallbackSiteTest):
             text = self.client.get("/fragments/sd/image-catalog-rows").get_data(as_text=True)
         self.assertIn("All catalog presets are available locally.", text)
         self.assertNotIn('class="compact-list-item"', text)
+    def test_cli_rejects_legacy_pi_os_before_downloading_or_creating_workspace(self) -> None:
+        script = APP_DIR.parent / "scripts/lib/image.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for source in ("IMAGE_URL=https://downloads.raspberrypi.com/raspios_oldstable_lite_arm64/raspios-bookworm.img.xz",
+                           "IMAGE_FILE=/tmp/raspios-bullseye.img"):
+                with self.subTest(source=source):
+                    result = subprocess.run(
+                        ["bash", "-c", 'set -euo pipefail; PROFILE=pi3bplus; IMAGE_URL=""; IMAGE_FILE=""; '
+                         f'{source}; WORKSPACE="$1/work"; SCRIPT_DIR="$3"; source "$SCRIPT_DIR/lib/common.sh"; source "$2"',
+                         "test", tmp, str(script), str(APP_DIR.parent / "scripts")],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("lack cloud-init", result.stderr)
+                    self.assertFalse((root / "work").exists())
+
+    def test_flash_downloads_once_under_concurrent_requests_and_preserves_cache(self) -> None:
+        script = APP_DIR.parent / "scripts/lib/image.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tools = root / "bin"
+            tools.mkdir()
+            payload = root / "payload.img"
+            payload.write_bytes(b"test disk image")
+            digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+            curl = tools / "curl"
+            curl.write_text(
+                '#!/bin/sh\ncase "$1" in\n'
+                '  -fsSLI) printf "Content-Length: 15\\n";;\n'
+                '  -fsSL) echo download >> "$CALLS"; sleep 1; '
+                '[ "${FAIL_DOWNLOAD:-0}" = 1 ] && exit 22; cp "$PAYLOAD" "$4";;\n'
+                '  *) exit 22;;\nesac\n'
+            )
+            curl.chmod(0o755)
+            env = {**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
+                   "IMAGE_CACHE_DIR": str(root / "cache"), "PAYLOAD": str(payload),
+                   "CALLS": str(root / "calls"), "DIGEST": digest}
+            command = [
+                "bash", "-c",
+                'set -euo pipefail; PROFILE=pi5; IMAGE_FILE=""; IMAGE_URL=https://example.invalid/test.img; '
+                'IMAGE_SHA256="$DIGEST"; WORKSPACE="$1/work"; SCRIPT_DIR="$2"; '
+                'source "$2/lib/common.sh"; source "$2/lib/image.sh"; '
+                'cmp "$IMG_TO_WRITE" "$PAYLOAD"',
+                "test", str(root), str(APP_DIR.parent / "scripts"),
+            ]
+            processes = [subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
+                                          stderr=subprocess.PIPE, text=True) for _ in range(2)]
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=20)
+                self.assertEqual(process.returncode, 0, stdout + stderr)
+                self.assertIn("Cached image:", stdout)
+            self.assertEqual((root / "calls").read_text().splitlines(), ["download"])
+            cache = root / "cache" / services.image_catalog._safe_catalog_filename(
+                "https://example.invalid/test.img", "unused")
+            self.assertEqual(cache.read_bytes(), payload.read_bytes())
+            self.assertEqual(list((root / "cache").glob("*.part")), [])
+            result = subprocess.run(command, env={**env, "DIGEST": ""},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Image hash verified:", result.stdout)
+            cache.write_bytes(b"corrupt")
+            result = subprocess.run(command, env={**env, "DIGEST": ""},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Image hash verification failed", result.stderr)
+            self.assertEqual((root / "calls").read_text().splitlines(), ["download"])
+            cache.unlink()
+            result = subprocess.run(command, env={**env, "DIGEST": "0" * 64},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(cache.exists())
+            self.assertEqual(list((root / "cache").glob("*.part")), [])
+            result = subprocess.run(command, env={**env, "FAIL_DOWNLOAD": "1"},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(cache.exists())
+            self.assertEqual(list((root / "cache").glob("*.part")), [])
+
+    def test_cache_identity_is_url_based_and_legacy_files_are_reused(self) -> None:
+        url = "https://example.invalid/shared.img.xz"
+        self.assertEqual(services.image_catalog._safe_catalog_filename(url, "one"),
+                         services.image_catalog._safe_catalog_filename(url, "two"))
+        legacy = services.storage.IMAGE_CACHE_DIR / "legacy-shared.img.xz"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_bytes(b"existing")
+        entry = services.image_catalog._catalog_entry_with_availability(
+            {"id": "legacy", "image_url": url})
+        self.assertTrue(entry["local_available"])
+        self.assertEqual(entry["cache_path"], str(legacy))
+
+    def test_dashboard_shows_actual_cache_date_with_localized_formatting(self) -> None:
+        cache = services.storage.IMAGE_CACHE_DIR / "date-test.img"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(b"image")
+        os.utime(cache, (1794096000, 1794096000))
+        from services.images import _append_image_history
+        _append_image_history({"source_value": "https://example.invalid/date-test.img",
+                               "download_path": str(cache), "recorded_at": "2026-11-08T03:00:00Z"})
+        text = self.client.get("/").get_data(as_text=True)
+        self.assertIn('Cached on <time id="image-cached-at"', text)
+        self.assertIn('datetime="2026-11-08T00:00:00+00:00"', text)
+        script = self.client.get("/static/home/init.js").get_data(as_text=True)
+        self.assertIn('dateStyle: "long", timeStyle: "short"', script)
+        chrome = shutil.which("google-chrome") or shutil.which("chromium")
+        if not chrome:
+            self.skipTest("Chrome is required for localized date rendering validation")
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp) / "date.html"
+            page.write_text(
+                '<time id="image-cached-at" datetime="2026-11-08T00:00:00+00:00"></time>'
+                f'<script>{script.split("toggleBtn.addEventListener", 1)[0]}</script>'
+            )
+            result = subprocess.run(
+                [chrome, "--headless", "--no-sandbox", "--disable-gpu", "--lang=en-US",
+                 f"--user-data-dir={tmp}/chrome", "--dump-dom", page.as_uri()],
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertRegex(result.stdout, r">November (7|8), 2026 at ")
+
+    def test_catalog_checksum_failure_does_not_replace_valid_cached_image(self) -> None:
+        entry = {"id": "hash-failure", "image_url": "https://example.invalid/hash.img",
+                 "image_sha256": "0" * 64}
+        target = services.storage.IMAGE_CACHE_DIR / services.image_catalog._safe_catalog_filename(
+            entry["image_url"], entry["id"])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"original")
+        job_id = "hash-failure"
+        services.image_catalog.CATALOG_PULL_JOBS[job_id] = {"status": "queued", "results": []}
+        def download(url, path, on_progress=None):
+            path.write_bytes(b"wrong")
+            return hashlib.sha256(b"wrong").hexdigest()
+        with patch_in("_download_catalog_image", side_effect=download):
+            services.image_catalog._run_catalog_pull_job(job_id, [entry], skip_existing=False)
+        self.assertEqual(target.read_bytes(), b"original")
+        self.assertEqual(services.image_catalog.CATALOG_PULL_JOBS[job_id]["summary"]["failed"], 1)
+        self.assertEqual(list(target.parent.glob(f"{target.name}*.part")), [])
+        entry["image_sha256"] = hashlib.sha256(b"original").hexdigest()
+        services.image_catalog.CATALOG_PULL_JOBS[job_id] = {"status": "queued", "results": []}
+        with patch_in("_download_catalog_image") as downloader:
+            services.image_catalog._run_catalog_pull_job(job_id, [entry], skip_existing=True)
+            downloader.assert_not_called()
+        self.assertEqual(services.image_catalog.CATALOG_PULL_JOBS[job_id]["summary"]["skipped"], 1)
+
+    def test_dashboard_cache_date_is_available_without_image_history(self) -> None:
+        entry = domain_defaults.IMAGE_CATALOG[0]
+        target = services.storage.IMAGE_CACHE_DIR / services.image_catalog._safe_catalog_filename(
+            entry["image_url"], entry["id"])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"cached by CLI")
+        os.utime(target, (1794096000, 1794096000))
+        with patch_in("_read_image_history", return_value=[]):
+            summary = services.image_catalog._image_state_summary()
+        self.assertTrue(summary["latest_available"])
+        self.assertEqual(summary["latest_cached_at"], "2026-11-08T00:00:00+00:00")
+        self.assertEqual(summary["latest_cache_path"], str(target))
 
     def test_images_page_exposes_grouped_catalog_and_manual_record_controls(self) -> None:
         response = self.client.get("/images")
@@ -167,7 +329,7 @@ class ImageLibraryTests(BaseCallbackSiteTest):
             self.assertTrue(entry["image_url"].endswith(expected_suffix))
             self.assertEqual(
                 services.image_catalog._safe_catalog_filename(entry["image_url"], entry_id),
-                f"{entry_id}-{expected_suffix}",
+                hashlib.sha256(entry["image_url"].encode()).hexdigest() + ".img.xz",
             )
 
     def test_images_page_has_cache_path_color_hooks(self) -> None:
@@ -374,7 +536,7 @@ class ImageLibraryTests(BaseCallbackSiteTest):
                 stale_tmp.chmod(0o644)
                 stale_tmp.unlink()
 
-    def test_catalog_pull_worker_removes_stale_part_files_before_download(self) -> None:
+    def test_catalog_pull_worker_does_not_remove_other_jobs_partial_files(self) -> None:
         job_id = "job-test-catalog-stale-part-cleanup"
         entry = {
             "id": "ubuntu-22.04-pi-arm64",
@@ -415,7 +577,7 @@ class ImageLibraryTests(BaseCallbackSiteTest):
             ):
                 services.image_catalog._run_catalog_pull_job(job_id, [entry], skip_existing=False)
 
-            self.assertFalse(stale_tmp.exists())
+            self.assertTrue(stale_tmp.exists())
             self.assertTrue(target.exists())
         finally:
             if target.exists():

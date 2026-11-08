@@ -36,16 +36,16 @@ fi
 
 cat >> "$USER_DATA_OUT" <<EOF
 
-bootcmd:
-  - [ sh, -c, 'timedatectl set-ntp true; for i in \$(seq 1 90); do [ "\$(timedatectl show -p NTPSynchronized --value)" = yes ] && exit 0; sleep 2; done; echo "rack: clock not synced after 180s; repository signatures may fail" >&2; exit 1' ]
-
 package_update: true
 package_upgrade: false
 packages:
 EOF
 
+declare -A emitted_packages=()
 for pkg in $PROFILE_PACKAGES; do
+  [[ -z "${emitted_packages[$pkg]:-}" ]] || continue
   echo "  - ${pkg}" >> "$USER_DATA_OUT"
+  emitted_packages[$pkg]=1
 done
 
 if [[ "$CLOUD_INIT_ENABLE_FAIL2BAN" == "true" ]]; then
@@ -85,6 +85,27 @@ write_files:
       storage=${PROFILE_STORAGE}
       provisioner=cloud-init
 EOF
+
+cat >> "$USER_DATA_OUT" <<'CLOCK_FILES'
+  - path: /usr/local/bin/rack-clock-wait
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      set -eu
+      timedatectl set-ntp true
+      for i in $(seq 1 90); do
+          if [ "$(timedatectl show -p NTPSynchronized --value)" = yes ]; then
+              exit 0
+          fi
+          sleep 2
+      done
+      echo "rack: clock not synced after 180s; refusing package update" >&2
+      exit 1
+  - path: /etc/apt/apt.conf.d/00-rack-clock
+    permissions: "0644"
+    content: |
+      APT::Update::Pre-Invoke { "/usr/local/bin/rack-clock-wait"; };
+CLOCK_FILES
 
 RACK_K3S_MODE=""
 if [[ "$DISTRIBUTION" == "k3s" ]]; then

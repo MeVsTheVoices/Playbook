@@ -1,0 +1,87 @@
+@use "../../abstracts/mixins";
+
+.section-head {
+  margin-bottom: 0.45rem;
+}
+
+.section-copy {
+  max-width: 760px;
+}
+
+.section-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.22rem 0.62rem;
+  border: 1px solid #cbd5e1;
+  @include mixins.state-colors(#f8fafc, #334155);
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.6rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  @include mixins.state-colors(#f8fafc, var(--muted));
+  border: 1px solid var(--line);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.status-state::before {
+  content: "";
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.4);
+}
+
+.status-state.busy {
+  @include mixins.state-colors(#fff7ed, #9a4f00);
+  border-color: #fdba74;
+}
+
+.status-state.busy::before {
+  background: #f59e0b;
+  animation: pulse-amber 1.1s ease-in-out infinite;
+}
+
+.status-state.ok {
+  @include mixins.state-colors(#ecfdf5, #166534);
+  border-color: #86efac;
+}
+
+.status-state.ok::before {
+  background: #22c55e;
+}
+
+.status-state.error {
+  @include mixins.state-colors(#fef2f2, #991b1b);
+  border-color: #fca5a5;
+}
+
+.status-state.error::before {
+  background: #ef4444;
+}
+
+@keyframes pulse-amber {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+.grid {
+  @include mixins.auto-grid(220px, 0.8rem);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 0.9rem;
+}

@@ -1,34 +1,12 @@
-# meta-data, schema check, copy to the boot partition and boot config tweaks.
+# Copy the validated seed to the boot partition and apply boot config tweaks.
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
-
-cat > "$META_DATA_OUT" <<EOF
-instance-id: ${INSTANCE_ID}
-local-hostname: ${HOSTNAME}
-EOF
-
-if [[ "$VALIDATE_CLOUD_INIT_SCHEMA" == "true" ]]; then
-  if ! command -v cloud-init >/dev/null 2>&1; then
-    echo "cloud-init CLI is required for schema validation but was not found on this host." >&2
-    echo "Install cloud-init or rerun with CLOUD_INIT_VALIDATE_SCHEMA=false to bypass validation." >&2
-    exit 1
-  fi
-
-  echo "Validating generated cloud-init user-data schema"
-  if ! cloud-init schema --config-file "$USER_DATA_OUT"; then
-    echo "cloud-init schema command failed; trying legacy 'cloud-init devel schema'" >&2
-    if ! cloud-init devel schema --config-file "$USER_DATA_OUT"; then
-      echo "cloud-init schema validation failed for generated user-data: $USER_DATA_OUT" >&2
-      exit 1
-    fi
-  fi
-fi
 
 echo "Injecting cloud-init files into boot partition"
 cp "$USER_DATA_OUT" "$TMP_DIR/boot/user-data"
 cp "$META_DATA_OUT" "$TMP_DIR/boot/meta-data"
 
 if [[ "$PROFILE" == "network-toolkit" ]]; then
-  toolkit_render network > "$TMP_DIR/boot/network-config"
+  cp "$TMP_DIR/network-config" "$TMP_DIR/boot/network-config"
 fi
 
 if [[ "$PROFILE" == "pi5" && "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
@@ -78,6 +56,24 @@ if [[ "$DISTRIBUTION" == "k3s" ]]; then
 fi
 
 sync
+umount "$TMP_DIR/boot"
+
+echo "Verifying cloud-init seed from the card..."
+blockdev --flushbufs "$DEVICE"
+mount -o ro "$BOOT_PART" "$TMP_DIR/boot"
+for seed_dir in "$TMP_DIR/boot" "$TMP_DIR/boot/boot/firmware"; do
+  [[ -d "$seed_dir" ]] || continue
+  for seed_file in user-data meta-data; do
+    if ! cmp -- "$TMP_DIR/$seed_file" "$seed_dir/$seed_file"; then
+      echo "Cloud-init seed readback failed: $seed_dir/$seed_file. Card is not ready." >&2
+      exit 1
+    fi
+  done
+  if [[ "$PROFILE" == "network-toolkit" ]] && ! cmp -- "$TMP_DIR/network-config" "$seed_dir/network-config"; then
+    echo "Network configuration readback failed: $seed_dir/network-config. Card is not ready." >&2
+    exit 1
+  fi
+done
 umount "$TMP_DIR/boot"
 
 echo "Done. SD card is ready for ${HOSTNAME} (${PROFILE})."

@@ -1,3 +1,10 @@
+const imageCachedAtEl = document.getElementById("image-cached-at");
+if (imageCachedAtEl) {
+  imageCachedAtEl.textContent = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "long", timeStyle: "short",
+  }).format(new Date(imageCachedAtEl.dateTime));
+}
+
 toggleBtn.addEventListener("click", () => {
   body.classList.toggle("sidebar-collapsed");
   localStorage.setItem("sidebar-collapsed", body.classList.contains("sidebar-collapsed") ? "1" : "0");

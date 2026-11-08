@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from package_options import package_names
 
 PROFILE = "network-toolkit"
 GROUP = "network_toolkit_active"
@@ -54,21 +55,7 @@ TEMPLATES = {
 
 
 def extra_packages(options: dict[str, Any]) -> list[str]:
-    raw = options.get(EXTRA_PACKAGES_OPTION, [])
-    if isinstance(raw, str):
-        items = re.split(r"[,\s]+", raw.strip()) if raw.strip() else []
-    elif isinstance(raw, list):
-        items = raw
-    else:
-        raise ValueError("Extra diagnostic tools must be a list of Debian package names.")
-    packages = []
-    for item in items:
-        if not isinstance(item, str) or not re.fullmatch(r"[a-z0-9][a-z0-9+.-]+", item.strip()):
-            raise ValueError("Extra diagnostic tools must contain only Debian package names (no versions, URLs or command options).")
-        package = item.strip()
-        if package not in packages:
-            packages.append(package)
-    return packages
+    return package_names(options.get(EXTRA_PACKAGES_OPTION, []), "Extra diagnostic tools")
 
 
 def validate_options(options: dict[str, Any], *, boot: bool = False) -> list[str]:

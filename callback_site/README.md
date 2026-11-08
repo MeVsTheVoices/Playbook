@@ -278,6 +278,11 @@ is not replaced with an unauthenticated fallback.
 - `POST /api/ssh/generate`
 - `GET /api/ssh/keys`
 - `GET /api/ssh/public/<key_name>` — plain-text public key for verified first-boot SSH setup
+- `GET /api/helm/configurations` — saved Helm configurations and the included example
+- `POST /api/helm/configurations/import` — import a public GitHub chart and its default values
+- `PUT /api/helm/configurations/<id>` — save edited values, release, namespace and configuration name
+- `POST /api/helm/configurations/<id>/preview` — render saved values without changing the cluster
+- `POST /api/helm/configurations/<id>/deploy` — explicitly install or upgrade the saved configuration
 
 ## Data Files
 
@@ -290,6 +295,7 @@ is not replaced with an unauthenticated fallback.
 - `callback_site/data/ssh_keys/` — generated SSH key material
 - `callback_site/data/node_reports/` — stored hardware-report payloads
 - `callback_site/data/boot_logs/` — boot logs pulled from nodes, one folder per node
+- `callback_site/data/helm_configurations.json` — Helm configurations and last submitted inputs (may contain secrets; git-ignored)
 
 ## Testing
 
@@ -336,6 +342,54 @@ host's Tailscale daemon into the container. SD-card flashing and host-tailnet
 discovery therefore require a Linux host with those devices and services
 available. Keep the site on a trusted network; it is not intended for direct
 public-internet exposure.
+
+### Docker Desktop Kubernetes and Helm
+
+Enable Kubernetes in Docker Desktop and wait for its node to be Ready. From
+PowerShell at the repository root, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\connect_docker_kubernetes.ps1
+```
+
+This process-only execution policy setting does not change Windows policy.
+The script exports only the `docker-desktop` context to `.local/kubeconfig`
+(git-ignored and excluded from the image), preserves its certificate validation,
+and mounts it read-only into the callback container. These credentials have
+administrative access to your local test cluster; protect the file and keep the
+dashboard on a trusted network. No anonymous access or TLS bypass is used.
+Docker Desktop may change the API port when recreating its cluster; rerun the
+script to refresh the connection.
+
+For subsequent starts and rebuilds, keep the Kubernetes override:
+
+```powershell
+docker compose -f compose.yaml -f compose.kubernetes.yaml up --build -d
+```
+
+At `/kubernetes`, select **Hello World (NGINX)** under **Included examples**
+and press **Import defaults**. The example is the official
+[`helm/examples`](https://github.com/helm/examples) chart at `charts/hello-world`.
+Other public GitHub repositories work the same way; if there are several charts,
+enter the relative chart directory. Private repositories and automatic chart
+dependency downloads are not supported in this first version.
+For a native Linux deployment, install Git and Helm plus kubectl (or K3s);
+the Docker image already includes the clients.
+
+Import saves the default values and pins the repository commit. Name the
+configuration, edit the release/namespace or values YAML, and **Save configuration**.
+Use **Preview manifests** before **Deploy / upgrade**, which asks for confirmation.
+Import, save and preview do not change the cluster. Deployment uses the mounted
+context (or the local K3s kubeconfig on a Linux host), waits up to two minutes for
+readiness, and retains the cluster, release, Git commit and exact submitted values.
+Reopen the configuration under **Saved configurations** to customize and upgrade
+the same release. Later edits do not overwrite the last submitted values.
+Failed submissions are recorded as failed and may leave resources in the cluster;
+they are not automatically rolled back or uninstalled.
+
+Saved configurations persist in the existing `/data` volume, not the image.
+Back up that volume separately when moving to another host; Git cannot recover
+runtime configurations or credentials that were never committed.
 
 ## Release / Recreate
 

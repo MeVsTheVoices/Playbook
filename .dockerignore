@@ -16,3 +16,4 @@ callback_site/data
 **/.env
 **/.env.*
 collections/ansible_collections
+.local

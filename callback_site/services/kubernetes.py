@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import socket
@@ -66,6 +67,10 @@ def _service_is_active(service_name: str) -> bool:
     return proc.returncode == 0 and str(proc.stdout or "").strip() == "active"
 
 
+def _has_client_kubeconfig() -> bool:
+    return bool(os.getenv("KUBECONFIG", "").strip()) or (Path.home() / ".kube" / "config").is_file()
+
+
 def _detect_kubernetes_runtime(force_refresh: bool = False) -> Dict[str, Any]:
     now = time.time()
     with KUBERNETES_STATUS_LOCK:
@@ -86,7 +91,8 @@ def _detect_kubernetes_runtime(force_refresh: bool = False) -> Dict[str, Any]:
         if candidate.exists() and candidate.is_file():
             k3s_binary = str(candidate)
 
-    has_kubeconfig = Path("/etc/rancher/k3s/k3s.yaml").exists()
+    has_client_config = _has_client_kubeconfig()
+    has_kubeconfig = has_client_config or Path("/etc/rancher/k3s/k3s.yaml").exists()
     active_service = ""
     if _service_is_active("k3s"):
         active_service = "k3s"
@@ -101,10 +107,28 @@ def _detect_kubernetes_runtime(force_refresh: bool = False) -> Dict[str, Any]:
     else:
         reason = "k3s service and binary not found"
 
+    kubectl_binary = shutil.which("kubectl") or ""
+    if has_client_config and kubectl_binary:
+        try:
+            probe = subprocess.run(
+                [kubectl_binary, "get", "--raw=/version", "--request-timeout=3s"],
+                capture_output=True, text=True, check=False, timeout=5,
+            )
+            if probe.returncode == 0:
+                active_service = "kubectl"
+                reason = "configured Kubernetes API is reachable"
+            else:
+                active_service = ""
+                reason = str(probe.stderr or "configured Kubernetes API is unavailable").strip()[:1000]
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            active_service = ""
+            reason = f"Kubernetes API probe failed: {exc}"
+
     state = {
         "available": bool(active_service),
         "active_service": active_service,
         "k3s_binary": k3s_binary,
+        "kubectl_binary": kubectl_binary,
         "has_kubeconfig": bool(has_kubeconfig),
         "reason": reason,
     }
@@ -119,7 +143,7 @@ def _detect_kubernetes_runtime(force_refresh: bool = False) -> Dict[str, Any]:
 def _run_kubectl_json(args: List[str]) -> tuple[Dict[str, Any] | None, str]:
     candidate_cmds: List[List[str]] = []
     k3s_cmd = shutil.which("k3s")
-    if k3s_cmd:
+    if k3s_cmd and not _has_client_kubeconfig():
         candidate_cmds.append([k3s_cmd, "kubectl", *args])
     kubectl_cmd = shutil.which("kubectl")
     if kubectl_cmd:
@@ -242,7 +266,7 @@ def _stale_nodes(min_minutes: int = DEFAULT_STALE_MINUTES) -> Dict[str, Any]:
 def _kubectl_delete(args: List[str], done_message: str) -> tuple[bool, str]:
     commands: List[List[str]] = []
     k3s_cmd = shutil.which("k3s")
-    if k3s_cmd:
+    if k3s_cmd and not _has_client_kubeconfig():
         commands.append([k3s_cmd, "kubectl"])
     kubectl_cmd = shutil.which("kubectl")
     if kubectl_cmd:

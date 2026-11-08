@@ -14,12 +14,25 @@ RUN apt-get update \
         bash \
         ca-certificates \
         curl \
+        git \
         iputils-ping \
         openssh-client \
         util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+ARG TARGETARCH
+RUN curl -fsSL "https://dl.k8s.io/release/v1.36.1/bin/linux/${TARGETARCH}/kubectl" -o /tmp/kubectl \
+    && curl -fsSL "https://dl.k8s.io/release/v1.36.1/bin/linux/${TARGETARCH}/kubectl.sha256" -o /tmp/kubectl.sha256 \
+    && echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c - \
+    && install -m 0755 /tmp/kubectl /usr/local/bin/kubectl \
+    && curl -fsSL "https://get.helm.sh/helm-v3.19.0-linux-${TARGETARCH}.tar.gz" -o /tmp/helm.tar.gz \
+    && curl -fsSL "https://get.helm.sh/helm-v3.19.0-linux-${TARGETARCH}.tar.gz.sha256sum" -o /tmp/helm.sha256 \
+    && echo "$(cut -d ' ' -f 1 /tmp/helm.sha256)  /tmp/helm.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/helm.tar.gz -C /tmp \
+    && install -m 0755 "/tmp/linux-${TARGETARCH}/helm" /usr/local/bin/helm \
+    && rm -rf /tmp/kubectl /tmp/kubectl.sha256 /tmp/helm.tar.gz /tmp/helm.sha256 "/tmp/linux-${TARGETARCH}"
 
 COPY requirements-ansible.txt /tmp/requirements-ansible.txt
 COPY callback_site/requirements.txt /tmp/requirements-callback.txt

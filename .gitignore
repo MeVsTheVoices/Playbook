@@ -34,3 +34,5 @@ callback_site/data/ssh_keys/*
 callback_site/.venv/
 callback_site/.build/
 .build/
+.local/
+callback_site/data/helm_configurations.json

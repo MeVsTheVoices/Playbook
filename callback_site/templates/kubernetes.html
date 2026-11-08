@@ -34,7 +34,7 @@
         <section class="panel kube-hero">
           <div class="kube-hero-copy">
             <div class="kube-hero-title">
-              <h1>Kubernetes (Local)</h1>
+              <h1>Kubernetes</h1>
               <span class="kube-badge"><strong id="kube-runtime-service">waiting</strong> runtime</span>
               <span class="kube-badge">Observed <strong id="kube-observed-at">--</strong></span>
             </div>
@@ -75,6 +75,47 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <section class="panel kube-section" id="helm-workspace">
+          <h2>Helm configurations</h2>
+          <p class="kube-subtle">Import a public GitHub chart with its defaults. Save, preview, and explicitly deploy it to the configured cluster. Only import charts you trust.</p>
+          <form id="helm-form">
+            <div class="helm-fields">
+              <label>Configuration
+                <select id="helm-selection"><option value="">New configuration</option></select>
+              </label>
+              <label>GitHub repository
+                <input id="helm-repository" type="url" placeholder="https://github.com/owner/repository">
+              </label>
+              <label>Chart path (only needed if there are several)
+                <input id="helm-chart-path" placeholder="charts/hello-world">
+              </label>
+            </div>
+            <div class="kube-actions">
+              <button type="button" class="kube-btn" id="helm-import">Import defaults</button>
+              <button type="button" class="kube-btn" id="helm-new">New configuration</button>
+            </div>
+            <div id="helm-editor" hidden>
+              <p class="kube-subtle" id="helm-source"></p>
+              <div class="helm-fields">
+                <label>Name <input id="helm-name" maxlength="60" required></label>
+                <label>Release <input id="helm-release" maxlength="53" required></label>
+                <label>Namespace <input id="helm-namespace" maxlength="63" required></label>
+              </div>
+              <label>Values YAML (imported chart defaults)
+                <textarea id="helm-values" rows="14" spellcheck="false"></textarea>
+              </label>
+              <div class="kube-actions">
+                <button type="button" class="kube-btn" id="helm-save">Save configuration</button>
+                <button type="button" class="kube-btn" id="helm-preview">Preview manifests</button>
+                <button type="button" class="kube-btn" id="helm-deploy">Deploy / upgrade</button>
+              </div>
+              <p class="kube-subtle" id="helm-submission"></p>
+              <details><summary>Rendered manifests</summary><pre class="kube-raw" id="helm-manifest">Preview before deploying.</pre></details>
+            </div>
+            <div class="status" id="helm-status" role="status" aria-live="polite"></div>
+          </form>
         </section>
 
         <section class="panel kube-section">
@@ -219,5 +260,6 @@
     </main>
 
     <script src="{{ url_for('static', filename='kubernetes.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='helm.js') }}" defer></script>
   </body>
 </html>

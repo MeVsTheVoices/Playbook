@@ -177,6 +177,7 @@ async function loadKubernetesSummary() {
     longhornReadyEl.textContent = data.longhorn_ready ? "yes" : "no";
 
     const runtime = data.runtime && typeof data.runtime === "object" ? data.runtime : {};
+    const runtimeBinary = String(runtime.kubectl_binary || runtime.k3s_binary || "none");
     const activeService = String(runtime.active_service || "none");
     const reason = String(runtime.reason || "");
     const hasKubeconfig = runtime.has_kubeconfig === true ? "yes" : "no";
@@ -184,7 +185,7 @@ async function loadKubernetesSummary() {
     runtimeServiceEl.textContent = activeService;
     runtimeServiceDetailEl.textContent = activeService;
     kubeconfigEl.textContent = hasKubeconfig;
-    binaryEl.textContent = String(runtime.k3s_binary || "none");
+    binaryEl.textContent = runtimeBinary;
     reasonEl.textContent = reason || "--";
     lastErrorMiniEl.textContent = lastErrorText;
 
@@ -198,14 +199,14 @@ async function loadKubernetesSummary() {
         `Runtime service: ${escapeHtml(activeService)}`,
         `Reason: ${escapeHtml(reason)}`,
         `Kubeconfig present: ${escapeHtml(hasKubeconfig)}`,
-        `Binary: ${escapeHtml(String(runtime.k3s_binary || "none"))}`,
+        `Binary: ${escapeHtml(runtimeBinary)}`,
         `Last error: ${escapeHtml(lastErrorText)}`,
       ].map((line) => `<li>${line}</li>`).join("");
       rawJsonEl.textContent = JSON.stringify(data, null, 2);
       return;
     }
 
-    let statusText = `Runtime service: ${activeService}\nKubeconfig present: ${hasKubeconfig}\nBinary: ${runtime.k3s_binary || "none"}`;
+    let statusText = `Runtime service: ${activeService}\nKubeconfig present: ${hasKubeconfig}\nBinary: ${runtimeBinary}`;
     if (data.last_error) {
       statusText += `\nWarning: ${data.last_error}`;
     }
@@ -217,7 +218,7 @@ async function loadKubernetesSummary() {
     factsListEl.innerHTML = [
       `Observed at ${escapeHtml(data.observed_at || "")}`,
       `Runtime service ${escapeHtml(activeService)}`,
-      `Kubeconfig ${escapeHtml(hasKubeconfig)} · binary ${escapeHtml(String(runtime.k3s_binary || "none"))}`,
+      `Kubeconfig ${escapeHtml(hasKubeconfig)} · binary ${escapeHtml(runtimeBinary)}`,
       `Nodes ready ${escapeHtml(data.nodes_ready || 0)} of ${escapeHtml(data.nodes_total || 0)}`,
       `Pods running ${escapeHtml(data.pods_running || 0)} of ${escapeHtml(data.pods_total || 0)}`,
       `Jobs running ${escapeHtml(data.jobs_running || 0)} of ${escapeHtml(data.jobs_total || 0)}`,

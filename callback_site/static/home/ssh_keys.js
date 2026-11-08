@@ -7,7 +7,8 @@ function refreshKeyLinks(forcedKeyName) {
   const keyName = encodeURIComponent(keyNameInput);
   keyLinksEl.innerHTML =
     `<a href="/api/ssh/download/${keyName}/private">Download private key</a>` +
-    `<a href="/api/ssh/download/${keyName}/public">Download public key</a>`;
+    `<a href="/api/ssh/download/${keyName}/public">Download public key</a>` +
+    `<a href="/api/ssh/public/${keyName}">Public-key endpoint</a>`;
 }
 
 async function refreshSshKeyChoices(selectedKeyName = "") {
@@ -45,13 +46,14 @@ async function loadSelectedSshKey() {
     return;
   }
 
-  const res = await fetch(`/api/ssh/download/${encodeURIComponent(keyName)}/public`);
+  const res = await fetch(`/api/ssh/public/${encodeURIComponent(keyName)}`);
   if (!res.ok) {
     sshKeyStatusEl.textContent = "Could not load the selected key.";
     return;
   }
 
   form.ssh_public_key.value = (await res.text()).trim();
+  form.ssh_public_key.dataset.keyName = keyName;
   document.getElementById("ssh_key_name").value = keyName;
   refreshKeyLinks(keyName);
   sshKeyStatusEl.textContent = `Loaded saved key '${keyName}' into SSH public key.`;
@@ -72,6 +74,7 @@ function handleSshKeyUpload() {
       return;
     }
     form.ssh_public_key.value = value;
+    delete form.ssh_public_key.dataset.keyName;
     sshKeyStatusEl.textContent = `Loaded uploaded key file '${file.name}' into SSH public key.`;
   };
   reader.onerror = () => {
@@ -95,6 +98,7 @@ async function runSshKeyAction(mode) {
     return;
   }
   form.ssh_public_key.value = data.public_key;
+  form.ssh_public_key.dataset.keyName = data.key_name;
   refreshKeyLinks(data.key_name);
   const modeLabel = (data.mode || mode) === "generate" ? "Generate" : "Load";
   sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}' using ${modeLabel} mode. Public key inserted. Private key: ${data.private_key_path}`;

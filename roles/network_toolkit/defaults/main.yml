@@ -1,6 +1,8 @@
 ---
 toolkit_enable_funnel: false
 toolkit_terminal_password_hash: ""
+toolkit_ttyd_url: https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.aarch64
+toolkit_ttyd_sha256: b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165
 toolkit_packages:
   - ca-certificates
   - curl
@@ -33,7 +35,6 @@ toolkit_packages:
   - jq
   - less
   - nano
-  - ttyd
   - nginx-light
   - nftables
   - sudo

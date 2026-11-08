@@ -168,6 +168,7 @@
 
           <div class="fieldset">
             <h2>SSH Access</h2>
+            <p class="hint">Every Pi profile enables passwordless sudo for its administrative user by default. SSH password-login settings are separate; the Network Toolkit browser-console user keeps its restricted permissions.</p>
             <div>
               <label for="ssh_key_name">First-Time SSH Key Generation (optional)</label>
               <div class="key-picker-row">
@@ -198,6 +199,7 @@
             <div style="margin-top: 0.8rem;">
               <label for="ssh_public_key">SSH Public Key</label>
               <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
+              <p class="hint">Generated or loaded website keys are also fetched and verified during first boot from the callback host's public-key endpoint. Keep the matching private key for future SSH access. Uploaded or edited keys are embedded only. The callback address must be reachable from the node, not localhost.</p>
             </div>
           </div>
 
@@ -313,6 +315,18 @@ server: https://local-machine-ip:6443
                     <p class="segment-hint" style="margin-left: 1.6rem;">{{ opt.hint }}</p>
                   </div>
                   {% endfor %}
+                </div>
+              </details>
+
+              <details id="network-toolkit-tools-section" data-cloud-init-section="toolkit-tools" class="segment" hidden>
+                <summary>Extra Network Diagnostic Tools</summary>
+                <p class="segment-hint">Optional Debian packages to install on first boot alongside the built-in networking and serial tools. Only available for Network Toolkit nodes; this does not expand the browser terminal's sudo permissions.</p>
+                <div class="form-grid">
+                  <div class="grid-span-full" data-os-option-wrapper="1">
+                    <label for="opt_toolkit_extra_packages">Additional diagnostic packages (comma-separated)</label>
+                    <input id="opt_toolkit_extra_packages" data-option-key="toolkit_extra_packages" data-option-type="csv" data-option-profile="network-toolkit" placeholder="iperf3, iputils-tracepath, whois, strace">
+                    <p class="segment-hint">Use package names available in the image's configured Debian repositories. No commands, URLs or version pins. Leave blank to keep the standard toolkit; unavailable packages cause a cloud-init installation error.</p>
+                  </div>
                 </div>
               </details>
 

@@ -1,0 +1,28 @@
+#!/usr/bin/python3
+"""Repair confirmed Pi OS image warnings without changing network settings."""
+
+import importlib.util
+import os
+from pathlib import Path
+
+netplan = Path("/usr/lib/netplan/00-network-manager-all.yaml")
+if netplan.exists():
+    netplan.chmod(0o600)
+
+config = Path("/etc/cloud/cloud.cfg")
+if importlib.util.find_spec("cloudinit.config.cc_netplan_nm_patch") is None:
+    original = config.read_text()
+    cleaned = "".join(
+        line for line in original.splitlines(keepends=True)
+        if line.strip() != "- netplan_nm_patch"
+    )
+    if cleaned != original:
+        temporary = config.with_name(config.name + ".rack-tmp")
+        with temporary.open("w") as output:
+            output.write(cleaned)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.chmod(config.stat().st_mode & 0o777)
+        temporary.replace(config)
+        print("rack: removed unavailable netplan_nm_patch module from future cloud-init runs")
+print("rack: Pi OS boot configuration checked")

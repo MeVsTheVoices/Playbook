@@ -9,6 +9,13 @@ except ImportError:
 
 
 class SettingsTests(BaseCallbackSiteTest):
+    def test_catalog_health_and_source_share_one_panel(self) -> None:
+        text = self.client.get("/settings").get_data(as_text=True)
+        start = text.index("<h2>Image Catalog Health</h2>")
+        end = text.index('<div class="panel">', start)
+        self.assertIn("<summary>Catalog Source Of Truth</summary>", text[start:end])
+        self.assertNotIn("<h2>Catalog Source Of Truth</h2>", text)
+
     def test_health_endpoint(self) -> None:
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)

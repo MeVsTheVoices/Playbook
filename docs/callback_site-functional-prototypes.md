@@ -176,6 +176,11 @@ and _run_prepare_job() in services/sd_prepare.py.
   - Active node lists omit archived hostname/FQDN aliases; history and cluster resources remain untouched.
   - Later callbacks are stored but do not restore the node or schedule automatic SSH work.
   - Payload inspector is nested at the bottom of the callback dashboard, collapsed until selected.
+- callback_site/data/sd_profile_sessions/
+  - Browser-session cookie shared by tabs selects the cloud-init template and loaded website SSH key.
+  - Reload repopulates optional settings; saved credential fields are masked, replaced explicitly, or removed by clearing and saving.
+  - Credentials remain in private mode-0600 files, separate from public templates and job records, and resolve before preparation validation.
+  - Session restoration never selects a device, flashes a card or runs a remote task.
 
 ## 5b) Connection Profiles (committed direction, in development)
 

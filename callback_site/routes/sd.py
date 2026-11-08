@@ -9,9 +9,10 @@ import uuid
 import ipaddress
 from urllib.parse import urlsplit, urlunsplit, quote
 from datetime import datetime, timezone
+from functools import wraps
 from typing import Any, Dict
 
-from flask import jsonify, request, Response, stream_with_context
+from flask import g, jsonify, request, Response, stream_with_context
 
 from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
 from network_toolkit import PROFILE as TOOLKIT_PROFILE
@@ -39,6 +40,12 @@ from services.sd_profiles import (
     _ordered_sd_option_profiles,
     _save_sd_option_profiles,
     _set_preferred_sd_option_profile,
+)
+from services.sd_profile_sessions import (
+    SESSION_COOKIE, SD_SECRET_OPTIONS, _sd_session_id,
+    _selected_sd_session_profile, _select_sd_session_profile, _session_sd_profile,
+    _resolve_sd_session_secrets, _retain_sd_session_secrets, _forget_sd_session_profile,
+    _load_sd_session,
 )
 
 
@@ -83,15 +90,53 @@ def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
 
 
 def register_sd_routes(app: Any) -> None:
+    @app.after_request
+    def sd_session_cookie(response: Response) -> Response:
+        if getattr(g, "sd_profile_new_session", False):
+            response.set_cookie(SESSION_COOKIE, _sd_session_id(), httponly=True, samesite="Strict", secure=request.is_secure)
+        if hasattr(g, "sd_profile_session_id"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    def sd_storage_errors(handler: Any) -> Any:
+        @wraps(handler)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return handler(*args, **kwargs)
+            except (OSError, RuntimeError):
+                app.logger.error("Cloud-init configuration storage failed; check data-volume availability and session-file integrity.")
+                message = "Unable to read or save cloud-init configuration. Check the data volume and session files."
+                return jsonify(ok=False, error=message, errors=[message]), 500
+        return wrapped
+
     @app.get("/api/sd/options-profiles")
+    @sd_storage_errors
     def sd_options_profiles_get() -> Any:
         profiles = _load_sd_option_profiles()
         ordered = _ordered_sd_option_profiles(profiles)
-        return jsonify({"ok": True, "profiles": ordered})
+        return jsonify({"ok": True, "profiles": [_session_sd_profile(profile) for profile in ordered], "selected_profile": _selected_sd_session_profile(), "ssh_key_name": _load_sd_session()["selected_ssh_key"]})
+
+    @app.post("/api/sd/options-profiles/session")
+    @sd_storage_errors
+    def sd_options_profile_session() -> Any:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not payload or any(key not in {"name", "ssh_key_name"} or not isinstance(value, str) for key, value in payload.items()):
+            return jsonify(ok=False, error="Provide a template name or SSH-key name as a string."), 400
+        name = payload["name"].strip() if "name" in payload else None
+        if name and name not in _load_sd_option_profiles():
+            return jsonify(ok=False, error="Template not found."), 404
+        ssh_key = payload.get("ssh_key_name")
+        if ssh_key and (not _is_safe_key_name(ssh_key) or not (KEYS_DIR / f"{ssh_key}.pub").is_file()):
+            return jsonify(ok=False, error="Saved SSH public key not found."), 404
+        _select_sd_session_profile(name, ssh_key)
+        return jsonify(ok=True)
 
     @app.post("/api/sd/options-profiles")
+    @sd_storage_errors
     def sd_options_profiles_save() -> Any:
-        payload = request.get_json(silent=True) or {}
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify(ok=False, error="Invalid template payload."), 400
         name = str(payload.get("name", "")).strip()
         if not name:
             return jsonify({"ok": False, "error": "name is required"}), 400
@@ -99,6 +144,16 @@ def register_sd_routes(app: Any) -> None:
             return jsonify({"ok": False, "error": "invalid profile name"}), 400
 
         options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
+        if any(key in options and not isinstance(options[key], str) for key in SD_SECRET_OPTIONS):
+            return jsonify(ok=False, error="Credential fields must be strings."), 400
+        clear = payload.get("clear_secret_options", [])
+        if not isinstance(clear, list) or any(not isinstance(key, str) or key not in SD_SECRET_OPTIONS for key in clear):
+            return jsonify(ok=False, error="Invalid clear_secret_options."), 400
+        try:
+            resolved_options = _resolve_sd_session_secrets(str(payload.get("secret_source_profile") or name), options)
+        except ValueError as exc:
+            app.logger.warning("Cloud-init credential save rejected: %s", exc)
+            return jsonify(ok=False, error=str(exc)), 400
         description = str(payload.get("description", "")).strip()
         distribution = str(payload.get("distribution", "standard")).strip().lower() or "standard"
         if distribution not in {"standard", "k3s"}:
@@ -117,11 +172,13 @@ def register_sd_routes(app: Any) -> None:
         if payload.get("profile") == TOOLKIT_PROFILE:
             profiles[name]["profile"] = TOOLKIT_PROFILE
         _save_sd_option_profiles(profiles)
+        _retain_sd_session_secrets(name, resolved_options, clear)
         if bool(payload.get("set_preferred", False)):
             _set_preferred_sd_option_profile(name)
-        return jsonify({"ok": True, "profile": profiles[name]})
+        return jsonify({"ok": True, "profile": _session_sd_profile(profiles[name])})
 
     @app.delete("/api/sd/options-profiles/<profile_name>")
+    @sd_storage_errors
     def sd_options_profiles_delete(profile_name: str) -> Any:
         profiles = _load_sd_option_profiles()
         target = str(profile_name).strip()
@@ -129,6 +186,7 @@ def register_sd_routes(app: Any) -> None:
             return jsonify({"ok": False, "error": "profile not found"}), 404
         profiles.pop(target, None)
         _save_sd_option_profiles(profiles)
+        _forget_sd_session_profile(target)
         return jsonify({"ok": True})
 
     @app.get("/api/sd/devices")
@@ -170,12 +228,22 @@ def register_sd_routes(app: Any) -> None:
         )
 
     @app.post("/api/sd/prepare")
+    @sd_storage_errors
     def sd_prepare() -> Any:
         prereq_errors = _ensure_prereqs()
         if prereq_errors:
             return jsonify({"ok": False, "errors": prereq_errors}), 400
 
-        payload_raw = request.get_json(silent=True) or {}
+        payload_raw = request.get_json(silent=True)
+        if not isinstance(payload_raw, dict):
+            return jsonify(ok=False, errors=["Invalid preparation payload."]), 400
+        options = payload_raw.get("cloud_init_options")
+        if isinstance(options, dict):
+            try:
+                payload_raw["cloud_init_options"] = _resolve_sd_session_secrets(str(payload_raw.get("sd_options_profile") or ""), options)
+            except ValueError as exc:
+                app.logger.warning("Cloud-init credential restore rejected: %s", exc)
+                return jsonify(ok=False, errors=[str(exc)]), 400
         payload = _sanitize_sd_prepare_payload(payload_raw if isinstance(payload_raw, dict) else {})
         # Derive the endpoint locally; never accept an arbitrary key-fetch URL.
         payload.pop("ssh_public_key_url", None)
@@ -235,6 +303,7 @@ def register_sd_routes(app: Any) -> None:
             if not k3s_check["ok"]:
                 return jsonify({"ok": False, "errors": [f"K3s config: {err}" for err in k3s_check["errors"]]}), 400
         payload["sd_options_profile"] = _auto_generate_sd_option_profile(payload)
+        _retain_sd_session_secrets(payload["sd_options_profile"], payload["cloud_init_options"])
 
         job_id = uuid.uuid4().hex
         with JOBS_LOCK:

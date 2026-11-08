@@ -7,14 +7,16 @@ Install the local staged-secret check with Docker running:
 ```bash
 python3 -m venv .venv-security
 .venv-security/bin/python -m pip install -r requirements-security.txt
-.venv-security/bin/pre-commit install
+.venv-security/bin/pre-commit install --hook-type pre-commit --hook-type pre-push
 bash scripts/check_secrets.sh history
 ```
 
 On Debian/Ubuntu, install the matching `python3-venv` package if virtual
 environment creation reports that `ensurepip` is missing.
 
-The pre-commit hook checks staged changes. CI checks all history reachable from
+The pre-commit hook checks staged changes. The pre-push hook checks all locally
+reachable history, preventing an old clone from reintroducing known credentials.
+CI checks all history reachable from
 the refs in its checkout, including pull-request commits, with the same digest-pinned
 Gitleaks version and repository rules for Tailscale, Discord, and literal
 credential fields in Compose files (including commented-out assignments).

@@ -7,3 +7,11 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+        stages: [pre-commit]
+      - id: playbook-history-secrets
+        name: Detect reachable-history secrets before pushing (Gitleaks)
+        entry: bash scripts/check_secrets.sh history
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

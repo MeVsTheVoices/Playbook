@@ -349,10 +349,12 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
             self.skipTest("No active nodes in inventory for async provision job test")
 
         node_name = nodes[0]["name"]
-        response = self.client.post(
-            "/api/nodes/provision",
-            json={"node": node_name, "mode": "check", "run_ansible": True},
-        )
+        with patch("services.provision_jobs.threading.Thread") as thread:
+            response = self.client.post(
+                "/api/nodes/provision",
+                json={"node": node_name, "mode": "check", "run_ansible": True},
+            )
+            thread.return_value.start.assert_called_once()
         self.assertEqual(response.status_code, 202)
         payload = response.get_json()
         self.assertTrue(payload["ok"])

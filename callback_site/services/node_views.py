@@ -19,7 +19,7 @@ from services.events import (
 from services.image_catalog import _image_state_summary
 from services.images import _read_image_history
 from services.node_inventory import _last_callback_by_host, _latest_hardware_by_host, _node_ops_inventory_view
-from services.node_runs import _apply_node_provisioning
+from services.provision_jobs import _start_node_provision_job
 from services.node_state import (
     _effective_node_profiles,
     _latest_node_cert,
@@ -464,31 +464,34 @@ def _single_source_of_truth_summary() -> Dict[str, Any]:
     }
 
 
-def _trigger_initial_callback_closer(event: Dict[str, Any]) -> None:
+def _trigger_initial_callback_closer(event: Dict[str, Any]) -> str:
     hostname = str(event.get("hostname", "") or "").strip()
     if not hostname:
-        return
+        return ""
 
     prior_events = _read_events(limit=2000)
     has_prior_event = any(
-        str(prior.get("hostname", "") or "").strip() == hostname
-        or str(prior.get("fqdn", "") or "").strip() == hostname
+        prior.get("received_at") != event.get("received_at")
+        and (
+            str(prior.get("hostname", "") or "").strip() == hostname
+            or str(prior.get("fqdn", "") or "").strip() == hostname
+        )
         for prior in prior_events
     )
     if has_prior_event:
-        return
+        return ""
 
     profile = str(event.get("profile", "") or "").strip().lower()
     profile_group = _k3s_group_for_profile(profile)
 
     if not profile_group:
-        return
+        return ""
 
     provision_state = _load_node_provisioning()
     node = {"name": hostname, "group": profile_group}
     profile_ids = _effective_node_profiles(node, provision_state)
     if not profile_ids:
-        return
+        return ""
 
     logger.info(
         "Auto-triggering initial closer check for hostname=%s profiles=%s stage=%s",
@@ -496,4 +499,4 @@ def _trigger_initial_callback_closer(event: Dict[str, Any]) -> None:
         profile_ids,
         str(event.get("stage", "") or "").strip().lower() or "unknown",
     )
-    _apply_node_provisioning(hostname, profile_ids, mode="check", run_ansible=True)
+    return _start_node_provision_job([hostname], "check", True, profile_ids)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from unittest.mock import patch
 
 try:
@@ -155,3 +156,40 @@ class ConnectionProfileTests(BaseCallbackSiteTest):
         self.assertTrue(any(c["address"] == "192.168.174.78" for c in payload["candidates"]))
         self.assertEqual(self.client.get("/api/nodes/missing-node/connection-profiles").status_code, 404)
         self.assertEqual(self.client.get("/api/nodes/.bad/connection-profiles").status_code, 400)
+
+    def test_route_details_report_interface_gateway_and_address_family(self) -> None:
+        result = subprocess.CompletedProcess([], 0, '[{"dev":"eth0","gateway":"172.18.0.1","prefsrc":"172.18.0.2"}]', "")
+        with patch.object(cp.subprocess, "run", return_value=result) as run:
+            route = cp.describe_route("192.168.1.20")
+        self.assertEqual(route, {"interface": "eth0", "gateway": "172.18.0.1", "source_ip": "172.18.0.2", "family": "IPv4", "error": ""})
+        self.assertEqual(run.call_args.args[0], ["ip", "-json", "route", "get", "192.168.1.20"])
+        self.assertEqual(run.call_args.kwargs["timeout"], 2)
+        with patch.object(cp.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, '[{"dev":"tailscale0"}]', "")):
+            self.assertEqual(cp.describe_route("fd7a:115c:a1e0::1")["family"], "IPv6")
+
+    def test_route_lookup_failure_is_explicit_and_names_are_not_guessed(self) -> None:
+        for result in (subprocess.CompletedProcess([], 1, "", "Network unreachable"), subprocess.CompletedProcess([], 0, "bad json", "")):
+            with patch.object(cp.subprocess, "run", return_value=result):
+                self.assertTrue(cp.describe_route("192.168.1.20")["error"])
+        for error in (FileNotFoundError("ip"), subprocess.TimeoutExpired("ip", 2)):
+            with patch.object(cp.subprocess, "run", side_effect=error):
+                self.assertIn("unavailable", cp.describe_route("192.168.1.20")["error"])
+        with patch.object(cp.subprocess, "run") as run:
+            self.assertIn("connection time", cp.describe_route("rack-node.local")["error"])
+            run.assert_not_called()
+
+    def test_route_enrichment_is_opt_in_and_reuses_duplicate_address_lookup(self) -> None:
+        candidates = [
+            cp.ConnectionProfile("callback", "callback", "192.168.1.20", "callback"),
+            cp.ConnectionProfile("inventory", "inventory", "192.168.1.20", "inventory"),
+        ]
+        route = {"interface": "eth0", "gateway": "", "source_ip": "", "family": "IPv4", "error": ""}
+        with patch("routes.connection_profiles._node_ops_inventory_view", return_value=[{"name": "route-node", "address": "192.168.1.20"}]), \
+             patch("routes.connection_profiles.gather_profiles", return_value=candidates), \
+             patch("routes.connection_profiles.describe_route", return_value=route) as describe:
+            plain = self.client.get("/api/nodes/route-node/connection-profiles").json
+            describe.assert_not_called()
+            detailed = self.client.get("/api/nodes/route-node/connection-profiles?routes=1").json
+            describe.assert_called_once_with("192.168.1.20")
+        self.assertNotIn("route", plain["candidates"][0])
+        self.assertEqual(detailed["candidates"][1]["route"], route)

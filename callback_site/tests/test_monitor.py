@@ -30,7 +30,7 @@ class MonitorTests(BaseCallbackSiteTest):
         self.assertEqual(response.status_code, 200)
         text = self.page_text(response)
         self.assertIn('id="monitor-node-select"', text)
-        self.assertIn('id="prune-stale-monitor"', text)
+        self.assertNotIn('id="prune-stale-monitor"', text)
         self.assertIn('id="monitor-run-check"', text)
         self.assertIn('id="summary-run-ping"', text)
         self.assertIn('id="monitor-run-ping"', text)

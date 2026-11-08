@@ -11,6 +11,7 @@ from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
 from k3s_lightweight import ROLE_TAINTS as K3S_ROLE_TAINTS
 from k3s_lightweight import ui_defaults as k3s_role_ui_defaults
 from services.events import _read_events
+from services.node_archive import active_nodes
 from services.image_catalog import _image_state_summary
 from services.images import _read_image_history
 from services.k3s_config import _default_k3s_config
@@ -28,7 +29,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
     @pages.get("/")
     def index() -> str:
         _ensure_device_monitor_started()
-        events = _read_events(limit=200)
+        events = active_nodes(_read_events(limit=200))
         rack_name = _load_app_settings().get("rack_name", "homelab")
         option_profiles = _load_sd_option_profiles()
         image_catalog = catalog_entries_for_ui()
@@ -105,7 +106,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
 
     @pages.get("/fragments/cloud-init/event-rows")
     def cloud_init_event_rows() -> str:
-        return render_template("fragments/callback_rows.html", events=_read_events(limit=200))
+        return render_template("fragments/callback_rows.html", events=active_nodes(_read_events(limit=200)))
 
     @pages.get("/fragments/sd/image-catalog-rows")
     def sd_image_catalog_rows() -> str:

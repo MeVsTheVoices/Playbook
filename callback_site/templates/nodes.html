@@ -311,7 +311,6 @@
           <div class="monitor-actions">
             <button id="refresh-monitor">Refresh Node Status</button>
             <button id="refresh-monitor-webhook" class="secondary">Refresh + Send Webhook</button>
-            <button id="prune-stale-nodes" class="secondary">Prune Stale Nodes</button>
           </div>
           <p id="monitor-status" class="note">No state yet. Monitoring data appears after callback or provisioning activity.</p>
           <table>
@@ -341,6 +340,19 @@
           <p class="note">Latest check/apply output for profile runs.</p>
           <div id="provision-log" class="log">No provisioning actions yet.</div>
         </div>
+
+        <div class="panel" id="boot-log-panel">
+          <h2>Boot Logs</h2>
+          <p class="note">Select a node to collect fresh journal, cloud-init and dmesg logs over its preferred route. Select another route to try it instead. Stored-log selection only reads history; archived nodes never trigger collection.</p>
+          <div class="grid">
+            <div><label for="boot-log-host">Node</label><select id="boot-log-host"><option value="">Select a node...</option></select></div>
+            <div><label for="boot-log-route">Connection route</label><select id="boot-log-route" disabled><option value="">Select a node first...</option></select></div>
+            <div><label for="boot-log-select">Stored log</label><select id="boot-log-select"></select></div>
+          </div>
+          <p id="boot-log-route-note" class="note">Routes originate inside the dashboard container, not the remote node.</p>
+          <p id="boot-log-status" class="note" role="status">Pick a node to see its stored boot logs.</p>
+          <pre id="boot-log-view" class="log">No boot log selected.</pre>
+        </div>
       </div>
     </main>
 
@@ -353,6 +365,7 @@
     <script src="{{ url_for('static', filename='nodes/manual_nodes.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/openwrt_host.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/summary.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='nodes/boot_logs.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/provisioning.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/init.js') }}" defer></script>
   </body>

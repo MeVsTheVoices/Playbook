@@ -6,6 +6,8 @@ import queue
 import re
 import threading
 import uuid
+import ipaddress
+from urllib.parse import urlsplit, urlunsplit, quote
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -13,6 +15,8 @@ from flask import jsonify, request, Response, stream_with_context
 
 from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
 from network_toolkit import PROFILE as TOOLKIT_PROFILE
+from services.ssh_keys import _is_safe_key_name
+from services.storage import KEYS_DIR
 
 from services.k3s_config import _check_longform
 from services.sd_devices import (
@@ -173,6 +177,41 @@ def register_sd_routes(app: Any) -> None:
 
         payload_raw = request.get_json(silent=True) or {}
         payload = _sanitize_sd_prepare_payload(payload_raw if isinstance(payload_raw, dict) else {})
+        # Derive the endpoint locally; never accept an arbitrary key-fetch URL.
+        payload.pop("ssh_public_key_url", None)
+        key_name = str(payload.get("ssh_key_name") or "").strip()
+        if key_name:
+            if not _is_safe_key_name(key_name):
+                return jsonify({"ok": False, "errors": ["Invalid SSH key name."]}), 400
+            path = KEYS_DIR / f"{key_name}.pub"
+            try:
+                public_key = path.read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                return jsonify({"ok": False, "errors": ["Selected SSH public key not found."]}), 400
+            except OSError:
+                app.logger.exception("Unable to read selected SSH public key")
+                return jsonify({"ok": False, "errors": ["Unable to read selected SSH public key."]}), 500
+            if not public_key or public_key != str(payload.get("ssh_public_key") or "").strip():
+                return jsonify({"ok": False, "errors": ["Selected website key does not match the SSH public key. Reload the key."]}), 400
+            try:
+                callback = urlsplit(str(payload.get("callback_url") or ""))
+                host = callback.hostname or ""
+                callback.port
+                if callback.scheme not in {"http", "https"} or not host or callback.username or callback.password:
+                    raise ValueError("Invalid callback URL.")
+                if host.lower() == "localhost" or host.lower().endswith(".localhost"):
+                    raise ValueError("The node cannot fetch a website key from localhost.")
+                try:
+                    address = ipaddress.ip_address(host)
+                except ValueError:
+                    address = None
+                if address is not None and (address.is_loopback or address.is_unspecified):
+                    raise ValueError("Use a callback host address reachable from the node, not loopback.")
+            except ValueError as exc:
+                return jsonify({"ok": False, "errors": [str(exc)]}), 400
+            payload["ssh_public_key_url"] = urlunsplit((
+                callback.scheme, callback.netloc, f"/api/ssh/public/{quote(key_name, safe='')}", "", "",
+            ))
         required = ["profile", "hostname", "device", "ssh_public_key", "callback_url"]
         missing = [k for k in required if not str(payload.get(k, "")).strip()]
         if missing:

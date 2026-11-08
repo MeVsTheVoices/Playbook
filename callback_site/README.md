@@ -104,19 +104,61 @@ server: https://<local-machine-ip>:6443
 
 That config is carried forward in the cloud-init payload and used by the post-boot K3s bootstrap path.
 
+### Website-hosted SSH public keys
+
+`GET /api/ssh/public/<key_name>` serves a saved public key as plain text without
+serving its private key. Generate or load a website key in **SSH Access** to enable
+automatic first-boot retrieval. The endpoint URL uses the callback URL's host and
+port, which must be reachable from the new node (not `localhost` or loopback).
+Uploaded or manually edited keys remain embedded-only.
+
+Cloud-init fetches the key with bounded retries and verifies its SHA-256 digest
+against the selected key before adding it to the administrative user's
+`authorized_keys`, preserving other keys. The selected key is also embedded so
+an unavailable endpoint does not lock out bootstrap SSH; fetching failures are
+reported as cloud-init errors. Retain the matching private key for future login.
+This is a first-boot install, not automatic key rotation or a fix for sudo
+permissions. Use HTTPS where possible; a changed endpoint key is rejected until
+you deliberately select it for a new image.
+
+### Default Pi administrative access
+
+All Pi imaging profiles (Pi 5, Pi 4, Pi 3B+ and Network Toolkit) grant the
+configured administrative user passwordless sudo by default. Cloud-init sets
+the user grant and, before the other first-boot commands, installs and validates
+`/etc/sudoers.d/010_<username>-nopasswd`, matching the Raspberry Pi OS
+raspi-config **Admin Password disabled** setting. A non-interactive sudo check
+reports a boot error if the grant is ineffective. Other users' grants are left
+alone; the toolkit's `network-console` user does not receive unrestricted sudo.
+The example and legacy Pi cloud-init configs also default to passwordless sudo.
+SSH password authentication and root SSH access remain separate settings.
+Protect administrative private keys: anyone holding one has root-level access.
+
 ### Network Toolkit (Pi 3B+)
 
 Select **Network Toolkit (Pi 3B+)** in the SD Profile selector. This is a separate
 `network-toolkit` class, not a K3s role. It uses the pinned, checksum-verified
 Raspberry Pi OS **Trixie Lite 64-bit** image (which supports cloud-init), forces
 Standard distribution, and installs no desktop, Docker, K3s or Telegraf.
+The ARM64 browser terminal (`ttyd` 1.7.7) is installed from its pinned upstream
+release with SHA-256 verification because the Pi OS Trixie repositories do not
+provide the package. Imaging and Node Ops use the same URL and checksum.
 Do not substitute legacy Bookworm images, which lack this first-boot workflow.
 
-Its cloud-init panel shows only Toolkit, Identity and Locale, administrative
+Its cloud-init panel shows only Toolkit, Extra Network Diagnostic Tools, Identity and Locale, administrative
 Access, Tailscale, and Boot Reporting and Updates. Generic Wi-Fi, K3s, package
 bootstrap and hardening sections are omitted. Redundant SSH/firewall, routing,
 MOTD and Telegraf controls are hidden; the appliance enforces its own defaults.
 The Tailscale join key is explicitly required, even with Funnel turned off.
+
+**Extra Network Diagnostic Tools** accepts optional comma-separated Debian package
+names, such as `iperf3, iputils-tracepath, whois, strace`. These are added to the
+standard toolkit packages on first boot and can be saved in SD templates.
+Leave blank to preserve the base package set. Only use packages available in the
+image's configured repositories; unavailable packages fail cloud-init installation.
+This does not grant the browser terminal any additional sudo permissions.
+For command-line imaging, set `CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES` to a
+space- or comma-separated package list.
 
 The profile-specific form requires:
 
@@ -135,6 +177,16 @@ imaging machine. Ethernet is for equipment, not the internet uplink; keep its
 device subnet separate from Wi-Fi. Use a USB serial adapter with the electrical
 standard your equipment requires.
 
+Check power with `sudo vcgencmd get_throttled`: bit 0 indicates active
+undervoltage and bit 16 records earlier undervoltage. Correct the supply/cable
+and peripheral load before provisioning; software cannot remedy voltage drops.
+Pi cloud-init waits for NTP during `bootcmd`, before package updates, as well as
+before HTTPS installers. A synchronization timeout is reported explicitly.
+Toolkit setup corrects the image's Netplan file permissions and removes the
+`netplan_nm_patch` cloud-init entry only when that module is absent. The next boot
+then avoids the missing-module warning. Persistent journals are capped at 16 MiB
+so failures survive a restart without unbounded SD-card logging.
+
 The **Publish authenticated terminal** checkbox is off by default. Before enabling
 it, enable MagicDNS and HTTPS in the tailnet, use the Tailscale ACL planner's
 **Network Toolkit Funnel permission** checkbox, and apply its generated policy.
@@ -146,6 +198,12 @@ SSH password and root logins are disabled; the firewall allows inbound SSH only
 over Tailscale, and blocks forwarding. No router port-forward is needed.
 Funnel is public, not tailnet-authenticated: anyone on the internet can reach
 the login prompt. Follow your organization's policy before publishing it.
+
+Node Ops also accepts an explicit `tag:shared` override in the Tailscale module
+when the auth key and existing tailnet policy use that tag. Imaging still defaults
+to `tag:network-toolkit`; the ACL planner's toolkit Funnel rules target that default
+tag. A shared-tag node needs its existing policy to permit SSH and, if enabled,
+Funnel. Routing and exit nodes remain disabled.
 
 `eth0` is dedicated to equipment, uses link-local addressing initially, and never
 provides a default route. USB serial adapters appear under `/dev/serial/by-id/`
@@ -219,6 +277,7 @@ is not replaced with an unauthenticated fallback.
 - `DELETE /api/nodes/module-presets/<id>`
 - `POST /api/ssh/generate`
 - `GET /api/ssh/keys`
+- `GET /api/ssh/public/<key_name>` — plain-text public key for verified first-boot SSH setup
 
 ## Data Files
 

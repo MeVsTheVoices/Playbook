@@ -6,10 +6,11 @@ const CLOUD_INIT_PROFILE_MATRIX = {
   pi4: { sections: GENERAL_CLOUD_INIT_SECTIONS },
   pi3bplus: { sections: GENERAL_CLOUD_INIT_SECTIONS },
   "network-toolkit": {
-    sections: ["toolkit", "identity", "access", "tailscale", "telemetry"],
+    sections: ["toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry"],
     optionKeys: [
       "toolkit_terminal_password_hash", "toolkit_enable_funnel",
       "toolkit_wifi_ssid", "toolkit_wifi_password", "toolkit_wifi_country",
+      "toolkit_extra_packages",
       "full_name", "timezone", "locale", "username", "shell", "extra_ssh_keys",
       "tailscale_ssh", "tailscale_auth_key", "tailscale_hostname",
       "enable_power_restore_callback", "boot_summary", "enable_unattended_upgrades",

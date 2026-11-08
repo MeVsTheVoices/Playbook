@@ -17,6 +17,18 @@ except ImportError:
 
 
 class RepoConfigTests(BaseCallbackSiteTest):
+    def test_docker_image_includes_the_node_ops_playbook(self) -> None:
+        dockerfile = (APP_DIR / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY ansible.cfg inventory.yml site.yml /app/", dockerfile)
+
+    def test_shell_scripts_use_unix_line_endings(self) -> None:
+        root = APP_DIR.parent
+        attributes = (root / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("*.sh text eol=lf", attributes)
+        for script in (root / "scripts").rglob("*.sh"):
+            with self.subTest(script=script.name):
+                self.assertNotIn(b"\r\n", script.read_bytes())
+
     def test_pi_cloud_init_examples_default_to_passwordless_sudo(self) -> None:
         root = Path(__file__).resolve().parents[2]
         example = yaml.safe_load((root / "cloud-init/pi5-user-data.example.yml").read_text())

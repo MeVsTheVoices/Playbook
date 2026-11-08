@@ -61,6 +61,8 @@ async function pollProvisionJob(jobId, mode) {
       }
       if (job.status === "failed") {
         provisionStatus.textContent = job.error || `${mode === "check" ? "Check" : "Apply"} failed.`;
+        provisionLog.textContent = formatProvisionResult({ results: job.results || [] });
+        await loadSummary();
         return;
       }
       provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning in progress...`;

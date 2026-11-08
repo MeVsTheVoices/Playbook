@@ -1,0 +1,61 @@
+services:
+  zerobyte:
+    image: ghcr.io/nicotsx/zerobyte:latest
+    container_name: zerobyte
+    restart: unless-stopped
+    working_dir: /app
+    mem_limit: 536870912
+    pids_limit: 2048
+    shm_size: 67108864
+    entrypoint:
+    - /opt/unraid/tailscale
+    environment:
+    - TAILSCALE_USERSPACE_NETWORKING=false
+    - ORG_ENTRYPOINT=/sbin/tini -s --
+    - TZ=America/Los_Angeles
+    - BASE_URL=https://tower-2-zerobyte.tail00c2ce.ts.net
+    - CA_TS_FALLBACK_DIR=/var/lib/zerobyte
+    - APP_SECRET=${TOWER2_ZEROBYTE_APP_SECRET:?Set TOWER2_ZEROBYTE_APP_SECRET}
+    - TAILSCALE_ALLOW_LAN_ACCESS=false
+    - TAILSCALE_USE_SSH=false
+    - ORG_CMD=bun .output/server/index.mjs
+    - HOST_OS=Unraid
+    - HOST_HOSTNAME=Tower-2
+    - HOST_CONTAINERNAME=zerobyte
+    - TAILSCALE_HOSTNAME=tower-2-zerobyte
+    - TAILSCALE_SERVE_PORT=4096
+    - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bun-node-fallback-bin
+    - BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+    - BUN_INSTALL_BIN=/usr/local/bin
+    - VITE_RESTIC_VERSION=0.18.1
+    - VITE_RCLONE_VERSION=1.73.3
+    - VITE_SHOUTRRR_VERSION=0.14.2
+    - APP_VERSION=v0.33.1
+    - NODE_ENV=production
+    - PORT=4096
+    volumes:
+    - /usr/local/share/docker/tailscale_container_hook:/opt/unraid/tailscale
+    - /mnt/user/appdata/zerobyte/lib:/var/lib/zerobyte:rw
+    - /mnt/user/backups/:/volumes/backups:rw
+    ports:
+    - 4096:4096/tcp
+    cap_add:
+    - NET_ADMIN
+    - SYS_ADMIN
+    devices:
+    - /dev/net/tun:/dev/net/tun:rwm
+    - /dev/fuse:/dev/fuse:rwm
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/devzwf/unraid-docker-templates/main/images/zerobyte-logo.png
+      net.unraid.docker.managed: dockerman
+      net.unraid.docker.tailscale.hostname: tower-2-zerobyte
+      net.unraid.docker.tailscale.webui: https://[hostname][magicdns]
+      net.unraid.docker.webui: http://[IP]:[PORT:4096]
+      org.opencontainers.image.created: '2026-04-04T21:41:42.414Z'
+      org.opencontainers.image.description: Backup automation for self-hosters. Built on top of restic
+      org.opencontainers.image.licenses: AGPL-3.0
+      org.opencontainers.image.revision: f11e3b7f823340a70017fdc0c924d011196ca72e
+      org.opencontainers.image.source: https://github.com/nicotsx/zerobyte
+      org.opencontainers.image.title: zerobyte
+      org.opencontainers.image.url: https://github.com/nicotsx/zerobyte
+      org.opencontainers.image.version: v0.33.1

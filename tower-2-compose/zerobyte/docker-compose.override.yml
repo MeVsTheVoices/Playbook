@@ -1,0 +1,9 @@
+services:
+  zerobyte:
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/devzwf/unraid-docker-templates/main/images/zerobyte-logo.png
+      net.unraid.docker.managed: dockerman
+      net.unraid.docker.shell: ''
+      net.unraid.docker.tailscale.hostname: tower-2-zerobyte
+      net.unraid.docker.tailscale.webui: https://[hostname][magicdns]
+      net.unraid.docker.webui: http://[IP]:[PORT:4096]

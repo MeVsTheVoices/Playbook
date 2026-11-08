@@ -19,3 +19,5 @@ callback_site/logs
 **/.env.*
 collections/ansible_collections
 .local
+**/.venv-security
+**/.filter-repo-replacements*

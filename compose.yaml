@@ -1,0 +1,19 @@
+name: playbook
+
+services:
+  callback-site:
+    image: playbook-callback-site
+    build:
+      context: .
+      dockerfile: callback_site/Dockerfile
+    ports:
+      - "${CALLBACK_PORT:-8088}:8088"
+    environment:
+      CALLBACK_APPDATA_DIR: /data
+    volumes:
+      - callback-site-data:/data
+    restart: unless-stopped
+
+volumes:
+  callback-site-data:
+    name: playbook_callback-site-data

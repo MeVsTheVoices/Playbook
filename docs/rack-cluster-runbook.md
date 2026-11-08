@@ -157,6 +157,10 @@ What it generates, and why:
 Rollout: merge the sections rather than replacing your policy, keep the default allow-all grant until the rack works, then delete it. The old page derived the homelab tag from the rack name, produced an ACL that let the Pis reach the NucBox but not the other way round (which blocks `kubectl logs` and flannel), and approved routes only for Pi 5. All three are fixed.
 
 ## Callback Site Testing
+- Docker Desktop Kubernetes and saved Helm chart configurations are described in
+  [the operator guide](../callback_site/README.md#docker-desktop-kubernetes-and-helm).
+  The included Hello World chart can be imported, previewed and deployed into
+  the local `playbook-helm` namespace without changing the rack cluster.
 - Run the local regression suite from `callback_site/` with `python -m unittest discover -s tests`.
 - The tests cover page/fragment rendering, image CRUD, callback event fragments, source IP precedence, and the health endpoint.
 - The verifier terminal now accepts only named checks (no freeform remote command input). Use `GET /api/test-terminal/checks` to review allowed checks.

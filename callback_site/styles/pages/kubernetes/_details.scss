@@ -1,0 +1,76 @@
+@use "../../abstracts/mixins";
+
+.kube-detail-columns {
+  @include mixins.auto-grid(220px, 0.85rem);
+}
+
+.kube-note-block {
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.9), rgba(248, 250, 252, 0.95));
+  border: 1px solid rgba(16, 185, 129, 0.18);
+}
+
+.kube-status {
+  position: relative;
+  border-left: 3px solid rgba(14, 165, 233, 0.7);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95), rgba(248, 250, 252, 0.96));
+  animation: kubePulse 2.8s ease-in-out infinite;
+}
+
+@keyframes kubePulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(14, 165, 233, 0.06); }
+  50% { box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.08); }
+}
+
+.kube-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.kube-list li {
+  color: #334155;
+}
+
+.kube-status {
+  margin-top: 0.8rem;
+  white-space: pre-wrap;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.kube-raw {
+  margin: 0;
+  max-height: 24rem;
+}
+
+.kube-subtle {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.kube-actions {
+  margin: 0.5rem 0;
+}
+
+.kube-btn {
+  padding: 0.3rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.kube-btn:hover:not(:disabled) {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.kube-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

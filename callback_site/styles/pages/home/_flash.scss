@@ -1,0 +1,184 @@
+@use "../../abstracts/mixins";
+
+.job-log {
+  max-height: 280px;
+}
+
+.job-log .kv {
+  color: #8b9ab2;
+  font-weight: 600;
+}
+
+.job-log .term {
+  color: #7dd3fc;
+  font-weight: 700;
+}
+
+.job-log .term-warn {
+  color: #fca5a5;
+  font-weight: 700;
+}
+
+.job-log .term-ok {
+  color: #86efac;
+  font-weight: 700;
+}
+
+.job-log .term-info {
+  color: #a5f3fc;
+  font-weight: 600;
+}
+
+.job-log .term-highlight {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.job-log .term-path {
+  color: #bfdbfe;
+  font-weight: 500;
+}
+
+#job-status {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
+  margin-bottom: 0.6rem;
+}
+
+.flash-mascot {
+  display: none;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.72rem 0 0.55rem;
+  color: #155e75;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.flash-mascot.active {
+  display: inline-flex;
+}
+
+.flash-mascot-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #fde68a, #fbbf24);
+  border: 1px solid #f59e0b;
+  position: relative;
+  animation: mascot-bounce 0.8s ease-in-out infinite;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+}
+
+.flash-mascot-icon::before,
+.flash-mascot-icon::after {
+  content: "";
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: #1f2937;
+  border-radius: 50%;
+  top: 9px;
+}
+
+.flash-mascot-icon::before {
+  left: 7px;
+}
+
+.flash-mascot-icon::after {
+  right: 7px;
+}
+
+.flash-mascot-smile {
+  position: absolute;
+  left: 7px;
+  top: 13px;
+  width: 10px;
+  height: 5px;
+  border-bottom: 2px solid #1f2937;
+  border-radius: 0 0 10px 10px;
+}
+
+@keyframes mascot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.job-status-header {
+  @include mixins.action-row(1.2rem, center);
+}
+
+.job-status-badge {
+  display: inline-block;
+  padding: 0.32rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.job-status-badge.running {
+  @include mixins.state-colors(#dbeafe, #1d4ed8);
+  border: 1px solid #93c5fd;
+}
+
+.job-status-badge.completed {
+  @include mixins.state(success);
+  border: 1px solid #86efac;
+}
+
+.job-status-badge.failed {
+  @include mixins.state(error);
+  border: 1px solid #fca5a5;
+}
+
+.job-status-badge.running::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 0.45rem;
+  border-radius: 999px;
+  background: #1d4ed8;
+  box-shadow: 0 0 0 0 rgba(29, 78, 216, 0.55);
+  animation: status-pulse 1.3s infinite;
+}
+
+.job-timing {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.82rem;
+  color: #8b9ab2;
+  line-height: 1;
+}
+
+.job-substatus {
+  margin-top: 0.2rem;
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+.job-timing strong {
+  color: #a5f3fc;
+}
+
+.job-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.job-actions a {
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.job-actions a:hover {
+  text-decoration: underline;
+}

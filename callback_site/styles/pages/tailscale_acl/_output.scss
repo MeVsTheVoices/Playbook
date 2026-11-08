@@ -1,0 +1,70 @@
+@use "../../abstracts/mixins";
+
+.notice-list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.notice {
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.86rem;
+  border: 1px solid;
+}
+
+.notice-info {
+  @include mixins.state-colors(#eff6ff, #0f4a84);
+  border-color: #bfdbfe;
+}
+
+.notice-warn {
+  @include mixins.state-colors(#fff7ed, #7f2f0a);
+  border-color: #fed7aa;
+}
+
+.notice-error {
+  @include mixins.state-colors(#fef2f2, #7f1d1d);
+  border-color: #fecaca;
+}
+
+.rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.rules-table th,
+.rules-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #e3eaf2;
+}
+
+.rules-table th {
+  color: #5f7388;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rules-table td:nth-child(2),
+.rules-table td:nth-child(3),
+.rules-table td:nth-child(4) {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+}
+
+pre {
+  margin: 0.62rem 0 0;
+  @include mixins.state-colors(#0f172f, #e5efff);
+  border-radius: 12px;
+  border: 1px solid #243357;
+  padding: 0.86rem;
+  overflow: auto;
+  font-size: 0.82rem;
+  line-height: 1.44;
+}

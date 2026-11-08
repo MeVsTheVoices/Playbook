@@ -18,6 +18,26 @@ CLOUD_INIT_ENABLE_FIREWALL_BASELINE="${CLOUD_INIT_ENABLE_FIREWALL_BASELINE:-fals
 CLOUD_INIT_ENABLE_SELINUX_ENFORCING="${CLOUD_INIT_ENABLE_SELINUX_ENFORCING:-false}"
 CLOUD_INIT_K3S_SECURITY_BASELINE="${CLOUD_INIT_K3S_SECURITY_BASELINE:-false}"
 CLOUD_INIT_FANCY_MOTD="${CLOUD_INIT_FANCY_MOTD:-false}"
+CLOUD_INIT_CONFIGURE_NEOVIM="${CLOUD_INIT_CONFIGURE_NEOVIM:-false}"
+CLOUD_INIT_INSTALL_CLI_TOOLS="${CLOUD_INIT_INSTALL_CLI_TOOLS:-false}"
+CLOUD_INIT_EXTRA_PACKAGES="${CLOUD_INIT_EXTRA_PACKAGES:-}"
+for misc_value in "$CLOUD_INIT_CONFIGURE_NEOVIM" "$CLOUD_INIT_INSTALL_CLI_TOOLS"; do
+  if [[ "$misc_value" != "true" && "$misc_value" != "false" ]]; then
+    echo "Invalid Neovim or CLI tools flag: expected true or false." >&2
+    exit 1
+  fi
+done
+if [[ ! "$CLOUD_INIT_EXTRA_PACKAGES" =~ ^[a-z0-9+.\ -]*$ ]]; then
+  echo "Invalid extra packages: use space-separated Debian package names." >&2
+  exit 1
+fi
+read -r -a extra_package_names <<< "$CLOUD_INIT_EXTRA_PACKAGES"
+for pkg in "${extra_package_names[@]}"; do
+  if [[ ! "$pkg" =~ ^[a-z0-9][a-z0-9+.-]+$ ]]; then
+    echo "Invalid extra package: ${pkg}. Use Debian package names, not versions, URLs or command options." >&2
+    exit 1
+  fi
+done
 CLOUD_INIT_INSTALL_TELEGRAF="${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
 CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"
 CLOUD_INIT_SSH_PORT="${CLOUD_INIT_SSH_PORT:-}"
@@ -43,6 +63,9 @@ if [[ "$PROFILE" == "network-toolkit" ]]; then
   CLOUD_INIT_ENABLE_HARDWARE_CHECKS="true"
   CLOUD_INIT_INSTALL_TELEGRAF="false"
   CLOUD_INIT_FANCY_MOTD="false"
+  CLOUD_INIT_CONFIGURE_NEOVIM="false"
+  CLOUD_INIT_INSTALL_CLI_TOOLS="false"
+  CLOUD_INIT_EXTRA_PACKAGES=""
   CLOUD_INIT_ENABLE_FIREWALL_BASELINE="false"
 fi
 
@@ -165,6 +188,14 @@ elif [[ "$PROFILE" == "network-toolkit" ]]; then
   PROFILE_ROLE="network-toolkit"
   PROFILE_STORAGE="sdcard"
   PROFILE_PACKAGES="$(toolkit_render packages)"
+fi
+
+PROFILE_PACKAGES="$PROFILE_PACKAGES $CLOUD_INIT_EXTRA_PACKAGES"
+if [[ "$CLOUD_INIT_CONFIGURE_NEOVIM" == "true" ]]; then
+  PROFILE_PACKAGES="$PROFILE_PACKAGES neovim"
+fi
+if [[ "$CLOUD_INIT_INSTALL_CLI_TOOLS" == "true" ]]; then
+  PROFILE_PACKAGES="$PROFILE_PACKAGES tmux ripgrep fd-find fzf jq unzip bash-completion"
 fi
 
 # Ubuntu 21.10 to 23.10 moved the vxlan module (flannel's overlay) out of the base raspi kernel package.

@@ -71,6 +71,100 @@ class SdCloudInitRenderTests(unittest.TestCase):
     def runcmd(data: dict) -> list[str]:
         return [c if isinstance(c, str) else " ".join(c) for c in data["runcmd"]]
 
+    def test_misc_packages_and_neovim_are_opt_in_on_all_general_profiles(self) -> None:
+        for profile in ("pi5", "pi4", "pi3bplus"):
+            with self.subTest(profile=profile):
+                code, data, err = self.render(R_PROFILE=profile, R_DIST="standard")
+                self.assertEqual(code, 0, err)
+                self.assertNotIn("neovim", data["packages"])
+                self.assertNotIn("/usr/local/bin/rack-neovim-bootstrap", self.files(data))
+                code, data, err = self.render(
+                    R_PROFILE=profile, CLOUD_INIT_CONFIGURE_NEOVIM="true",
+                    CLOUD_INIT_INSTALL_CLI_TOOLS="true", CLOUD_INIT_EXTRA_PACKAGES="strace jq git strace",
+                )
+                self.assertEqual(code, 0, err)
+                self.assertEqual(len(data["packages"]), len(set(data["packages"])))
+                self.assertTrue({"neovim", "strace", "tmux", "ripgrep", "fd-find", "fzf",
+                                 "jq", "unzip", "bash-completion"}.issubset(data["packages"]))
+                self.assertIn(["/usr/local/bin/rack-neovim-bootstrap", "jdizzle"], data["runcmd"])
+                self.assertNotIn("update-alternatives", "\n".join(self.runcmd(data)))
+        for env in ({"CLOUD_INIT_EXTRA_PACKAGES": "--help"}, {"CLOUD_INIT_EXTRA_PACKAGES": "git;reboot"},
+                    {"CLOUD_INIT_EXTRA_PACKAGES": "*"},
+                    {"CLOUD_INIT_CONFIGURE_NEOVIM": "yes"}):
+            code, _, err = self.render(**env)
+            self.assertNotEqual(code, 0)
+            self.assertIn("Invalid", err)
+
+    def test_neovim_bootstrap_preserves_existing_configs_and_is_repeatable(self) -> None:
+        code, data, err = self.render(CLOUD_INIT_CONFIGURE_NEOVIM="true")
+        self.assertEqual(code, 0, err)
+        files = self.files(data)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            source = root / "init.vim"
+            source.write_text(files["/usr/share/rack/neovim/init.vim"]["content"])
+            helper = root / "bootstrap"
+            helper.write_text(files["/usr/local/bin/rack-neovim-bootstrap"]["content"].replace(
+                "/usr/share/rack/neovim/init.vim", str(source)))
+            for name, content in {
+                "getent": f'#!/bin/sh\nprintf "rack-admin:x:1000:1000::%s:/bin/bash\\n" "{home}"\n',
+                "runuser": '#!/bin/sh\nshift 3\nexec "$@"\n',
+            }.items():
+                tool = root / name
+                tool.write_text(content)
+                tool.chmod(0o755)
+            env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}"}
+            config = home / ".config/nvim"
+            for existing in ("init.lua", "init.vim"):
+                config.mkdir(parents=True, exist_ok=True)
+                target = config / existing
+                target.write_text("custom config")
+                result = subprocess.run(["bash", str(helper), "rack-admin"], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("preserving existing", result.stdout)
+                self.assertEqual(target.read_text(), "custom config")
+                if existing == "init.lua":
+                    self.assertFalse((config / "init.vim").exists())
+                target.unlink()
+            for _ in range(2):
+                result = subprocess.run(["bash", str(helper), "rack-admin"], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((config / "init.vim").read_text(), source.read_text())
+            (config / "init.vim").unlink()
+            (config / "init.lua").symlink_to(root / "missing")
+            result = subprocess.run(["bash", str(helper), "rack-admin"], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((config / "init.vim").exists())
+            source.unlink()
+            (config / "init.lua").unlink()
+            result = subprocess.run(["bash", str(helper), "rack-admin"], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(result.stderr)
+
+    @unittest.skipUnless(shutil.which("nvim"), "Neovim is not installed on the test host")
+    def test_neovim_defaults_load_in_a_real_editor(self) -> None:
+        code, data, err = self.render(CLOUD_INIT_CONFIGURE_NEOVIM="true")
+        self.assertEqual(code, 0, err)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "init.vim"
+            config.write_text(self.files(data)["/usr/share/rack/neovim/init.vim"]["content"])
+            output = root / "settings"
+            env = {**os.environ, "HOME": tmp, "XDG_DATA_HOME": str(root / "data"),
+                   "XDG_CONFIG_HOME": str(root / "config"), "XDG_STATE_HOME": str(root / "state")}
+            result = subprocess.run([
+                "nvim", "--headless", "-u", str(config), "-n",
+                "-c", f"call writefile([string(&number), string(&expandtab), string(&shiftwidth), string(&undofile)], '{output}')",
+                "-c", "qa!",
+            ], env=env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertEqual(output.read_text().splitlines(), ["1", "1", "4", "1"])
+            undo = root / "data/nvim/undo"
+            self.assertTrue(undo.is_dir())
+            self.assertEqual(stat.S_IMODE(undo.stat().st_mode), 0o700)
+
     def test_all_pi_profiles_enable_passwordless_admin_sudo_by_default(self) -> None:
         for profile in ("pi5", "pi4", "pi3bplus", "network-toolkit"):
             for distribution in ("standard", "k3s"):
@@ -178,6 +272,7 @@ class SdCloudInitRenderTests(unittest.TestCase):
         code, data, err = self.render(
             CLOUD_INIT_TAILSCALE_ENABLE="true", CLOUD_INIT_TAILSCALE_AUTH_KEY=AUTH_KEY,
             CLOUD_INIT_INSTALL_TELEGRAF="true", CLOUD_INIT_ENABLE_HARDWARE_CHECKS="true", CLOUD_INIT_FANCY_MOTD="true",
+            CLOUD_INIT_CONFIGURE_NEOVIM="true",
         )
         self.assertEqual(code, 0, err)
         checked = 0
@@ -355,15 +450,19 @@ class SdCloudInitRenderTests(unittest.TestCase):
         self.assertLess(clock, next(i for i, c in enumerate(cmds) if "rack-tailscale-bootstrap" in c))
         self.assertLess(clock, next(i for i, c in enumerate(cmds) if "get.k3s.io" in c))
 
-    def test_clock_sync_bootcmd_waits_before_package_stage_and_reports_timeout(self) -> None:
+    def test_clock_sync_apt_hook_waits_at_package_stage_without_blocking_early_boot(self) -> None:
         code, data, err = self.render()
         self.assertEqual(code, 0, err)
-        command = data["bootcmd"][0]
-        self.assertEqual(command[:2], ["sh", "-c"])
+        self.assertNotIn("bootcmd", data)
+        files = self.files(data)
+        command = files["/usr/local/bin/rack-clock-wait"]["content"]
+        self.assertEqual(files["/usr/local/bin/rack-clock-wait"]["permissions"], "0755")
+        self.assertIn('APT::Update::Pre-Invoke { "/usr/local/bin/rack-clock-wait"; };',
+                      files["/etc/apt/apt.conf.d/00-rack-clock"]["content"])
         self.assertTrue(data["package_update"])
-        self.assertIn("seq 1 90", command[2])
-        self.assertIn("sleep 2", command[2])
-        self.assertIn("exit 1", command[2])
+        self.assertIn("seq 1 90", command)
+        self.assertIn("sleep 2", command)
+        self.assertIn("exit 1", command)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name, content in {
@@ -376,7 +475,7 @@ class SdCloudInitRenderTests(unittest.TestCase):
                 path.chmod(0o755)
             for synced, expected in (("yes", 0), ("no", 1)):
                 result = subprocess.run(
-                    command, capture_output=True, text=True,
+                    ["/bin/sh", "-c", command], capture_output=True, text=True,
                     env={"PATH": tmp, "SYNCED": synced}, executable="/bin/sh",
                 )
                 self.assertEqual(result.returncode, expected, result.stderr)

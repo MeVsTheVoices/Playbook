@@ -1,0 +1,174 @@
+@use "../../abstracts/mixins";
+
+.download-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.download-state.available {
+  color: #166534;
+}
+
+.download-state.missing {
+  color: #9f1239;
+}
+
+.download-state .mark {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.download-status-card {
+  margin-top: 0.7rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
+  padding: 0.85rem;
+}
+
+.download-status-card.pulling {
+  border-color: #f59e0b;
+  background: linear-gradient(180deg, #fff7e6 0%, #fffaf0 100%);
+}
+
+.download-status-card.completed {
+  border-color: #86efac;
+}
+
+.download-status-card.failed {
+  border-color: #fca5a5;
+}
+
+.download-status-card .job-status-header {
+  @include mixins.action-row(0.75rem, flex-start);
+  justify-content: space-between;
+}
+
+.download-status-card .job-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.22rem 0.62rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  @include mixins.state-colors(#e2e8f0, #334155);
+}
+
+.download-status-card .job-status-badge.running {
+  @include mixins.state(warning);
+}
+
+.download-status-card .job-status-badge.completed {
+  @include mixins.state(success);
+}
+
+.download-status-card .job-status-badge.failed {
+  @include mixins.state(error);
+}
+
+.download-status-card .job-status-meta {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.download-status-card .job-substatus {
+  margin-top: 0.45rem;
+  color: #334155;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.download-status-card .job-actions {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.download-status-card .job-actions a {
+  color: #0f766e;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.download-status-card .job-actions a:hover {
+  text-decoration: underline;
+}
+
+.catalog-pull-progress {
+  margin-top: 0.75rem;
+}
+
+.catalog-pull-progress-header {
+  @include mixins.action-row(0.75rem, center);
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.catalog-pull-progress-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.catalog-pull-progress-bar {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.catalog-pull-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f59e0b, #f97316, #fb7185);
+  transition: width 0.35s ease;
+}
+
+.catalog-pull-progress.active .catalog-pull-progress-fill {
+  background-size: 200% 100%;
+  animation: progress-shimmer 1.1s linear infinite;
+}
+
+.catalog-pull-progress.complete .catalog-pull-progress-fill {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.catalog-pull-progress.failed .catalog-pull-progress-fill {
+  background: linear-gradient(90deg, #ef4444, #b91c1c);
+}
+
+.catalog-pull-progress-meta {
+  margin-top: 0.3rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  color: #475569;
+  font-size: 0.8rem;
+}
+
+.catalog-pull-progress.active .catalog-pull-progress-meta,
+.catalog-pull-progress.active .catalog-pull-progress-label {
+  animation: text-breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes text-breathe {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}

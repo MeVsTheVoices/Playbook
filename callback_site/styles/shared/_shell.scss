@@ -1,0 +1,9 @@
+body {
+  margin: 0;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  color: var(--ink);
+  background: radial-gradient(circle at 15% 12%, rgba(11, 139, 110, 0.12), transparent 38%),
+  radial-gradient(circle at 89% 9%, rgba(19, 119, 176, 0.09), transparent 42%),
+  linear-gradient(165deg, var(--bg-accent), var(--bg));
+}

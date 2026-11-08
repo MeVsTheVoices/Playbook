@@ -1,0 +1,48 @@
+@use "../abstracts/mixins";
+
+.content {
+  margin-left: 246px;
+  min-width: 0;
+  transition: margin-left 0.2s ease;
+}
+
+body.sidebar-collapsed .content {
+  margin-left: 92px;
+}
+
+.wrap {
+  max-width: 1280px;
+  margin: 1.5rem auto 2rem;
+  padding: 0 1rem;
+  min-width: 0;
+}
+
+.panel {
+  min-width: 0;
+  margin-bottom: 1rem;
+  padding: 1.1rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.hero,
+.panel.hero,
+.terminal-hero {
+  background: linear-gradient(135deg, #ecfdf5 0%, #f8fafc 60%, #eff6ff 100%);
+  border: 1px solid #c5e7de;
+  border-radius: var(--radius);
+}
+
+.hero:not(.panel), .terminal-hero {
+  padding: 1rem;
+  margin: 0 0 1rem;
+}
+
+.hero-row,
+.section-head,
+.split-head {
+  @include mixins.action-row(0.75rem, flex-start);
+  justify-content: space-between;
+}

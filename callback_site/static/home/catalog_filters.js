@@ -3,7 +3,7 @@ function profileArch(profile) {
 }
 
 function profileCatalog(profile) {
-  return imageCatalog.filter((item) => Array.isArray(item.profiles) && item.profiles.includes(profile));
+  return imageCatalog.filter((item) => item.cloud_init_supported !== false && Array.isArray(item.profiles) && item.profiles.includes(profile));
 }
 
 function rebuildCatalogFilters() {
@@ -124,7 +124,7 @@ function updatePresetSelectState(localAvailable) {
 function applyOsPreset() {
   const selected = form.os_preset.selectedOptions[0];
   const profile = form.profile.value;
-  const arch = profileArch(profile);
+  const arch = selected?.dataset?.arch || profileArch(profile);
   if (!selected || !selected.value) {
     form.os_preset.classList.remove("cached-selected", "download-needed");
     osPresetNoteEl.textContent = `No preset selected for ${profile} (${arch}). You can provide Image URL or local file manually.`;
@@ -141,6 +141,9 @@ function applyOsPreset() {
   const docsUrl = selected.dataset.docsUrl || "";
   const distro = selected.dataset.distro || "";
   const release = selected.dataset.release || "";
+  form.image_file.value = "";
+  form.image_url.value = "";
+  form.image_sha256.value = imageSha;
   updatePresetSelectState(localAvailable);
   if (localAvailable && cachePath) {
     form.image_file.value = cachePath;
@@ -150,14 +153,8 @@ function applyOsPreset() {
     form.image_url.value = imageUrl;
     form.image_file.value = "";
     osPresetNoteEl.textContent = `${distro} ${release} selected for ${profile} (${arch}). Image URL was populated 🌐`;
-  } else if (profile === "pi3bplus" || profile === "pi4") {
-    osPresetNoteEl.textContent = `${distro} ${release} selected for ${profile === "pi4" ? "Pi 4" : "Pi 3B+"}. The default Ubuntu 24.04 ARM64 image works on this board 🌐`;
   } else {
     osPresetNoteEl.textContent = `${distro} ${release} selected. Provide a direct Image URL or local Image File 🙂`;
-  }
-
-  if (imageSha && !form.image_sha256.value.trim()) {
-    form.image_sha256.value = imageSha;
   }
 
   const statusPill = localAvailable

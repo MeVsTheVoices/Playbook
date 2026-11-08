@@ -1,0 +1,50 @@
+@use "../abstracts/mixins";
+
+.collapsible-panel {
+  padding: 0;
+}
+
+.collapsible-panel > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 1rem 1.1rem;
+  @include mixins.action-row(0.75rem, center);
+  justify-content: space-between;
+}
+
+.collapsible-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.collapsible-summary h2, .collapsible-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.collapsible-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.collapsible-indicator {
+  margin-left: auto;
+  color: #0f766e;
+  font-size: 1.1rem;
+  transition: transform 0.2s ease;
+}
+
+.collapsible-panel[open] > summary .collapsible-indicator {
+  transform: rotate(90deg);
+}
+
+.collapsible-body {
+  padding: 0 1.1rem 1.1rem;
+}

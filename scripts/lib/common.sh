@@ -20,9 +20,10 @@ Usage:
 
 Notes:
 - This script will ERASE the selected device.
-- For Pi 5, --image-url is optional and defaults to Ubuntu 24.04 preinstalled server ARM64.
-- For Pi B+, pass --image-url or --image-file for your cloud-init compatible image.
+- Pi 5, Pi 4 and Pi 3B+ default to Ubuntu 24.04 preinstalled server ARM64.
+- Legacy Pi OS Bookworm/Bullseye images do not support this cloud-init workflow.
 - Network Toolkit defaults to Pi OS Lite 64-bit Trixie; set its Wi-Fi, browser password hash and Tailscale auth key before imaging.
+- User-data is validated before erasing; the written image and injected seed are read back before reporting ready.
 EOF
 }
 

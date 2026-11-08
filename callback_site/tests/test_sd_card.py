@@ -17,6 +17,117 @@ import services.storage
 
 
 class SdCardTests(BaseCallbackSiteTest):
+    def test_misc_options_are_visible_and_map_to_provisioning(self) -> None:
+        page = self.page_text(self.client.get("/"))
+        self.assertIn('data-cloud-init-section="misc"', page)
+        self.assertIn('data-option-key="configure_neovim"', page)
+        self.assertIn('data-option-key="install_cli_tools"', page)
+        env = {}
+        enabled = services.sd_prepare._map_cloud_init_options_to_env(env, "standard", {
+            "configure_neovim": True, "install_cli_tools": True,
+            "packages": "jq, tmux, jq",
+        })
+        self.assertEqual(env["CLOUD_INIT_CONFIGURE_NEOVIM"], "true")
+        self.assertEqual(env["CLOUD_INIT_INSTALL_CLI_TOOLS"], "true")
+        self.assertEqual(env["CLOUD_INIT_EXTRA_PACKAGES"], "jq tmux")
+        self.assertTrue({"configure_neovim", "install_cli_tools", "packages"}.issubset(enabled))
+        services.sd_prepare._map_cloud_init_options_to_env(env, "standard", {
+            "configure_neovim": False, "install_cli_tools": False,
+        })
+        self.assertEqual(env["CLOUD_INIT_CONFIGURE_NEOVIM"], "false")
+        self.assertEqual(env["CLOUD_INIT_INSTALL_CLI_TOOLS"], "false")
+        self.assertEqual(env["CLOUD_INIT_EXTRA_PACKAGES"], "")
+
+    def test_misc_and_package_validation_prevents_starting_a_flash(self) -> None:
+        for options in (
+            {"packages": ["curl;reboot"]}, {"packages": ["--help"]},
+            {"packages": ["git=1.0"]}, {"packages": [42]},
+            {"configure_neovim": "false"}, {"install_cli_tools": 1},
+        ):
+            with self.subTest(options=options):
+                with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as thread:
+                    response = self.client.post("/api/sd/prepare", json={
+                        "profile": "pi5", "hostname": "misc-test", "device": "/dev/fake",
+                        "ssh_public_key": "ssh-ed25519 test",
+                        "callback_url": "http://example.invalid/callback",
+                        "cloud_init_options": options,
+                    })
+                self.assertEqual(response.status_code, 400)
+                self.assertTrue(response.get_json()["errors"])
+                thread.assert_not_called()
+
+    def test_misc_options_survive_saved_sd_templates(self) -> None:
+        options = {"configure_neovim": True, "install_cli_tools": True, "packages": ["strace"]}
+        response = self.client.post("/api/sd/options-profiles", json={
+            "name": "misc-test", "distribution": "standard", "options": options,
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        profiles = self.client.get("/api/sd/options-profiles").get_json()["profiles"]
+        saved = next(profile for profile in profiles if profile["name"] == "misc-test")
+        self.assertEqual(saved["options"], options)
+        self.addCleanup(self.client.delete, "/api/sd/options-profiles/misc-test")
+
+    def test_prepare_rejects_legacy_pi_os_urls_and_cached_files(self) -> None:
+        for entry in domain_defaults.IMAGE_CATALOG:
+            if entry.get("cloud_init_supported") is not False or not entry["image_url"]:
+                continue
+            cache_path = services.image_catalog._catalog_entry_with_availability(entry)["cache_path"]
+            for source in ({"image_url": entry["image_url"]}, {"image_file": cache_path}):
+                with self.subTest(image=entry["id"], source=source):
+                    with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as thread:
+                        response = self.client.post("/api/sd/prepare", json={
+                            "profile": "pi3bplus", "hostname": "image-test", "device": "/dev/fake",
+                            "ssh_public_key": "ssh-ed25519 test",
+                            "callback_url": "http://example.invalid/callback", **source,
+                        })
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn("does not support cloud-init", " ".join(response.get_json()["errors"]))
+                    thread.assert_not_called()
+
+    def test_prepare_rejects_known_image_for_the_wrong_profile(self) -> None:
+        entry = next(e for e in domain_defaults.IMAGE_CATALOG if e["id"] == "ubuntu-24.04-pi-arm64")
+        payload = services.sd_prepare._sanitize_sd_prepare_payload({
+            "profile": "network-toolkit", "image_url": entry["image_url"], "cloud_init_options": {},
+        })
+        self.assertIn("not compatible", " ".join(payload["config_errors"]))
+
+    def test_presets_replace_stale_image_fields_and_use_selected_architecture(self) -> None:
+        text = (domain_defaults.BASE_DIR / "static/home/catalog_filters.js").read_text()
+        self.assertIn('const arch = selected?.dataset?.arch || profileArch(profile)', text)
+        self.assertIn('form.image_sha256.value = imageSha;', text)
+        self.assertNotIn('!form.image_sha256.value.trim()', text)
+        self.assertIn('item.cloud_init_supported !== false', text)
+        self.assertNotIn('The default Ubuntu 24.04 ARM64 image works', text)
+
+    def test_prepare_job_uses_shared_catalog_cache_and_preserves_local_override(self) -> None:
+        entry = next(e for e in domain_defaults.IMAGE_CATALOG if e["id"] ==
+                     "network-toolkit-raspios-trixie-arm64-lite")
+        for image_file in ("", "/tmp/manual.img"):
+            with self.subTest(image_file=image_file):
+                form = {"profile": "network-toolkit", "hostname": "cache-test", "device": "/dev/fake",
+                        "ssh_public_key": "ssh-ed25519 test", "callback_url": "http://example.invalid/callback",
+                        "image_file": image_file}
+                job_id = "cache-env-test"
+                services.sd_prepare.JOBS[job_id] = {"status": "queued"}
+                with patch("os.geteuid", return_value=0), patch_in("_archive_ssh_public_key",
+                    return_value={}), patch("services.sd_prepare.subprocess.Popen") as popen, patch_in("_record_image_history"):
+                    popen.return_value.stdout = iter(())
+                    popen.return_value.returncode = 0
+                    services.sd_prepare._run_prepare_job(job_id, form)
+                command = popen.call_args.args[0]
+                env = popen.call_args.kwargs["env"]
+                self.assertEqual(env["IMAGE_CACHE_DIR"], str(services.storage.IMAGE_CACHE_DIR))
+                if image_file:
+                    self.assertNotIn("IMAGE_CACHE_PATH", env)
+                    self.assertNotIn("--image-url", command)
+                    self.assertEqual(command[command.index("--image-file") + 1], image_file)
+                else:
+                    self.assertEqual(command[command.index("--image-url") + 1], entry["image_url"])
+                    self.assertEqual(command[command.index("--image-sha256") + 1], entry["image_sha256"])
+                    self.assertEqual(env["IMAGE_CACHE_PATH"], str(services.storage.IMAGE_CACHE_DIR /
+                        services.image_catalog._safe_catalog_filename(entry["image_url"], entry["id"])))
+                services.sd_prepare.JOBS.pop(job_id)
+
     def test_home_page_contains_cloud_init_template_controls(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

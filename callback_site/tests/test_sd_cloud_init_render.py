@@ -9,6 +9,12 @@ import stat
 import subprocess
 import tempfile
 import unittest
+import hashlib
+import io
+import runpy
+from types import SimpleNamespace
+from unittest.mock import patch
+from urllib.error import URLError
 from pathlib import Path
 
 import yaml
@@ -27,12 +33,14 @@ def _harness_text() -> str:
     text = read_sd_script()
     func = re.search(r"^validate_ssh_public_key_lines\(\) \{\n.*?^\}\n", text, re.S | re.M)
     toolkit_func = re.search(r"^toolkit_render\(\) \{\n.*?^\}\n", text, re.S | re.M)
+    url_func = re.search(r"^validate_http_url\(\) \{\n.*?^\}\n", text, re.S | re.M)
     body = re.search(r"^CLOUD_INIT_USERNAME=.*?(?=^cat > \"\$META_DATA_OUT\")", text, re.S | re.M)
-    assert func and toolkit_func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
+    assert func and toolkit_func and url_func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
     return (
         "set -euo pipefail\n"
         + func.group(0)
         + toolkit_func.group(0)
+        + url_func.group(0)
         + 'PROFILE="${R_PROFILE:-pi3bplus}"\nHOSTNAME="render-test"\nDISTRIBUTION="${R_DIST:-k3s}"\n'
         + f'SCRIPT_DIR="{Path(__file__).resolve().parents[2] / "scripts"}"\n'
         'CALLBACK_URL="http://192.168.174.1:8088/api/cloud-init/callback"\n'
@@ -62,6 +70,109 @@ class SdCloudInitRenderTests(unittest.TestCase):
     @staticmethod
     def runcmd(data: dict) -> list[str]:
         return [c if isinstance(c, str) else " ".join(c) for c in data["runcmd"]]
+
+    def test_all_pi_profiles_enable_passwordless_admin_sudo_by_default(self) -> None:
+        for profile in ("pi5", "pi4", "pi3bplus", "network-toolkit"):
+            for distribution in ("standard", "k3s"):
+                if profile == "network-toolkit" and distribution == "k3s":
+                    continue
+                with self.subTest(profile=profile, distribution=distribution):
+                    env = {"R_PROFILE": profile, "R_DIST": distribution, "CLOUD_INIT_USERNAME": "rack-admin"}
+                    if profile == "network-toolkit":
+                        env.update({
+                            "CLOUD_INIT_TOOLKIT_TERMINAL_PASSWORD_HASH": "$6$testsalt$" + "a" * 86,
+                            "CLOUD_INIT_TOOLKIT_WIFI_SSID": "test-uplink",
+                            "CLOUD_INIT_TOOLKIT_WIFI_PASSWORD": "test-password",
+                            "CLOUD_INIT_TOOLKIT_WIFI_COUNTRY": "US",
+                            "CLOUD_INIT_TAILSCALE_AUTH_KEY": AUTH_KEY,
+                        })
+                    code, data, err = self.render(**env)
+                    self.assertEqual(code, 0, err)
+                    user = data["users"][1]
+                    self.assertEqual(user["name"], "rack-admin")
+                    self.assertEqual(user["sudo"], "ALL=(ALL) NOPASSWD: ALL")
+                    self.assertIn("sudo", user["groups"])
+                    command = data["runcmd"][0]
+                    self.assertEqual(command[:2], ["bash", "-c"])
+                    self.assertIn('rule="rack-admin ALL=(ALL) NOPASSWD: ALL"', command[2])
+                    self.assertIn("/etc/sudoers.d/010_rack-admin-nopasswd", command[2])
+                    self.assertIn("visudo -cf -", command[2])
+                    self.assertIn("runuser -u rack-admin -- sudo -n true", command[2])
+                    self.assertNotIn("network-console", command[2])
+                    self.assertNotIn("rm ", command[2])
+                    result = subprocess.run(["bash", "-n"], input=command[2], text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_admin_rule_install_aborts_if_validation_fails(self) -> None:
+        code, data, err = self.render()
+        self.assertEqual(code, 0, err)
+        with tempfile.TemporaryDirectory() as tmp:
+            for tool in ("visudo", "install", "runuser"):
+                path = Path(tmp) / tool
+                path.write_text(
+                    '#!/bin/sh\nprintf "%s\\n" "' + tool + '" >> "$CALL_LOG"\n'
+                    'test "' + tool + '" != visudo\n'
+                )
+                path.chmod(0o755)
+            log = Path(tmp) / "calls"
+            result = subprocess.run(data["runcmd"][0], capture_output=True, text=True,
+                                    env={"PATH": tmp, "CALL_LOG": str(log)}, executable="/bin/bash")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(log.read_text().splitlines(), ["visudo"])
+
+    def test_website_key_fetch_is_pinned_and_precedes_tailscale(self) -> None:
+        url = "http://192.168.174.1:8088/api/ssh/public/admin"
+        code, data, err = self.render(
+            CLOUD_INIT_SSH_PUBLIC_KEY_URL=url,
+            CLOUD_INIT_TAILSCALE_ENABLE="true", CLOUD_INIT_TAILSCALE_AUTH_KEY=AUTH_KEY,
+        )
+        self.assertEqual(code, 0, err)
+        files = self.files(data)
+        self.assertIn("CLOUD_INIT_SSH_PUBLIC_KEY_URL=" + url, files["/etc/rack-node.env"]["content"])
+        embedded = data["users"][1]["ssh_authorized_keys"][0]
+        digest = hashlib.sha256(embedded.encode()).hexdigest()
+        self.assertIn("CLOUD_INIT_SSH_PUBLIC_KEY_SHA256=" + digest, files["/etc/rack-node.env"]["content"])
+        commands = self.runcmd(data)
+        self.assertLess(next(i for i,c in enumerate(commands) if "rack-ssh-key-bootstrap" in c),
+                        commands.index("/usr/local/bin/rack-tailscale-bootstrap"))
+        code, data, err = self.render()
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("/usr/local/bin/rack-ssh-key-bootstrap", self.files(data))
+
+    def test_website_key_fetch_preserves_keys_and_rejects_failure_or_substitution(self) -> None:
+        code, data, err = self.render(CLOUD_INIT_SSH_PUBLIC_KEY_URL="https://callback.test/api/ssh/public/admin")
+        self.assertEqual(code, 0, err)
+        script = self.files(data)["/usr/local/bin/rack-ssh-key-bootstrap"]["content"]
+        key = data["users"][1]["ssh_authorized_keys"][0].encode()
+        digest = hashlib.sha256(key).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            helper = home / "helper.py"
+            helper.write_text(script)
+            directory = home / ".ssh"
+            directory.mkdir()
+            target = directory / "authorized_keys"
+            target.write_bytes(b"existing-key")
+            account = SimpleNamespace(pw_dir=tmp, pw_uid=os.getuid(), pw_gid=os.getgid())
+            argv = [str(helper), "https://callback.test/api/ssh/public/admin", digest, "admin"]
+            with patch("sys.argv", argv), patch("pwd.getpwnam", return_value=account), patch("os.chown"), patch("urllib.request.urlopen") as fetch:
+                for _ in range(2):
+                    fetch.return_value.__enter__.return_value.read.return_value = key + b"\n"
+                    runpy.run_path(str(helper), run_name="__main__")
+                self.assertEqual(target.read_bytes(), b"existing-key\n" + key + b"\n")
+                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+                before = target.read_bytes()
+                for response in (b"attacker-key", b"x" * 65537):
+                    fetch.return_value.__enter__.return_value.read.return_value = response
+                    with self.assertRaises(SystemExit):
+                        runpy.run_path(str(helper), run_name="__main__")
+                    self.assertEqual(target.read_bytes(), before)
+                fetch.side_effect = URLError("unreachable")
+                with patch("time.sleep"), patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                    with self.assertRaises(SystemExit):
+                        runpy.run_path(str(helper), run_name="__main__")
+                self.assertIn("public-key fetch failed", stderr.getvalue())
+                self.assertEqual(target.read_bytes(), before)
 
     def test_every_embedded_script_parses(self) -> None:
         code, data, err = self.render(
@@ -243,6 +354,34 @@ class SdCloudInitRenderTests(unittest.TestCase):
         clock = next(i for i, c in enumerate(cmds) if "NTPSynchronized" in c)
         self.assertLess(clock, next(i for i, c in enumerate(cmds) if "rack-tailscale-bootstrap" in c))
         self.assertLess(clock, next(i for i, c in enumerate(cmds) if "get.k3s.io" in c))
+
+    def test_clock_sync_bootcmd_waits_before_package_stage_and_reports_timeout(self) -> None:
+        code, data, err = self.render()
+        self.assertEqual(code, 0, err)
+        command = data["bootcmd"][0]
+        self.assertEqual(command[:2], ["sh", "-c"])
+        self.assertTrue(data["package_update"])
+        self.assertIn("seq 1 90", command[2])
+        self.assertIn("sleep 2", command[2])
+        self.assertIn("exit 1", command[2])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name, content in {
+                "timedatectl": '#!/bin/sh\n[ "$1" = set-ntp ] && exit 0\nprintf "%s\\n" "$SYNCED"\n',
+                "sleep": "#!/bin/sh\nexit 0\n",
+                "seq": "#!/bin/sh\nprintf '1\\n2\\n'\n",
+            }.items():
+                path = root / name
+                path.write_text(content)
+                path.chmod(0o755)
+            for synced, expected in (("yes", 0), ("no", 1)):
+                result = subprocess.run(
+                    command, capture_output=True, text=True,
+                    env={"PATH": tmp, "SYNCED": synced}, executable="/bin/sh",
+                )
+                self.assertEqual(result.returncode, expected, result.stderr)
+                if expected:
+                    self.assertIn("clock not synced after 180s", result.stderr)
 
     def test_default_tags_follow_the_profile(self) -> None:
         for profile, expected in (("pi3bplus", "tag:rpi-3bplus,tag:homelab"), ("pi5", "tag:rpi5,tag:homelab"), ("pi4", "tag:rpi4,tag:homelab")):

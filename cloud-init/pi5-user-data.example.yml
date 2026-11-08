@@ -8,7 +8,7 @@ users:
     gecos: Rack Operations
     groups: [sudo]
     shell: /bin/bash
-    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    sudo: "ALL=(ALL) NOPASSWD: ALL"
     ssh_authorized_keys:
       - CHANGE_ME_SSH_PUBLIC_KEY
 
@@ -32,6 +32,7 @@ write_files:
       provisioner=cloud-init
 
 runcmd:
+  - [ bash, -c, 'set -euo pipefail; rule="ops ALL=(ALL) NOPASSWD: ALL"; printf "%s\n" "$rule" | visudo -cf -; printf "%s\n" "$rule" | install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/010_ops-nopasswd; visudo -cf /etc/sudoers.d/010_ops-nopasswd; runuser -u ops -- sudo -n true' ]
   - [ systemctl, enable, ssh ]
   - [ systemctl, restart, ssh ]
   - [ sh, -c, "echo 'Pi5 bootstrap completed' > /var/log/rack-bootstrap.log" ]

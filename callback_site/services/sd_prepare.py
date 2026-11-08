@@ -29,6 +29,7 @@ from services.kubernetes import _local_k3s_version
 from services.ssh_keys import _archive_ssh_public_key
 from services.storage import INVENTORY_FILE, SCRIPT_PATH
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options
+from network_toolkit import EXTRA_PACKAGES_OPTION, extra_packages
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "hostname",
         "device",
         "ssh_public_key",
+        "ssh_key_name",
         "callback_url",
         "image_url",
         "image_file",
@@ -180,6 +182,9 @@ def _redact_sd_secret_options(options: Any) -> Dict[str, Any]:
 
 def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud_init_options: Dict[str, Any]) -> List[str]:
     enabled_options: List[str] = []
+    if EXTRA_PACKAGES_OPTION in cloud_init_options:
+        env["CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES"] = " ".join(extra_packages(cloud_init_options))
+        enabled_options.append(EXTRA_PACKAGES_OPTION)
     for spec in TOOLKIT_SPECS:
         key = spec["id"]
         if key in cloud_init_options:
@@ -391,6 +396,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         env = os.environ.copy()
         distribution = str(form.get("distribution", "standard")).strip().lower() or "standard"
         env["CLOUD_INIT_DISTRIBUTION"] = distribution
+        env["CLOUD_INIT_SSH_PUBLIC_KEY_URL"] = str(form.get("ssh_public_key_url", ""))
 
         cloud_init_options = form.get("cloud_init_options", {})
         if isinstance(cloud_init_options, dict):

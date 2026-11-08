@@ -12,7 +12,7 @@ users:
     gecos: Rack Operations
     groups: [sudo]
     shell: /bin/bash
-    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    sudo: "ALL=(ALL) NOPASSWD: ALL"
     ssh_authorized_keys:
       - ${SSH_KEY_CONTENT}
 EOF
@@ -35,6 +35,9 @@ EOF
 fi
 
 cat >> "$USER_DATA_OUT" <<EOF
+
+bootcmd:
+  - [ sh, -c, 'timedatectl set-ntp true; for i in \$(seq 1 90); do [ "\$(timedatectl show -p NTPSynchronized --value)" = yes ] && exit 0; sleep 2; done; echo "rack: clock not synced after 180s; repository signatures may fail" >&2; exit 1' ]
 
 package_update: true
 package_upgrade: false
@@ -102,6 +105,7 @@ for node_env_var in \
   CLOUD_INIT_ENABLE_HARDWARE_CHECKS CLOUD_INIT_ENABLE_SYSCTL_HARDENING \
   CLOUD_INIT_ENABLE_FIREWALL_BASELINE CLOUD_INIT_ENABLE_SELINUX_ENFORCING \
   CLOUD_INIT_FANCY_MOTD CLOUD_INIT_INSTALL_TELEGRAF CLOUD_INIT_SSH_PORT CLOUD_INIT_SSH_ALLOW_GROUPS \
+  CLOUD_INIT_SSH_PUBLIC_KEY_URL \
   CLOUD_INIT_TELEGRAF_INFLUX_URL CLOUD_INIT_TELEGRAF_INFLUX_TOKEN CLOUD_INIT_TELEGRAF_INFLUX_ORG \
   CLOUD_INIT_TELEGRAF_INFLUX_BUCKET CLOUD_INIT_TELEGRAF_CONFIG_URL \
   CLOUD_INIT_TAILSCALE_ENABLE CLOUD_INIT_TAILSCALE_HOSTNAME CLOUD_INIT_TAILSCALE_TAGS \
@@ -111,4 +115,7 @@ done
 # The boot summary only reports whether a K3s config exists; never copy its content (it holds the token).
 if [[ "$DISTRIBUTION" == "k3s" ]]; then
   emit_env_line CLOUD_INIT_K3S_CONFIG "set"
+fi
+if [[ -n "$CLOUD_INIT_SSH_PUBLIC_KEY_URL" ]]; then
+  emit_env_line CLOUD_INIT_SSH_PUBLIC_KEY_SHA256 "$(printf '%s' "$SSH_KEY_CONTENT" | sha256sum | cut -d ' ' -f 1)"
 fi

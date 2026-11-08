@@ -8,7 +8,7 @@ Group=network-console
 SupplementaryGroups=dialout
 WorkingDirectory=/var/lib/network-console
 Environment=SCREENDIR=/var/lib/network-console/.screen
-ExecStart=/usr/bin/ttyd --interface 127.0.0.1 --port 7682 --writable --check-origin --max-clients 2 /bin/bash -l
+ExecStart=/usr/local/bin/ttyd --interface 127.0.0.1 --port 7682 --writable --check-origin --max-clients 2 /bin/bash -l
 Restart=on-failure
 MemoryMax=192M
 TasksMax=64

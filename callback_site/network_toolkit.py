@@ -37,8 +37,10 @@ BOOT_INPUT_SPECS = INPUT_SPECS + [
     {"id": "toolkit_wifi_password", "label": "Wi-Fi password", "input_type": "text", "required": True, "sensitive": True},
     {"id": "toolkit_wifi_country", "label": "Wi-Fi country (two letters)", "input_type": "text", "default": "US", "required": True},
 ]
+EXTRA_PACKAGES_OPTION = "toolkit_extra_packages"
 SECRET_OPTIONS = {"toolkit_terminal_password_hash", "toolkit_wifi_password"}
 TEMPLATES = {
+    "/etc/systemd/journald.conf.d/60-rack-toolkit.conf": ("journald.conf.j2", "0644"),
     "/etc/nginx/sites-enabled/network-toolkit": ("nginx.conf.j2", "0644"),
     "/etc/nginx/network-toolkit.htpasswd": ("htpasswd.j2", "0640"),
     "/etc/systemd/system/rack-toolkit-terminal.service": ("terminal.service.j2", "0644"),
@@ -51,8 +53,30 @@ TEMPLATES = {
 }
 
 
+def extra_packages(options: dict[str, Any]) -> list[str]:
+    raw = options.get(EXTRA_PACKAGES_OPTION, [])
+    if isinstance(raw, str):
+        items = re.split(r"[,\s]+", raw.strip()) if raw.strip() else []
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        raise ValueError("Extra diagnostic tools must be a list of Debian package names.")
+    packages = []
+    for item in items:
+        if not isinstance(item, str) or not re.fullmatch(r"[a-z0-9][a-z0-9+.-]+", item.strip()):
+            raise ValueError("Extra diagnostic tools must contain only Debian package names (no versions, URLs or command options).")
+        package = item.strip()
+        if package not in packages:
+            packages.append(package)
+    return packages
+
+
 def validate_options(options: dict[str, Any], *, boot: bool = False) -> list[str]:
     errors = []
+    try:
+        extra_packages(options)
+    except ValueError as exc:
+        errors.append(str(exc))
     password_hash = str(options.get("toolkit_terminal_password_hash") or "")
     if not re.fullmatch(r"\$6\$(?:rounds=[1-9][0-9]{3,8}\$)?[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{86}", password_hash):
         errors.append("Browser password hash must be SHA-512 crypt, generated with openssl passwd -6 -stdin.")
@@ -107,18 +131,22 @@ def network_config(options: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     options = {spec["id"]: os.environ.get(f"CLOUD_INIT_{spec['id'].upper()}", spec.get("default", "")) for spec in BOOT_INPUT_SPECS}
+    options[EXTRA_PACKAGES_OPTION] = os.environ.get("CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES", "")
     errors = validate_options(options, boot=True)
     if errors:
         raise SystemExit("network-toolkit: " + "; ".join(errors))
     action = sys.argv[1]
     if action == "packages":
         packages = yaml.safe_load((ROLE_DIR / "defaults" / "main.yml").read_text())["toolkit_packages"]
-        print(" ".join(packages))
+        print(" ".join(dict.fromkeys(packages + extra_packages(options))))
     elif action == "files":
         text = yaml.safe_dump(render_files(options), sort_keys=False, allow_unicode=False)
         print("\n".join("  " + line for line in text.splitlines()))
     elif action == "network":
         print(yaml.safe_dump(network_config(options), sort_keys=False))
+    elif action == "ttyd":
+        defaults = yaml.safe_load((ROLE_DIR / "defaults" / "main.yml").read_text())
+        print(defaults["toolkit_ttyd_url"], defaults["toolkit_ttyd_sha256"])
     else:
         raise SystemExit(f"Unknown network-toolkit render action: {action}")
 

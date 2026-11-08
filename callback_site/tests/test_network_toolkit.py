@@ -48,9 +48,12 @@ OPTIONS = {
 
 
 class NetworkToolkitTests(BaseCallbackSiteTest):
-    def render(self, funnel: bool = False):
+    def render(self, funnel: bool = False, packages: list[str] | None = None):
         env: dict[str, str] = {}
-        _map_cloud_init_options_to_env(env, "standard", {**OPTIONS, "toolkit_enable_funnel": funnel})
+        _map_cloud_init_options_to_env(env, "standard", {
+            **OPTIONS, "toolkit_enable_funnel": funnel,
+            toolkit.EXTRA_PACKAGES_OPTION: packages or [],
+        })
         return sd_render.SdCloudInitRenderTests().render(
             R_PROFILE=toolkit.PROFILE, R_DIST="standard",
             CLOUD_INIT_TAILSCALE_AUTH_KEY=AUTH_KEY, **env,
@@ -83,6 +86,8 @@ class NetworkToolkitTests(BaseCallbackSiteTest):
         html = response.get_data(as_text=True)
         self.assertIn('<option value="network-toolkit">', html)
         self.assertIn('id="network-toolkit-section"', html)
+        self.assertIn('id="network-toolkit-tools-section"', html)
+        self.assertIn('id="opt_toolkit_extra_packages"', html)
         self.assertIn('data-option-profile="network-toolkit"', html)
         self.assertIn('data-option-default="US"', html)
         self.assertIn('id="opt_toolkit_wifi_password"', html)
@@ -173,8 +178,19 @@ class NetworkToolkitTests(BaseCallbackSiteTest):
         files = sd_render.SdCloudInitRenderTests.files(data)
         for entry in toolkit.render_files(OPTIONS):
             self.assertEqual(files[entry["path"]]["content"], entry["content"], entry["path"])
-        for package in ("picocom", "minicom", "ethtool", "tcpdump", "ttyd", "nginx-light"):
+        for package in ("picocom", "minicom", "ethtool", "tcpdump", "nginx-light"):
             self.assertIn(package, data["packages"])
+        self.assertNotIn("ttyd", data["packages"])
+        defaults = yaml.safe_load((toolkit.ROLE_DIR / "defaults/main.yml").read_text())
+        install = next(c for c in sd_render.SdCloudInitRenderTests.runcmd(data) if "sha256sum -c" in c)
+        self.assertIn(defaults["toolkit_ttyd_url"], install)
+        self.assertIn(defaults["toolkit_ttyd_sha256"], install)
+        self.assertIn("/usr/local/bin/ttyd", files["/etc/systemd/system/rack-toolkit-terminal.service"]["content"])
+        device = files["/etc/NetworkManager/system-connections/rack-device.nmconnection"]["content"]
+        self.assertIn("autoconnect-priority=999", device)
+        self.assertNotIn("autoconnect-priority=1000", device)
+        self.assertIn("SystemMaxUse=16M", files["/etc/systemd/journald.conf.d/60-rack-toolkit.conf"]["content"])
+        self.assertIn("/usr/local/bin/rack-toolkit-boot-fixes", sd_render.SdCloudInitRenderTests.runcmd(data))
         for package in ("telegraf", "qemu-guest-agent", "fortune-mod", "cowsay"):
             self.assertNotIn(package, data["packages"])
         self.assertEqual(data["ssh_pwauth"], False)
@@ -188,6 +204,62 @@ class NetworkToolkitTests(BaseCallbackSiteTest):
             if content.startswith("#!/bin/bash"):
                 check = subprocess.run(["bash", "-n"], input=content, text=True, capture_output=True)
                 self.assertEqual(check.returncode, 0, check.stderr)
+
+    def test_extra_diagnostic_packages_reach_cloud_init_without_duplicates(self) -> None:
+        code, data, err = self.render(packages=["iperf3", "whois", "tcpdump", "iperf3"])
+        self.assertEqual(code, 0, err)
+        base = yaml.safe_load((toolkit.ROLE_DIR / "defaults/main.yml").read_text())["toolkit_packages"]
+        self.assertEqual(data["packages"], base + ["iperf3", "whois"])
+        self.assertEqual(toolkit.extra_packages({"toolkit_extra_packages": "iperf3, whois\nstrace"}),
+                         ["iperf3", "whois", "strace"])
+        env: dict[str, str] = {}
+        _map_cloud_init_options_to_env(env, "standard", {"toolkit_extra_packages": ["iperf3", "whois"]})
+        self.assertEqual(env["CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES"], "iperf3 whois")
+
+    def test_extra_diagnostic_packages_validate_before_prepare(self) -> None:
+        for raw in ({"name": "iperf3"}, [42], ["--help"], ["curl;reboot"],
+                    ["iperf3=1.0"], ["https://example.invalid/tool"], [""]):
+            with self.subTest(raw=raw):
+                options = {**OPTIONS, "toolkit_extra_packages": raw}
+                self.assertTrue(toolkit.validate_options(options, boot=True))
+                payload = _sanitize_sd_prepare_payload({
+                    "profile": toolkit.PROFILE, "cloud_init_options": options,
+                })
+                self.assertIn("Extra diagnostic tools", " ".join(payload["config_errors"]))
+                with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as thread:
+                    response = self.client.post("/api/sd/prepare", json={
+                        "profile": toolkit.PROFILE, "hostname": "toolkit-test", "device": "/dev/fake",
+                        "ssh_public_key": "ssh-ed25519 test", "callback_url": "http://example.invalid/callback",
+                        "cloud_init_options": options,
+                    })
+                self.assertEqual(response.status_code, 400)
+                thread.assert_not_called()
+
+    def test_extra_diagnostic_packages_survive_saved_templates(self) -> None:
+        response = self.client.post("/api/sd/options-profiles", json={
+            "name": "toolkit-extra", "profile": toolkit.PROFILE,
+            "options": {**OPTIONS, "toolkit_extra_packages": ["iperf3", "whois"]},
+        })
+        self.assertEqual(response.status_code, 200)
+        text = json.dumps(self.client.get("/api/sd/options-profiles").get_json())
+        self.assertIn('"toolkit_extra_packages": ["iperf3", "whois"]', text)
+
+    def test_boot_fixes_remove_only_missing_module_and_restrict_netplan_permissions(self) -> None:
+        script = toolkit.ROLE_DIR / "files/rack-toolkit-boot-fixes"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "cloud.cfg"
+            netplan = root / "netplan.yaml"
+            original = "cloud_final_modules:\n  - scripts_user\n  - netplan_nm_patch\n  - phone_home\n"
+            netplan.write_text("network: {}\n")
+            def mapped_path(value):
+                return config if value == "/etc/cloud/cloud.cfg" else netplan
+            for present in (False, True):
+                config.write_text(original)
+                with patch("pathlib.Path", side_effect=mapped_path), patch("importlib.util.find_spec", return_value=object() if present else None):
+                    runpy.run_path(str(script), run_name="__main__")
+                self.assertEqual(netplan.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(config.read_text(), original if present else original.replace("  - netplan_nm_patch\n", ""))
 
     def test_funnel_is_explicit_and_runs_only_after_activation(self) -> None:
         for funnel in (False, True):
@@ -296,6 +368,17 @@ class NetworkToolkitTests(BaseCallbackSiteTest):
         self.assertFalse(invalid["ok"])
         invalid = build_policy({**base_options, "toolkit_funnel": True, "ssh_user": "network-console"})
         self.assertFalse(invalid["ok"])
+
+    def test_tailscale_module_accepts_explicit_shared_tag(self) -> None:
+        from services.node_runs import _run_node_profile
+
+        with patch("services.node_runs._ssh_private_key_preflight", return_value="test preflight reached") as preflight:
+            result = _run_node_profile(
+                "toolkit", _profile_map()["tailscale"], "apply", True,
+                {"advertise_tags": "tag:shared"}, node_group=toolkit.GROUP,
+            )
+        preflight.assert_called_once()
+        self.assertEqual(result["output"], "test preflight reached")
 
     def test_tailscale_module_cannot_give_toolkit_rack_tags_or_exit_node(self) -> None:
         from services.node_runs import _run_node_profile

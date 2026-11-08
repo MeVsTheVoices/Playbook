@@ -90,8 +90,8 @@ def _run_node_profile(
         toolkit_errors = validate_toolkit_options(profile_inputs)
     elif node_group == TOOLKIT_GROUP and profile_id == "tailscale":
         tags_input = str(profile_inputs.get("advertise_tags") or "").strip()
-        if tags_input and tags_input != "tag:network-toolkit":
-            toolkit_errors.append("Network Toolkit uses only tag:network-toolkit, not the rack tags.")
+        if tags_input and tags_input not in {"tag:network-toolkit", "tag:shared"}:
+            toolkit_errors.append("Network Toolkit accepts tag:network-toolkit or an explicit tag:shared override, not the rack tags.")
         if str(profile_inputs.get("advertise_exit_node") or "").lower() == "true":
             toolkit_errors.append("Network Toolkit cannot advertise an exit node.")
     if toolkit_errors:

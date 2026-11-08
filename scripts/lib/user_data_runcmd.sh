@@ -1,10 +1,26 @@
 # runcmd: install steps and the final callback.
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
 
+# Match raspi-config's per-user rule without deleting other cloud-init sudo grants.
+cat >> "$USER_DATA_OUT" <<ADMIN_RUNCMD
+  - [ bash, -c, 'set -euo pipefail; rule="${CLOUD_INIT_USERNAME} ALL=(ALL) NOPASSWD: ALL"; printf "%s\n" "\$rule" | visudo -cf -; printf "%s\n" "\$rule" | install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; visudo -cf /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; runuser -u ${CLOUD_INIT_USERNAME} -- sudo -n true' ]
+ADMIN_RUNCMD
+
+cat >> "$USER_DATA_OUT" <<'SSH_RUNCMD'
+  - [ systemctl, enable, ssh ]
+  - [ systemctl, restart, ssh ]
+SSH_RUNCMD
+
 # A Pi has no RTC and boots on the image build date, so HTTPS installers fail with "certificate is not yet valid".
 cat >> "$USER_DATA_OUT" <<'CLOCK_RUNCMD'
   - [ sh, -c, 'timedatectl set-ntp true || true; for i in $(seq 1 90); do [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ] && exit 0; sleep 2; done; echo "rack: clock not synced after 180s" >&2; exit 0' ]
 CLOCK_RUNCMD
+
+if [[ -n "$CLOUD_INIT_SSH_PUBLIC_KEY_URL" ]]; then
+  cat >> "$USER_DATA_OUT" <<'SSH_FETCH_RUNCMD'
+  - [ bash, -c, '. /etc/rack-node.env; /usr/local/bin/rack-ssh-key-bootstrap "$CLOUD_INIT_SSH_PUBLIC_KEY_URL" "$CLOUD_INIT_SSH_PUBLIC_KEY_SHA256" "$CLOUD_INIT_USERNAME"' ]
+SSH_FETCH_RUNCMD
+fi
 
 if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
   # Must run before the K3s install so the Tailscale address is already in the K3s config.
@@ -110,6 +126,13 @@ fi
 
 # Append final runcmd callback using a runtime payload generator so all values are expanded on the node, not during host-side template generation.
 if [[ "$PROFILE" == "network-toolkit" ]]; then
+  cat >> "$USER_DATA_OUT" <<'TOOLKIT_BOOT_FIXES_RUNCMD'
+  - [ /usr/local/bin/rack-toolkit-boot-fixes ]
+TOOLKIT_BOOT_FIXES_RUNCMD
+  read -r TOOLKIT_TTYD_URL TOOLKIT_TTYD_SHA256 < <(toolkit_render ttyd)
+  cat >> "$USER_DATA_OUT" <<TOOLKIT_TTYD_RUNCMD
+  - [ bash, -c, 'set -euo pipefail; tmp=\$(mktemp); trap ''rm -f "\$tmp"'' EXIT; curl --retry 3 --connect-timeout 10 --max-time 120 -fsSL "${TOOLKIT_TTYD_URL}" -o "\$tmp"; printf "%s  %s\n" "${TOOLKIT_TTYD_SHA256}" "\$tmp" | sha256sum -c -; install -o root -g root -m 0755 "\$tmp" /usr/local/bin/ttyd' ]
+TOOLKIT_TTYD_RUNCMD
   cat >> "$USER_DATA_OUT" <<'TOOLKIT_RUNCMD'
   - [ /usr/local/bin/rack-toolkit-activate ]
 TOOLKIT_RUNCMD

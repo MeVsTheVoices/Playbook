@@ -16,6 +16,8 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 visudo -cf /etc/sudoers.d/network-toolkit
 systemctl daemon-reload
+systemctl restart systemd-journald.service
+journalctl --flush
 nmcli connection reload
 CARRIER="$(nmcli -g WIRED-PROPERTIES.CARRIER device show eth0)"
 if [[ "$CARRIER" == on ]]; then

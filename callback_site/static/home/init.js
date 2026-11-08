@@ -36,6 +36,7 @@ form.addEventListener("submit", async (e) => {
     image_sha256: form.image_sha256.value,
     workspace: form.workspace.value,
     ssh_public_key: form.ssh_public_key.value,
+    ssh_key_name: form.ssh_public_key.dataset.keyName || "",
     sd_options_profile: sdOptionsProfileSelectEl.value,
     pi_only: Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked),
     cloud_init_options: gatherCloudInitOptions(),
@@ -76,6 +77,9 @@ sshKeySelectEl.addEventListener("change", () => {
 });
 
 sshKeyUploadEl.addEventListener("change", handleSshKeyUpload);
+form.ssh_public_key.addEventListener("input", () => {
+  delete form.ssh_public_key.dataset.keyName;
+});
 
 sdOptionsSaveBtn.addEventListener("click", saveCurrentSdOptionProfile);
 

@@ -1,6 +1,55 @@
 # write_files for the node-side scripts (callback, hardware checks, Telegraf, MOTD).
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
 
+if [[ -n "$CLOUD_INIT_SSH_PUBLIC_KEY_URL" ]]; then
+  cat >> "$USER_DATA_OUT" <<'SSH_FETCH_SCRIPT'
+  - path: /usr/local/bin/rack-ssh-key-bootstrap
+    permissions: "0755"
+    content: |
+      #!/usr/bin/python3
+      import hashlib
+      import os
+      import pwd
+      import sys
+      import time
+      from pathlib import Path
+      from urllib.error import URLError
+      from urllib.request import urlopen
+
+      url, expected, username = sys.argv[1:]
+      for attempt in range(3):
+          try:
+              with urlopen(url, timeout=20) as response:
+                  content = response.read(65537)
+              break
+          except (URLError, TimeoutError, OSError) as exc:
+              print(f"rack: public-key fetch failed ({attempt + 1}/3): {exc}", file=sys.stderr)
+              if attempt == 2:
+                  sys.exit("rack: public-key fetch failed; the embedded bootstrap key remains installed")
+              time.sleep(2)
+      if len(content) > 65536:
+          sys.exit("rack: public-key response is too large; authorized_keys unchanged")
+      content = content.strip()
+      if hashlib.sha256(content).hexdigest() != expected:
+          sys.exit("rack: fetched public key does not match the selected key; authorized_keys unchanged")
+      account = pwd.getpwnam(username)
+      directory = Path(account.pw_dir) / ".ssh"
+      directory.mkdir(mode=0o700, exist_ok=True)
+      os.chmod(directory, 0o700)
+      os.chown(directory, account.pw_uid, account.pw_gid)
+      target = directory / "authorized_keys"
+      existing = target.read_bytes() if target.exists() else b""
+      if content not in [line.strip() for line in existing.splitlines()]:
+          with target.open("ab") as output:
+              if existing and not existing.endswith(b"\n"):
+                  output.write(b"\n")
+              output.write(content + b"\n")
+      os.chmod(target, 0o600)
+      os.chown(target, account.pw_uid, account.pw_gid)
+      print("rack: website public key verified and installed for administrative SSH")
+SSH_FETCH_SCRIPT
+fi
+
 cat >> "$USER_DATA_OUT" <<EOF
   - path: /usr/local/bin/rack-local-ip
     permissions: "0755"
@@ -362,6 +411,4 @@ phone_home:
   tries: 15
 
 runcmd:
-  - [ systemctl, enable, ssh ]
-  - [ systemctl, restart, ssh ]
 EOF

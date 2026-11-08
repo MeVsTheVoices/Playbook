@@ -173,6 +173,7 @@ try {
   sdOptionsProfilePiOnlyEl.checked = true;
   document.getElementById("opt_wifi_ssid").value = "generic-wifi";
   document.getElementById("opt_package_list").value = "docker.io";
+  document.getElementById("opt_toolkit_extra_packages").value = "iperf3, whois";
   document.getElementById("opt_install_telegraf").checked = true;
   document.getElementById("opt_disable_ssh_password").checked = true;
   document.getElementById("opt_tailscale_advertise_routes").value = "192.168.1.0/24";
@@ -185,6 +186,7 @@ try {
   applyCloudInitOptions({
     toolkit_wifi_ssid: " wifi with spaces ", toolkit_wifi_password: " password ",
     toolkit_wifi_country: "US", packages: ["docker.io"], install_telegraf: true,
+    toolkit_extra_packages: ["strace", "whois"],
     tailscale_advertise_routes: ["192.168.1.0/24"], k3s_config: "server: stale",
   });
   results.push(snapshot("network-toolkit", "standard"));
@@ -217,7 +219,7 @@ try {
         self.assertIsNotNone(match, result.stdout)
         snapshots = json.loads(html_lib.unescape(match.group(1)))
         general = {"identity", "network", "packages", "hardening", "access", "tailscale", "telemetry"}
-        toolkit = {"toolkit", "identity", "access", "tailscale", "telemetry"}
+        toolkit = {"toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry"}
         for snapshot in snapshots:
             with self.subTest(profile=snapshot["profile"], distribution=snapshot["distribution"]):
                 expected = set(toolkit if snapshot["profile"] == "network-toolkit" else general)
@@ -234,6 +236,7 @@ try {
                     self.assertTrue(snapshot["requiredKey"])
                     self.assertTrue(snapshot["securityStarterHidden"])
                     self.assertIn("toolkit_wifi_ssid", snapshot["enabled"])
+                    self.assertIn("toolkit_extra_packages", snapshot["enabled"])
                     self.assertIn("username", snapshot["enabled"])
                     self.assertIn("tailscale_auth_key", snapshot["enabled"])
                     self.assertIn("enable_unattended_upgrades", snapshot["enabled"])
@@ -245,6 +248,8 @@ try {
                     self.assertFalse(snapshot["requiredKey"])
                     self.assertFalse(snapshot["securityStarterHidden"])
                     self.assertNotIn("toolkit_wifi_ssid", snapshot["enabled"])
+                    self.assertNotIn("toolkit_extra_packages", snapshot["enabled"])
+                    self.assertNotIn("toolkit_extra_packages", snapshot["options"])
                     self.assertNotIn("toolkit_enable_funnel", snapshot["options"])
         self.assertEqual(snapshots[8]["options"]["wifi_ssid"], "generic-wifi")
         self.assertEqual(snapshots[8]["options"]["packages"], ["docker.io"])
@@ -252,8 +257,10 @@ try {
         self.assertTrue(snapshots[8]["options"]["disable_ssh_password_auth"])
         self.assertEqual(snapshots[9]["options"]["toolkit_wifi_ssid"], " wifi with spaces ")
         self.assertEqual(snapshots[9]["options"]["toolkit_wifi_password"], " password ")
+        self.assertEqual(snapshots[9]["options"]["toolkit_extra_packages"], ["strace", "whois"])
         self.assertEqual(snapshots[10]["options"]["toolkit_wifi_country"], "US")
         self.assertFalse(snapshots[10]["options"]["toolkit_enable_funnel"])
+        self.assertNotIn("toolkit_extra_packages", snapshots[10]["options"])
 
     def test_sidebar_hides_kubernetes_link_when_runtime_unavailable(self) -> None:
         with patch_in("_detect_kubernetes_runtime",

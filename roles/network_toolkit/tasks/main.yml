@@ -36,6 +36,28 @@
       with_fileglob:
         - "{{ role_path }}/files/*"
 
+    - name: Install pinned ARM64 browser terminal
+      ansible.builtin.get_url:
+        url: "{{ toolkit_ttyd_url }}"
+        checksum: "sha256:{{ toolkit_ttyd_sha256 }}"
+        dest: /usr/local/bin/ttyd
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Repair confirmed Pi OS boot warnings
+      ansible.builtin.command: /usr/local/bin/rack-toolkit-boot-fixes
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Create persistent journal configuration directory
+      ansible.builtin.file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: Install toolkit configuration
       ansible.builtin.template:
         src: "{{ item.src }}"
@@ -45,6 +67,7 @@
         mode: "{{ item.mode | default('0644') }}"
       no_log: true
       loop:
+        - {src: journald.conf.j2, dest: /etc/systemd/journald.conf.d/60-rack-toolkit.conf}
         - {src: nginx.conf.j2, dest: /etc/nginx/sites-enabled/network-toolkit}
         - {src: htpasswd.j2, dest: /etc/nginx/network-toolkit.htpasswd, group: www-data, mode: '0640'}
         - {src: terminal.service.j2, dest: /etc/systemd/system/rack-toolkit-terminal.service}

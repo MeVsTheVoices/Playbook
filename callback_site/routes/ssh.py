@@ -12,6 +12,17 @@ from services.storage import KEYS_DIR
 
 
 def register_ssh_routes(app: Any) -> None:
+    @app.get("/api/ssh/public/<key_name>")
+    def ssh_public(key_name: str) -> Any:
+        if not _is_safe_key_name(key_name):
+            return jsonify({"ok": False, "error": "invalid key name"}), 400
+        path = KEYS_DIR / f"{key_name}.pub"
+        if not path.is_file():
+            return jsonify({"ok": False, "error": "public key not found"}), 404
+        response = send_file(path, mimetype="text/plain", as_attachment=False, conditional=False)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.post("/api/ssh/generate")
     def ssh_generate() -> Any:
         payload = request.get_json(silent=True) or {}

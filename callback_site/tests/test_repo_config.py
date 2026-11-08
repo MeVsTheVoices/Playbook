@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+import yaml
 from pathlib import Path
 
 try:
@@ -16,6 +17,15 @@ except ImportError:
 
 
 class RepoConfigTests(BaseCallbackSiteTest):
+    def test_pi_cloud_init_examples_default_to_passwordless_sudo(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        example = yaml.safe_load((root / "cloud-init/pi5-user-data.example.yml").read_text())
+        self.assertEqual(example["users"][1]["sudo"], "ALL=(ALL) NOPASSWD: ALL")
+        self.assertIn("010_ops-nopasswd", example["runcmd"][0][2])
+        legacy = yaml.safe_load((root / "pi_config/user-data").read_text())
+        self.assertEqual(legacy["users"], ["default"])
+        self.assertEqual(legacy["system_info"]["default_user"]["sudo"], "ALL=(ALL) NOPASSWD: ALL")
+
     def test_ansible_cfg_disables_vault_prompting(self) -> None:
         config = configparser.ConfigParser()
         config.read(Path(__file__).resolve().parents[2] / "ansible.cfg")

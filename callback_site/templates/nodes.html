@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='nodes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='connection_routes.css') }}">
     <script src="{{ url_for('static', filename='config_check.js') }}"></script>
   </head>
   <body>
@@ -343,6 +344,7 @@
       </div>
     </main>
 
+    <script src="{{ url_for('static', filename='connection_routes.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/state.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/module_config.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/module_presets.js') }}" defer></script>

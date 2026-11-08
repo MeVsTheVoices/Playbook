@@ -122,7 +122,7 @@ const allEvents = {json.dumps(events)};
         html = response.get_data(as_text=True)
         self.assertIn('<div class="table-wrap">\n        <table class="events-table">', html)
         with self.client.get("/static/home.css") as stylesheet:
-            css = stylesheet.get_data(as_text=True)
+            css = stylesheet.get_data(as_text=True).replace("\r\n", "\n")
         self.assertIn("minmax(min(240px, 100%), 1fr)", css)
         self.assertIn(
             ".key-picker-row,\n  .key-preset-row,\n  .key-upload-row,\n  .inline-row {\n"

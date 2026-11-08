@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import subprocess
+import logging
+import codecs
 import threading
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -17,6 +19,9 @@ TEST_TERMINAL_JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 TEST_TERMINAL_LOCK = threading.Lock()
+TERMINAL_OUTPUT_LIMIT = 20_000
+TERMINAL_TIMEOUT_SECONDS = 120
+logger = logging.getLogger(__name__)
 
 
 TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
@@ -72,28 +77,58 @@ def _run_test_terminal_job(job_id: str, cmd: list[str]) -> None:
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
         )
-    except Exception as exc:
+    except OSError as exc:
+        logger.error("Could not start terminal job %s: %s", job_id, exc)
         with TEST_TERMINAL_LOCK:
             TEST_TERMINAL_JOBS[job_id]["status"] = "failed"
             TEST_TERMINAL_JOBS[job_id]["stderr"] = str(exc)
             TEST_TERMINAL_JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
         return
 
-    output_chunks: list[str] = []
-    if proc.stdout is not None:
-        for line in proc.stdout:
-            output_chunks.append(line)
-            with TEST_TERMINAL_LOCK:
-                TEST_TERMINAL_JOBS[job_id]["stdout"] = "".join(output_chunks)[-20000:]
+    timed_out = threading.Event()
 
-    proc.wait()
+    def expire() -> None:
+        if proc.poll() is None:
+            timed_out.set()
+            proc.kill()
+
+    timer = threading.Timer(TERMINAL_TIMEOUT_SECONDS, expire)
+    timer.daemon = True
+    timer.start()
+    output = ""
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    stream_error = ""
+    try:
+        if proc.stdout is not None:
+            while chunk := proc.stdout.read1(4096):
+                output = (output + decoder.decode(chunk))[-TERMINAL_OUTPUT_LIMIT:]
+                with TEST_TERMINAL_LOCK:
+                    TEST_TERMINAL_JOBS[job_id]["stdout"] = output
+            output = (output + decoder.decode(b"", final=True))[-TERMINAL_OUTPUT_LIMIT:]
+            with TEST_TERMINAL_LOCK:
+                TEST_TERMINAL_JOBS[job_id]["stdout"] = output
+        proc.wait()
+    except OSError as exc:
+        stream_error = f"Could not read terminal output: {exc}"
+        logger.error("Terminal job %s failed: %s", job_id, exc)
+        proc.kill()
+        proc.wait()
+    finally:
+        timer.cancel()
+        timer.join()
+        if proc.stdout is not None:
+            proc.stdout.close()
     with TEST_TERMINAL_LOCK:
         TEST_TERMINAL_JOBS[job_id]["exit_code"] = proc.returncode
-        TEST_TERMINAL_JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        TEST_TERMINAL_JOBS[job_id]["status"] = "completed" if proc.returncode == 0 and not timed_out.is_set() and not stream_error else "failed"
+        if stream_error:
+            TEST_TERMINAL_JOBS[job_id]["stderr"] = stream_error
+        if timed_out.is_set():
+            TEST_TERMINAL_JOBS[job_id]["stderr"] = f"Terminal task exceeded {TERMINAL_TIMEOUT_SECONDS} seconds; the local SSH process was stopped."
         TEST_TERMINAL_JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+    if timed_out.is_set():
+        logger.warning("Terminal job %s exceeded its timeout", job_id)
 
 
 TERMINAL_IP_SOURCES = {"source_ip", "callback"}

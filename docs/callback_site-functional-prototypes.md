@@ -79,6 +79,11 @@ and _run_prepare_job() in services/sd_prepare.py.
   - Returns: monitor node summary envelope
   - Depends on: _monitor_nodes_summary()
 
+- POST /api/cloud-init/callback
+  - Persists the event before queuing an initial closer check; never waits for Ansible
+  - Returns: ok, deduped, closer_job_id (empty when no initial job was started)
+  - Initial checks share the Node Ops job runner and its status endpoint
+
 - POST /api/monitor/nodes/<node_name>/ping
   - Returns: reachable, latency_ms, error
   - Depends on: _ping_status(), monitor node lookup
@@ -86,6 +91,7 @@ and _run_prepare_job() in services/sd_prepare.py.
 - POST /api/nodes/provision
   - Starts provisioning/check operation and returns a job id
   - Depends on: _apply_node_provisioning() job worker wrapper
+  - Missing target nodes/profiles fail explicitly; completed per-node results remain available if a later target fails
 
 ### SD/API
 

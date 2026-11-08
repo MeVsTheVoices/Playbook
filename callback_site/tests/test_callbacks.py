@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 try:
     from .test_support import BaseCallbackSiteTest, patch_in
@@ -311,7 +312,7 @@ class CallbackEndpointTests(BaseCallbackSiteTest):
         self.assertEqual(latest["stage"], "hardware-check")
 
     def test_initial_callback_triggers_auto_closer_check(self) -> None:
-        with patch_in("_apply_node_provisioning", return_value={"node": "auto-check-node", "results": []}) as apply_mock:
+        with patch_in("_start_node_provision_job", ["services.node_views"], return_value="initial-job") as apply_mock:
             response = self.client.post(
                 "/api/cloud-init/callback",
                 json={
@@ -324,11 +325,11 @@ class CallbackEndpointTests(BaseCallbackSiteTest):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(apply_mock.called)
-        self.assertEqual(apply_mock.call_args.kwargs["mode"], "check")
-        self.assertTrue(apply_mock.call_args.kwargs["run_ansible"])
+        self.assertEqual(apply_mock.call_args.args[:3], (["auto-check-node"], "check", True))
+        self.assertEqual(response.json["closer_job_id"], "initial-job")
 
     def test_initial_callback_triggers_auto_closer_check_for_runcmd(self) -> None:
-        with patch_in("_apply_node_provisioning", return_value={"node": "auto-check-node", "results": []}) as apply_mock:
+        with patch_in("_start_node_provision_job", ["services.node_views"], return_value="initial-job") as apply_mock:
             response = self.client.post(
                 "/api/cloud-init/callback",
                 json={
@@ -341,8 +342,50 @@ class CallbackEndpointTests(BaseCallbackSiteTest):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(apply_mock.called)
-        self.assertEqual(apply_mock.call_args.kwargs["mode"], "check")
-        self.assertTrue(apply_mock.call_args.kwargs["run_ansible"])
+        self.assertEqual(apply_mock.call_args.args[:3], (["auto-check-runcmd-node"], "check", True))
+
+    def test_callback_is_stored_before_initial_job_and_retry_does_not_reschedule(self) -> None:
+        from services.node_inventory import _node_ops_inventory_view
+        payload = {"hostname": "persist-before-check", "profile": "pi5", "stage": "phone_home", "source_ip": "192.0.2.25"}
+
+        def scheduled(*args):
+            node = next(item for item in _node_ops_inventory_view() if item["name"] == payload["hostname"])
+            self.assertEqual(node["callback_source_ip"], payload["source_ip"])
+            return "persisted-job"
+
+        with patch_in("_start_node_provision_job", ["services.node_views"], side_effect=scheduled) as start:
+            first = self.client.post("/api/cloud-init/callback", json=payload)
+            second = self.client.post("/api/cloud-init/callback", json=payload)
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(first.json["closer_job_id"], "persisted-job")
+            self.assertEqual(second.json["closer_job_id"], "")
+            start.assert_called_once()
+
+    def test_initial_callback_returns_while_closer_worker_is_still_running(self) -> None:
+        import threading
+        from services import provision_jobs
+
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+        def worker(*args):
+            started.set()
+            release.wait(5)
+            finished.set()
+
+        try:
+            with patch("services.node_views._start_node_provision_job", provision_jobs._start_node_provision_job), \
+                 patch.object(provision_jobs, "_run_node_provision_job", side_effect=worker):
+                response = self.client.post("/api/cloud-init/callback", json={
+                    "hostname": "async-closer-test", "profile": "pi5", "stage": "phone_home", "source_ip": "192.0.2.26",
+                })
+                self.assertEqual(response.status_code, 200)
+                self.addCleanup(provision_jobs.PROVISION_JOBS.pop, response.json["closer_job_id"], None)
+                self.assertTrue(started.wait(1))
+                self.assertFalse(finished.is_set(), "Callback waited for the closer worker to finish")
+        finally:
+            release.set()
+            if started.is_set():
+                self.assertTrue(finished.wait(1))
 
     def test_callback_node_report_is_stored_and_retrievable(self) -> None:
         response = self.client.post(

@@ -3,9 +3,17 @@
   hosts: localhost
   connection: local
   vars:
-    tailscale_authkey: "REDACTED"
+    tailscale_authkey: "{{ lookup('ansible.builtin.env', 'TAILSCALE_AUTHKEY', default=undef()) }}"
     tailscale_args: "--hostname=pi-rack-1"
   tasks:
+    - name: Require a Tailscale authentication key
+      ansible.builtin.assert:
+        that:
+          - tailscale_authkey | length > 0
+        fail_msg: Set TAILSCALE_AUTHKEY in the provisioning environment.
     - name: Install Tailscale
       include_role:
         name: artis3n.tailscale.machine
+        apply:
+          no_log: true
+      no_log: true

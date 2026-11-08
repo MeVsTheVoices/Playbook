@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: playbook-secrets
+        name: Detect staged secrets (Gitleaks)
+        entry: bash scripts/check_secrets.sh staged
+        language: system
+        pass_filenames: false
+        always_run: true

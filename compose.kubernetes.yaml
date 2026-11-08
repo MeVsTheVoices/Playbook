@@ -1,0 +1,13 @@
+services:
+  callback-site:
+    environment:
+      KUBECONFIG: /run/kubeconfig
+    volumes:
+      - type: bind
+        source: ./.local/kubeconfig
+        target: /run/kubeconfig
+        read_only: true
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

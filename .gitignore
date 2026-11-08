@@ -36,3 +36,15 @@ callback_site/.build/
 .build/
 .local/
 callback_site/data/helm_configurations.json
+.venv-security/
+!scripts/check_secrets.sh
+!.github/workflows/secrets.yml
+.env
+.env.*
+!.env.example
+!.env.*.example
+.filter-repo-replacements*
+*.pem
+*.key
+**/vault.yml
+**/vault.yaml

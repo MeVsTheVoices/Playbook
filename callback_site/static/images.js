@@ -446,52 +446,12 @@
   }
 
   async function loadImageCatalog() {
-    const res = await fetch("/api/sd/image-catalog");
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      return;
-    }
-
-    imageCatalogBodyEl.innerHTML = "";
-    const entries = data.entries || [];
-    if (!entries.length) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 7;
-      td.textContent = "No image catalog entries yet.";
-      tr.appendChild(td);
-      imageCatalogBodyEl.appendChild(tr);
-      return;
-    }
-
-    for (const row of entries) {
-      const tr = document.createElement("tr");
-      const cols = [
-        row.recorded_at || "-",
-        row.profile || "-",
-        row.source_value || row.source || "-",
-        availabilityLabel(row.local_available),
-        row.hash_status || "-",
-        row.observed_sha256 || row.expected_sha256 || "-",
-        `${row.job_status || "-"} (${row.exit_code === null || row.exit_code === undefined ? "-" : row.exit_code})`,
-      ];
-      cols.forEach((value, idx) => {
-        const td = document.createElement("td");
-        if (idx === 3) {
-          const tag = document.createElement("span");
-          tag.className = row.local_available ? "download-state available" : "download-state missing";
-          tag.innerHTML = `<span class="mark">${availabilityGlyph(row.local_available)}</span> <span>${value}</span>`;
-          td.appendChild(tag);
-        } else if (idx === 2 || idx === 5) {
-          const code = document.createElement("code");
-          code.textContent = value;
-          td.appendChild(code);
-        } else {
-          td.textContent = value;
-        }
-        tr.appendChild(td);
-      });
-      imageCatalogBodyEl.appendChild(tr);
+    try {
+      const res = await fetch("/fragments/sd/image-catalog-rows");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      imageCatalogBodyEl.innerHTML = await res.text();
+    } catch (error) {
+      imageCatalogBodyEl.textContent = `Could not refresh missing presets: ${error.message}`;
     }
   }
 
@@ -876,6 +836,9 @@
     loadManagedImages();
     loadCloudInitProfiles();
     startCatalogRefreshTimer();
+    document.querySelectorAll('a[href="#catalog-source-panel"]').forEach(link => {
+      link.addEventListener("click", () => { catalogSourcePanelEl.open = true; });
+    });
 
     document.getElementById("save-image-record").addEventListener("click", saveImageRecord);
     document.getElementById("clear-image-record").addEventListener("click", clearImageRecordForm);

@@ -53,6 +53,8 @@ Open:
 ## Pages
 
 - `/` — SD image prep, SSH keys, optional cloud-init settings, and saved templates.
+- Activity Dock status cards link directly to their relevant dashboard sections; the banner follows the current attention state.
+- Image Library's download-catalog preview shows at most five named missing presets, with the full catalog and pull controls in the Image Source Panel. Settings combines catalog health and its source details into one panel.
   On mobile, SSH key controls stack and callback tables scroll within their panel so the dashboard stays within the viewport.
   Older callbacks per host use single-line compact rows, including certificate
   text and badges; expand a row or use Expand older to see full details.
@@ -90,6 +92,26 @@ Open:
 - The imaging script is `scripts/prepare_sd_cloud_init.sh`.
 - Required inputs: `profile`, `hostname`, `device`, `ssh_public_key`, `callback_url`.
 - Optional metadata is passed via `cloud_init_options` and saved template profiles.
+- Cloud-init remembers the last saved/loaded template and loaded website SSH key
+  using a browser-session cookie shared by tabs, not a global preferred default.
+  On reload, non-secret fields are populated and retained credential inputs show
+  masked `__CONFIGURED__` values. Replace a masked value to update it; clear it
+  and save to remove it. Save As copies retained credentials within that session.
+  Reset clears the session's template selection, not the saved template.
+  SD devices, remote actions and private SSH-key contents are never restored.
+- Tailscale auth keys, toolkit Wi-Fi passwords/browser hashes, login passwords
+  and Influx tokens are stored separately in `sd_profile_sessions/` on the data
+  volume (directory `0700`, files `0600` on Linux). Template APIs/page HTML and
+  job records do not return their real values. They are resolved server-side
+  for an explicit preparation request. Treat this plaintext private store and
+  its backups as credentials; protect the Docker volume.
+- The session cookie is HttpOnly, SameSite Strict and has no persistent expiry.
+  A different browser session does not inherit selection or retained credentials;
+  browser session-restoration settings may retain session cookies across restarts.
+  Old credential records remain on the volume after a cookie is lost, but are not
+  exposed to a new session. Deleting a template clears its current-session record.
+  Previously discarded keys cannot be recovered; enter them once and save.
+  Expired or single-use Tailscale keys still need replacement.
 - Cloud-init sections follow a per-profile matrix in `static/home/cloud_init_options.js`.
   K3s settings appear only for the K3s distribution; Pi-specific boot controls
   appear only for Pi 5 templates, the only board with such controls.
@@ -235,8 +257,9 @@ Callbacks retain `profile: network-toolkit` and discover nodes in
 `network_toolkit_active`. Node Ops defaults to Baseline, Tailscale and Network
 Toolkit only. The Network Toolkit module reuses the same credential hash and
 Funnel toggle; Wi-Fi is boot-only and can be changed privately with `nmcli`.
-Saved SD templates retain the class and non-secret settings, but omit the Wi-Fi
-password, browser hash and join key. Re-enter them for every new card.
+Saved SD templates retain the class and non-secret settings. Wi-Fi passwords,
+browser hashes and join keys are retained privately for the saving browser session
+and restored as masked inputs; other browser sessions must supply their own.
 Treat the flashed card's boot files as sensitive; Wi-Fi and join credentials
 are necessarily present there during first boot.
 
@@ -271,6 +294,7 @@ is not replaced with an unauthenticated fallback.
 - `GET /api/state/source-of-truth`
 - `GET /api/sd/options-profiles`
 - `POST /api/sd/options-profiles`
+- `POST /api/sd/options-profiles/session` — remember `name` and/or `ssh_key_name` in the current browser session. GET templates returns that session's `selected_profile`, `ssh_key_name` and masked credential indicators.
 - `DELETE /api/sd/options-profiles/<name>`
 - `GET /api/nodes/summary`
 - `GET /api/nodes/archive` — archived nodes and timestamps
@@ -300,6 +324,7 @@ is not replaced with an unauthenticated fallback.
 - `callback_site/data/node_provisioning.json` — node profiles and saved inputs
 - `callback_site/data/module_presets.json` — remembered and named module configurations (contains secrets; git-ignored)
 - `callback_site/data/sd_option_profiles.json` — reusable cloud-init option templates
+- `callback_site/data/sd_profile_sessions/` — private browser-session selection and credential records; protect this directory and backups
 - `callback_site/data/ssh_keys/` — generated SSH key material
 - `callback_site/data/node_reports/` — stored hardware-report payloads
 - `callback_site/data/boot_logs/` — boot logs pulled from nodes, one folder per node

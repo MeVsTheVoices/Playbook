@@ -210,17 +210,17 @@
           <summary>
             <div class="collapsible-summary">
               <h2 class="collapsible-title">Image Download Catalog</h2>
-              <p class="collapsible-subtitle">Browse the catalog and pull presets on demand.</p>
+              <p class="collapsible-subtitle">A short preview of presets missing from the local cache.</p>
             </div>
             <span class="collapsible-indicator" aria-hidden="true">›</span>
           </summary>
           <div class="collapsible-body">
             <div class="split-head" style="margin-bottom: 0.5rem;">
-              <span class="hint">Use this section when you want to inspect or pull preset entries.</span>
+              <a class="mini-link" href="#catalog-source-panel">Open full catalog and pull controls</a>
               <a class="mini-link" href="/fragments/sd/image-catalog-rows" hx-get="/fragments/sd/image-catalog-rows" hx-target="#image-catalog-body" hx-swap="innerHTML">Refresh rows</a>
             </div>
             <div id="image-catalog-body" class="compact-list">
-              {% include "fragments/image_catalog_rows.html" %}
+              {% include "fragments/missing_catalog_rows.html" %}
             </div>
           </div>
         </details>

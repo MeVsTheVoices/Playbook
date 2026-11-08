@@ -1,0 +1,14 @@
+{% set missing = image_catalog | rejectattr('local_available') | list %}
+<p class="hint">{{ missing | length }} missing preset(s). Showing up to 5; the Image Source Panel above has the full catalog and pull controls.</p>
+{% for row in missing[:5] %}
+<div class="compact-list-item">
+  <div class="compact-list-item-main">
+    <div class="compact-list-item-title">{{ row.label or row.id or 'Catalog entry' }}</div>
+    <div class="compact-list-item-meta">{{ row.id }} · {{ (row.profiles or []) | join(', ') }}</div>
+    <div class="compact-list-item-meta">{{ row.image_url or 'No download URL configured' }}</div>
+  </div>
+  <div class="compact-list-item-actions"><span class="download-state missing">Missing</span></div>
+</div>
+{% else %}
+<p class="hint">All catalog presets are available locally.</p>
+{% endfor %}

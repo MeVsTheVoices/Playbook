@@ -39,7 +39,7 @@ async function refreshSshKeyChoices(selectedKeyName = "") {
   }
 }
 
-async function loadSelectedSshKey() {
+async function loadSelectedSshKey(retainSelection = true) {
   const keyName = String(sshKeySelectEl.value || "").trim();
   if (!keyName) {
     sshKeyStatusEl.textContent = "Select a saved key first.";
@@ -57,6 +57,13 @@ async function loadSelectedSshKey() {
   document.getElementById("ssh_key_name").value = keyName;
   refreshKeyLinks(keyName);
   sshKeyStatusEl.textContent = `Loaded saved key '${keyName}' into SSH public key.`;
+  if (retainSelection) {
+    try {
+      await saveSdBrowserSelection({ssh_key_name: keyName});
+    } catch (error) {
+      sshKeyStatusEl.textContent = `Key loaded, but session selection could not be retained: ${error.message}`;
+    }
+  }
 }
 
 function handleSshKeyUpload() {
@@ -75,6 +82,9 @@ function handleSshKeyUpload() {
     }
     form.ssh_public_key.value = value;
     delete form.ssh_public_key.dataset.keyName;
+    saveSdBrowserSelection({ssh_key_name: ""}).catch(error => {
+      sshKeyStatusEl.textContent = `Uploaded key loaded, but session selection could not be cleared: ${error.message}`;
+    });
     sshKeyStatusEl.textContent = `Loaded uploaded key file '${file.name}' into SSH public key.`;
   };
   reader.onerror = () => {
@@ -102,4 +112,9 @@ async function runSshKeyAction(mode) {
   refreshKeyLinks(data.key_name);
   const modeLabel = (data.mode || mode) === "generate" ? "Generate" : "Load";
   sshKeyStatusEl.textContent = `${data.created ? "Created" : "Loaded"} key '${data.key_name}' using ${modeLabel} mode. Public key inserted. Private key: ${data.private_key_path}`;
+  try {
+    await saveSdBrowserSelection({ssh_key_name: data.key_name});
+  } catch (error) {
+    sshKeyStatusEl.textContent = `Key ready, but session selection could not be retained: ${error.message}`;
+  }
 }

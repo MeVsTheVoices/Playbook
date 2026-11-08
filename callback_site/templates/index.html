@@ -41,23 +41,23 @@
         </div>
         <p class="small-note">Waiting on long-running tasks should feel clear, friendly, and a little silly.</p>
         <div class="activity-grid">
-          <article class="activity-card waiting" id="activity-sd-card">
+          <a class="activity-card waiting" id="activity-sd-card" href="#job-log">
             <p class="k">SD Imager 🧰</p>
             <p class="v" id="activity-sd-state">😴 Idle</p>
             <p class="d" id="activity-sd-detail">No SD write is running right now.</p>
-          </article>
-          <article class="activity-card waiting" id="activity-callback-card">
+          </a>
+          <a class="activity-card waiting" id="activity-callback-card" href="#callback-dashboard">
             <p class="k">Callback Radar 📡</p>
             <p class="v" id="activity-callback-state">🫥 Quiet</p>
             <p class="d" id="activity-callback-detail">Waiting for nodes to check in.</p>
-          </article>
-          <article class="activity-card waiting" id="activity-device-card">
+          </a>
+          <a class="activity-card waiting" id="activity-device-card" href="#sd-form">
             <p class="k">Device Watcher 🔌</p>
             <p class="v" id="activity-device-state">🛰️ Connecting</p>
             <p class="d" id="activity-device-detail">Linking to SD/USB monitor stream.</p>
-          </article>
+          </a>
         </div>
-        <div class="activity-banner waiting" id="activity-banner">⏳ Queue vibe: all systems calm. Kick off a job and I will cheer every milestone.</div>
+        <a class="activity-banner waiting" id="activity-banner" href="#sd-form">⏳ Queue vibe: all systems calm. Kick off a job and I will cheer every milestone.</a>
       </div>
 
       <div class="panel">
@@ -235,11 +235,12 @@
               <button type="button" id="sd-options-delete" class="danger-btn">Delete Selected Template</button>
             </div>
             <div class="option-profile-status" id="sd-options-profile-status">Templates let you reuse optional cloud-init settings across nodes. <span class="option-count" id="sd-options-config-count">0 fields set</span></div>
+            <p class="small-note">The last saved or loaded template and loaded website SSH key restore across tabs in this browser session. Credentials are retained privately and shown masked; clearing a saved credential and saving removes it. Device selection is never restored.</p>
 
             <div class="segment-list" style="margin-top: 0.8rem;">
               <details id="network-toolkit-section" data-cloud-init-section="toolkit" class="segment" hidden>
                 <summary>Network Toolkit (Pi 3B+)</summary>
-                <p class="segment-hint">Pi OS Lite 64-bit, Wi-Fi uplink, dedicated Ethernet and USB serial console. Browser login: operator. Generate a hash from a strong, unique password with <code>openssl passwd -6 -stdin</code>. Secrets are not saved in SD templates; re-enter them for each card.</p>
+                <p class="segment-hint">Pi OS Lite 64-bit, Wi-Fi uplink, dedicated Ethernet and USB serial console. Browser login: operator. Generate a hash from a strong, unique password with <code>openssl passwd -6 -stdin</code>. Saving retains credentials privately for this browser session; restored fields are masked. Expired or single-use Tailscale keys still need replacement.</p>
                 <p class="segment-hint">SSH stays private on Tailscale. Funnel publishes the authenticated browser terminal only when explicitly enabled, and requires tag:network-toolkit permission in your tailnet policy. No Docker, Kubernetes or Telegraf is installed.</p>
                 <div class="form-grid">
                   {% for spec in toolkit_specs %}

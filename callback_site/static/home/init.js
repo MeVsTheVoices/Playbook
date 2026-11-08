@@ -14,6 +14,7 @@ document.getElementById("payload-inspect-clear").addEventListener("click", () =>
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+  await sdBrowserSessionReady;
   await pollDevicesSnapshot();
   if (!String(form.device.value || "").trim()) {
     statusEl.textContent = "No target SD device selected. Insert a card and try again.";
@@ -63,7 +64,7 @@ document.getElementById("generate-ssh-key").addEventListener("click", () => runS
 
 document.getElementById("kload-ssh-key").addEventListener("click", () => runSshKeyAction("kload"));
 
-document.getElementById("load-selected-ssh-key").addEventListener("click", loadSelectedSshKey);
+document.getElementById("load-selected-ssh-key").addEventListener("click", () => loadSelectedSshKey());
 
 document.getElementById("refresh-ssh-key-list").addEventListener("click", () => refreshSshKeyChoices());
 
@@ -78,7 +79,13 @@ sshKeySelectEl.addEventListener("change", () => {
 
 sshKeyUploadEl.addEventListener("change", handleSshKeyUpload);
 form.ssh_public_key.addEventListener("input", () => {
+  const wasSavedKey = Boolean(form.ssh_public_key.dataset.keyName);
   delete form.ssh_public_key.dataset.keyName;
+  if (wasSavedKey) {
+    saveSdBrowserSelection({ssh_key_name: ""}).catch(error => {
+      sshKeyStatusEl.textContent = `Could not clear saved session key selection: ${error.message}`;
+    });
+  }
 });
 
 sdOptionsSaveBtn.addEventListener("click", saveCurrentSdOptionProfile);
@@ -93,6 +100,10 @@ sdOptionsProfileSelectEl.addEventListener("change", () => {
   const name = String(sdOptionsProfileSelectEl.value || "").trim();
   if (name && sdOptionProfiles[name]) {
     loadSelectedSdOptionProfile();
+  } else {
+    saveSdBrowserSelection({name: ""}).catch(error => {
+      sdOptionsProfileStatusEl.textContent = `Could not clear saved session template selection: ${error.message}`;
+    });
   }
   updateSdOptionActions();
 });
@@ -100,6 +111,13 @@ sdOptionsProfileSelectEl.addEventListener("change", () => {
 for (const el of sdOptionsInputEls) {
   const eventName = String(el.dataset.optionType || "") === "checkbox" ? "change" : "input";
   el.addEventListener(eventName, updateSdOptionsConfiguredCount);
+  if (SD_SECRET_KEYS.has(el.dataset.optionKey)) {
+    const hint = document.createElement("p");
+    hint.id = `${el.id}-saved-hint`;
+    hint.className = "small-note";
+    el.insertAdjacentElement("afterend", hint);
+    el.addEventListener("input", () => updateSdSavedSecretHint(el));
+  }
 }
 
 document.getElementById("opt_k3s_role")?.addEventListener("change", () => {
@@ -188,9 +206,7 @@ updateDeviceActivity(0, false);
 
 updateSdOptionsConfiguredCount();
 
-refreshSshKeyChoices();
-
-loadSdOptionProfiles();
+sdBrowserSessionReady = loadSdOptionProfiles();
 
 startDeviceWebhook();
 

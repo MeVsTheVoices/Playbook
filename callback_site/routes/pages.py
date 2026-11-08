@@ -19,6 +19,7 @@ from services.kubernetes import _local_k3s_version
 from services.network import _default_callback_url
 from services.sd_devices import _ensure_device_monitor_started, _list_sd_devices
 from services.sd_profiles import _load_sd_option_profiles
+from services.sd_prepare import _redact_sd_secret_options
 from services.settings import _load_app_settings, _tailscale_policy_defaults
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS
 
@@ -32,6 +33,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
         events = active_nodes(_read_events(limit=200))
         rack_name = _load_app_settings().get("rack_name", "homelab")
         option_profiles = _load_sd_option_profiles()
+        option_profiles = {name: {**profile, "options": _redact_sd_secret_options(profile.get("options"))} for name, profile in option_profiles.items()}
         image_catalog = catalog_entries_for_ui()
         return render_template(
             "index.html",
@@ -110,26 +112,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
 
     @pages.get("/fragments/sd/image-catalog-rows")
     def sd_image_catalog_rows() -> str:
-        catalog_rows = []
-        for entry in catalog_entries_for_ui():
-            catalog_rows.append(
-                {
-                    "id": entry.get("id", ""),
-                    "label": entry.get("label") or entry.get("id") or "Catalog entry",
-                    "profile": ", ".join(str(p) for p in entry.get("profiles", []) if str(p).strip()) or "-",
-                    "source": "image_url",
-                    "source_value": entry.get("image_url") or "-",
-                    "hash_status": "verified" if entry.get("image_sha256") else "sha-missing",
-                    "observed_sha256": entry.get("image_sha256") or "",
-                    "expected_sha256": entry.get("image_sha256") or "",
-                    "job_status": "catalog",
-                    "exit_code": None,
-                    "local_available": bool(entry.get("local_available", False)),
-                    "download_path": entry.get("cache_path") or "",
-                    "recorded_at": "catalog",
-                }
-            )
-        return render_template("fragments/image_catalog_rows.html", image_history=catalog_rows)
+        return render_template("fragments/missing_catalog_rows.html", image_catalog=catalog_entries_for_ui())
 
     @pages.get("/fragments/sd/images-rows")
     def sd_images_rows() -> str:

@@ -5,9 +5,6 @@ toggleBtn.addEventListener("click", () => {
 
 document.getElementById("refresh-summary").addEventListener("click", loadSummary);
 
-if (pruneStaleMonitorBtn) {
-  pruneStaleMonitorBtn.addEventListener("click", pruneStaleMonitorNodes);
-}
 
 monitorRunCheckBtn.addEventListener("click", runMonitorCloserCheck);
 

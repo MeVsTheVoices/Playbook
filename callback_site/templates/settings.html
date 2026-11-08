@@ -127,18 +127,18 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
         </div>
 
         <div class="panel">
-          <h2>Prune Stale Nodes</h2>
+          <h2 id="archived-nodes">Archived Nodes</h2>
           <p class="note">
-            Removes nodes that have not sent a callback within the age threshold. This cleanup propagates across callback history,
-            monitor-managed nodes, cloud-init option assignments, and Node Ops saved state.
+            Retire dead or unused nodes from the callback dashboard without deleting their history.
+            Archived nodes stay hidden even if new callbacks arrive. Restore them here when needed.
+            Boot logs remain available in Node Ops; repository inventory and cluster resources are untouched.
           </p>
-          <label for="stale-max-age-hours">Stale Threshold (hours)</label>
-          <input id="stale-max-age-hours" type="number" min="1" max="8760" value="168">
           <div class="button-row" style="margin-top: 0.7rem;">
-            <button id="preview-stale-prune" class="primary">Preview Stale Nodes</button>
-            <button id="run-stale-prune" class="danger-alt">Prune Stale Nodes</button>
+            <button id="refresh-archived-nodes" class="primary">Refresh archive</button>
+            <a href="/#callback-dashboard">Manage active nodes on the callback dashboard</a>
           </div>
-          <div id="stale-prune-status" class="status">Idle.</div>
+          <div id="archive-status" class="status" role="status">Loading archived nodes...</div>
+          <div id="archived-node-list" class="module-grid"></div>
         </div>
       </div>
     </main>

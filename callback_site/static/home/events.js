@@ -211,6 +211,7 @@ function showPayloadInspect(event) {
   };
   payloadInspectMeta.textContent = summary.line;
   payloadInspectJson.textContent = summary.json;
+  payloadInspectPanel.open = true;
 
   eventsBodyEl.querySelectorAll("tr.event-row-selected").forEach((r) => r.classList.remove("event-row-selected"));
   const allRows = eventsBodyEl.querySelectorAll("tr");
@@ -316,6 +317,18 @@ function renderEvents(events) {
     }
 
     tr.addEventListener("click", () => showPayloadInspect(e));
+    if (!isOlder && (e.hostname || e.fqdn)) {
+      const actions = document.createElement("div");
+      actions.className = "inline-actions";
+      const archive = document.createElement("button");
+      archive.type = "button";
+      archive.className = "secondary";
+      archive.style.cssText = "width:auto;padding:0.25rem 0.5rem;font-size:0.75rem";
+      archive.textContent = "Archive node";
+      archive.dataset.archiveNode = e.hostname || e.fqdn;
+      actions.append(archive);
+      tr.children[1].append(actions);
+    }
     eventsBodyEl.appendChild(tr);
   }
   updateOlderToggle(olderCount);
@@ -334,21 +347,47 @@ function renderEvents(events) {
   }
 }
 
+eventsBodyEl.addEventListener("click", async (event) => {
+  const archive = event.target.closest("[data-archive-node]");
+  if (!archive) return;
+  event.stopPropagation();
+  const name = archive.dataset.archiveNode;
+  if (!window.confirm(`Archive ${name} from active views? History and boot logs are retained. Restore it in Settings.`)) return;
+  archive.disabled = true;
+  try {
+    const response = await fetch(`/api/nodes/${encodeURIComponent(name)}/archive`, {
+      method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({archived: true}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Archive failed.");
+    if (inspectedSnapshot && eventHostKey(inspectedSnapshot.event).split(".")[0] === name.toLowerCase().split(".")[0]) {
+      inspectedSnapshot = null;
+      inspectedEventId = null;
+      payloadInspectMeta.textContent = "Node archived. Restore it in Settings.";
+      payloadInspectJson.textContent = "No payload selected yet.";
+      setTerminalHost("");
+    }
+    await loadEvents();
+  } catch (error) {
+    eventMetaEl.textContent = `Could not archive node: ${error.message}`;
+    archive.disabled = false;
+  }
+}, true);
+
 async function loadEvents() {
   try {
     const res = await fetch("/api/cloud-init/events");
     const data = await res.json();
     if (!res.ok) {
-      return;
+      throw new Error(data.error || "Callback refresh failed.");
     }
     allEvents = Array.isArray(data.events) ? data.events : [];
     updateCallbackActivity(allEvents);
     updateEventFilterOptions(allEvents);
-    refreshBootLogHosts(allEvents);
     const visibleEvents = filterEvents(allEvents);
     updateEventStats(allEvents, visibleEvents);
     renderEvents(visibleEvents);
-  } catch (_) {
-    // Keep prior event table data if refresh fails.
+  } catch (error) {
+    eventMetaEl.textContent = `Could not refresh callbacks: ${error.message}. Previous data retained.`;
   }
 }

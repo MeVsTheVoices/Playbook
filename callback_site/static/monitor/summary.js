@@ -142,39 +142,6 @@ async function loadSummary() {
   monitorStatus.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"} loaded, ${hwCount} with hardware data.`;
 }
 
-async function pruneStaleMonitorNodes() {
-  const hoursRaw = window.prompt("Remove nodes with callbacks older than how many hours?", "168");
-  if (hoursRaw == null) {
-    return;
-  }
-  const hours = Number.parseInt(String(hoursRaw).trim(), 10);
-  if (!Number.isFinite(hours) || hours < 1 || hours > 8760) {
-    monitorStatus.textContent = "Stale threshold must be an integer between 1 and 8760 hours.";
-    return;
-  }
-  if (!window.confirm(`Prune stale nodes older than ${hours} hour(s)? This also removes saved node state for those entries.`)) {
-    return;
-  }
-
-  monitorStatus.textContent = "Pruning stale nodes...";
-  try {
-    const res = await fetch("/api/nodes/stale/prune", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ max_age_hours: hours, dry_run: false }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || "Failed to prune stale nodes");
-    }
-    const staleNodes = Array.isArray(data.stale_nodes) ? data.stale_nodes : [];
-    monitorStatus.textContent = `Pruned ${staleNodes.length} stale node${staleNodes.length === 1 ? "" : "s"}.`;
-    await loadSummary();
-  } catch (err) {
-    monitorStatus.textContent = `Stale prune failed: ${String(err && err.message ? err.message : err)}`;
-  }
-}
-
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 20000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

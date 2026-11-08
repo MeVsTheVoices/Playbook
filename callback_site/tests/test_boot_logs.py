@@ -11,6 +11,7 @@ except ImportError:
     from test_support import BaseCallbackSiteTest, patch_in
 
 import services.boot_logs
+from services.connection_profiles import ConnectionProfile
 
 
 class BootLogTests(BaseCallbackSiteTest):
@@ -42,6 +43,29 @@ class BootLogTests(BaseCallbackSiteTest):
         self.assertEqual([entry["id"] for entry in listed], [log["id"]])
         text = self.client.get(f"/api/nodes/rpi5-01/boot-logs/{log['id']}").get_json()["text"]
         self.assertIn("rpi5-01", text)
+
+    def test_explicit_route_uses_profile_host_user_key_and_port(self) -> None:
+        self._patched_node(SimpleNamespace(returncode=0, stdout="route proof\n", stderr=""))
+        route = ConnectionProfile("tailnet", "tailnet", "100.101.102.103", "tailscale", port=2222, user="route-ops", key="route-key")
+        with patch("services.boot_logs.gather_profiles", return_value=[route]), patch("services.boot_logs.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="route proof\n", stderr="")
+            response = self.client.post("/api/nodes/route-proof-node/boot-logs/fetch", json={"route_id": "tailnet"})
+            self.assertTrue(response.get_json()["ok"])
+            meta = response.get_json()["log"]
+            self.assertEqual(meta["route_id"], "tailnet")
+            self.assertIn("route-ops@100.101.102.103", meta["target"])
+            cmd = run.call_args.args[0]
+            self.assertEqual(cmd[cmd.index("-p") + 1], "2222")
+            self.assertTrue(cmd[cmd.index("-i") + 1].endswith("route-key"))
+            self.assertIn("route-ops@100.101.102.103", cmd)
+
+    def test_invalid_routes_and_payloads_never_start_ssh(self) -> None:
+        with patch("services.boot_logs.gather_profiles", return_value=[]), patch("services.boot_logs._node_ops_inventory_view", return_value=[]), patch("services.boot_logs.subprocess.run") as run:
+            for payload in ([], {"route_id": ""}, {"route_id": 22}, {"route_id": "unknown"}, {"route_id": "user@arbitrary-host"}):
+                response = self.client.post("/api/nodes/rpi5-01/boot-logs/fetch", json=payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(response.get_json()["ok"])
+            run.assert_not_called()
 
     def test_failed_fetch_is_recorded_with_the_reason(self) -> None:
         self._patched_node(SimpleNamespace(returncode=255, stdout="", stderr="Permission denied (publickey)."))
@@ -105,7 +129,15 @@ class BootLogTests(BaseCallbackSiteTest):
         self.assertEqual(self.client.post("/api/cloud-init/boot-log", json={"hostname": "x"}).status_code, 400)
         self.assertEqual(self.client.post("/api/cloud-init/boot-log", json={"hostname": "../x", "log": "a"}).status_code, 400)
 
-    def test_dashboard_has_boot_log_panel(self) -> None:
-        page = self.client.get("/").get_data(as_text=True)
+    def test_node_ops_has_boot_log_panel(self) -> None:
+        page = self.client.get("/nodes").get_data(as_text=True)
         self.assertIn('id="boot-log-panel"', page)
         self.assertIn("boot_logs.js", page)
+        self.assertNotIn('id="boot-log-fetch"', page)
+        self.assertIn('id="boot-log-route"', page)
+        self.assertLess(page.index('id="provision-log"'), page.index('id="boot-log-panel"'))
+        self.assertLess(page.index('id="boot-log-host"'), page.index('id="boot-log-route"'))
+        self.assertLess(page.index('id="boot-log-route"'), page.index('id="boot-log-select"'))
+        home = self.client.get("/").get_data(as_text=True)
+        self.assertNotIn('id="boot-log-panel"', home)
+        self.assertIn('<details id="payload-inspect-panel"', home)

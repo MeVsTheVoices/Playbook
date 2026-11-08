@@ -50,8 +50,6 @@ const manualNodeShellEl = document.getElementById("manual-node-shell");
 
 const manualNodeCertificateEl = document.getElementById("manual-node-certificate");
 
-const pruneStaleNodesBtn = document.getElementById("prune-stale-nodes");
-
 const profileSegmentProfileEl = document.getElementById("profile-segment-profile");
 
 const profileSegmentNameEl = document.getElementById("profile-segment-name");

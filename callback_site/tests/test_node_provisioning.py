@@ -56,7 +56,8 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         text = self.page_text(response)
         self.assertIn('id="manual-node-selector"', text)
         self.assertIn("Add / Update Manual Node", text)
-        self.assertIn('id="prune-stale-nodes"', text)
+        self.assertNotIn('id="prune-stale-nodes"', text)
+        self.assertIn('id="boot-log-panel"', text)
         self.assertIn('/api/state/source-of-truth', text)
 
     def test_node_ops_page_guides_manual_node_edit_flow(self) -> None:

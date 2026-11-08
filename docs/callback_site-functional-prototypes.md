@@ -168,6 +168,14 @@ and _run_prepare_job() in services/sd_prepare.py.
 
 - callback_site/data/boot_logs/<node>/
   - Last 10 boot logs per node, pulled over SSH or pushed by the node
+  - Viewer is below provisioning output in Node Ops; archived hosts retain read-only log access.
+  - Node selection collects via the preferred route; route selection collects via that profile's address/user/key/port.
+  - Stored-log selection reads history without SSH; stale responses from earlier selections do not replace the current view.
+- callback_site/data/archived_nodes.json
+  - Explicit archive/restore registry. Archive on the newest callback, restore in Settings.
+  - Active node lists omit archived hostname/FQDN aliases; history and cluster resources remain untouched.
+  - Later callbacks are stored but do not restore the node or schedule automatic SSH work.
+  - Payload inspector is nested at the bottom of the callback dashboard, collapsed until selected.
 
 ## 5b) Connection Profiles (committed direction, in development)
 

@@ -1,25 +1,22 @@
-"""Read models over nodes and events: monitor summary, source of truth, stale-node pruning."""
+"""Read models over nodes and events: monitor summary and source of truth."""
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from domain_defaults import IMAGE_CATALOG_FILE, NODE_PROVISION_PROFILES
 from k3s_lightweight import group_for_profile as _k3s_group_for_profile
 
 from services.events import (
-    _event_matches_node_aliases,
-    _keys_matching_aliases,
-    _parse_event_time,
     _read_events,
 )
 from services.image_catalog import _image_state_summary
 from services.images import _read_image_history
 from services.node_inventory import _last_callback_by_host, _latest_hardware_by_host, _node_ops_inventory_view
 from services.provision_jobs import _start_node_provision_job
+from services.node_archive import active_nodes, active_node_mapping, archived_nodes, node_key
 from services.node_state import (
     _effective_node_profiles,
     _latest_node_cert,
@@ -30,8 +27,6 @@ from services.node_state import (
     _node_aliases,
     _profile_input_specs,
     _redact_node_profile_inputs,
-    _save_monitor_state,
-    _save_node_provisioning,
 )
 from services.storage import (
     DATA_FILE,
@@ -39,147 +34,9 @@ from services.storage import (
     INVENTORY_FILE,
     MONITOR_STATE_FILE,
     NODE_PROVISION_FILE,
-    _ensure_data_file,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _prune_stale_nodes(max_age_hours: int = 168, dry_run: bool = False) -> Dict[str, Any]:
-    hours = max(1, int(max_age_hours))
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-
-    node_inventory = _node_ops_inventory_view()
-    stale_nodes: List[Dict[str, Any]] = []
-    stale_aliases: set[str] = set()
-
-    for node in node_inventory:
-        if not isinstance(node, dict):
-            continue
-        node_name = str(node.get("name", "")).strip()
-        last_callback = _parse_event_time(str(node.get("last_callback", "")))
-        if not node_name or last_callback is None:
-            continue
-        if last_callback >= cutoff:
-            continue
-
-        stale_aliases.update(_node_aliases(node_name.lower()))
-        stale_nodes.append(
-            {
-                "name": node_name,
-                "group": str(node.get("group", "")).strip(),
-                "address": str(node.get("address", "")).strip(),
-                "last_callback": str(node.get("last_callback", "")).strip(),
-                "address_source": str(node.get("address_source", "")).strip(),
-            }
-        )
-
-    stale_nodes.sort(key=lambda item: str(item.get("name", "")).lower())
-
-    if not stale_nodes:
-        return {
-            "ok": True,
-            "dry_run": bool(dry_run),
-            "cutoff": cutoff.isoformat(),
-            "max_age_hours": hours,
-            "stale_nodes": [],
-            "removed": {
-                "callbacks": 0,
-                "managed_nodes": 0,
-                "node_cloud_init": 0,
-                "node_configs": 0,
-                "node_inputs": 0,
-                "node_results": 0,
-                "manual_nodes": 0,
-            },
-        }
-
-    removed_counts = {
-        "callbacks": 0,
-        "managed_nodes": 0,
-        "node_cloud_init": 0,
-        "node_configs": 0,
-        "node_inputs": 0,
-        "node_results": 0,
-        "manual_nodes": 0,
-    }
-
-    # Plan callback event removals.
-    _ensure_data_file()
-    existing_lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
-    kept_lines: List[str] = []
-    for line in existing_lines:
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            kept_lines.append(line)
-            continue
-        if _event_matches_node_aliases(event, stale_aliases):
-            removed_counts["callbacks"] += 1
-            continue
-        kept_lines.append(line)
-
-    # Plan monitor-state removals.
-    monitor_state = _load_monitor_state()
-    managed_nodes = monitor_state.get("managed_nodes", {}) if isinstance(monitor_state.get("managed_nodes"), dict) else {}
-    node_cloud_init = monitor_state.get("node_cloud_init", {}) if isinstance(monitor_state.get("node_cloud_init"), dict) else {}
-
-    # Plan provisioning-state removals.
-    node_prov = _load_node_provisioning()
-    node_configs = node_prov.get("node_configs", {}) if isinstance(node_prov.get("node_configs"), dict) else {}
-    node_inputs = node_prov.get("node_inputs", {}) if isinstance(node_prov.get("node_inputs"), dict) else {}
-    node_results = node_prov.get("results", {}) if isinstance(node_prov.get("results"), dict) else {}
-    manual_nodes = node_prov.get("manual_nodes", {}) if isinstance(node_prov.get("manual_nodes"), dict) else {}
-
-    managed_keys = _keys_matching_aliases(managed_nodes, stale_aliases)
-    cloud_init_keys = _keys_matching_aliases(node_cloud_init, stale_aliases)
-    node_config_keys = _keys_matching_aliases(node_configs, stale_aliases)
-    node_input_keys = _keys_matching_aliases(node_inputs, stale_aliases)
-    node_result_keys = _keys_matching_aliases(node_results, stale_aliases)
-    manual_node_keys = _keys_matching_aliases(manual_nodes, stale_aliases)
-
-    removed_counts["managed_nodes"] = len(managed_keys)
-    removed_counts["node_cloud_init"] = len(cloud_init_keys)
-    removed_counts["node_configs"] = len(node_config_keys)
-    removed_counts["node_inputs"] = len(node_input_keys)
-    removed_counts["node_results"] = len(node_result_keys)
-    removed_counts["manual_nodes"] = len(manual_node_keys)
-
-    if not dry_run:
-        rendered = "\n".join(kept_lines)
-        DATA_FILE.write_text((rendered + "\n") if kept_lines else "", encoding="utf-8")
-
-        for key in managed_keys:
-            managed_nodes.pop(key, None)
-        for key in cloud_init_keys:
-            node_cloud_init.pop(key, None)
-        for key in node_config_keys:
-            node_configs.pop(key, None)
-        for key in node_input_keys:
-            node_inputs.pop(key, None)
-        for key in node_result_keys:
-            node_results.pop(key, None)
-        for key in manual_node_keys:
-            manual_nodes.pop(key, None)
-
-        monitor_state["managed_nodes"] = managed_nodes
-        monitor_state["node_cloud_init"] = node_cloud_init
-        _save_monitor_state(monitor_state)
-
-        node_prov["node_configs"] = node_configs
-        node_prov["node_inputs"] = node_inputs
-        node_prov["results"] = node_results
-        node_prov["manual_nodes"] = manual_nodes
-        _save_node_provisioning(node_prov)
-
-    return {
-        "ok": True,
-        "dry_run": bool(dry_run),
-        "cutoff": cutoff.isoformat(),
-        "max_age_hours": hours,
-        "stale_nodes": stale_nodes,
-        "removed": removed_counts,
-    }
 
 
 def _monitor_nodes_summary() -> Dict[str, Any]:
@@ -280,9 +137,9 @@ def _monitor_nodes_summary() -> Dict[str, Any]:
     cloud_init_options.sort(key=lambda item: str(item.get("label", "")).lower())
 
     return {
-        "nodes": nodes,
+        "nodes": active_nodes(nodes),
         "cloud_init_options": cloud_init_options,
-        "node_cloud_init": node_cloud_init,
+        "node_cloud_init": active_node_mapping(node_cloud_init),
     }
 
 
@@ -325,7 +182,7 @@ def _single_source_of_truth_summary() -> Dict[str, Any]:
             "tags": [str(tag).strip() for tag in profile.get("tags", []) if str(tag).strip()],
         }
 
-    monitor_nodes = monitor_summary.get("nodes", []) if isinstance(monitor_summary.get("nodes", []), list) else []
+    monitor_nodes = active_nodes(monitor_summary.get("nodes", []) if isinstance(monitor_summary.get("nodes", []), list) else [])
     monitor_by_name: Dict[str, Dict[str, Any]] = {}
     for monitor_node in monitor_nodes:
         if not isinstance(monitor_node, dict):
@@ -437,8 +294,8 @@ def _single_source_of_truth_summary() -> Dict[str, Any]:
         },
         "provisioning": {
             "config": masked_config,
-            "node_inputs": _redact_node_profile_inputs(provision_state.get("node_inputs", {})),
-            "manual_nodes": provision_state.get("manual_nodes", {}),
+            "node_inputs": active_node_mapping(_redact_node_profile_inputs(provision_state.get("node_inputs", {}))),
+            "manual_nodes": active_node_mapping(provision_state.get("manual_nodes", {})),
         },
         "nodes": normalized_nodes,
         # The Node Ops module forms are built from these specs; node records keep the lean metadata only.
@@ -467,6 +324,8 @@ def _single_source_of_truth_summary() -> Dict[str, Any]:
 def _trigger_initial_callback_closer(event: Dict[str, Any]) -> str:
     hostname = str(event.get("hostname", "") or "").strip()
     if not hostname:
+        return ""
+    if node_key(hostname) in {node_key(item["name"]) for item in archived_nodes()}:
         return ""
 
     prior_events = _read_events(limit=2000)

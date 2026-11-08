@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 from services.network import _preferred_node_connect_target
 from services.node_inventory import _node_ops_inventory_view
 from services.node_state import _load_node_config
+from services.connection_profiles import ConnectionProfile, gather_profiles
 from services.ssh_keys import (
     _ansible_known_hosts_args,
     _is_safe_key_name,
@@ -103,7 +104,7 @@ def _read_boot_log(node_name: str, log_id: str) -> str | None:
         return None
 
 
-def _fetch_boot_logs(node_name: str, trigger: str = "manual", address: str | None = None) -> Dict[str, Any]:
+def _fetch_boot_logs(node_name: str, trigger: str = "manual", address: str | None = None, route_id: str | None = None) -> Dict[str, Any]:
     name = _safe_name(node_name)
     if not name:
         raise ValueError("invalid node name")
@@ -125,13 +126,26 @@ def _fetch_boot_logs(node_name: str, trigger: str = "manual", address: str | Non
         {},
     )
     callback_ip = str(node_entry.get("callback_connect_ip", "") or node_entry.get("callback_source_ip", "") or "").strip()
-    host, source = _preferred_node_connect_target(name, str(address or node_entry.get("address", "") or "").strip(), callback_ip)
+    route: ConnectionProfile | None = None
+    if route_id is not None:
+        candidates = gather_profiles(
+            name, str(node_entry.get("address", "") or ""), callback_ip,
+            user=str(node_entry.get("node_username", "") or ""),
+            key=str(node_entry.get("certificate", "") or ""),
+        )
+        route = next((item for item in candidates if item.id == route_id), None)
+        if route is None:
+            raise ValueError("Selected route is no longer available. Select the node again to refresh routes.")
+        host, source = route.address, route.source
+        meta["route_id"] = route.id
+    else:
+        host, source = _preferred_node_connect_target(name, str(address or node_entry.get("address", "") or "").strip(), callback_ip)
     if not host:
         meta["error"] = "No node address known yet."
         return _write_entry(name, meta, "")
 
-    user = str(node_entry.get("node_username", "") or "").strip() or str(_load_node_config().get("username", "") or "").strip() or "jdizzle"
-    cert = str(node_entry.get("certificate", "") or "").strip()
+    user = (route.user if route else "") or str(node_entry.get("node_username", "") or "").strip() or str(_load_node_config().get("username", "") or "").strip() or "jdizzle"
+    cert = (route.key if route else "") or str(node_entry.get("certificate", "") or "").strip()
     key_path = str(KEYS_DIR / (cert if cert and _is_safe_key_name(cert) else "rack-bootstrap-ed25519"))
     meta["target"] = f"{user}@{host} ({source})"
 
@@ -143,6 +157,7 @@ def _fetch_boot_logs(node_name: str, trigger: str = "manual", address: str | Non
     _seed_known_host(host)
     cmd = [
         "ssh",
+        "-p", str(route.port if route else 22),
         "-i", key_path,
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=10",
@@ -217,6 +232,9 @@ def _pushed_recently(name: str) -> bool:
 
 def _boot_log_auto_worker(name: str, address: str) -> None:
     time.sleep(AUTO_DELAY_SECONDS)
+    from services.node_archive import archived_nodes, node_key
+    if node_key(name) in {node_key(item["name"]) for item in archived_nodes()}:
+        return
     if _pushed_recently(name):
         return
     try:
@@ -230,6 +248,9 @@ def _schedule_boot_log_fetch(event: Dict[str, Any]) -> bool:
     if not _auto_fetch_enabled():
         return False
     name = _safe_name(str(event.get("hostname", "") or ""))
+    from services.node_archive import archived_nodes, node_key
+    if node_key(name) in {node_key(item["name"]) for item in archived_nodes()}:
+        return False
     if not name or str(event.get("stage", "") or "").strip().lower() in SKIP_STAGES:
         return False
     with _auto_lock:

@@ -657,7 +657,7 @@ server: https://local-machine-ip:6443
           </div>
         </div>
         <p class="small-note" id="event-meta">Waiting for callback updates...</p>
-        <p class="small-note">Click a row to inspect it. Older callbacks per host are condensed (▸ expands).</p>
+        <p class="small-note">Click a row to inspect it. Archive a retired node from its newest callback; history stays safe and restoration is available in <a href="/settings#archived-nodes">Settings</a>. Older callbacks per host are condensed (▸ expands).</p>
         <div class="table-wrap">
         <table class="events-table">
           <thead>
@@ -677,35 +677,14 @@ server: https://local-machine-ip:6443
           </tbody>
         </table>
         </div>
-      </div>
-
-      <div class="panel" id="payload-inspect-panel">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.55rem;">
-          <h2 style="margin:0;">Payload Inspector</h2>
+      <details id="payload-inspect-panel" class="fieldset">
+        <summary><span class="fieldset-title">Payload Inspector</span><span class="fieldset-summary-note">Select a callback to inspect its payload <span class="fieldset-disclosure">▾</span></span></summary>
+        <div style="display:flex; align-items:center; justify-content:flex-end; margin:0.55rem 0;">
           <button type="button" id="payload-inspect-clear" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;">Clear Selection</button>
         </div>
         <p class="note" id="payload-inspect-meta">Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.</p>
         <pre id="payload-inspect-json" style="background:#0b1020; color:#d6deeb; border-radius:10px; padding:0.8rem; max-height:480px; overflow:auto; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; white-space:pre-wrap; margin:0;">No payload selected yet.</pre>
-      </div>
-
-      <div class="panel" id="boot-log-panel">
-        <h2 style="margin:0 0 0.4rem;">Boot Logs 🥾</h2>
-        <p class="note">Shortly after a node calls back, the site logs in over SSH and stores its journal for this boot, cloud-init logs and dmesg (last 10 per node). Fetch again here at any time.</p>
-        <div class="filters-grid">
-          <div>
-            <label for="boot-log-host">Node</label>
-            <select id="boot-log-host"><option value="">Select a node...</option></select>
-          </div>
-          <div>
-            <label for="boot-log-select">Stored log</label>
-            <select id="boot-log-select"></select>
-          </div>
-          <div style="align-self:end;">
-            <button type="button" id="boot-log-fetch" style="width:auto;" disabled>Fetch boot logs now</button>
-          </div>
-        </div>
-        <p class="small-note" id="boot-log-status">Pick a node to see its stored boot logs.</p>
-        <pre id="boot-log-view" style="background:#0b1020; color:#d6deeb; border-radius:10px; padding:0.8rem; max-height:480px; overflow:auto; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; white-space:pre-wrap; margin:0.6rem 0 0;">No boot log selected.</pre>
+      </details>
       </div>
     </div>
     </main>
@@ -722,7 +701,6 @@ server: https://local-machine-ip:6443
     <script src="{{ url_for('static', filename='home/job_log.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/image_library.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/events.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='home/boot_logs.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/catalog_filters.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/k3s_roles.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/catalog_pull.js') }}" defer></script>

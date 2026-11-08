@@ -43,10 +43,6 @@ document.getElementById("refresh-monitor").addEventListener("click", () => refre
 
 document.getElementById("refresh-monitor-webhook").addEventListener("click", () => refreshMonitor(true));
 
-if (pruneStaleNodesBtn) {
-  pruneStaleNodesBtn.addEventListener("click", pruneStaleNodes);
-}
-
 initSidebar();
 
 refreshProfileSegments();

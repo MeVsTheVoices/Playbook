@@ -19,10 +19,7 @@ const moduleSyncGrid = document.getElementById("module-sync-grid");
 const refreshDataPipelinesBtn = document.getElementById("refresh-data-pipelines");
 const dataPipelinesStatus = document.getElementById("data-pipelines-status");
 const dataPipelinesGrid = document.getElementById("data-pipelines-grid");
-const staleMaxAgeHoursInput = document.getElementById("stale-max-age-hours");
-const previewStalePruneBtn = document.getElementById("preview-stale-prune");
-const runStalePruneBtn = document.getElementById("run-stale-prune");
-const stalePruneStatus = document.getElementById("stale-prune-status");
+const archiveStatus = document.getElementById("archive-status");
 
 function initSidebar() {
   const saved = localStorage.getItem("sidebar-collapsed");
@@ -385,66 +382,47 @@ async function viewRecentLogs() {
   loggingStatus.textContent = `Loaded from: ${data.log_file}`;
 }
 
-function parseStaleHours() {
-  const raw = String(staleMaxAgeHoursInput && staleMaxAgeHoursInput.value ? staleMaxAgeHoursInput.value : "168").trim();
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 8760) {
-    return null;
-  }
-  return parsed;
-}
-
-function formatPruneSummary(result) {
-  const removed = result && typeof result === "object" ? (result.removed || {}) : {};
-  const staleNodes = Array.isArray(result && result.stale_nodes) ? result.stale_nodes : [];
-  const nodeNames = staleNodes.slice(0, 12).map((item) => item.name).filter(Boolean).join(", ");
-  return [
-    `Stale nodes: ${staleNodes.length}`,
-    `Callbacks removed: ${removed.callbacks || 0}`,
-    `Managed nodes removed: ${removed.managed_nodes || 0}`,
-    `Node cloud-init links removed: ${removed.node_cloud_init || 0}`,
-    `Node configs removed: ${removed.node_configs || 0}`,
-    `Node inputs removed: ${removed.node_inputs || 0}`,
-    `Node results removed: ${removed.node_results || 0}`,
-    `Manual nodes removed: ${removed.manual_nodes || 0}`,
-    nodeNames ? `Sample nodes: ${nodeNames}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-async function runStalePrune(dryRun) {
-  if (!stalePruneStatus) {
-    return;
-  }
-  const hours = parseStaleHours();
-  if (hours == null) {
-    stalePruneStatus.textContent = "Stale threshold must be an integer between 1 and 8760 hours.";
-    return;
-  }
-
-  if (!dryRun) {
-    const confirmed = window.confirm(`Prune nodes with last callback older than ${hours} hour(s)? This also removes their saved monitor and node ops state.`);
-    if (!confirmed) {
-      return;
-    }
-  }
-
-  stalePruneStatus.textContent = dryRun ? "Scanning stale nodes..." : "Pruning stale nodes...";
+async function refreshArchivedNodes() {
+  archiveStatus.textContent = "Loading archived nodes...";
   try {
-    const res = await fetch("/api/nodes/stale/prune", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ max_age_hours: hours, dry_run: dryRun }),
-    });
+    const res = await fetch("/api/nodes/archive");
     const data = await res.json();
-    if (!res.ok || !data.ok) {
-      stalePruneStatus.textContent = data.error || "Stale node operation failed.";
-      return;
+    if (!res.ok || !data.ok) throw new Error(data.error || "Could not load archive.");
+    const list = document.getElementById("archived-node-list");
+    list.replaceChildren();
+    for (const node of data.nodes) {
+      const card = document.createElement("article");
+      card.className = "module-card";
+      const title = document.createElement("h3");
+      title.textContent = node.name;
+      const note = document.createElement("p");
+      note.className = "note";
+      note.textContent = `Archived ${new Date(node.archived_at).toLocaleString()} · history retained`;
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.className = "primary";
+      restore.textContent = "Restore node";
+      restore.addEventListener("click", async () => {
+        restore.disabled = true;
+        try {
+          const response = await fetch(`/api/nodes/${encodeURIComponent(node.name)}/archive`, {
+            method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({archived: false}),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.error || "Restore failed.");
+          await refreshArchivedNodes();
+          refreshModuleSync();
+        } catch (error) {
+          archiveStatus.textContent = `Could not restore node: ${error.message}`;
+          restore.disabled = false;
+        }
+      });
+      card.append(title, note, restore);
+      list.append(card);
     }
-
-    const modeText = dryRun ? "Preview" : "Prune complete";
-    stalePruneStatus.textContent = `${modeText} (cutoff ${data.cutoff}):\n${formatPruneSummary(data)}`;
+    archiveStatus.textContent = data.nodes.length ? `${data.nodes.length} archived node(s). Restore returns their saved history to active views.` : "No archived nodes. Archive a node from its newest callback card.";
   } catch (err) {
-    stalePruneStatus.textContent = `Stale node operation failed: ${String(err && err.message ? err.message : err)}`;
+    archiveStatus.textContent = `Could not load archive: ${err.message}`;
   }
 }
 
@@ -461,14 +439,10 @@ if (refreshModuleSyncBtn) {
 if (refreshDataPipelinesBtn) {
   refreshDataPipelinesBtn.addEventListener("click", refreshDataPipelinesSnapshot);
 }
-if (previewStalePruneBtn) {
-  previewStalePruneBtn.addEventListener("click", () => runStalePrune(true));
-}
-if (runStalePruneBtn) {
-  runStalePruneBtn.addEventListener("click", () => runStalePrune(false));
-}
+document.getElementById("refresh-archived-nodes").addEventListener("click", refreshArchivedNodes);
 
 initSidebar();
 loadRackSettings();
 refreshModuleSync();
 refreshDataPipelinesSnapshot();
+refreshArchivedNodes();

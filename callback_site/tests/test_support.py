@@ -74,11 +74,16 @@ class BaseCallbackSiteTest(unittest.TestCase):
         html = response.get_data(as_text=True)
         parts = [html]
         for path in re.findall(r'(?:src|href)="(/static/[^"?#]+\.(?:js|css))', html):
-            parts.append(self.client.get(path).get_data(as_text=True))
-        return "\n".join(parts)
+            with self.client.get(path) as asset:
+                parts.append(asset.get_data(as_text=True))
+        return "\n".join(parts).replace("\r\n", "\n")
 
     def setUp(self) -> None:
         self.client = app.test_client()
+        # Callback tests must not launch Ansible against inventory or example IPs.
+        automatic_jobs = patch_in("_start_node_provision_job", ["services.node_views"], return_value="test-auto-job")
+        automatic_jobs.start()
+        self.addCleanup(automatic_jobs.stop)
         # The Node Ops hardware check POSTs here; port 9 is closed, so tests can never reach the live site.
         guard = patch_in(
             "_default_callback_url",

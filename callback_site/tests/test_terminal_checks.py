@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import patch
+import sys
 
 try:
     from .test_support import BaseCallbackSiteTest, patch_in
@@ -14,6 +15,36 @@ import services.terminal_checks
 
 
 class TerminalCheckTests(BaseCallbackSiteTest):
+    def test_terminal_start_rejects_malformed_json_and_ports(self) -> None:
+        for payload in ([], "host", None, {"host": "node", "port": "abc"}, {"host": "node", "port": 22.5}, {"host": "node", "port": True}, {"host": "node", "port": 0}):
+            with self.subTest(payload=payload):
+                response = self.client.post("/api/test-terminal/start", json=payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(response.json["ok"])
+
+    def test_terminal_job_output_is_bounded_even_without_newlines(self) -> None:
+        module = services.terminal_checks
+        job_id = "bounded-terminal-test"
+        module.TEST_TERMINAL_JOBS[job_id] = {"status": "running"}
+        self.addCleanup(module.TEST_TERMINAL_JOBS.pop, job_id, None)
+        module._run_test_terminal_job(job_id, [sys.executable, "-c", "import sys; sys.stdout.write('x' * 100000 + 'end')"])
+        job = module.TEST_TERMINAL_JOBS[job_id]
+        self.assertEqual(job["status"], "completed")
+        self.assertEqual(len(job["stdout"]), module.TERMINAL_OUTPUT_LIMIT)
+        self.assertTrue(job["stdout"].endswith("end"))
+
+    def test_terminal_job_times_out_and_finishes_as_failed(self) -> None:
+        module = services.terminal_checks
+        job_id = "timeout-terminal-test"
+        module.TEST_TERMINAL_JOBS[job_id] = {"status": "running"}
+        self.addCleanup(module.TEST_TERMINAL_JOBS.pop, job_id, None)
+        with patch.object(module, "TERMINAL_TIMEOUT_SECONDS", 0.1):
+            module._run_test_terminal_job(job_id, [sys.executable, "-c", "import time; time.sleep(30)"])
+        job = module.TEST_TERMINAL_JOBS[job_id]
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("exceeded", job["stderr"])
+        self.assertTrue(job["finished_at"])
+
     def test_verifier_terminal_page_uses_sidebar_navigation(self) -> None:
         response = self.client.get("/test-terminal")
         self.assertEqual(response.status_code, 200)

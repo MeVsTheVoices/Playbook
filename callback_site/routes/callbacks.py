@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,6 +25,7 @@ from services.reports import _decode_node_report_payload, _read_node_report, _st
 from services.sd_prepare import _strip_dataset_fields
 
 logger = logging.getLogger(__name__)
+INITIAL_CALLBACK_LOCK = threading.Lock()
 
 
 def register_callback_routes(app: Any) -> None:
@@ -146,10 +148,12 @@ def register_callback_routes(app: Any) -> None:
             hardware_data = payload.get("hardware")
             logger.info(f"Hardware check reported: hostname={event.get('hostname')}, hardware={hardware_data}")
     
-        _trigger_initial_callback_closer(event)
-        deduped = _store_callback_event(event)
+        # Publish the callback address before a worker reads inventory; serialize first-callback scheduling.
+        with INITIAL_CALLBACK_LOCK:
+            deduped = _store_callback_event(event)
+            job_id = _trigger_initial_callback_closer(event) if not deduped else ""
         _schedule_boot_log_fetch(event)
-        return jsonify({"ok": True, "deduped": deduped})
+        return jsonify({"ok": True, "deduped": deduped, "closer_job_id": job_id})
 
     @app.get("/api/cloud-init/reports/<report_id>")
     def cloud_init_report_get(report_id: str) -> Any:

@@ -56,13 +56,23 @@ def register_test_terminal_routes(app: Any) -> None:
 
     @app.post("/api/test-terminal/start")
     def test_terminal_start() -> Any:
-        payload = request.get_json(silent=True) or {}
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            logger.warning("Terminal request rejected: a JSON object is required")
+            return jsonify(ok=False, error="A JSON object is required"), 400
         host = str(payload.get("host", payload.get("hostname", ""))).strip()
         resolved_host = _resolve_terminal_host(host)
         username = str(payload.get("username", "jdizzle")).strip() or "jdizzle"
         key_name = str(payload.get("key_name", "rack-bootstrap-ed25519")).strip() or "rack-bootstrap-ed25519"
         check_id = str(payload.get("check_id", "identity")).strip() or "identity"
-        port = int(payload.get("port", 22) or 22)
+        raw_port = payload.get("port", 22)
+        try:
+            if isinstance(raw_port, bool) or not str(raw_port).isdigit():
+                raise ValueError("SSH port must be an integer")
+            port = int(raw_port)
+        except (ValueError, TypeError, OverflowError):
+            logger.warning("Terminal request rejected: invalid SSH port")
+            return jsonify(ok=False, error="invalid port"), 400
 
         if not host:
             return jsonify({"ok": False, "error": "host is required"}), 400

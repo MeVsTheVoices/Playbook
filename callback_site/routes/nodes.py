@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import re
-import threading
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -32,7 +30,7 @@ from services.node_state import (
     _save_node_config,
     _save_node_provisioning,
 )
-from services.provision_jobs import PROVISION_JOBS, PROVISION_JOBS_LOCK, _run_node_provision_job
+from services.provision_jobs import PROVISION_JOBS, PROVISION_JOBS_LOCK, _start_node_provision_job
 from services.sd_profiles import _load_profile_segments, _upsert_profile_segment
 
 
@@ -399,25 +397,7 @@ def register_node_routes(app: Any) -> None:
                 _save_node_provisioning(state)
 
         if run_ansible:
-            job_id = uuid.uuid4().hex
-            with PROVISION_JOBS_LOCK:
-                PROVISION_JOBS[job_id] = {
-                    "id": job_id,
-                    "status": "queued",
-                    "mode": mode,
-                    "run_ansible": run_ansible,
-                    "target_nodes": [node["name"] for node in target_nodes],
-                    "profile_filter": list(profile_filter),
-                    "results": [],
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }
-            thread = threading.Thread(
-                target=_run_node_provision_job,
-                args=(job_id, [node["name"] for node in target_nodes], mode, run_ansible, profile_filter),
-                daemon=True,
-            )
-            thread.start()
+            job_id = _start_node_provision_job([node["name"] for node in target_nodes], mode, run_ansible, profile_filter)
             return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "job_id": job_id, "status": "queued"}), 202
 
         results: List[Dict[str, Any]] = []

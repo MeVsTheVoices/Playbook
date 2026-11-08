@@ -42,7 +42,7 @@ RUN python -m pip install \
         -r /tmp/requirements-callback.txt \
         gunicorn==23.0.0
 
-COPY ansible.cfg inventory.yml /app/
+COPY ansible.cfg inventory.yml site.yml /app/
 COPY collections/requirements.yml /tmp/collections-requirements.yml
 COPY callback_site/ /app/callback_site/
 COPY scripts/ /app/scripts/

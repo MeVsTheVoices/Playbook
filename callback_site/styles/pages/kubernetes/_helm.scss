@@ -1,7 +1,7 @@
 @use "../../abstracts/mixins";
 
 .helm-fields {
-  @include mixins.auto-grid(240px, 0.75rem);
+  @include mixins.auto-grid(min(240px, 100%), 0.75rem);
   align-items: end;
 }
 

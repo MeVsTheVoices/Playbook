@@ -329,81 +329,34 @@
     imageRecordStatusEl.textContent = `Editing record ${record.id}. Update fields and save.`;
   }
 
-  function renderManagedImages(entries) {
-    managedImagesBodyEl.innerHTML = "";
-    if (!entries || !entries.length) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 9;
-      td.textContent = "No managed image records yet.";
-      tr.appendChild(td);
-      managedImagesBodyEl.appendChild(tr);
+  window.editManagedImage = (recordId) => {
+    const record = managedImageRecords.find(row => String(row.id) === String(recordId));
+    if (!record) {
+      imageRecordStatusEl.textContent = "This record is not loaded. Refresh the image records and try again.";
       return;
     }
-
-    for (const row of entries) {
-      const normalized = normalizeManagedImage(row);
-      const tr = document.createElement("tr");
-      const cols = [
-        normalized.recorded_at,
-        normalized.label,
-        normalized.profile,
-        normalized.source_value,
-        availabilityLabel(normalized.local_available),
-        normalized.hash_status,
-        `${normalized.job_status} (${normalized.exit_code === null || normalized.exit_code === undefined ? "-" : normalized.exit_code})`,
-        normalized.notes,
-      ];
-
-      cols.forEach((value, idx) => {
-        const td = document.createElement("td");
-        if (idx === 4) {
-          const tag = document.createElement("span");
-          tag.className = normalized.local_available ? "download-state available" : "download-state missing";
-          tag.innerHTML = `<span class="mark">${availabilityGlyph(normalized.local_available)}</span> <span>${value}</span>`;
-          td.appendChild(tag);
-        } else if (idx === 1 || idx === 3 || idx === 7) {
-          const code = document.createElement("code");
-          code.textContent = value || "-";
-          td.appendChild(code);
-        } else {
-          td.textContent = value || "-";
-        }
-        tr.appendChild(td);
-      });
-
-      const actionTd = document.createElement("td");
-      const actionWrap = document.createElement("div");
-      actionWrap.className = "row-actions";
-
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.textContent = "Edit";
-      editBtn.addEventListener("click", () => fillImageRecordForm(normalized));
-
-      const deleteBtn = document.createElement("button");
-      deleteBtn.type = "button";
-      deleteBtn.textContent = "Delete";
-      deleteBtn.className = "danger-btn";
-      deleteBtn.addEventListener("click", () => deleteManagedImage(normalized.id, normalized.label));
-
-      actionWrap.appendChild(editBtn);
-      actionWrap.appendChild(deleteBtn);
-      actionTd.appendChild(actionWrap);
-      tr.appendChild(actionTd);
-      managedImagesBodyEl.appendChild(tr);
-    }
-  }
+    fillImageRecordForm(normalizeManagedImage(record));
+  };
 
   async function loadManagedImages() {
-    const res = await fetch("/api/sd/images");
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      imageRecordStatusEl.textContent = "Failed to load managed image records.";
-      return;
+    try {
+      const [res, fragment] = await Promise.all([
+        fetch("/api/sd/images"),
+        fetch("/fragments/sd/images-rows"),
+      ]);
+      const data = await res.json();
+      if (!res.ok || !data.ok || !Array.isArray(data.entries)) {
+        throw new Error(data.error || "Invalid managed image records response.");
+      }
+      if (!fragment.ok) {
+        throw new Error(`Image cards returned HTTP ${fragment.status}.`);
+      }
+      const cards = await fragment.text();
+      managedImageRecords = data.entries;
+      managedImagesBodyEl.innerHTML = cards;
+    } catch (error) {
+      imageRecordStatusEl.textContent = `Failed to load managed image records: ${error.message}`;
     }
-    managedImageRecords = Array.isArray(data.entries) ? data.entries : [];
-    renderManagedImages(managedImageRecords);
   }
 
   async function saveImageRecord() {

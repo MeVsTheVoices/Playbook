@@ -1,0 +1,89 @@
+@use "../../abstracts/mixins";
+
+.actions-row button {
+  width: auto;
+  min-width: 120px;
+}
+
+.actions-row.controls-inline {
+  align-items: flex-end;
+}
+
+.actions-row.controls-inline > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0;
+}
+
+.tag.ok {
+  @include mixins.state(success);
+}
+
+.tag.bad {
+  @include mixins.state(error);
+}
+
+.cards {
+  @include mixins.auto-grid(220px, 0.75rem);
+}
+
+.kpi-grid {
+  @include mixins.auto-grid(180px, 0.65rem);
+  margin-top: 0.7rem;
+}
+
+.kpi {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 0.62rem;
+}
+
+.kpi .label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.kpi .value {
+  margin-top: 0.24rem;
+  font-size: 1.07rem;
+  font-weight: 700;
+}
+
+.table-note {
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.token-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border-radius: 999px;
+  padding: 0.14rem 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  @include mixins.state-colors(#e2e8f0, #334155);
+}
+
+.status-tag.ok {
+  @include mixins.state(success);
+}
+
+.status-tag.failed {
+  @include mixins.state(error);
+}
+
+.status-tag.warn {
+  @include mixins.state(warning);
+}

@@ -1,0 +1,29 @@
+@use "sass:map";
+@use "tokens";
+
+// Declaration-only helpers: importing these never emits CSS or changes specificity.
+@mixin action-row($gap: 0.6rem, $align: center) {
+  display: flex;
+  align-items: $align;
+  flex-wrap: wrap;
+  gap: $gap;
+}
+
+@mixin auto-grid($minimum, $gap: 0.8rem) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax($minimum, 1fr));
+  gap: $gap;
+}
+
+@mixin state-colors($background, $ink) {
+  background: $background;
+  color: $ink;
+}
+
+@mixin state($name) {
+  @if not map.has-key(tokens.$states, $name) {
+    @error "Unknown UI state: #{$name}";
+  }
+  $palette: map.get(tokens.$states, $name);
+  @include state-colors(map.get($palette, background), map.get($palette, ink));
+}

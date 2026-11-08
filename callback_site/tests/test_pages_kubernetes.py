@@ -45,7 +45,7 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         with flask_app.test_request_context("/"):
             rows = flask_app.jinja_env.get_template("fragments/callback_rows.html").render(events=events)
         script = (root / "static/home/events.js").read_text()
-        css = (root / "static/home.css").read_text()
+        css = (root / "static/home.css").read_text() + (root / "static/common.css").read_text()
         probe = """
 const measurements = [];
 function measure(label) {
@@ -122,12 +122,14 @@ const allEvents = {json.dumps(events)};
         html = response.get_data(as_text=True)
         self.assertIn('<div class="table-wrap">\n        <table class="events-table">', html)
         with self.client.get("/static/home.css") as stylesheet:
-            css = stylesheet.get_data(as_text=True).replace("\r\n", "\n")
-        self.assertIn("minmax(min(240px, 100%), 1fr)", css)
-        self.assertIn(
-            ".key-picker-row,\n  .key-preset-row,\n  .key-upload-row,\n  .inline-row {\n"
-            "    grid-template-columns: minmax(0, 1fr);",
+            css = stylesheet.get_data(as_text=True)
+        with self.client.get("/static/common.css") as stylesheet:
+            shared_css = stylesheet.get_data(as_text=True)
+        self.assertIn("minmax(min(240px, 100%), 1fr)", shared_css)
+        self.assertRegex(
             css,
+            r"\.key-picker-row,\s*\.key-preset-row,\s*\.key-upload-row,\s*\.inline-row\s*\{\s*"
+            r"grid-template-columns: minmax\(0, 1fr\);",
         )
 
     def test_cloud_init_profile_matrix_in_browser(self) -> None:
@@ -138,7 +140,7 @@ const allEvents = {json.dumps(events)};
         html = self.client.get("/").get_data(as_text=True)
         html = re.sub(r'<script\b[^>]*\bsrc=[^>]*>.*?</script>', "", html, flags=re.DOTALL)
         html = re.sub(r"<link\b[^>]*>", "", html)
-        css = (root / "static/home.css").read_text()
+        css = (root / "static/home.css").read_text() + (root / "static/common.css").read_text()
         html = html.replace("</head>", f"<style>{css}</style></head>")
         scripts = "\n".join(
             (root / "static/home" / name).read_text()

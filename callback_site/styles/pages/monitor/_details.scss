@@ -1,0 +1,98 @@
+@use "../../abstracts/mixins";
+
+.ops-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+}
+
+.expander-btn {
+  width: auto;
+  min-width: 0;
+  padding: 0.2rem 0.32rem;
+  border-radius: 8px;
+  border: 1px solid #c8d3df;
+  @include mixins.state-colors(#f8fafc, #0f172a);
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.expander-btn:hover {
+  background: #edf2f7;
+}
+
+.hw-detail-row > td,
+.sot-detail-row > td {
+  background: #f8fafc;
+  border-bottom: 1px dashed #c8d3df;
+}
+
+.hw-detail-grid,
+.sot-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.hw-detail-card,
+.sot-detail-card {
+  border: 1px solid #d3dbe5;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.55rem;
+}
+
+.hw-detail-card h4,
+.sot-detail-card h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.84rem;
+  color: #334155;
+}
+
+.detail-list {
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.detail-item {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0.55rem;
+  align-items: start;
+}
+
+.detail-item dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detail-item dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.summary-stack {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.summary-main {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.summary-sub {
+  color: var(--muted);
+  font-size: 0.79rem;
+}
+
+.hw-pre {
+  margin: 0;
+  max-height: 240px;
+}

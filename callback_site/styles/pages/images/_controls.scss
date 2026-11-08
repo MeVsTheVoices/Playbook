@@ -1,0 +1,90 @@
+@use "../../abstracts/mixins";
+
+.mini-link {
+  color: #0f766e;
+  text-decoration: none;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.mini-link:hover {
+  text-decoration: underline;
+}
+
+.cache-path-ok {
+  color: #166534;
+  font-weight: 700;
+}
+
+.cache-path-missing {
+  color: #9f1239;
+  opacity: 0.9;
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.job-log {
+  max-height: 280px;
+}
+
+.grid-span-full {
+  grid-column: 1 / -1;
+}
+
+.crud-actions {
+  margin-top: 0.7rem;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  @include mixins.state-colors(#f8fafc, #334155);
+  padding: 0.22rem 0.62rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #14b8a6;
+  box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45);
+}
+
+.status-chip.running .status-dot {
+  animation: status-pulse 1.3s ease-in-out infinite;
+}
+
+.status-chip.running {
+  @include mixins.state(warning);
+  border-color: #fcd34d;
+}
+
+.status-chip.completed {
+  @include mixins.state(success);
+  border-color: #86efac;
+}
+
+.status-chip.failed {
+  @include mixins.state(error);
+  border-color: #fca5a5;
+}
+
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(20, 184, 166, 0); }
+}

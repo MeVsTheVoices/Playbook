@@ -1,0 +1,50 @@
+@use "../../abstracts/mixins";
+
+.events-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.events-table thead th {
+  @include mixins.state-colors(#f1f5f9, #334155);
+  border-top: 1px solid #dbe4ee;
+  border-bottom: 1px solid #dbe4ee;
+}
+
+.events-table thead th:first-child {
+  border-left: 1px solid #dbe4ee;
+  border-top-left-radius: 10px;
+}
+
+.events-table thead th:last-child {
+  border-right: 1px solid #dbe4ee;
+  border-top-right-radius: 10px;
+}
+
+.events-table tbody td {
+  background: #ffffff;
+}
+
+.events-table tbody tr:nth-child(odd) td {
+  background: #f9fcff;
+}
+
+.cert-pill {
+  display: inline-block;
+  padding: 0.15rem 0.48rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.cert-pill.ok {
+  @include mixins.state(success);
+  border: 1px solid #86efac;
+}
+
+.cert-pill.none {
+  @include mixins.state(error);
+  border: 1px solid #fecaca;
+}

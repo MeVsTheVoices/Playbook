@@ -1,0 +1,2 @@
+# Build-only Dart Sass; not needed to run the portal.
+sass-embedded==0.1.5

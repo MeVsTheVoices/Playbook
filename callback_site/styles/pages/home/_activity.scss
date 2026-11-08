@@ -1,0 +1,118 @@
+@use "../../abstracts/mixins";
+
+.activity-dock {
+  background: linear-gradient(135deg, #fffdf2 0%, #f0fdfa 46%, #eef2ff 100%);
+  border: 1px solid #d9f99d;
+}
+
+.activity-grid {
+  @include mixins.auto-grid(210px, 0.7rem);
+  margin-top: 0.8rem;
+}
+
+.activity-card {
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.7rem;
+  box-shadow: 0 8px 24px rgba(9, 30, 66, 0.07);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.activity-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(9, 30, 66, 0.09);
+}
+
+.activity-card .k {
+  margin: 0;
+  color: #4f6070;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.activity-card .v {
+  margin: 0.25rem 0 0;
+  color: #10243a;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.activity-card .d {
+  margin: 0.35rem 0 0;
+  color: #4f6070;
+  font-size: 0.8rem;
+}
+
+.activity-card.waiting {
+  border-color: #93c5fd;
+  background: linear-gradient(90deg, #eff6ff 0%, #ffffff 45%, #eff6ff 100%);
+  background-size: 220% 100%;
+  animation: activity-shimmer 2.2s linear infinite;
+}
+
+.activity-card.ok {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.activity-card.warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.activity-card.bad {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.activity-banner {
+  display: block;
+  margin-top: 0.8rem;
+  border: 1px dashed #c7d2fe;
+  border-radius: 12px;
+  padding: 0.6rem 0.7rem;
+  @include mixins.state-colors(rgba(255, 255, 255, 0.75), #374151);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.activity-card[href], .activity-banner[href] {
+  color: inherit;
+  text-decoration: none;
+}
+
+.activity-card[href]:hover, .activity-banner[href]:hover {
+  outline: 1px solid var(--accent);
+}
+
+.activity-card[href]:focus-visible, .activity-banner[href]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.activity-banner.waiting {
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+.activity-banner.ok {
+  border-color: #86efac;
+  color: #166534;
+}
+
+.activity-banner.warn {
+  border-color: #facc15;
+  color: #854d0e;
+}
+
+.activity-banner.bad {
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+@keyframes activity-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -40% 0; }
+}

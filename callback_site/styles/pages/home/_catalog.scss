@@ -1,0 +1,51 @@
+@use "../../abstracts/mixins";
+
+.catalog-meta {
+  margin-top: 0.7rem;
+  padding: 0.7rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  @include mixins.state-colors(#f8fafc, var(--muted));
+  font-size: 0.84rem;
+}
+
+.catalog-meta a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.catalog-pills {
+  @include mixins.action-row(0.45rem, center);
+  margin-bottom: 0.45rem;
+}
+
+.catalog-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.catalog-pill.available {
+  @include mixins.state-colors(#dcfce7, #14532d);
+  border-color: #86efac;
+}
+
+.catalog-pill.missing {
+  @include mixins.state-colors(#ffedd5, #9a3412);
+  border-color: #fdba74;
+}
+
+#os_preset.cached-selected {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+#os_preset.download-needed {
+  border-color: #fb923c;
+  background: #fff7ed;
+}

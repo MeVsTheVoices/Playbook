@@ -1,0 +1,16 @@
+@media (max-width: 980px) {
+  .field-key {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .route-summary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .terminal-hero {
+    padding: 1rem;
+  }
+}

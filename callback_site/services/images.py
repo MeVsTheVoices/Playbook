@@ -145,6 +145,8 @@ def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> 
     expected_sha = str(form.get("image_sha256", "")).strip().lower()
 
     download_match = re.search(r"Download complete:\s*(.+)", stdout)
+    cache_match = re.search(r"Cached image:\s*(.+)", stdout)
+    source_match = re.search(r"Image source:\s*(.+)", stdout)
     verified_match = re.search(r"Image hash verified:\s*([A-Fa-f0-9]{64})", stdout)
     fail_expected_match = re.search(r"Expected:\s*([A-Fa-f0-9]{64})", stdout)
     fail_actual_match = re.search(r"Actual:\s*([A-Fa-f0-9]{64})", stdout)
@@ -161,7 +163,7 @@ def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> 
         hash_status = "unknown"
 
     source = "image_url" if image_url else "image_file" if image_file else "default"
-    source_value = image_url or image_file
+    source_value = image_url or image_file or (source_match.group(1).strip() if source_match else "")
     record = {
         "id": uuid.uuid4().hex[:12],
         "recorded_at": datetime.now(timezone.utc).isoformat(),
@@ -171,7 +173,7 @@ def _record_image_history(form: Dict[str, Any], stdout: str, exit_code: int) -> 
         "source": source,
         "source_value": source_value,
         "downloaded": bool(download_match),
-        "download_path": download_match.group(1).strip() if download_match else "",
+        "download_path": cache_match.group(1).strip() if cache_match else image_file or (download_match.group(1).strip() if download_match else ""),
         "hash_status": hash_status,
         "expected_sha256": (fail_expected_match.group(1).lower() if fail_expected_match else expected_sha),
         "observed_sha256": (

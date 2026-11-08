@@ -1,0 +1,123 @@
+@use "../../abstracts/mixins";
+
+.form-grid > *,
+.key-picker-row > *,
+.key-preset-row > *,
+.key-upload-row > * {
+  min-width: 0;
+}
+
+.fieldset {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem;
+  margin-top: 0.9rem;
+}
+
+.fieldset > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 0;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.fieldset > summary::marker {
+  color: #0f766e;
+}
+
+.fieldset-title {
+  font-size: 1rem;
+}
+
+.fieldset-summary-note {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+}
+
+.fieldset-disclosure {
+  display: inline-block;
+  margin-left: 0.25rem;
+  font-size: 0.95rem;
+  color: #0f766e;
+  transition: transform 0.18s ease;
+}
+
+.fieldset[open] > summary .fieldset-disclosure {
+  transform: rotate(180deg);
+}
+
+.segment-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.segment {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.25rem 0.6rem 0.65rem;
+}
+
+.segment summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0.35rem 0 0.45rem;
+}
+
+.segment summary::marker {
+  color: #0f766e;
+}
+
+.segment-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0 0 0.6rem;
+}
+
+.option-actions {
+  margin-top: 0.65rem;
+}
+
+.option-actions button {
+  width: auto;
+  min-width: 150px;
+}
+
+.option-profile-status {
+  margin-top: 0.5rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.option-count {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #bae6fd;
+  @include mixins.state-colors(#ecfeff, #0c4a6e);
+  font-weight: 700;
+  font-size: 0.74rem;
+}
+
+#opt_k3s_config {
+  resize: vertical;
+  max-width: 100%;
+  min-height: 180px;
+}
+
+.danger {
+  @include mixins.state-colors(#fee2e2, #7f1d1d);
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 0.6rem;
+  margin: 0.6rem 0;
+}

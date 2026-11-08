@@ -1,0 +1,81 @@
+@use "../../abstracts/mixins";
+
+.danger {
+  @include mixins.state-colors(var(--danger), white);
+}
+
+.button-row {
+  margin-bottom: 0.5rem;
+}
+
+.quick-links {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.quick-links a {
+  text-decoration: none;
+  @include mixins.state-colors(#eaf2fb, #0f4a84);
+  border: 1px solid #c9d8ea;
+  border-radius: 999px;
+  padding: 0.24rem 0.62rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.quick-links a:hover {
+  background: #dfebf8;
+}
+
+.module-grid {
+  margin-top: 0.75rem;
+  @include mixins.auto-grid(170px, 0.65rem);
+}
+
+.module-card {
+  background: #f8fbff;
+}
+
+.module-card.ok {
+  border-color: #b7e4d5;
+  background: #f4fdf9;
+}
+
+.module-card.warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.module-card.bad {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.module-k {
+  margin: 0;
+}
+
+.module-v {
+  margin: 0.3rem 0 0;
+}
+
+.module-d {
+  margin: 0.35rem 0 0;
+  color: #4f6070;
+  font-size: 0.79rem;
+}
+
+.log-output {
+  max-height: 300px;
+  overflow-y: auto;
+  word-break: break-word;
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,6 +2,56 @@
 
 Callback Site is the control plane for the rack workflow: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, post-boot node provisioning, and the shared monitoring views that tie those steps together.
 
+### Shared interface styles
+
+Styles are authored in `styles/` using Dart Sass modules, not edited in the
+generated `static/*.css` files:
+
+- `styles/*.scss`: ten small entrypoints, one per existing static stylesheet.
+- `styles/shared/`: design tokens, shell/navigation, typography, controls,
+  layouts, tables, logs, status, disclosures and responsive/accessibility rules.
+- `styles/pages/<feature>/`: feature-owned modules (for example, dashboard
+  options, SSH keys, flashing, callbacks and activity; Node Ops editor, live
+  actions, access picker and operations).
+- `styles/abstracts/`: semantic success/error/warning palettes and declaration-only
+  mixins for action rows, automatic grids and state colors. These emit no CSS until
+  included and never alter selector specificity. Use `@use`, not legacy `@import`
+  or selector-expanding `@extend`.
+
+Every page still loads `static/common.css` after its feature stylesheet. It owns the
+palette, typography, sidebar, content width, cards, controls, tables, disclosure
+panels, log surfaces, focus indicators and responsive shell. Feature stylesheets
+retain only their specialized layouts and state indicators; declarations already
+owned by shared rules have been removed. Keep this load order: shared control and
+responsive policies intentionally take precedence over feature decoration.
+Navigation is rendered from `templates/_sidebar.html`
+so labels, active-page states and mobile navigation stay consistent. Phone layouts
+use a two-column navigation grid, fit controls to available width and preserve
+local scrolling for wide tables. Reduced-motion preferences disable decoration
+and transition animations without changing operational state.
+
+Build from the repository root (Python 3.10+):
+
+```bash
+.venv/bin/python -m pip install -r callback_site/requirements-styles.txt
+.venv/bin/python callback_site/build_styles.py
+.venv/bin/python callback_site/build_styles.py --check
+```
+
+The pinned build-only package bundles Dart Sass; Node.js and npm are not required.
+Include regenerated CSS alongside Sass changes so Flask and deployed nodes need
+neither a compiler nor a build step at startup. Build on a supported workstation
+when the deployment platform has no compiler wheel. `--check` compiles to a
+temporary directory and fails for missing/stale assets without modifying them.
+Compilation errors stop the build before any assets are published, and unchanged
+assets are not rewritten. Source maps are not published.
+The `Portal styles` GitHub Actions workflow checks reproducibility and build
+failure behavior whenever stylesheet sources, assets or build tooling change.
+
+Keep source modules below 300 lines and group by responsibility rather than
+splitting arbitrarily. Before introducing new shared rules, check for existing
+owners/mixins; avoid page-specific copies of the shell or controls.
+
 ## At A Glance
 
 - SD-card imaging for `pi5`, `pi4` and `pi3bplus` profiles.
@@ -20,6 +70,35 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 - Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
 
 ## Runtime Contract
+
+Image URL downloads during flashing now populate the persistent `image_cache/`
+catalog cache and are reused on subsequent runs. Flashing and catalog pulls share
+per-image locks, so concurrent requests for the same URL download only once.
+Complete downloads are published atomically after any supplied/discovered SHA256
+check; failed downloads are not reusable. Without a publisher checksum, a saved
+digest checks local integrity on reuse, not publisher authenticity. Explicit local
+image files still work, and existing catalog caches remain usable. The dashboard
+shows when the latest available image was cached, formatted in the browser's local
+date/time. CLI imaging uses the same cache by default; `IMAGE_CACHE_DIR` overrides
+its location. These changes do not require interrupting an already-running flash.
+
+Before overwriting a card, the flasher unmounts all mounted target filesystems
+and checks again. An unmount or inspection failure aborts before the write;
+close file managers or terminals using the card and retry rather than forcing it.
+After the image is flushed, `partprobe` refreshes its partition table before the
+boot partition is mounted for cloud-init injection.
+Cloud-init rendering and schema validation now happen **before** any unmount/write.
+The target must be a whole disk large enough for the image; system filesystems
+and swap are refused. A device lock refuses overlapping preparations on the same
+device. After flushing the device buffers, the entire written image
+is compared byte-for-byte with the source. The injected user-data, meta-data and
+toolkit network-config are also compared after unmounting and reopening the boot
+partition read-only. Any mismatch fails the job rather than reporting the card ready.
+This adds a full-card-image read to each flash and detects write-path failures;
+it does not guarantee stable power or reliable storage on the Pi during first boot.
+Legacy Pi OS Bookworm/Bullseye catalog images remain downloadable but are excluded
+from SD provisioning because they lack cloud-init. Preset changes replace the
+previous image path, URL and checksum together, including clearing stale checksums.
 
 Everything that should survive restarts or container recreation lives under `CALLBACK_APPDATA_DIR`.
 
@@ -61,6 +140,9 @@ Open:
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
 - `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
+- `/settings` — restore archived nodes without deleting callbacks, saved inputs,
+  or historical boot logs. Age-based pruning is retired; archive active nodes
+  explicitly from the callback dashboard.
 - `/openwrt` — redirects to the OpenWrt routers panel in `/nodes`.
 - `/tailscale-acl` — rack tailnet policy builder (grants, K3s ports, SSH, routes, tests).
 
@@ -160,6 +242,31 @@ The example and legacy Pi cloud-init configs also default to passwordless sudo.
 SSH password authentication and root SSH access remain separate settings.
 Protect administrative private keys: anyone holding one has root-level access.
 
+### Misc conveniences and extra packages
+
+For Pi 5, Pi 4 and Pi 3B+ images, **Misc** offers two opt-in conveniences:
+
+- **Neovim with sensible defaults** installs the distribution's `neovim` package
+  and a plugin-free `~/.config/nvim/init.vim` for the configured administrative
+  user. It enables syntax/filetype support, line numbers, four-space indentation,
+  smart-case searching, convenient splits and private persistent undo storage.
+  Existing `init.vim` or `init.lua` (including symlinks) is preserved. No plugin
+  downloads, editor alternatives or shell defaults are changed.
+- **Everyday CLI tools** installs `tmux`, `ripgrep`, `fd-find`, `fzf`, `jq`,
+  `unzip` and `bash-completion`. Debian/Ubuntu names the fd executable `fdfind`.
+
+Both choices default off and are reusable through saved SD option templates.
+They apply to newly provisioned images, not automatically to already-running
+nodes. Network Toolkit keeps its separate diagnostic-package controls and does
+not expose or apply these general conveniences.
+
+**Packages and First-Boot Commands > Package List** now adds packages to the
+rendered cloud-init package list alongside the profile defaults; duplicate names
+are removed. Use Debian package names only, without versions, URLs or command
+options. Package installation uses the existing NTP-aware APT hook; unavailable
+packages are reported as cloud-init errors. This fixes the previously
+metadata-only Package List control.
+
 ### Network Toolkit (Pi 3B+)
 
 Select **Network Toolkit (Pi 3B+)** in the SD Profile selector. This is a separate
@@ -206,12 +313,24 @@ standard your equipment requires.
 Check power with `sudo vcgencmd get_throttled`: bit 0 indicates active
 undervoltage and bit 16 records earlier undervoltage. Correct the supply/cable
 and peripheral load before provisioning; software cannot remedy voltage drops.
-Pi cloud-init waits for NTP during `bootcmd`, before package updates, as well as
-before HTTPS installers. A synchronization timeout is reported explicitly.
+Pi package updates wait for NTP through an APT pre-update hook; HTTPS installers
+also wait for synchronization. No network/time wait runs in `bootcmd`: Raspberry
+Pi OS runs that stage before sysinit, D-Bus and NetworkManager, so waiting there
+blocks the services needed for synchronization. A timeout is reported explicitly.
 Toolkit setup corrects the image's Netplan file permissions and removes the
 `netplan_nm_patch` cloud-init entry only when that module is absent. The next boot
 then avoids the missing-module warning. Persistent journals are capped at 16 MiB
 so failures survive a restart without unbounded SD-card logging.
+
+If a reset leaves zero-byte rack scripts/configuration while the boot partition's
+user-data still contains their full content, inspect `/var/lib/cloud/instance/sem/`:
+once-per-instance markers can survive while the installed data does not. Cloud-init
+then skips those modules on subsequent boots; repeatedly booting the same damaged
+card will not repair it. Preserve the logs, correct power/card/reader faults, and
+reimage through the verified flash path. Missing journals or an absent final-stage
+callback alone do not identify the reset trigger. In particular, the earlier
+`0x50005` power report means both current and historical undervoltage/throttling,
+not merely insufficient power for USB peripherals.
 
 The **Publish authenticated terminal** checkbox is off by default. Before enabling
 it, enable MagicDNS and HTTPS in the tailnet, use the Tailscale ACL planner's
@@ -333,7 +452,9 @@ is not replaced with an unauthenticated fallback.
 
 ## Testing
 
-Run the project test suite from the repo root:
+Run the project test suite from the repo root.
+Install `callback_site/requirements-styles.txt` above first; the suite verifies
+that checked-in CSS matches its Sass sources.
 
 ```bash
 cd /home/jdizzle/Playbook

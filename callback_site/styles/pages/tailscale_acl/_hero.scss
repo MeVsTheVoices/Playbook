@@ -1,0 +1,118 @@
+@use "../../abstracts/mixins";
+
+.acl-hero {
+  position: relative;
+  display: grid;
+  gap: 0.72rem;
+  padding: 1.25rem 1.2rem;
+  background: linear-gradient(130deg, rgba(11, 139, 110, 0.92), rgba(16, 91, 120, 0.92)),
+  var(--panel);
+  color: #e6fef7;
+  border-color: rgba(9, 115, 90, 0.45);
+  overflow: hidden;
+}
+
+.acl-hero h1 {
+  margin: 0.25rem 0 0;
+}
+
+.hero-subtext {
+  margin: 0.45rem 0 0;
+  color: rgba(236, 253, 245, 0.88);
+  max-width: 690px;
+}
+
+.hero-actions {
+  @include mixins.action-row(0.6rem, center);
+}
+
+.hero-note {
+  color: rgba(236, 253, 245, 0.92);
+  font-size: 0.82rem;
+}
+
+.hero-corner {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  @include mixins.state-colors(rgba(15, 23, 42, 0.22), rgba(236, 253, 245, 0.95));
+  border: 1px solid rgba(236, 253, 245, 0.3);
+  transform: rotate(-10deg);
+}
+
+.hero-corner-left {
+  top: 14px;
+  right: 96px;
+}
+
+.hero-corner-right {
+  top: 18px;
+  right: 50px;
+  transform: rotate(10deg);
+}
+
+.ghost-link {
+  @include mixins.state-colors(rgba(2, 132, 199, 0.15), #f0fdfa);
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid rgba(226, 232, 240, 0.45);
+  border-radius: 999px;
+  padding: 0.42rem 0.85rem;
+}
+
+.ghost-link:hover {
+  background: rgba(2, 132, 199, 0.24);
+}
+
+.hero-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #86efac;
+  box-shadow: 0 0 0 0 rgba(134, 239, 172, 0.7);
+  animation: pulse 1.8s infinite;
+}
+
+.hero-meta {
+  color: rgba(240, 253, 250, 0.95);
+  font-size: 0.86rem;
+}
+
+.lazy {
+  min-height: 82px;
+}
+
+.reveal {
+  animation: raise-in 0.38s ease both;
+}
+
+.skeleton {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: rgba(8, 84, 67, 0.95);
+}
+
+.acl-hero .eyebrow {
+  color: rgba(204, 251, 241, 0.92);
+}
+
+.muted-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+}

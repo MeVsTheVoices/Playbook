@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import logging
 import os
 import re
@@ -36,11 +37,8 @@ CATALOG_PULL_JOBS_LOCK = threading.Lock()
 def _image_state_summary() -> Dict[str, Any]:
     history = _read_image_history(limit=500)
     available_urls = _available_image_urls_from_history(limit=5000)
-    catalog_available = sum(
-        1
-        for entry in IMAGE_CATALOG
-        if _catalog_entry_with_availability(entry, available_urls=available_urls).get("local_available")
-    )
+    catalog = [_catalog_entry_with_availability(entry, available_urls=available_urls) for entry in IMAGE_CATALOG]
+    catalog_available = sum(1 for entry in catalog if entry.get("local_available"))
     latest = history[0] if history else {}
     latest_label = str(latest.get("label") or latest.get("source_value") or latest.get("download_path") or "-")
     latest_status = str(latest.get("job_status") or latest.get("hash_status") or "-")
@@ -55,9 +53,23 @@ def _image_state_summary() -> Dict[str, Any]:
         if record_cache_path or bool(record.get("local_available", False)):
             state_entry = record
             break
+    for record in history:
+        if record.get("local_available"):
+            state_entry = record
+            break
 
     latest_available = bool(state_entry.get("local_available", False))
     cache_path = str(state_entry.get("download_path") or state_entry.get("cache_path") or "")
+    cached_paths = {str(entry.get("cache_path") or "") for entry in catalog if entry.get("local_available")}
+    if latest_available:
+        cached_paths.add(cache_path)
+    existing_paths = [Path(path) for path in cached_paths if path and Path(path).is_file()]
+    cached_at = ""
+    if existing_paths:
+        latest_path = max(existing_paths, key=lambda path: path.stat().st_mtime)
+        cache_path = str(latest_path)
+        latest_available = True
+        cached_at = datetime.fromtimestamp(latest_path.stat().st_mtime, timezone.utc).isoformat()
     latest_state_emoji = "🎉" if latest_available else "🕳️"
     latest_state_text = "Cached and ready" if latest_available else "No cached image recorded yet"
 
@@ -69,6 +81,7 @@ def _image_state_summary() -> Dict[str, Any]:
         "latest_available": latest_available,
         "latest_cache_path": cache_path,
         "latest_cache_path_short": _compact_path_label(cache_path),
+        "latest_cached_at": cached_at,
         "latest_state_emoji": latest_state_emoji,
         "latest_state_text": latest_state_text,
         "available_catalog_entries": catalog_available,
@@ -78,11 +91,8 @@ def _image_state_summary() -> Dict[str, Any]:
 
 def _safe_catalog_filename(url: str, entry_id: str) -> str:
     parsed = urlparse.urlparse(url)
-    name = Path(parsed.path).name or f"{entry_id}.img"
-    safe = re.sub(r"[^A-Za-z0-9._+-]+", "-", name).strip(".-")
-    if not safe:
-        safe = f"{entry_id}.img"
-    return f"{entry_id}-{safe}"
+    suffix = ".img.xz" if parsed.path.endswith(".xz") else ".img"
+    return hashlib.sha256(url.encode()).hexdigest() + suffix
 
 
 def _catalog_pull_temp_path(target: Path) -> Path:
@@ -134,7 +144,11 @@ def _catalog_entry_with_availability(entry: Dict[str, Any], available_urls: set[
     _ensure_image_cache_dir()
     entry_id = str(entry.get("id", "entry"))
     cache_path = IMAGE_CACHE_DIR / _safe_catalog_filename(image_url, entry_id)
-    has_cache_file = cache_path.exists()
+    legacy_name = re.sub(r"[^A-Za-z0-9._+-]+", "-", Path(urlparse.urlsplit(image_url).path).name).strip(".-")
+    legacy_path = IMAGE_CACHE_DIR / f"{entry_id}-{legacy_name}"
+    if not cache_path.is_file() and legacy_path.is_file():
+        cache_path = legacy_path
+    has_cache_file = cache_path.is_file()
     has_history_file = bool(available_urls and image_url in available_urls)
     
     # Also check managed images for any record with this URL that has local_available=True
@@ -143,6 +157,12 @@ def _catalog_entry_with_availability(entry: Dict[str, Any], available_urls: set[
         for record in _list_image_records(limit=500):
             if record.get("source_value") == image_url and record.get("local_available"):
                 has_managed_file = True
+                cache_path = Path(record["download_path"])
+                break
+    if not has_cache_file and has_history_file:
+        for record in _list_image_records(limit=5000):
+            if record.get("source_value") == image_url and record.get("local_available"):
+                cache_path = Path(record["download_path"])
                 break
     
     enriched["local_available"] = has_cache_file or has_history_file or has_managed_file
@@ -208,22 +228,29 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
             if job:
                 job.setdefault("results", []).append(item_result)
 
-        filename = _safe_catalog_filename(image_url, entry_id)
-        target = IMAGE_CACHE_DIR / filename
+        target = Path(_catalog_entry_with_availability(entry)["cache_path"])
         tmp: Path | None = None
+        lock = None
 
         try:
-            if target.exists() and skip_existing:
+            lock = Path(f"{target}.lock").open("a")
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if target.is_file() and skip_existing:
+                cached_sha = expected_sha
+                checksum_path = Path(f"{target}.sha256")
+                if not cached_sha and checksum_path.is_file():
+                    cached_sha = checksum_path.read_text(encoding="ascii").strip()
+                if cached_sha:
+                    with target.open("rb") as source:
+                        digest = hashlib.sha256()
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                        if digest.hexdigest() != cached_sha:
+                            raise ValueError(f"Cached image checksum mismatch: {target}")
                 item_result["status"] = "skipped"
                 item_result["download_path"] = str(target)
                 item_result["message"] = "already exists"
                 continue
-
-            for stale_part in sorted(IMAGE_CACHE_DIR.glob(f"{target.name}*.part")):
-                try:
-                    stale_part.unlink(missing_ok=True)
-                except OSError:
-                    logger.warning(f"Unable to remove stale catalog temp file: {stale_part}")
 
             tmp = _catalog_pull_temp_path(target)
 
@@ -243,13 +270,14 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
                             break
 
             observed_sha = _download_catalog_image(image_url, tmp, on_progress=_on_item_progress)
+            if expected_sha and observed_sha != expected_sha:
+                raise ValueError(f"Downloaded image checksum mismatch: {target}")
             tmp.replace(target)
+            Path(f"{target}.sha256").write_text(observed_sha + "\n", encoding="ascii")
 
             hash_status = "verified" if expected_sha and observed_sha == expected_sha else "downloaded"
-            if expected_sha and observed_sha != expected_sha:
-                hash_status = "failed"
 
-            item_result["status"] = "ok" if hash_status != "failed" else "failed"
+            item_result["status"] = "ok"
             item_result["download_path"] = str(target)
             item_result["observed_sha256"] = observed_sha
             item_result["message"] = hash_status
@@ -269,20 +297,24 @@ def _run_catalog_pull_job(job_id: str, entries: List[Dict[str, Any]], skip_exist
                     "hash_status": hash_status,
                     "expected_sha256": expected_sha,
                     "observed_sha256": observed_sha,
-                    "job_status": "completed" if hash_status != "failed" else "failed",
-                    "exit_code": 0 if hash_status != "failed" else 1,
+                    "job_status": "completed",
+                    "exit_code": 0,
                     "label": label,
                     "notes": "Manual catalog pull",
                 }
             )
         except Exception as exc:
+            logger.exception("Catalog image pull failed: %s", entry_id)
             item_result["status"] = "failed"
             item_result["message"] = str(exc)
             try:
                 if tmp is not None:
                     tmp.unlink(missing_ok=True)
             except OSError:
-                pass
+                logger.exception("Unable to remove catalog partial download: %s", tmp)
+        finally:
+            if lock is not None:
+                lock.close()
 
         with CATALOG_PULL_JOBS_LOCK:
             job = CATALOG_PULL_JOBS.get(job_id)

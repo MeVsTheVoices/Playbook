@@ -1,0 +1,57 @@
+button.ping-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 138px;
+  transition: background-color 220ms ease, box-shadow 220ms ease, transform 180ms ease, filter 180ms ease, color 180ms ease;
+}
+
+button.ping-action::after {
+  content: "";
+  width: 0.68rem;
+  height: 0.68rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: transparent;
+  transition: border-color 220ms ease, background-color 220ms ease, box-shadow 260ms ease, transform 220ms ease;
+}
+
+button.ping-action.ping-pending::after {
+  border-color: rgba(255, 255, 255, 0.4);
+  border-top-color: #fef08a;
+  animation: ping-spin 0.72s linear infinite;
+}
+
+button.ping-action.ping-good::after {
+  border-color: #22c55e;
+  background: #22c55e;
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.2);
+}
+
+button.ping-action.ping-warn::after {
+  border-color: #f59e0b;
+  background: #f59e0b;
+  box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.2);
+}
+
+button.ping-action.ping-bad::after {
+  border-color: #ef4444;
+  background: #ef4444;
+  box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.2);
+}
+
+button.ping-action.ping-good,
+button.ping-action.ping-warn,
+button.ping-action.ping-bad {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+}
+
+button.ping-action.ping-bad {
+  filter: saturate(1.05);
+}
+
+@keyframes ping-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

@@ -1,0 +1,129 @@
+@use "../../abstracts/mixins";
+
+.access-card {
+  margin-top: 1rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.access-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.85rem 1.1rem;
+  list-style: none;
+  cursor: pointer;
+}
+
+.access-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.access-card[open] > summary {
+  border-bottom: 1px dashed var(--line);
+}
+
+.access-card[open] .collapsible-indicator {
+  transform: rotate(90deg);
+}
+
+.access-card-body {
+  padding: 1rem 1.1rem 1.1rem;
+}
+
+.access-card-head h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+}
+
+.access-card .module-desc {
+  margin: 0;
+}
+
+.access-card .module-actions {
+  margin-top: 1rem;
+}
+
+.module-actions-status {
+  flex: 1 1 12rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.module-actions-status:empty {
+  display: none;
+}
+
+.module-picker {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 1rem 1.2rem;
+  align-items: start;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.module-picker-side {
+  display: grid;
+  gap: 0.55rem;
+}
+
+@media (max-width: 760px) {
+  .module-picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+.module-picker-side > label {
+  margin: 0;
+  color: #334155;
+  font-weight: 600;
+}
+
+.module-picker-side .module-hint {
+  margin: 0;
+}
+
+.module-picker-side .module-hint:empty {
+  display: none;
+}
+
+#module-connection-context:empty {
+  display: none;
+}
+
+.module-list-scroll {
+  /* Fits today's six modules as they were; a longer list scrolls under the sticky header. */
+  max-height: 24rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.module-detail h4 {
+  margin: 0 0 0.25rem;
+}
+
+.module-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.3rem 0 0.6rem;
+}
+
+.module-tag {
+  display: inline-flex;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  @include mixins.state-colors(#f8fafc, var(--muted));
+  font-size: 0.72rem;
+}
+
+.required {
+  color: #991b1b;
+}

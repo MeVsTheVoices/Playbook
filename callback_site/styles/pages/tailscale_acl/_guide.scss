@@ -1,0 +1,33 @@
+.guide-steps {
+  margin-top: 0.66rem;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.guide-step {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  align-items: start;
+  gap: 0.6rem;
+  border: 1px solid #d7e2ee;
+  border-radius: 12px;
+  background: #f9fbff;
+  padding: 0.64rem;
+}
+
+.guide-step p {
+  margin: 0.12rem 0 0;
+  color: #334155;
+}
+
+.step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  font-weight: 700;
+  color: #f0fdfa;
+  background: linear-gradient(145deg, #0f8f71, #0f5f4e);
+}

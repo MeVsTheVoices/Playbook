@@ -1,5 +1,5 @@
 const GENERAL_CLOUD_INIT_SECTIONS = [
-  "k3s", "identity", "network", "packages", "hardening", "access", "tailscale", "telemetry",
+  "k3s", "identity", "network", "packages", "misc", "hardening", "access", "tailscale", "telemetry",
 ];
 const SD_SAVED_SECRET = "__CONFIGURED__";
 const SD_SECRET_KEYS = new Set(["tailscale_auth_key", "toolkit_wifi_password", "toolkit_terminal_password_hash", "password", "telegraf_influx_token"]);

@@ -10,25 +10,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='nodes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='connection_routes.css') }}">
     <script src="{{ url_for('static', filename='config_check.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
   </head>
   <body>
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <div class="sidebar-title">Callback Site</div>
-        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops 😄</div>
-      </div>
-      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
-      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span class="label">Dashboard</span></a>
-      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span class="label">Node Ops</span></a>
-      <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span class="label">Monitor</span></a>
-      {% if kubernetes_available %}
-      <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" href="/kubernetes"><span class="label">Kubernetes</span></a>
-      {% endif %}
-      <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span class="label">Image Library</span></a>
-      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
-      <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span class="label">Terminal</span></a>
-      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span class="label">Settings</span></a>
-    </aside>
+    {% include "_sidebar.html" %}
 
     <main class="content">
       <div class="wrap">
@@ -230,16 +215,16 @@
             </div>
             <div style="margin-top: 0.7rem;">
               <label for="profile-segment-config">Config Block</label>
-              <textarea id="profile-segment-config" rows="8" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:0.6rem; font-family:IBM Plex Mono, monospace;"></textarea>
+              <textarea id="profile-segment-config" rows="8" class="mono-input"></textarea>
             </div>
             <div class="grid" style="margin-top: 0.7rem;">
               <div>
                 <label for="profile-segment-defaults">Defaults JSON</label>
-                <textarea id="profile-segment-defaults" rows="4" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:0.6rem; font-family:IBM Plex Mono, monospace;" placeholder='{"image": "example:latest"}'></textarea>
+                <textarea id="profile-segment-defaults" rows="4" class="mono-input" placeholder='{"image": "example:latest"}'></textarea>
               </div>
               <div>
                 <label for="profile-segment-galaxy">Ansible Galaxy requirements</label>
-                <textarea id="profile-segment-galaxy" rows="4" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:0.6rem; font-family:IBM Plex Mono, monospace;" placeholder='community.general&#10;ansible.posix'></textarea>
+                <textarea id="profile-segment-galaxy" rows="4" class="mono-input" placeholder='community.general&#10;ansible.posix'></textarea>
               </div>
             </div>
             <div class="inline-actions" style="margin-top: 0.8rem;">
@@ -313,25 +298,27 @@
             <button id="refresh-monitor-webhook" class="secondary">Refresh + Send Webhook</button>
           </div>
           <p id="monitor-status" class="note">No state yet. Monitoring data appears after callback or provisioning activity.</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Node</th>
-                <th>Group</th>
-                <th>Address</th>
-                <th>Address Source</th>
-                <th>Reachable</th>
-                <th>Latency ms</th>
-                <th>Last Callback</th>
-                <th>Config Sets</th>
-                <th>Last Closer Check</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="node-rows">
-              <tr><td colspan="10">No state captured yet.</td></tr>
-            </tbody>
-          </table>
+          <div class="table-wrap" role="region" aria-label="Node monitoring state" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>Group</th>
+                  <th>Address</th>
+                  <th>Address Source</th>
+                  <th>Reachable</th>
+                  <th>Latency ms</th>
+                  <th>Last Callback</th>
+                  <th>Config Sets</th>
+                  <th>Last Closer Check</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="node-rows">
+                <tr><td colspan="10">No state captured yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="panel">

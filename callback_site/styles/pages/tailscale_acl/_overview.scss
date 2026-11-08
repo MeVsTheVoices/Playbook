@@ -1,0 +1,52 @@
+@use "../../abstracts/mixins";
+
+.overview-head,
+.section-head {
+  @include mixins.action-row(0.75rem, start);
+  justify-content: space-between;
+}
+
+.pill-row {
+  @include mixins.action-row(0.48rem, center);
+}
+
+.pill.info {
+  @include mixins.state-colors(#dbeafe, #0f4a84);
+  border: 1px solid #bfdbfe;
+}
+
+.pill.subtle {
+  @include mixins.state-colors(#dcfce7, #0f5f4e);
+  border: 1px solid #bbf7d0;
+}
+
+.overview-grid {
+  margin-top: 0.8rem;
+  @include mixins.auto-grid(180px, 0.72rem);
+}
+
+.stat-label {
+  margin: 0;
+}
+
+.stat-value {
+  margin: 0.38rem 0 0;
+}
+
+.compact-warn {
+  margin-top: 0.78rem;
+}
+
+.charm-line {
+  margin: 0.82rem 0 0;
+  color: #14532d;
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
+.warn {
+  @include mixins.state-colors(#fff7ed, #7f2f0a);
+  border: 1px solid #fed7aa;
+  border-radius: 11px;
+  padding: 0.62rem 0.7rem;
+}

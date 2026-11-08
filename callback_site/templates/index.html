@@ -10,25 +10,10 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="{{ url_for('static', filename='config_check.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='home.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
   </head>
   <body>
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <div class="sidebar-title">Callback Site 🚀</div>
-        <div class="sidebar-subtitle">Cloud-init, imaging, and node ops with vibes 😄</div>
-      </div>
-      <button class="toggle-btn" id="sidebar-toggle">Toggle</button>
-      <a class="{% if request.path == '/' %}active{% endif %}" href="/"><span class="label">Dashboard</span></a>
-      <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" href="/nodes"><span class="label">Node Ops</span></a>
-      <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" href="/monitor"><span class="label">Monitor</span></a>
-      {% if kubernetes_available %}
-      <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" href="/kubernetes"><span class="label">Kubernetes</span></a>
-      {% endif %}
-      <a class="{% if request.path.startswith('/images') %}active{% endif %}" href="/images"><span class="label">Image Library</span></a>
-      <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
-      <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" href="/test-terminal"><span class="label">Terminal</span></a>
-      <a class="{% if request.path.startswith('/settings') %}active{% endif %}" href="/settings"><span class="label">Settings</span></a>
-    </aside>
+    {% include "_sidebar.html" %}
 
     <main class="content">
     <div class="wrap">
@@ -83,6 +68,7 @@
             <div class="k">Latest state</div>
             <div class="v">{{ image_summary.latest_state_text }} {{ image_summary.latest_state_emoji }}</div>
             <div class="payload-kv">{{ image_summary.latest_cache_path_short or "No cached path recorded yet. 😶" }}</div>
+            {% if image_summary.latest_cached_at %}<div class="payload-kv">Cached on <time id="image-cached-at" datetime="{{ image_summary.latest_cached_at }}">{{ image_summary.latest_cached_at }}</time></div>{% endif %}
           </div>
         </div>
         <form id="sd-form">
@@ -421,6 +407,27 @@ server: https://local-machine-ip:6443
                 </div>
               </details>
 
+              <details data-cloud-init-section="misc" class="segment">
+                <summary>Misc</summary>
+                <p class="segment-hint">Optional everyday conveniences, installed on first boot and remembered in saved SD templates. Nothing is enabled by default.</p>
+                <div class="form-grid">
+                  <div>
+                    <div class="checkbox-row">
+                      <input id="opt_configure_neovim" data-option-key="configure_neovim" data-option-type="checkbox" type="checkbox">
+                      <label for="opt_configure_neovim" style="margin: 0;">Neovim with sensible defaults</label>
+                    </div>
+                    <p class="segment-hint">Installs the distro's Neovim package and a plugin-free config for the administrative user: syntax, line numbers, search, indentation and persistent undo. Existing init.vim or init.lua is preserved; no editor alternatives are changed.</p>
+                  </div>
+                  <div>
+                    <div class="checkbox-row">
+                      <input id="opt_install_cli_tools" data-option-key="install_cli_tools" data-option-type="checkbox" type="checkbox">
+                      <label for="opt_install_cli_tools" style="margin: 0;">Everyday CLI tools</label>
+                    </div>
+                    <p class="segment-hint">Installs tmux, ripgrep, fd-find, fzf, jq, unzip and bash-completion. On Debian/Ubuntu the fd command is named fdfind. No shell configuration is replaced.</p>
+                  </div>
+                </div>
+              </details>
+
               <details data-cloud-init-section="hardening" class="segment">
                 <summary>Hardening Flags</summary>
                 <p class="segment-hint">Optional safety toggles for SSH and reboot behavior.</p>
@@ -684,7 +691,7 @@ server: https://local-machine-ip:6443
           <button type="button" id="payload-inspect-clear" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;">Clear Selection</button>
         </div>
         <p class="note" id="payload-inspect-meta">Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.</p>
-        <pre id="payload-inspect-json" style="background:#0b1020; color:#d6deeb; border-radius:10px; padding:0.8rem; max-height:480px; overflow:auto; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; white-space:pre-wrap; margin:0;">No payload selected yet.</pre>
+        <pre id="payload-inspect-json" class="payload-view">No payload selected yet.</pre>
       </details>
       </div>
     </div>

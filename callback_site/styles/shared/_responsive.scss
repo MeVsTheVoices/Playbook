@@ -1,0 +1,37 @@
+@media (max-width: 980px) {
+  .sidebar { width: 196px; }
+  .content { margin-left: 208px; }
+  body.sidebar-collapsed .content { margin-left: 92px; }
+}
+
+@media (max-width: 760px) {
+  .sidebar, body.sidebar-collapsed .sidebar {
+    position: static;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  }
+  .sidebar nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; }
+  .sidebar a { margin: 0; }
+  body.sidebar-collapsed .sidebar .label { display: inline; }
+  body.sidebar-collapsed .sidebar .sidebar-brand { display: block; }
+  button.toggle-btn { display: none; }
+  .content, body.sidebar-collapsed .content { margin-left: 0; overflow-wrap: anywhere; }
+  .wrap { margin: 1rem auto; padding: 0 0.75rem; }
+  .panel { padding: 0.85rem; }
+  .collapsible-panel { padding: 0; }
+  .collapsible-panel > summary { padding: 0.85rem; }
+  .collapsible-body { padding: 0 0.85rem 0.85rem; }
+  .kube-hero, .kube-layout, .hw-detail-grid, .sot-detail-grid, .split { grid-template-columns: minmax(0, 1fr); }
+  .kube-table-wrap { overflow-x: auto; }
+  .activity-grid, .grid, .crud-form { grid-template-columns: minmax(0, 1fr); }
+  button { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

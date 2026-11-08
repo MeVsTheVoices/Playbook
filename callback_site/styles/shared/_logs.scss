@@ -1,0 +1,27 @@
+@use "../abstracts/mixins";
+
+.job-log, .log, .log-output, .terminal, .kube-raw, .hw-pre, .cert-box, .payload-view {
+  border: 1px solid #25354b;
+  border-radius: var(--radius-sm);
+  @include mixins.state-colors(#0b1020, #d6deeb);
+  padding: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.payload-view {
+  max-height: 480px;
+  margin: 0;
+}
+
+.boot-log-view {
+  margin-top: 0.6rem;
+}
+
+.mono-input {
+  font-family: var(--font-mono);
+}

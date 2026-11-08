@@ -1,0 +1,12 @@
+@media (max-width: 1050px) {
+  .split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  th:nth-child(3),
+  td:nth-child(3),
+  th:nth-child(5),
+  td:nth-child(5) { display: none; }
+
+  .action-sections { grid-template-columns: 1fr; }
+}

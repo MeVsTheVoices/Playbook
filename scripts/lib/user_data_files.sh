@@ -1,6 +1,55 @@
 # write_files for Tailscale, K3s, SSH hardening, fail2ban and sysctl.
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
 
+if [[ "$CLOUD_INIT_CONFIGURE_NEOVIM" == "true" ]]; then
+  cat >> "$USER_DATA_OUT" <<'NEOVIM_FILES'
+  - path: /usr/share/rack/neovim/init.vim
+    permissions: "0644"
+    content: |
+      syntax enable
+      filetype plugin indent on
+      set number
+      set expandtab shiftwidth=4 softtabstop=4
+      set ignorecase smartcase incsearch hlsearch
+      set hidden
+      set splitbelow splitright
+      set scrolloff=5
+      set undofile
+      let s:undo_dir = stdpath('data') . '/undo'
+      if !isdirectory(s:undo_dir)
+        call mkdir(s:undo_dir, 'p', 0700)
+      endif
+      let &undodir = s:undo_dir
+      nnoremap <silent> <Esc> :nohlsearch<CR>
+  - path: /usr/local/bin/rack-neovim-bootstrap
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      username="$1"
+      home_dir="$(getent passwd "$username" | cut -d: -f6)"
+      if [[ -z "$home_dir" || "$home_dir" != /* ]]; then
+        echo "rack-neovim: no absolute home directory for $username" >&2
+        exit 1
+      fi
+      if [[ ! -s /usr/share/rack/neovim/init.vim || ! -r /usr/share/rack/neovim/init.vim ]]; then
+        echo "rack-neovim: missing or unreadable defaults" >&2
+        exit 1
+      fi
+      runuser -u "$username" -- sh -eu -c '
+        config_dir="$1/.config/nvim"
+        for init in "$config_dir/init.vim" "$config_dir/init.lua"; do
+          if [ -e "$init" ] || [ -L "$init" ]; then
+            echo "rack-neovim: preserving existing $init"
+            exit 0
+          fi
+        done
+        mkdir -p "$config_dir"
+        (set -C; cat /usr/share/rack/neovim/init.vim > "$config_dir/init.vim")
+      ' sh "$home_dir"
+NEOVIM_FILES
+fi
+
 if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<TS_KEY_FILE
   - path: /etc/rack-tailscale-authkey

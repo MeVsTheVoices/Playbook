@@ -1,0 +1,16 @@
+@media (max-width: 1100px) {
+  .split { grid-template-columns: 1fr; }
+
+  .hw-detail-grid { grid-template-columns: 1fr; }
+
+  .sot-detail-grid { grid-template-columns: 1fr; }
+
+  .ops-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  th:nth-child(4),
+  td:nth-child(4),
+  th:nth-child(6),
+  td:nth-child(6) { display: none; }
+}

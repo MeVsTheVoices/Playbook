@@ -5,6 +5,11 @@ Use filename patterns that encode feature area and behavior:
 - test_<feature>.py: one file per feature area (callbacks, images, monitor, node provisioning, node inventory, SD card, settings, SSH keys, terminal checks, repo config).
 - test_k3s_lightweight.py, test_tailscale_policy.py: board/role rules and the Tailscale policy builder.
 - test_support.py: shared base class and `patch_in`, which patches a name in every module that imported it. Use `page_text()` for assertions on text that now lives in linked static files.
+- test_style_build.py: build-only Sass compilation, stale/missing assets, safe
+  failures and source ownership/module-size checks. Install
+  `../requirements-styles.txt` before running these tests.
+- test_ui_styles.py: shared page chrome and browser layout/control invariants
+  at desktop, tablet and phone viewport widths.
 
 Guidelines:
 

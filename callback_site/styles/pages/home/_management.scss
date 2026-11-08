@@ -1,0 +1,59 @@
+@use "../../abstracts/mixins";
+
+.grid-span-full {
+  grid-column: 1 / -1;
+}
+
+.top-link {
+  display: inline-block;
+  margin-bottom: 0.8rem;
+  text-decoration: none;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mini-link {
+  display: inline-block;
+  @include mixins.state-colors(transparent, var(--accent));
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.88rem;
+  border: none;
+  padding: 0;
+  width: auto;
+}
+
+.mini-link:hover {
+  text-decoration: underline;
+}
+
+.crud-form {
+  margin-top: 0.8rem;
+}
+
+.crud-form .grid-span-full {
+  grid-column: 1 / -1;
+}
+
+.crud-actions {
+  margin-top: 0.8rem;
+}
+
+.crud-actions button {
+  width: auto;
+  min-width: 160px;
+}
+
+.row-actions button {
+  width: auto;
+  min-width: 72px;
+  padding: 0.45rem 0.55rem;
+}
+
+.section-head {
+  margin-bottom: 0.75rem;
+}
+
+.section-head h1 {
+  margin: 0;
+}

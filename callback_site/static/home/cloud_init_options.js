@@ -1,6 +1,25 @@
 const GENERAL_CLOUD_INIT_SECTIONS = [
   "k3s", "identity", "network", "packages", "hardening", "access", "tailscale", "telemetry",
 ];
+const SD_SAVED_SECRET = "__CONFIGURED__";
+const SD_SECRET_KEYS = new Set(["tailscale_auth_key", "toolkit_wifi_password", "toolkit_terminal_password_hash", "password", "telegraf_influx_token"]);
+let sdBrowserSessionReady = Promise.resolve();
+
+async function saveSdBrowserSelection(selection) {
+  await sdBrowserSessionReady;
+  const res = await fetch("/api/sd/options-profiles/session", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(selection),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.error || "Could not retain this browser-session selection.");
+}
+
+function updateSdSavedSecretHint(el) {
+  const hint = document.getElementById(`${el.id}-saved-hint`);
+  if (hint) hint.textContent = el.value === SD_SAVED_SECRET
+    ? "Saved for this browser session. Replace to update; clear and save to remove."
+    : "";
+}
 const CLOUD_INIT_PROFILE_MATRIX = {
   pi5: { sections: [...GENERAL_CLOUD_INIT_SECTIONS, "pi"] },
   pi4: { sections: GENERAL_CLOUD_INIT_SECTIONS },
@@ -178,6 +197,9 @@ function applyCloudInitOptions(options) {
     const key = String(el.dataset.optionKey || "").trim();
     const kind = String(el.dataset.optionType || "").trim();
     const value = data[key];
+    if (SD_SECRET_KEYS.has(key)) {
+      el.dataset.savedSecret = value === SD_SAVED_SECRET ? "1" : "";
+    }
     if (kind === "checkbox") {
       const defaultChecked = String(el.dataset.optionDefault || "").trim().toLowerCase() === "true";
       el.checked = value === undefined || value === null ? defaultChecked : Boolean(value);
@@ -192,13 +214,15 @@ function applyCloudInitOptions(options) {
       continue;
     }
     el.value = value === undefined || value === null ? String(el.dataset.optionDefault || "") : String(value);
+    if (SD_SECRET_KEYS.has(key)) updateSdSavedSecretHint(el);
   }
   updateOsScopedOptionsVisibility();
   updatePiScopedOptionsVisibility();
   updateSdOptionsConfiguredCount();
 }
 
-function resetCloudInitOptions() {
+async function resetCloudInitOptions() {
+  await sdBrowserSessionReady;
   applyCloudInitOptions({});
   sdOptionsProfileSelectEl.value = "";
   if (sdOptionsProfilePiOnlyEl) {
@@ -207,6 +231,11 @@ function resetCloudInitOptions() {
   updatePiScopedOptionsVisibility();
   updateSdOptionActions();
   sdOptionsProfileStatusEl.textContent = "Optional cloud-init fields reset. Fill manually or load a template.";
+  try {
+    await saveSdBrowserSelection({name: ""});
+  } catch (error) {
+    sdOptionsProfileStatusEl.textContent = `Fields reset, but session selection could not be cleared: ${error.message}`;
+  }
 }
 
 function applySecurityStarterDefaults() {
@@ -263,28 +292,44 @@ function renderSdOptionProfiles() {
   updateSdOptionActions();
 }
 
-async function loadSdOptionProfiles() {
-  const res = await fetch("/api/sd/options-profiles");
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    sdOptionsProfileStatusEl.textContent = data.error || "Could not load cloud-init templates.";
-    return;
-  }
+async function loadSdOptionProfiles(restoreSession = true) {
+  try {
+    const res = await fetch("/api/sd/options-profiles");
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      sdOptionsProfileStatusEl.textContent = data.error || "Could not load cloud-init templates.";
+      return;
+    }
 
-  const next = {};
-  const nextOrder = [];
-  for (const profile of Array.isArray(data.profiles) ? data.profiles : []) {
-    const name = String(profile.name || "").trim();
-    if (!name) continue;
-    next[name] = profile;
-    nextOrder.push(name);
+    const next = {};
+    const nextOrder = [];
+    for (const profile of Array.isArray(data.profiles) ? data.profiles : []) {
+      const name = String(profile.name || "").trim();
+      if (!name) continue;
+      next[name] = profile;
+      nextOrder.push(name);
+    }
+    sdOptionProfiles = next;
+    sdOptionProfileOrder = nextOrder;
+    renderSdOptionProfiles();
+    const selected = String(data.selected_profile || "");
+    if (restoreSession && selected && sdOptionProfiles[selected]) {
+      sdOptionsProfileSelectEl.value = selected;
+      await loadSelectedSdOptionProfile(false);
+    }
+    if (restoreSession) {
+      const sshKey = String(data.ssh_key_name || "");
+      await refreshSshKeyChoices(sshKey);
+      if (sshKey && sshKeySelectEl.value === sshKey) await loadSelectedSshKey(false);
+      else if (sshKey) sshKeyStatusEl.textContent = "The session's saved SSH key is no longer available. Select another key.";
+    }
+  } catch (error) {
+    sdOptionsProfileStatusEl.textContent = `Could not restore cloud-init configuration: ${error.message}`;
   }
-  sdOptionProfiles = next;
-  sdOptionProfileOrder = nextOrder;
-  renderSdOptionProfiles();
 }
 
-function loadSelectedSdOptionProfile() {
+async function loadSelectedSdOptionProfile(retainSelection = true) {
+  if (retainSelection) await sdBrowserSessionReady;
   const name = String(sdOptionsProfileSelectEl.value || "").trim();
   if (!name) {
     return;
@@ -317,9 +362,17 @@ function loadSelectedSdOptionProfile() {
     ? `Loaded Pi-specific template '${name}' and merged it into the current optional settings.`
     : `Loaded template '${name}'.`;
   updateSdOptionActions();
+  if (retainSelection) {
+    try {
+      await saveSdBrowserSelection({name});
+    } catch (error) {
+      sdOptionsProfileStatusEl.textContent = `Template loaded, but session selection could not be retained: ${error.message}`;
+    }
+  }
 }
 
 async function saveCurrentSdOptionProfile() {
+  await sdBrowserSessionReady;
   const name = String(sdOptionsProfileNameEl.value || "").trim();
   if (!name) {
     sdOptionsProfileStatusEl.textContent = "Enter a template name before saving.";
@@ -331,30 +384,46 @@ async function saveCurrentSdOptionProfile() {
     distribution: String(form.distribution.value || "standard").trim().toLowerCase() || "standard",
     pi_only: Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked),
     options: gatherCloudInitOptions(),
+    secret_source_profile: String(sdOptionsProfileSelectEl.value || ""),
+    clear_secret_options: [...sdOptionsInputEls]
+      .filter(el => SD_SECRET_KEYS.has(el.dataset.optionKey) && el.dataset.savedSecret === "1" && !el.value)
+      .map(el => el.dataset.optionKey),
   };
   if (form.profile.value === "network-toolkit") payload.profile = "network-toolkit";
-  const res = await fetch("/api/sd/options-profiles", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    sdOptionsProfileStatusEl.textContent = data.error || "Could not save template.";
-    return;
-  }
+  try {
+    const res = await fetch("/api/sd/options-profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      sdOptionsProfileStatusEl.textContent = data.error || "Could not save template.";
+      return;
+    }
 
-  const savedName = String((data.profile || {}).name || name).trim();
-  if (savedName) {
-    sdOptionProfiles[savedName] = data.profile;
-    sdOptionProfileOrder = [savedName].concat(sdOptionProfileOrder.filter((name) => name !== savedName));
-    renderSdOptionProfiles();
-    sdOptionsProfileSelectEl.value = savedName;
-    sdOptionsProfileNameEl.value = savedName;
+    const savedName = String((data.profile || {}).name || name).trim();
+    if (savedName) {
+      sdOptionProfiles[savedName] = data.profile;
+      sdOptionProfileOrder = [savedName].concat(sdOptionProfileOrder.filter((name) => name !== savedName));
+      renderSdOptionProfiles();
+      sdOptionsProfileSelectEl.value = savedName;
+      sdOptionsProfileNameEl.value = savedName;
+      for (const el of sdOptionsInputEls) {
+        const key = el.dataset.optionKey;
+        if (!SD_SECRET_KEYS.has(key) || el.disabled || !optionScopeMatches(el)) continue;
+        const value = data.profile.options[key];
+        if (value === SD_SAVED_SECRET) el.value = value;
+        el.dataset.savedSecret = value === SD_SAVED_SECRET ? "1" : "";
+        updateSdSavedSecretHint(el);
+      }
+    }
+    sdOptionsProfileStatusEl.textContent = `Saved template '${savedName || name}'.`;
+    updateSdOptionsConfiguredCount();
+    updateSdOptionActions();
+  } catch (error) {
+    sdOptionsProfileStatusEl.textContent = `Could not save template: ${error.message}`;
   }
-  sdOptionsProfileStatusEl.textContent = `Saved template '${savedName || name}'.`;
-  updateSdOptionsConfiguredCount();
-  updateSdOptionActions();
 }
 
 async function deleteSelectedSdOptionProfile() {
@@ -379,6 +448,12 @@ async function deleteSelectedSdOptionProfile() {
   renderSdOptionProfiles();
   sdOptionsProfileNameEl.value = "";
   sdOptionsProfileDescriptionEl.value = "";
+  for (const el of sdOptionsInputEls) {
+    if (!SD_SECRET_KEYS.has(el.dataset.optionKey) || el.value !== SD_SAVED_SECRET) continue;
+    el.value = "";
+    el.dataset.savedSecret = "";
+    updateSdSavedSecretHint(el);
+  }
   sdOptionsProfileStatusEl.textContent = `Deleted template '${name}'.`;
   updateSdOptionActions();
 }

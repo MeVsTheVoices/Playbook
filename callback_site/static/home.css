@@ -904,6 +904,7 @@ button {
   background: #fff1f2;
 }
 .activity-banner {
+  display: block;
   margin-top: 0.8rem;
   border: 1px dashed #c7d2fe;
   border-radius: 12px;
@@ -912,6 +913,17 @@ button {
   background: rgba(255, 255, 255, 0.75);
   font-size: 0.86rem;
   font-weight: 600;
+}
+.activity-card[href], .activity-banner[href] {
+  color: inherit;
+  text-decoration: none;
+}
+.activity-card[href]:hover, .activity-banner[href]:hover {
+  outline: 1px solid var(--accent);
+}
+.activity-card[href]:focus-visible, .activity-banner[href]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 .activity-banner.waiting {
   border-color: #93c5fd;

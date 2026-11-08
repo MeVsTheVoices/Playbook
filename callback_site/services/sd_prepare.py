@@ -38,6 +38,7 @@ JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 JOBS_LOCK = threading.Lock()
+SD_SECRET_OPTIONS = {"tailscale_auth_key", "password", "telegraf_influx_token", *TOOLKIT_SECRETS}
 
 
 def _ensure_prereqs() -> List[str]:
@@ -172,12 +173,12 @@ def _apply_k3s_lightweight_to_payload(cleaned: Dict[str, Any]) -> None:
 def _redact_sd_secret_options(options: Any) -> Dict[str, Any]:
     """Copy of SD cloud-init options without join or toolkit credentials.
 
-    Job records and auto-saved templates are readable through the unauthenticated API
-    and stored in plaintext; an auth key can join tagged devices, so it never goes there.
+    Public templates and job records never contain credentials. Browser-session
+    credentials are retained separately and resolved only for explicit preparation.
     """
     if not isinstance(options, dict):
         return {}
-    return {key: value for key, value in options.items() if key not in {"tailscale_auth_key", *TOOLKIT_SECRETS}}
+    return {key: value for key, value in options.items() if key not in SD_SECRET_OPTIONS}
 
 
 def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud_init_options: Dict[str, Any]) -> List[str]:

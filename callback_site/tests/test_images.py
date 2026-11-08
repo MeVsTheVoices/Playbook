@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 try:
     from .test_support import BaseCallbackSiteTest, APP_DIR, TEST_DATA_DIR, patch_in
@@ -15,6 +16,28 @@ import services.storage
 
 
 class ImageLibraryTests(BaseCallbackSiteTest):
+    def test_missing_catalog_preview_is_named_bounded_and_matches_fragment(self) -> None:
+        entries = [{"id": f"missing-{i}", "label": f"Missing image {i}", "profiles": ["pi5"], "image_url": f"https://example.invalid/{i}.img", "local_available": False} for i in range(8)]
+        entries.append({"id": "cached", "label": "Cached image", "local_available": True})
+        with patch("routes.images.IMAGE_CATALOG", entries), patch("routes.images._catalog_entry_with_availability", side_effect=lambda entry, **kwargs: entry):
+            fragment = self.client.get("/fragments/sd/image-catalog-rows")
+            page = self.client.get("/images")
+        text = fragment.get_data(as_text=True)
+        self.assertEqual(fragment.status_code, 200)
+        self.assertEqual(text.count('class="compact-list-item"'), 5)
+        self.assertIn("8 missing preset(s)", text)
+        self.assertIn("Missing image 0", text)
+        self.assertNotIn("Missing image 5", text)
+        self.assertNotIn("Cached image", text)
+        self.assertNotIn("<tr", text)
+        self.assertIn(text.strip(), page.get_data(as_text=True))
+
+    def test_missing_catalog_preview_reports_all_cached(self) -> None:
+        with patch("routes.images.IMAGE_CATALOG", [{"id": "cached", "local_available": True}]), patch("routes.images._catalog_entry_with_availability", side_effect=lambda entry, **kwargs: entry):
+            text = self.client.get("/fragments/sd/image-catalog-rows").get_data(as_text=True)
+        self.assertIn("All catalog presets are available locally.", text)
+        self.assertNotIn('class="compact-list-item"', text)
+
     def test_images_page_exposes_grouped_catalog_and_manual_record_controls(self) -> None:
         response = self.client.get("/images")
         self.assertEqual(response.status_code, 200)

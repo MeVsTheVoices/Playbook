@@ -19,17 +19,20 @@ function refreshActivityBanner() {
   if (!activityBannerEl) {
     return;
   }
+  activityBannerEl.href = "#sd-form";
   if (activityMood.sd === "running") {
     activityBannerEl.className = "activity-banner waiting";
     activityBannerEl.textContent = "⏳ SD write in progress. Byte parade marching, please keep cable wiggles to a minimum. 🧃";
     return;
   }
   if (activityMood.sd === "failed") {
+    activityBannerEl.href = "#job-log";
     activityBannerEl.className = "activity-banner bad";
     activityBannerEl.textContent = "🔥 SD flow needs attention. Check logs below for the exact wobble point.";
     return;
   }
   if (activityMood.callback === "active") {
+    activityBannerEl.href = "#callback-dashboard";
     activityBannerEl.className = "activity-banner ok";
     activityBannerEl.textContent = "📡 Fresh callbacks are landing. Fleet heartbeat looks alive and chatty. 💚";
     return;

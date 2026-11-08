@@ -89,7 +89,7 @@ def _ensure_image_cache_dir() -> None:
     IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
+def _atomic_write_text(path: Path, text: str, *, mode: int = 0o666) -> None:
     # Temp-file then replace: keeps JSON files from becoming cursed half-writes.
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
@@ -97,12 +97,13 @@ def _atomic_write_text(path: Path, text: str) -> None:
     tmp_path = Path(tmp_name)
     try:
         tmp_path.write_text(text, encoding="utf-8")
-        os.chmod(tmp_path, 0o666)
+        os.chmod(tmp_path, mode)
         tmp_path.replace(path)
         try:
-            os.chmod(path, 0o666)
+            os.chmod(path, mode)
         except OSError:
-            pass
+            if mode != 0o666:
+                raise
     finally:
         try:
             tmp_path.unlink(missing_ok=True)

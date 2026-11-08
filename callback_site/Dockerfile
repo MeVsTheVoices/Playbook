@@ -15,6 +15,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         git \
+        iproute2 \
         iputils-ping \
         openssh-client \
         util-linux \

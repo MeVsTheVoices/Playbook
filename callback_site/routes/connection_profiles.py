@@ -5,12 +5,13 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from flask import jsonify
+from flask import jsonify, request
 
 from services.boot_logs import _safe_name
 from services.connection_profiles import (
     _read_node_profiles,
     active_strategy_name,
+    describe_route,
     gather_profiles,
     select_profile,
     strategy_names,
@@ -35,13 +36,23 @@ def register_connection_profile_routes(app: Any) -> None:
             key=str(node.get("certificate", "") or ""),
         )
         chosen = select_profile(candidates)
+        include_routes = request.args.get("routes") == "1"
+        route_cache = {}
+        rendered = []
+        for profile in candidates:
+            record = asdict(profile)
+            if include_routes:
+                if profile.address not in route_cache:
+                    route_cache[profile.address] = describe_route(profile.address)
+                record["route"] = route_cache[profile.address]
+            rendered.append(record)
         return jsonify(
             {
                 "ok": True,
                 "strategy": active_strategy_name(),
                 "strategies": strategy_names(),
                 "selected": chosen.id if chosen else "",
-                "candidates": [asdict(profile) for profile in candidates],
+                "candidates": rendered,
                 "stored": _read_node_profiles(name),
             }
         )

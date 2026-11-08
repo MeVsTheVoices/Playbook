@@ -35,6 +35,32 @@ class TerminalCheckTests(BaseCallbackSiteTest):
         self.assertIn("cloud_init", check_ids)
         self.assertIn("remote_inventory", check_ids)
         self.assertIn("boot_log", check_ids)
+        for check in checks:
+            self.assertIn(check["category"], ("System", "Boot & logs", "Inventory"))
+            self.assertEqual(check["command"], services.terminal_checks.TERMINAL_CHECKS[check["id"]]["command"])
+
+    def test_terminal_page_has_task_browser_and_route_preview(self) -> None:
+        html = self.client.get("/test-terminal").get_data(as_text=True)
+        for control in ("task-search", "task-categories", "task-cards", "check-command", "terminal-route", "terminal-routes"):
+            self.assertIn(f'id="{control}"', html)
+        self.assertIn('/static/connection_routes.js', html)
+        nodes = self.client.get("/nodes").get_data(as_text=True)
+        self.assertIn('/static/connection_routes.js', nodes)
+        with self.client.get("/static/nodes/node_table.js") as response:
+            script = response.get_data(as_text=True)
+        self.assertIn('data-action="routes"', script)
+
+    def test_route_preview_resolves_the_same_host_as_terminal_start(self) -> None:
+        route = {"interface": "eth0", "gateway": "172.18.0.1", "source_ip": "172.18.0.2", "family": "IPv4", "error": ""}
+        with patch("routes.test_terminal._resolve_terminal_host", return_value="192.168.1.20") as resolve, \
+             patch("routes.test_terminal.describe_route", return_value=route) as describe:
+            response = self.client.get("/api/test-terminal/route?host=rack-node")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["resolved_host"], "192.168.1.20")
+        self.assertEqual(response.json["route"], route)
+        resolve.assert_called_once_with("rack-node")
+        describe.assert_called_once_with("192.168.1.20")
+        self.assertEqual(self.client.get("/api/test-terminal/route").status_code, 400)
 
     def test_terminal_page_reads_host_from_query_and_dashboard_links_it(self) -> None:
         script = self.client.get("/static/test_terminal.js").get_data(as_text=True)

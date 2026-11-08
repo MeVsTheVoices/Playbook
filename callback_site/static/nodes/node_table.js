@@ -104,6 +104,7 @@ function renderRows() {
         <div class="inline-actions">
           <button type="button" data-node="${node.name}" data-action="check" class="node-action-btn">Get Hardware Profile</button>
           <button type="button" data-node="${node.name}" data-action="apply" class="node-action-btn">Apply</button>
+          <button type="button" data-node="${escapeHtml(node.name)}" data-action="routes" class="node-action-btn secondary">Routes</button>
           ${removeBtn}
         </div>
       </td>
@@ -117,6 +118,10 @@ function renderRows() {
     btn.addEventListener("click", () => {
       const node = btn.getAttribute("data-node") || "";
       const action = btn.getAttribute("data-action") || "check";
+      if (action === "routes") {
+        NodeRoutes.open(node);
+        return;
+      }
       if (action === "remove") {
         deleteManualNode(node);
         return;

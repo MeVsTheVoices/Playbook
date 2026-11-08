@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='test_terminal.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='connection_routes.css') }}">
   </head>
   <body>
     <aside class="sidebar">
@@ -32,16 +33,16 @@
       <div class="wrap">
       <section class="panel">
         <div class="terminal-hero">
-          <div class="sparkle-corner sparkle-left" aria-hidden="true">✨</div>
-          <div class="sparkle-corner sparkle-right" aria-hidden="true">✨</div>
+          <p class="eyebrow">Your node workbench</p>
           <h1>Node Terminal</h1>
-          <p class="muted">Reach nodes quickly for SSH checks and lightweight manual interaction when follow-up actions are needed.</p>
-          <div class="hero-chips" aria-hidden="true">
-            <span class="hero-chip">🙂 calm mode</span>
-            <span class="hero-chip">✨ quick poke</span>
-            <span class="hero-chip">🛠️ manual touch</span>
+          <p class="muted">A little clarity, one task at a time. Choose a node, explore its checks, and watch the results arrive.</p>
+          <div class="hero-chips">
+            <span class="hero-chip">Key-based SSH</span>
+            <span class="hero-chip">Predefined diagnostics</span>
+            <span class="hero-chip">Nothing runs until you say so</span>
           </div>
         </div>
+        <h2><span class="step-number">1</span> Connect to a node</h2>
         <div class="grid">
           <div class="field">
             <label for="host">Host/IP</label>
@@ -51,7 +52,7 @@
             </div>
           </div>
           <div class="field">
-            <label for="host-select">Callback-discovered hosts</label>
+            <label for="host-select">Discovered &amp; saved hosts</label>
             <select id="host-select">
               <option value="">Select discovered host...</option>
             </select>
@@ -74,23 +75,38 @@
               <option value="rack-bootstrap-ed25519">rack-bootstrap-ed25519</option>
             </select>
           </div>
-          <div class="field field-full">
-            <label for="check-id">Terminal Task</label>
-            <select id="check-id"></select>
-            <p class="muted" id="check-description" style="margin-top: 0.35rem;">Choose a predefined task.</p>
-          </div>
+        </div>
+        <div class="route-summary">
+          <div><span class="eyebrow">SSH route from this dashboard</span><p id="terminal-route" role="status">Choose a host to see where your task will connect.</p></div>
+          <button class="mini-btn" id="terminal-routes" type="button" disabled>All node routes</button>
+        </div>
+        <h2><span class="step-number">2</span> Find your next task</h2>
+        <p class="muted">Browse by category or search. These are the available checks, not an unrestricted shell.</p>
+        <div class="task-toolbar">
+          <label for="task-search">Find a task<input id="task-search" type="search" placeholder="Try kernel, services, or cloud-init"></label>
+          <div id="task-categories" class="task-categories" role="group" aria-label="Task categories"></div>
+        </div>
+        <div id="task-cards" class="task-cards"></div>
+        <p id="task-count" class="muted" role="status"></p>
+        <div class="field task-selection">
+          <label for="check-id">Selected task</label>
+          <select id="check-id"></select>
+          <p class="muted" id="check-description">Choose a predefined task.</p>
+          <details class="command-preview"><summary>What will run?</summary><pre id="check-command">Select a task to preview its command.</pre></details>
         </div>
         <div class="actions">
-          <button id="start-check">Start Terminal Task</button>
+          <button id="start-check" disabled>Run selected task</button>
           <button id="refresh-keys" class="secondary">Refresh Keys</button>
         </div>
-        <div id="job-status" class="status">Idle.</div>
+        <h2><span class="step-number">3</span> Follow the results</h2>
+        <div id="job-status" class="status" role="status" aria-live="polite">Ready when you are.</div>
         <div id="dns-hint" class="dns-hint"></div>
-        <div id="job-output" class="terminal">No output yet.</div>
+        <pre id="job-output" class="terminal" aria-label="Task output">Your task output will appear here.</pre>
       </section>
       </div>
     </main>
 
+    <script src="{{ url_for('static', filename='connection_routes.js') }}" defer></script>
     <script src="{{ url_for('static', filename='test_terminal.js') }}" defer></script>
   </body>
 </html>

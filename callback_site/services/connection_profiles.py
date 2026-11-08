@@ -9,8 +9,11 @@ Profiles seen for each node are kept in `connection_profiles.json` so the histor
 from __future__ import annotations
 
 import json
+import ipaddress
+import logging
 import os
 import socket
+import subprocess
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -29,6 +32,46 @@ from services.storage import CONNECTION_PROFILES_FILE, _atomic_write_text, _ensu
 
 DEFAULT_STRATEGY = "prefer_tailnet"
 REFRESH_SECONDS = 300
+logger = logging.getLogger(__name__)
+
+
+def describe_route(address: str) -> Dict[str, str]:
+    """Read the dashboard host's route without probing or changing the node."""
+    details = {"interface": "", "gateway": "", "source_ip": "", "family": "", "error": ""}
+    try:
+        destination = ipaddress.ip_address(address)
+    except ValueError:
+        details["error"] = "Hostname route is resolved by SSH at connection time."
+        return details
+    details["family"] = f"IPv{destination.version}"
+    try:
+        result = subprocess.run(
+            ["ip", "-json", "route", "get", str(destination)],
+            capture_output=True, text=True, check=False, timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("Route lookup unavailable for %s: %s", address, exc)
+        details["error"] = "Local route lookup unavailable (requires Linux iproute2)."
+        return details
+    if result.returncode:
+        details["error"] = (result.stderr or "No local route found.").strip()[:300]
+        logger.warning("Route lookup failed for %s: %s", address, details["error"])
+        return details
+    try:
+        routes = json.loads(result.stdout)
+        route = routes[0]
+        if not isinstance(route, dict):
+            raise ValueError("Invalid route record")
+    except (ValueError, IndexError, KeyError, TypeError) as exc:
+        logger.warning("Invalid route lookup response for %s: %s", address, exc)
+        details["error"] = "Local route lookup returned an invalid response."
+        return details
+    details.update(
+        interface=str(route.get("dev") or ""),
+        gateway=str(route.get("gateway") or ""),
+        source_ip=str(route.get("prefsrc") or route.get("src") or ""),
+    )
+    return details
 
 
 @dataclass

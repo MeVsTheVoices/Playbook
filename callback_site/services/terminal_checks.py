@@ -22,21 +22,25 @@ TEST_TERMINAL_LOCK = threading.Lock()
 TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
     "identity": {
         "label": "Identity + Kernel",
+        "category": "System",
         "description": "Validate hostname/user/kernel baseline",
         "command": "hostname && whoami && uname -a",
     },
     "cloud_init": {
         "label": "Cloud-Init State",
+        "category": "Boot & logs",
         "description": "Check cloud-init completion and status",
         "command": "cloud-init status --long || cloud-init status",
     },
     "service_baseline": {
         "label": "Service Baseline",
+        "category": "System",
         "description": "Quick system health and networking status",
         "command": "systemctl is-system-running || true; systemctl --failed --no-legend || true; ip -brief address",
     },
     "boot_log": {
         "label": "Boot Log",
+        "category": "Boot & logs",
         "description": "Failed units, this boot's journal and the cloud-init output log (last lines)",
         "command": (
             'printf "=== failed units ===\\n"; systemctl --failed --no-pager || true; '
@@ -46,6 +50,7 @@ TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
     },
     "remote_inventory": {
         "label": "Remote Inventory",
+        "category": "Inventory",
         "description": "Collect hostname, OS, cloud-init, services, network, and storage state",
         "command": (
             'printf "=== identity ===\\n"; '

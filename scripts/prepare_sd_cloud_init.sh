@@ -154,16 +154,26 @@ require_cmd umount
 require_cmd mountpoint
 require_cmd udevadm
 require_cmd parted
+require_cmd partprobe
 require_cmd mktemp
 require_cmd sha256sum
 require_cmd python3
 require_cmd openssl
+require_cmd blockdev
+require_cmd cmp
+require_cmd flock
+
+if ! exec 8<"$DEVICE"; then
+  echo "Cannot open target device: $DEVICE" >&2
+  exit 1
+fi
+if ! flock -n 8; then
+  echo "Another SD preparation is using $DEVICE; refusing concurrent writes." >&2
+  exit 1
+fi
 
 # shellcheck source=lib/image.sh
 source "$SCRIPT_DIR/lib/image.sh"
-
-# shellcheck source=lib/flash.sh
-source "$SCRIPT_DIR/lib/flash.sh"
 
 # shellcheck source=lib/options.sh
 source "$SCRIPT_DIR/lib/options.sh"
@@ -179,6 +189,12 @@ source "$SCRIPT_DIR/lib/user_data_scripts.sh"
 
 # shellcheck source=lib/user_data_runcmd.sh
 source "$SCRIPT_DIR/lib/user_data_runcmd.sh"
+
+# shellcheck source=lib/validate.sh
+source "$SCRIPT_DIR/lib/validate.sh"
+
+# shellcheck source=lib/flash.sh
+source "$SCRIPT_DIR/lib/flash.sh"
 
 # shellcheck source=lib/finish.sh
 source "$SCRIPT_DIR/lib/finish.sh"

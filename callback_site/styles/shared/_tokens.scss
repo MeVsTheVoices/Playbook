@@ -1,0 +1,30 @@
+@use "sass:map";
+@use "../abstracts/tokens";
+
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --bg-accent: #deefe7;
+  --card: #ffffff;
+  --panel: var(--card);
+  --panel-soft: #f4f7fb;
+  --ink: #16202d;
+  --muted: #4f6070;
+  --line: #d3dbe5;
+  --accent: #0b8b6e;
+  --accent-2: #0284c7;
+  --accent-3: #f59e0b;
+  --primary: var(--accent);
+  --primary-strong: #0f5f4e;
+  --danger: #b91c1c;
+  --warning: #92400e;
+  --ok-bg: #{map.get(tokens.$states, success, background)};
+  --bad-bg: #{map.get(tokens.$states, error, background)};
+  --checking-bg: #{map.get(tokens.$states, warning, background)};
+  --side: #0e1a2e;
+  --side-ink: #cbd5e1;
+  --shadow: 0 12px 32px rgba(14, 42, 71, 0.07);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --font-mono: "IBM Plex Mono", monospace;
+}

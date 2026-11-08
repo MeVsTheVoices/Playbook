@@ -295,8 +295,6 @@ def register_sd_routes(app: Any) -> None:
         payload["distribution"] = distribution
         if payload.get("config_errors"):
             errors = payload["config_errors"]
-            if payload["profile"] != TOOLKIT_PROFILE:
-                errors = [f"K3s lightweight options: {err}" for err in errors]
             return jsonify({"ok": False, "errors": errors}), 400
         if distribution == "k3s":
             k3s_check = _check_longform("k3s_config", payload["cloud_init_options"].get("k3s_config", ""))

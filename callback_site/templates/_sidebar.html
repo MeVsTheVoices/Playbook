@@ -1,0 +1,19 @@
+<aside class="sidebar" aria-label="Site navigation">
+  <div class="sidebar-brand">
+    <div class="sidebar-title">Callback Site 🚀</div>
+    <div class="sidebar-subtitle">Cloud-init, imaging, and node operations</div>
+  </div>
+  <button class="toggle-btn" id="sidebar-toggle" type="button">Toggle sidebar</button>
+  <nav aria-label="Main">
+    <a class="{% if request.path == '/' %}active{% endif %}" {% if request.path == '/' %}aria-current="page"{% endif %} href="/"><span class="label">Dashboard</span></a>
+    <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" {% if request.path.startswith('/nodes') %}aria-current="page"{% endif %} href="/nodes"><span class="label">Node Ops</span></a>
+    <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" {% if request.path.startswith('/monitor') %}aria-current="page"{% endif %} href="/monitor"><span class="label">Monitor</span></a>
+    {% if kubernetes_available %}
+    <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" {% if request.path.startswith('/kubernetes') %}aria-current="page"{% endif %} href="/kubernetes"><span class="label">Kubernetes</span></a>
+    {% endif %}
+    <a class="{% if request.path.startswith('/images') %}active{% endif %}" {% if request.path.startswith('/images') %}aria-current="page"{% endif %} href="/images"><span class="label">Image Library</span></a>
+    <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" {% if request.path.startswith('/tailscale-acl') %}aria-current="page"{% endif %} href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
+    <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" {% if request.path.startswith('/test-terminal') %}aria-current="page"{% endif %} href="/test-terminal"><span class="label">Terminal</span></a>
+    <a class="{% if request.path.startswith('/settings') %}active{% endif %}" {% if request.path.startswith('/settings') %}aria-current="page"{% endif %} href="/settings"><span class="label">Settings</span></a>
+  </nav>
+</aside>

@@ -1,0 +1,38 @@
+@use "../abstracts/mixins";
+
+.actions-row, .button-row, .crud-actions, .row-actions, .actions, .inline-actions, .option-actions, .kube-actions {
+  @include mixins.action-row(0.6rem, center);
+}
+
+:where(.grid, .form-grid, .crud-form, .module-grid, .stats-grid, .activity-grid, .split, .kube-grid, .kube-layout) > * {
+  min-width: 0;
+}
+
+.form-grid, .crud-form {
+  @include mixins.auto-grid(min(240px, 100%), 0.8rem);
+}
+
+.stat-card, .module-card, .meta-card, .kube-card, .card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.8rem;
+}
+
+.stat-card {
+  background: linear-gradient(180deg, #fff, #f8fafc);
+}
+
+.stat-card .k, .stat-label, .module-k {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-card .v, .stat-value, .module-v {
+  margin-top: 0.3rem;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,37 @@
+name: Portal styles
+
+on:
+  pull_request:
+    paths:
+      - "callback_site/styles/**"
+      - "callback_site/static/*.css"
+      - "callback_site/build_styles.py"
+      - "callback_site/requirements-styles.txt"
+      - "callback_site/tests/test_style_build.py"
+      - ".github/workflows/styles.yml"
+  push:
+    paths:
+      - "callback_site/styles/**"
+      - "callback_site/static/*.css"
+      - "callback_site/build_styles.py"
+      - "callback_site/requirements-styles.txt"
+      - "callback_site/tests/test_style_build.py"
+      - ".github/workflows/styles.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  styles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: callback_site/requirements-styles.txt
+      - run: python -m pip install -r callback_site/requirements-styles.txt
+      - run: python callback_site/build_styles.py --check
+      - run: python -m unittest callback_site.tests.test_style_build

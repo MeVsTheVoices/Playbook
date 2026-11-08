@@ -1,0 +1,121 @@
+@use "../../abstracts/mixins";
+
+.route-summary {
+  @include mixins.action-row(0.8rem);
+  justify-content: space-between;
+  padding: 1rem;
+  margin-top: 1rem;
+  border: 1px solid #c5e6da;
+  border-radius: 12px;
+  background: #f0fdfa;
+}
+
+.route-summary p {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.route-summary button {
+  flex-shrink: 0;
+}
+
+.task-toolbar {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.task-toolbar label {
+  margin: 0;
+}
+
+.task-toolbar input {
+  display: block;
+  margin-top: 0.35rem;
+}
+
+.task-categories {
+  @include mixins.action-row(0.4rem);
+}
+
+.task-categories button {
+  border: 1px solid #d3dbe5;
+  background: #f8fafc;
+  color: #4f6070;
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.task-categories button[aria-pressed="true"] {
+  background: #0b7560;
+  border-color: #0b7560;
+  color: #ffffff;
+}
+
+.task-cards {
+  @include mixins.auto-grid(240px, 0.7rem);
+  margin: 1rem 0 0.6rem;
+}
+
+.task-card {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+  font-family: inherit;
+  color: var(--ink);
+  padding: 1rem;
+  border: 1px solid #dce6e1;
+  background: #fbfdfc;
+}
+
+.task-card strong {
+  font-size: 1rem;
+}
+
+.task-card .eyebrow {
+  margin: 0;
+}
+
+.task-card .muted {
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+button.task-card:hover:not(:disabled) {
+  border-color: #0b8b6e;
+  background: #f0fdfa;
+}
+
+.task-card[aria-pressed="true"] {
+  border-color: #0b8b6e;
+  background: #eafaf3;
+  box-shadow: inset 0 0 0 1px #0b8b6e;
+}
+
+.task-selection {
+  margin-top: 0.9rem;
+}
+
+.task-selection .muted {
+  margin-top: 0.5rem;
+}
+
+.command-preview {
+  margin-top: 0.7rem;
+  font-size: 0.82rem;
+}
+
+.command-preview summary {
+  cursor: pointer;
+  color: #0b7560;
+}
+
+.command-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "IBM Plex Mono", monospace;
+  color: #334155;
+}

@@ -24,12 +24,15 @@ from k3s_lightweight import (
 )
 
 from services.images import _record_image_history
+from services.image_catalog import _catalog_entry_with_availability
+from domain_defaults import IMAGE_CATALOG
 from services.k3s_config import _default_k3s_config, _normalize_k3s_node_name
 from services.kubernetes import _local_k3s_version
 from services.ssh_keys import _archive_ssh_public_key
-from services.storage import INVENTORY_FILE, SCRIPT_PATH
+from services.storage import IMAGE_CACHE_DIR, INVENTORY_FILE, SCRIPT_PATH
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options
 from network_toolkit import EXTRA_PACKAGES_OPTION, extra_packages
+from package_options import package_names
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +93,20 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     cleaned["sd_options_profile"] = str(cleaned.get("sd_options_profile", "")).strip()
     cleaned["pi_only"] = bool(cleaned.get("pi_only", False))
     cloud_options = cleaned["cloud_init_options"]
+    if cleaned.get("profile") != TOOLKIT_PROFILE:
+        option_errors = []
+        try:
+            package_names(cloud_options.get("packages", []))
+        except ValueError as exc:
+            option_errors.append(str(exc))
+        for key in ("configure_neovim", "install_cli_tools"):
+            if key in cloud_options and not isinstance(cloud_options[key], bool):
+                option_errors.append(f"{key} must be true or false.")
+        if option_errors:
+            cleaned["config_errors"] = option_errors
+    else:
+        for key in ("packages", "configure_neovim", "install_cli_tools"):
+            cloud_options.pop(key, None)
     distribution = str(cleaned.get("distribution", "standard")).strip().lower() or "standard"
     k3s_config = str(cloud_options.get("k3s_config", "") or "").strip()
     if cleaned.get("profile") == TOOLKIT_PROFILE:
@@ -146,7 +163,31 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if distribution == "k3s" and not cloud_options.get("k3s_config"):
         cloud_options["k3s_config"] = _default_k3s_config(cleaned.get("hostname") or None).strip()
     _apply_k3s_lightweight_to_payload(cleaned)
+    image_errors = _sd_image_selection_errors(cleaned)
+    if image_errors:
+        cleaned["config_errors"] = list(cleaned.get("config_errors") or []) + image_errors
     return cleaned
+
+
+def _sd_image_selection_errors(payload: Dict[str, Any]) -> List[str]:
+    image_url = str(payload.get("image_url") or "").strip()
+    image_file = str(payload.get("image_file") or "").strip()
+    profile = str(payload.get("profile") or "").strip()
+    if not image_url and not image_file:
+        return []
+    for entry in IMAGE_CATALOG:
+        if not entry.get("image_url"):
+            continue
+        if entry.get("cloud_init_supported") is not False and profile in entry.get("profiles", []):
+            continue
+        selected = image_url == entry["image_url"] if not image_file else (
+            Path(image_file).expanduser() == Path(_catalog_entry_with_availability(entry)["cache_path"])
+        )
+        if selected:
+            if entry.get("cloud_init_supported") is False:
+                return [f"{entry['label']} does not support cloud-init. Choose Ubuntu Server or cloud-init-enabled Pi OS Trixie."]
+            return [f"{entry['label']} is not compatible with the {profile} profile."]
+    return []
 
 
 def _apply_k3s_lightweight_to_payload(cleaned: Dict[str, Any]) -> None:
@@ -183,6 +224,9 @@ def _redact_sd_secret_options(options: Any) -> Dict[str, Any]:
 
 def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud_init_options: Dict[str, Any]) -> List[str]:
     enabled_options: List[str] = []
+    env["CLOUD_INIT_EXTRA_PACKAGES"] = " ".join(package_names(cloud_init_options.get("packages", [])))
+    if "packages" in cloud_init_options:
+        enabled_options.append("packages")
     if EXTRA_PACKAGES_OPTION in cloud_init_options:
         env["CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES"] = " ".join(extra_packages(cloud_init_options))
         enabled_options.append(EXTRA_PACKAGES_OPTION)
@@ -196,6 +240,11 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
                 env[f"CLOUD_INIT_{key.upper()}"] = str(value)
             enabled_options.append(key)
 
+    for key in ("configure_neovim", "install_cli_tools"):
+        enabled = cloud_init_options.get(key, False) is True
+        env[f"CLOUD_INIT_{key.upper()}"] = "true" if enabled else "false"
+        if enabled:
+            enabled_options.append(key)
     bool_env_fields = {
         "disable_ssh_password_auth": "CLOUD_INIT_DISABLE_SSH_PASSWORD_AUTH",
         "disable_root_ssh": "CLOUD_INIT_DISABLE_ROOT_SSH",
@@ -364,6 +413,13 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         image_url = form.get("image_url", "").strip()
         image_file = form.get("image_file", "").strip()
         image_sha256 = form.get("image_sha256", "").strip()
+        catalog_entry = next((entry for entry in IMAGE_CATALOG if
+            (image_url and entry.get("image_url") == image_url) or
+            (not image_url and not image_file and form["profile"] == "network-toolkit"
+             and entry.get("id") == "network-toolkit-raspios-trixie-arm64-lite")), None)
+        if catalog_entry and not image_file:
+            image_url = str(catalog_entry["image_url"])
+            image_sha256 = image_sha256 or str(catalog_entry.get("image_sha256") or "")
         workspace = form.get("workspace", "").strip()
         if image_url:
             cmd.extend(["--image-url", image_url])
@@ -395,6 +451,10 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
 
         # Build environment with cloud-init options
         env = os.environ.copy()
+        env["IMAGE_CACHE_DIR"] = str(IMAGE_CACHE_DIR)
+        env.pop("IMAGE_CACHE_PATH", None)
+        if catalog_entry and not image_file:
+            env["IMAGE_CACHE_PATH"] = _catalog_entry_with_availability(catalog_entry)["cache_path"]
         distribution = str(form.get("distribution", "standard")).strip().lower() or "standard"
         env["CLOUD_INIT_DISTRIBUTION"] = distribution
         env["CLOUD_INIT_SSH_PUBLIC_KEY_URL"] = str(form.get("ssh_public_key_url", ""))
@@ -453,4 +513,4 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         else:
             logger.error(f"SD preparation failed: job_id={job_id}, hostname={hostname}, exit_code={proc.returncode}")
 
-        _record_image_history(form, final_stdout, proc.returncode)
+        _record_image_history(form, "".join(output_chunks), proc.returncode)

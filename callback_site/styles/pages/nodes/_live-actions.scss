@@ -1,0 +1,107 @@
+@use "../../abstracts/mixins";
+
+.module-live-bar {
+  @include mixins.action-row(0.55rem, center);
+}
+
+.module-live-status {
+  max-width: 28rem;
+  padding: 0.22rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  @include mixins.state-colors(#f8fafc, var(--muted));
+  font-size: 0.78rem;
+}
+
+.module-live-status.ok {
+  border-color: #86efac;
+  @include mixins.state-colors(var(--ok-bg), #166534);
+}
+
+.module-live-status.error {
+  border-color: #fca5a5;
+  @include mixins.state-colors(#fef2f2, #991b1b);
+}
+
+.module-live-status.loading {
+  border-color: #fcd34d;
+  @include mixins.state-colors(var(--checking-bg), #92400e);
+  animation: pulse-chip 1.8s ease-in-out infinite;
+}
+
+.module-live-refresh {
+  width: auto;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+}
+
+.module-live {
+  @include mixins.action-row(0.5rem, center);
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.module-live:empty {
+  display: none;
+}
+
+.module-live.match {
+  color: #166534;
+}
+
+.module-live.differs {
+  color: #92400e;
+}
+
+.module-live-use {
+  width: auto;
+  padding: 0.12rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+}
+
+.module-field.from-live input:not([type="checkbox"]),
+.module-field.from-live select {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.module-toggle.from-live {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.module-test-row {
+  margin-top: 1rem;
+}
+
+.module-actions {
+  @include mixins.action-row(0.5rem, center);
+  margin-top: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.module-actions-gap {
+  flex: 1 1 1rem;
+}
+
+.module-actions button {
+  width: auto;
+  min-width: 9.5rem;
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+}
+
+.module-actions button.ghost {
+  border: 1px solid var(--accent-2);
+  @include mixins.state-colors(#ffffff, var(--accent-2));
+}
+
+.module-actions button.ghost:hover {
+  background: #f0f9ff;
+  box-shadow: none;
+}

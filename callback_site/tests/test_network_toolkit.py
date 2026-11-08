@@ -216,6 +216,16 @@ class NetworkToolkitTests(BaseCallbackSiteTest):
         _map_cloud_init_options_to_env(env, "standard", {"toolkit_extra_packages": ["iperf3", "whois"]})
         self.assertEqual(env["CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES"], "iperf3 whois")
 
+    def test_generic_misc_options_do_not_expand_the_appliance(self) -> None:
+        payload = _sanitize_sd_prepare_payload({
+            "profile": toolkit.PROFILE,
+            "cloud_init_options": {**OPTIONS, "configure_neovim": True,
+                                   "install_cli_tools": True, "packages": ["neovim"]},
+        })
+        self.assertNotIn("configure_neovim", payload["cloud_init_options"])
+        self.assertNotIn("install_cli_tools", payload["cloud_init_options"])
+        self.assertNotIn("packages", payload["cloud_init_options"])
+
     def test_extra_diagnostic_packages_validate_before_prepare(self) -> None:
         for raw in ({"name": "iperf3"}, [42], ["--help"], ["curl;reboot"],
                     ["iperf3=1.0"], ["https://example.invalid/tool"], [""]):

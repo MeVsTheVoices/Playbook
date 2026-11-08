@@ -125,8 +125,10 @@ Order: reset the cluster to the NucBox alone (`scripts/k3s_fresh_start.sh`), fla
    - `telegraf` installs the `telegraf` package, writes `/etc/telegraf/telegraf.conf` (root:telegraf, 0640, since it holds the token) from the Influx endpoint, bucket, org and access key, or downloads the Config URL with the token as an `Authorization: Token` header and stores the token in `/etc/default/telegraf` as `INFLUX_TOKEN` for UI-generated configs. It validates the config with `telegraf --test` before restarting the service. The token is the access key alone unless the "Influx Token Form" is `access_key:secret_key`; the first-boot script writes the same agent settings and now also restricts the file to root and the telegraf group.
 
 ## SD Bootstrap + Callback (Recommended)
-1. Start the callback site:
-   - `./scripts/bootstrap_project.sh --start-callback`
+1. Start the callback site from the repository root:
+   - Windows with Docker Desktop: `docker compose up --build -d`
+   - Linux native: `./scripts/bootstrap_project.sh --start-callback`
+   - On Windows, use the host's LAN IP (port 8088) for node callback URLs; localhost is only reachable from the host. Docker Desktop does not pass through SD-card devices, so prepare cards on a Linux host.
 2. Open the modular dashboard fragments and refresh individual tables when you do not want a full page reload.
 3. Prepare an SD card with cloud-init and callback baked in:
    - `cd ..`

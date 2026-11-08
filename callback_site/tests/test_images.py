@@ -9,6 +9,9 @@ import os
 import subprocess
 import tempfile
 import shutil
+import html
+import json
+import re
 
 try:
     from .test_support import BaseCallbackSiteTest, APP_DIR, TEST_DATA_DIR, patch_in
@@ -21,6 +24,69 @@ import services.storage
 
 
 class ImageLibraryTests(BaseCallbackSiteTest):
+    def test_refreshed_managed_cards_keep_edit_delete_and_fit_tablet(self) -> None:
+        chrome = shutil.which("google-chrome") or shutil.which("chromium")
+        if not chrome:
+            self.skipTest("Chrome is required for managed-image refresh validation")
+        record = {
+            "id": "refresh-proof", "label": "x" * 80, "source_value": "https://example.invalid/" + "y" * 120,
+            "download_path": "", "profile": "pi5", "recorded_at": "", "hash_status": "unknown",
+            "job_status": "completed", "exit_code": 0, "local_available": False,
+        }
+        with patch_in("_read_image_history", ["routes.pages"], return_value=[record]):
+            page = self.client.get("/images").get_data(as_text=True)
+            fragment = self.client.get("/fragments/sd/images-rows").get_data(as_text=True)
+        page = re.sub(r"<script\b[^>]*>.*?</script>", "", page, flags=re.S)
+        page = re.sub(r"<link\b[^>]*>", "", page)
+        css = (APP_DIR / "static/images.css").read_text() + (APP_DIR / "static/common.css").read_text()
+        script = (APP_DIR / "static/images.js").read_text()
+        probe = f"""
+window.__IMAGE_CATALOG__ = [];
+const calls = [];
+window.confirm = () => false;
+window.fetch = async (url, options = {{}}) => {{
+  calls.push({{url, method: options.method || "GET"}});
+  return {{ok: true, json: async () => ({{ok: true, entries: url === "/api/sd/images" ? [{json.dumps(record)}] : [], profiles: []}}),
+    text: async () => {json.dumps(fragment)}}};
+}};
+{script}
+setTimeout(() => {{
+  try {{
+    const container = document.getElementById("managed-images-body");
+    if (container.querySelector("tr") || container.querySelectorAll(".compact-list-item").length !== 1) throw new Error("Old table renderer replaced cards");
+    const buttons = container.querySelectorAll("button");
+    if (buttons.length !== 2) throw new Error("Edit/Delete controls missing");
+    buttons[0].click();
+    if (document.getElementById("image_record_id").value !== "refresh-proof") throw new Error("Edit did not load record");
+    buttons[1].click();
+    if (calls.some(call => call.method === "DELETE")) throw new Error("Cancelled deletion was submitted");
+    document.querySelectorAll("details").forEach(el => {{el.open = true}});
+    if (document.documentElement.scrollWidth > innerWidth) throw new Error("Refreshed cards overflow tablet");
+    document.body.innerHTML = '<pre id="refresh-result">PASS</pre>';
+  }} catch (error) {{
+    document.body.textContent = String(error);
+  }}
+}}, 100);
+"""
+        page = page.replace("</head>", f"<style>{css}</style></head>")
+        page = page.replace("</body>", f"<script>{probe}</script></body>")
+        with tempfile.TemporaryDirectory(prefix="managed-image-refresh-") as tmp:
+            fixture = Path(tmp) / "refresh.html"
+            fixture.write_text(
+                '<!doctype html><iframe style="width:768px;height:1000px;border:0" '
+                'onload="setTimeout(() => {const output = document.createElement(\'pre\'); '
+                'output.id = \'browser-result\'; output.textContent = this.contentDocument.body.textContent; '
+                'document.body.appendChild(output);}, 200)" '
+                f'srcdoc="{html.escape(page, quote=True)}"></iframe>'
+            )
+            result = subprocess.run(
+                [chrome, "--headless", "--no-sandbox", "--disable-gpu", "--disable-background-networking",
+                 "--virtual-time-budget=1000", f"--user-data-dir={tmp}/chrome", "--dump-dom", fixture.as_uri()],
+                capture_output=True, text=True, timeout=30,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('<pre id="browser-result">PASS</pre>', result.stdout)
+
     def test_missing_catalog_preview_is_named_bounded_and_matches_fragment(self) -> None:
         entries = [{"id": f"missing-{i}", "label": f"Missing image {i}", "profiles": ["pi5"], "image_url": f"https://example.invalid/{i}.img", "local_available": False} for i in range(8)]
         entries.append({"id": "cached", "label": "Cached image", "local_available": True})
@@ -343,8 +409,13 @@ class ImageLibraryTests(BaseCallbackSiteTest):
         self.assertIn("cache-path-missing", script)
         self.assertIn("source-panel", text)
         self.assertIn("Distro image presets", text)
-        self.assertIn("download-state available", script)
-        self.assertIn("download-state missing", script)
+        for available, state in ((True, "available"), (False, "missing")):
+            with patch_in("_read_image_history", ["routes.pages"], return_value=[{
+                "id": "availability-proof", "label": "Image", "local_available": available,
+                "exit_code": 0,
+            }]):
+                cards = self.client.get("/fragments/sd/images-rows").get_data(as_text=True)
+            self.assertIn(f'download-state {state}', cards)
 
     def test_image_crud_and_fragment_rows(self) -> None:
         created = self.client.post(

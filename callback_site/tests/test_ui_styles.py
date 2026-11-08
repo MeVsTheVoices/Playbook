@@ -58,7 +58,11 @@ class SharedStyleTests(BaseCallbackSiteTest):
             self.skipTest("Chrome is required for shared style layout validation")
         frames = []
         for path in PAGES:
-            with self.client.get(path) as response:
+            with patch_in("_read_image_history", ["routes.pages"], return_value=[{
+                "id": "layout-image", "label": "x" * 80, "source_value": "https://example.invalid/" + "y" * 120,
+                "download_path": "", "profile": "pi5", "recorded_at": "", "hash_status": "unknown",
+                "job_status": "completed", "exit_code": 0, "local_available": False,
+            }]), self.client.get(path) as response:
                 text = response.get_data(as_text=True)
             text = re.sub(r"<script\b[^>]*>.*?</script>", "", text, flags=re.S)
             styles = "\n".join(
@@ -77,9 +81,15 @@ const results = [];
 function measure(frame) {
   const doc = frame.contentDocument, win = frame.contentWindow;
   const sample = doc.createElement("div");
+  sample.className = "actions-row";
   sample.innerHTML = '<button>Primary</button><button class="secondary">Secondary</button>'
     + '<button class="danger">Delete</button><input type="checkbox">';
   doc.querySelector(".panel").appendChild(sample);
+  const taskCards = doc.querySelector("#task-cards");
+  if (taskCards) {
+    taskCards.innerHTML = '<button class="task-card" aria-pressed="true"><strong>Identity</strong>'
+      + '<span class="muted">Read-only system information</span></button>';
+  }
   const style = element => win.getComputedStyle(element);
   for (const state of ["default", "expanded"]) {
     if (state === "expanded") {
@@ -102,6 +112,11 @@ function measure(frame) {
       nodeTableOverflow: nodeTable ? style(nodeTable.closest("table").parentElement).overflowX : null,
       statCardPosition: statCard ? style(statCard).position : null,
       statCardOverflow: statCard ? style(statCard).overflowX : null,
+      taskCardBackground: taskCards ? style(taskCards.firstElementChild).backgroundColor : null,
+      taskCardInk: taskCards ? style(taskCards.firstElementChild).color : null,
+      taskCardLayout: taskCards ? style(taskCards.firstElementChild).display : null,
+      helmSelectionHeight: doc.querySelector("#helm-selection")?.getBoundingClientRect().height ?? null,
+      helmSelectionArrow: doc.querySelector("#helm-selection") ? style(doc.querySelector("#helm-selection")).backgroundImage : null,
     });
   }
   if (results.length === 64) {
@@ -140,6 +155,13 @@ function measure(frame) {
                     self.assertEqual(snapshot["nodeTableOverflow"], "auto")
                     self.assertEqual(snapshot["statCardPosition"], "relative")
                     self.assertEqual(snapshot["statCardOverflow"], "hidden")
+                if snapshot["path"] == "/test-terminal":
+                    self.assertEqual(snapshot["taskCardLayout"], "grid")
+                    self.assertEqual(snapshot["taskCardBackground"], "rgb(234, 250, 243)")
+                    self.assertEqual(snapshot["taskCardInk"], "rgb(22, 32, 45)")
+                if snapshot["path"] == "/kubernetes":
+                    self.assertGreaterEqual(snapshot["helmSelectionHeight"], 42)
+                    self.assertNotEqual(snapshot["helmSelectionArrow"], "none")
         for width in (360, 390, 768, 1440):
             headings = {snapshot["heading"] for snapshot in snapshots if snapshot["viewport"] == width}
             self.assertEqual(len(headings), 1, (width, headings))

@@ -153,7 +153,7 @@ tr.module-row-selected td:first-child {
 
 .module-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 0.95rem 1.1rem;
   align-items: start;
 }

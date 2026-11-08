@@ -90,13 +90,25 @@ class KubernetesNodeClearTests(BaseCallbackSiteTest):
 
     def test_delete_node_runs_kubectl_delete(self) -> None:
         completed = type("P", (), {"returncode": 0, "stdout": 'node "beta" deleted\n', "stderr": ""})()
-        with patch.object(kube.shutil, "which", side_effect=lambda cmd: "/usr/bin/k3s" if cmd == "k3s" else None), patch.object(
+        with patch.object(kube, "_has_client_kubeconfig", return_value=False), patch.object(
+            kube.shutil, "which", side_effect=lambda cmd: "/usr/bin/k3s" if cmd == "k3s" else None
+        ), patch.object(
             kube.subprocess, "run", return_value=completed
         ) as run:
             ok, message = kube._delete_node("beta")
         self.assertTrue(ok)
         self.assertIn("deleted", message)
         self.assertEqual(run.call_args.args[0], ["/usr/bin/k3s", "kubectl", "delete", "node", "beta"])
+
+    def test_delete_node_uses_configured_client_instead_of_host_k3s(self) -> None:
+        completed = type("P", (), {"returncode": 0, "stdout": 'node "beta" deleted\n', "stderr": ""})()
+        with patch.object(kube, "_has_client_kubeconfig", return_value=True), patch.object(
+            kube.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"
+        ), patch.object(kube.subprocess, "run", return_value=completed) as run:
+            ok, message = kube._delete_node("beta")
+        self.assertTrue(ok)
+        self.assertIn("deleted", message)
+        self.assertEqual(run.call_args.args[0], ["/usr/bin/kubectl", "delete", "node", "beta"])
 
     def test_clear_route_defaults_to_dry_run(self) -> None:
         with _fake_kubectl([_node("beta", False, 90)]), patch.object(kube, "_delete_node") as delete:

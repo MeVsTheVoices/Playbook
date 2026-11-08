@@ -148,6 +148,7 @@ const allEvents = {json.dumps(events)};
         )
         probe = r"""
 const results = [];
+window.fetch = async () => ({ok: true, json: async () => ({ok: true})});
 function snapshot(profile, distribution) {
   form.profile.value = profile;
   form.distribution.value = distribution;
@@ -171,6 +172,7 @@ function snapshot(profile, distribution) {
     viewportWidth: innerWidth, pageWidth: document.documentElement.scrollWidth,
   };
 }
+(async () => {
 try {
   sdOptionsProfilePiOnlyEl.checked = true;
   document.getElementById("opt_wifi_ssid").value = "generic-wifi";
@@ -192,7 +194,7 @@ try {
     tailscale_advertise_routes: ["192.168.1.0/24"], k3s_config: "server: stale",
   });
   results.push(snapshot("network-toolkit", "standard"));
-  resetCloudInitOptions();
+  await resetCloudInitOptions();
   results.push(snapshot("network-toolkit", "standard"));
   document.body.innerHTML = '<pre id="matrix-result"></pre>';
   document.getElementById("matrix-result").textContent = JSON.stringify(results);
@@ -200,6 +202,7 @@ try {
   document.body.innerHTML = '<pre id="matrix-error"></pre>';
   document.getElementById("matrix-error").textContent = String(error.stack);
 }
+})();
 """
         html = html.replace("</body>", f"<script>{scripts}\n{probe}</script></body>")
         with tempfile.TemporaryDirectory(prefix="cloud-init-matrix-") as tmp:
@@ -220,7 +223,7 @@ try {
         match = re.search(r'<pre id="matrix-result">(.*?)</pre>', result.stdout, re.DOTALL)
         self.assertIsNotNone(match, result.stdout)
         snapshots = json.loads(html_lib.unescape(match.group(1)))
-        general = {"identity", "network", "packages", "hardening", "access", "tailscale", "telemetry"}
+        general = {"identity", "network", "packages", "misc", "hardening", "access", "tailscale", "telemetry"}
         toolkit = {"toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry"}
         for snapshot in snapshots:
             with self.subTest(profile=snapshot["profile"], distribution=snapshot["distribution"]):

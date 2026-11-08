@@ -56,7 +56,7 @@
 }
 
 .task-cards {
-  @include mixins.auto-grid(240px, 0.7rem);
+  @include mixins.auto-grid(min(240px, 100%), 0.7rem);
   margin: 1rem 0 0.6rem;
 }
 

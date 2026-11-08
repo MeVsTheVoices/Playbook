@@ -8,6 +8,8 @@
 **/.coverage
 **/htmlcov
 callback_site/data
+callback_site/logs
+**/*.log
 **/vault.yml
 **/vault.yaml
 **/*secret*

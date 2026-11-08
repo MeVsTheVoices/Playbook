@@ -12,6 +12,7 @@ from flask import jsonify, request
 
 from services.ssh_keys import _is_safe_key_name, _seed_known_host, _ssh_private_key_preflight
 from services.storage import KEYS_DIR, KNOWN_HOSTS_FILE
+from services.connection_profiles import describe_route
 from services.terminal_checks import (
     TERMINAL_CHECKS,
     TEST_TERMINAL_JOBS,
@@ -34,6 +35,8 @@ def register_test_terminal_routes(app: Any) -> None:
                     "id": check_id,
                     "label": item["label"],
                     "description": item["description"],
+                    "category": item["category"],
+                    "command": item["command"],
                 }
             )
         return jsonify({"ok": True, "checks": checks})
@@ -41,6 +44,15 @@ def register_test_terminal_routes(app: Any) -> None:
     @app.get("/api/test-terminal/targets")
     def test_terminal_targets() -> Any:
         return jsonify({"ok": True, "targets": _test_terminal_targets(limit=2000)})
+
+    @app.get("/api/test-terminal/route")
+    def test_terminal_route() -> Any:
+        host = str(request.args.get("host") or "").strip()
+        if not host:
+            logger.warning("Terminal route request rejected: host is required")
+            return jsonify(ok=False, error="host is required"), 400
+        resolved = _resolve_terminal_host(host)
+        return jsonify(ok=True, requested_host=host, resolved_host=resolved, route=describe_route(resolved))
 
     @app.post("/api/test-terminal/start")
     def test_terminal_start() -> Any:

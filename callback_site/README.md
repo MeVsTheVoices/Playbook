@@ -41,10 +41,10 @@ sudo -E /home/jdizzle/Playbook/.venv/bin/python3 callback_site/app.py
 
 Open:
 
-- http://127.0.0.1:9821/
-- http://127.0.0.1:9821/images
-- http://127.0.0.1:9821/nodes
-- http://127.0.0.1:9821/monitor
+- http://127.0.0.1:8088/
+- http://127.0.0.1:8088/images
+- http://127.0.0.1:8088/nodes
+- http://127.0.0.1:8088/monitor
 
 ## Pages
 
@@ -308,19 +308,34 @@ For a broader validation pass, use:
 
 ## Deployment Notes
 
-Example Docker-style mount:
+### Docker Compose
 
-```bash
-mkdir -p /srv/appdata/callback_site
-docker run -d \
-  --name callback-site \
-  -e CALLBACK_APPDATA_DIR=/data \
-  -v /srv/appdata/callback_site:/data \
-  -p 9821:9821 \
-  your-image:latest
+From the repository root, build and start the callback site:
+
+```powershell
+docker compose up --build -d
+docker compose ps
 ```
 
-That keeps the runtime state outside the image so catalog pulls, callbacks, node reports, and operator edits survive rebuilds.
+The container uses Gunicorn with one worker because background job status is
+process-local; threads handle concurrent requests within that worker.
+Open http://127.0.0.1:8088/. View the app log with
+`docker compose logs -f callback-site`; stop it with `docker compose down`.
+To use a different host port, set `CALLBACK_PORT` before starting Compose
+(for example, `$env:CALLBACK_PORT=9821` in PowerShell).
+The `callback-site-data` Docker volume keeps catalog pulls, callbacks, node
+reports, SSH keys, and operator edits across image rebuilds and container
+recreation. `docker compose down` leaves that volume intact; do not add `-v`
+if you want to keep its data.
+
+For nodes to call back to this site, configure their callback URL with the
+Windows host's LAN IP and port, not `127.0.0.1`. Docker Desktop publishes the
+web port; Windows Firewall may also need to allow inbound connections on that
+port. This Windows deployment does not pass physical SD-card devices or the
+host's Tailscale daemon into the container. SD-card flashing and host-tailnet
+discovery therefore require a Linux host with those devices and services
+available. Keep the site on a trusted network; it is not intended for direct
+public-internet exposure.
 
 ## Release / Recreate
 

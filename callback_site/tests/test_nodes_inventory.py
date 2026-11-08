@@ -1,4 +1,4 @@
-"""Node summaries, inventory view, manual nodes and stale pruning."""
+"""Node summaries, inventory view, manual nodes and archiving."""
 
 from __future__ import annotations
 
@@ -17,9 +17,15 @@ import services.events
 import services.network
 import services.node_inventory
 import services.node_state
+import services.node_archive
 
 
 class NodeInventoryTests(BaseCallbackSiteTest):
+    def setUp(self) -> None:
+        super().setUp()
+        services.node_archive.ARCHIVE_FILE.unlink(missing_ok=True)
+        self.addCleanup(lambda: services.node_archive.ARCHIVE_FILE.unlink(missing_ok=True))
+
     def test_nodes_summary_uses_canonical_source_of_truth(self) -> None:
         fake_state = {
             "nodes": [{"name": "node-a", "selected_profiles": ["baseline"], "latest_check": {"ok": True}, "in_node_ops_view": True}],
@@ -426,16 +432,16 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         self.assertEqual(match[0].get("address_source"), "callback")
         self.assertTrue(match[0].get("last_callback"))
 
-    def test_prune_stale_nodes_rejects_invalid_hours(self) -> None:
+    def test_stale_prune_is_retired(self) -> None:
         response = self.client.post(
             "/api/nodes/stale/prune",
             json={"max_age_hours": "abc", "dry_run": True},
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 410)
         payload = response.get_json()
         self.assertFalse(payload["ok"])
 
-    def test_prune_stale_nodes_parses_string_dry_run_false(self) -> None:
+    def test_stale_prune_cannot_delete_history(self) -> None:
         stale_ts = "2020-01-01T00:00:00+00:00"
         services.events._append_event(
             {
@@ -454,14 +460,11 @@ class NodeInventoryTests(BaseCallbackSiteTest):
             "/api/nodes/stale/prune",
             json={"max_age_hours": 24, "dry_run": "false"},
         )
-        self.assertEqual(execute.status_code, 200)
-        payload = execute.get_json()
-        self.assertTrue(payload["ok"])
-        self.assertFalse(payload["dry_run"])
-        names = {row.get("name") for row in payload.get("stale_nodes", [])}
+        self.assertEqual(execute.status_code, 410)
+        names = {row.get("hostname") for row in services.events._read_events(limit=2000)}
         self.assertIn("string-dryrun-node", names)
 
-    def test_prune_stale_nodes_propagates_across_all_state(self) -> None:
+    def test_archive_hides_nodes_and_restore_preserves_all_state(self) -> None:
         stale_ts = "2020-01-01T00:00:00+00:00"
         fresh_ts = datetime.now(timezone.utc).isoformat()
 
@@ -536,35 +539,17 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         }
         services.node_state._save_node_provisioning(provision_state)
 
-        preview = self.client.post(
-            "/api/nodes/stale/prune",
-            json={"max_age_hours": 24, "dry_run": True},
-        )
-        self.assertEqual(preview.status_code, 200)
-        preview_payload = preview.get_json()
-        self.assertTrue(preview_payload["ok"])
-        self.assertTrue(preview_payload["dry_run"])
-        preview_names = {row.get("name") for row in preview_payload.get("stale_nodes", [])}
-        self.assertIn("stale-node-01", preview_names)
-
         dry_run_summary = self.client.get("/api/nodes/summary").get_json()
         dry_run_names = {row.get("name") for row in dry_run_summary.get("nodes", [])}
         self.assertIn("stale-node-01", dry_run_names)
 
-        execute = self.client.post(
-            "/api/nodes/stale/prune",
-            json={"max_age_hours": 24, "dry_run": False},
+        execute = self.client.put(
+            "/api/nodes/STALE-node-01.lab.local/archive",
+            json={"archived": True},
         )
         self.assertEqual(execute.status_code, 200)
         execute_payload = execute.get_json()
         self.assertTrue(execute_payload["ok"])
-        self.assertFalse(execute_payload["dry_run"])
-        self.assertGreaterEqual(int(execute_payload.get("removed", {}).get("callbacks", 0) or 0), 1)
-        self.assertEqual(int(execute_payload.get("removed", {}).get("node_cloud_init", 0) or 0), 1)
-        self.assertEqual(int(execute_payload.get("removed", {}).get("node_configs", 0) or 0), 1)
-        self.assertEqual(int(execute_payload.get("removed", {}).get("node_inputs", 0) or 0), 1)
-        self.assertEqual(int(execute_payload.get("removed", {}).get("node_results", 0) or 0), 1)
-        self.assertEqual(int(execute_payload.get("removed", {}).get("manual_nodes", 0) or 0), 1)
 
         nodes_summary = self.client.get("/api/nodes/summary")
         self.assertEqual(nodes_summary.status_code, 200)
@@ -572,6 +557,8 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         nodes_names = {row.get("name") for row in nodes_payload.get("nodes", [])}
         self.assertNotIn("stale-node-01", nodes_names)
         self.assertIn("fresh-node-01", nodes_names)
+        self.assertNotIn("stale-node-01.lab.local", nodes_payload.get("manual_nodes", {}))
+        self.assertNotIn("stale-node-01.lab.local", nodes_payload.get("node_inputs", {}))
 
         monitor_summary = self.client.get("/api/monitor/summary")
         self.assertEqual(monitor_summary.status_code, 200)
@@ -581,13 +568,19 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         self.assertIn("fresh-node-01", monitor_names)
 
         monitor_state_after = services.node_state._load_monitor_state()
-        self.assertNotIn("stale-node-01.lab.local", monitor_state_after.get("node_cloud_init", {}))
+        self.assertEqual(monitor_state_after, monitor_state)
 
         provision_after = services.node_state._load_node_provisioning()
-        self.assertNotIn("stale-node-01.lab.local", provision_after.get("node_configs", {}))
-        self.assertNotIn("stale-node-01.lab.local", provision_after.get("node_inputs", {}))
-        self.assertNotIn("stale-node-01.lab.local", provision_after.get("results", {}))
-        self.assertNotIn("stale-node-01.lab.local", provision_after.get("manual_nodes", {}))
+        self.assertEqual(provision_after, provision_state)
+        events = self.client.get("/api/cloud-init/events").get_json()["events"]
+        self.assertNotIn("stale-node-01", {row.get("hostname") for row in events})
+        from services.terminal_checks import _test_terminal_targets
+        self.assertNotIn("stale-node-01", {row.get("hostname") for row in _test_terminal_targets()})
+        from services.node_views import _trigger_initial_callback_closer
+        self.assertEqual(_trigger_initial_callback_closer({"hostname": "stale-node-01", "profile": "pi5"}), "")
+        restore = self.client.put("/api/nodes/stale-node-01/archive", json={"archived": False})
+        self.assertEqual(restore.status_code, 200)
+        self.assertIn("stale-node-01", {row.get("name") for row in self.client.get("/api/nodes/summary").get_json()["nodes"]})
 
     def test_preferred_node_connect_target_avoids_transit_inventory_when_callback_is_usable(self) -> None:
         target, source = services.network._preferred_node_connect_target(

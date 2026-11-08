@@ -28,7 +28,11 @@
 } %}
 <tr{% if is_older %} class="event-row-condensed"{% endif %}>
   <td>{{ (e.received_at or '-') | replace('T', ' ') | replace('+00:00', ' UTC') }}</td>
-  <td>{{ e.hostname or '-' }}</td>
+  <td>{{ e.hostname or '-' }}
+    {% if not is_older and (e.hostname or e.fqdn) %}
+    <div class="inline-actions"><button type="button" class="secondary" data-archive-node="{{ e.hostname or e.fqdn }}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem">Archive node</button></div>
+    {% endif %}
+  </td>
   <td>{{ e.instance_id or '-' }}</td>
   <td>{{ e.fqdn or '-' }}</td>
   <td>

@@ -12,6 +12,7 @@ from k3s_lightweight import BOARDS, group_for_profile as _k3s_group_for_profile,
 from network_toolkit import GROUP as TOOLKIT_GROUP, PROFILE as TOOLKIT_PROFILE
 
 from services.events import _parse_event_time, _read_events
+from services.node_archive import active_nodes
 from services.network import _is_usable_callback_ip, _preferred_connect_ip_from_history
 from services.node_state import _load_node_provisioning, _node_aliases
 from services.storage import BASE_DIR, DATA_FILE, INVENTORY_FILE
@@ -439,4 +440,4 @@ def _node_ops_inventory_view() -> List[Dict[str, Any]]:
         item["callback_node_report_present"] = bool(callback.get("node_report_present", False))
         item["manual_node"] = bool(item.get("manual_node", False))
         enriched.append(item)
-    return enriched
+    return active_nodes(enriched)

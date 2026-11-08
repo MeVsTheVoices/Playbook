@@ -14,14 +14,14 @@ class SettingsTests(BaseCallbackSiteTest):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"ok": True})
 
-    def test_settings_page_exposes_stale_prune_controls(self) -> None:
+    def test_settings_page_exposes_archive_restore_controls(self) -> None:
         response = self.client.get("/settings")
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
-        self.assertIn("Prune Stale Nodes", text)
-        self.assertIn('id="stale-max-age-hours"', text)
-        self.assertIn('id="preview-stale-prune"', text)
-        self.assertIn('id="run-stale-prune"', text)
+        self.assertIn("Archived Nodes", text)
+        self.assertIn('id="archived-node-list"', text)
+        self.assertIn('id="refresh-archived-nodes"', text)
+        self.assertNotIn('id="run-stale-prune"', text)
         self.assertIn("Data Sets and Pull Pipelines", text)
         self.assertIn('id="refresh-data-pipelines"', text)
         self.assertIn('id="data-pipelines-grid"', text)

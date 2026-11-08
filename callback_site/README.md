@@ -10,6 +10,7 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 - Catalog management with cache checks and bulk pulls (select several presets, or pull everything missing).
 - Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
 - Boot log exchange: nodes flashed from this site send their own boot logs (journal, cloud-init, dmesg) to `/api/cloud-init/boot-log` after the final callback and on every power restore, which works behind NAT. For other nodes the site pulls them over SSH shortly after a callback (skipped when a push just arrived; `CALLBACK_AUTO_BOOT_LOGS=0` turns the automatic pull off). The last 10 per node are kept.
+- Retire a node with **Archive node** on its newest callback. This hides it from active callbacks, Hardware Monitor, Node Ops and Terminal targets without deleting history, configuration, inventory or Kubernetes resources. New callbacks do not restore it or schedule automatic checks/SSH log collection. Restore it under **Settings > Archived Nodes**. Boot logs live below provisioning output in **Node Ops**, including read-only logs for archived nodes. Selecting an active node collects fresh logs over its preferred connection route; choosing another route attempts that route with its SSH user, key and port. Selecting a stored log only displays history. Collection can take up to 90 seconds and reports failures without erasing stored logs. The payload inspector is collapsed at the bottom of the callback dashboard and opens when a callback is selected.
 - Node Ops connects to a node at its tailnet address when `tailscale status` on the site host lists it online, ahead of the LAN/NAT address a callback reports; the monitor pings the same target.
 - Connection profiles (in active development): each node keeps several ways to reach it (callback, inventory, tailnet IP, tailnet FQDN, DNS, hostname) in `data/connection_profiles.json`, and a replaceable strategy picks one (`prefer_tailnet` default, `prefer_fqdn`, `lan_first`; set `CALLBACK_CONNECTION_STRATEGY` or `register_strategy`). The FQDN profile is only chosen when this host can resolve the MagicDNS name, and every tailnet profile carries the node's `fqdn` for later HTTPS with Tailscale certificates. `GET /api/nodes/<node>/connection-profiles` shows the candidates and the pick. Pinned profiles, per-profile user/key/port, failover and HTTPS via `tailscale cert` are planned next.
 - Terminal: browse predefined SSH diagnostics under System, Boot & logs, and Inventory, filter by search, and preview the exact command before running. The host field is the task target; editing it overrides the discovered-host selection. The route preview uses the same hostname resolution as the task runner. Node Ops **Routes** and Terminal **All node routes** open a compact connection-path modal showing type, preferred strategy, and local interface/gateway when known. These are known candidates, not proof of live SSH reachability. Route lookups use Linux `iproute2` (included in Docker); in Docker the interface belongs to the container, not the Windows host or remote node. Hostname-only routes are resolved by SSH at connection time. Add `?routes=1` to the connection-profile API for these optional route details; `/api/test-terminal/route?host=<host>` previews the terminal target without connecting.
@@ -272,7 +273,11 @@ is not replaced with an unauthenticated fallback.
 - `POST /api/sd/options-profiles`
 - `DELETE /api/sd/options-profiles/<name>`
 - `GET /api/nodes/summary`
-- `POST /api/nodes/stale/prune`
+- `GET /api/nodes/archive` — archived nodes and timestamps
+- `PUT /api/nodes/<name>/archive` — `{"archived": true}` hides a known node; `false` restores it
+- `POST /api/nodes/stale/prune` — retired, returns HTTP 410 without deleting data
+- `GET /api/nodes/boot-log-hosts` — active nodes and retained-log hosts, with archive status
+- `POST /api/nodes/<name>/boot-logs/fetch` — optional `{"route_id": "callback"}` selects a current connection-profile ID, not an arbitrary client-supplied address. No payload keeps the existing automatic strategy. Archived nodes reject collection.
 - `POST /api/nodes/provision`
 - `GET /api/nodes/live-config?node=<name>&module=<id>` — reads that module's current settings off the node over SSH (never secrets); a failed read is `ok: false` with the reason, not an HTTP error?module=<id>&node=<name>` — saved configurations plus settings drawn from other nodes and SD profiles
 - `POST /api/nodes/module-presets` — name a saved configuration (`id`, `name`) or save a node's current inputs under a name (`node`, `module`, `name`)
@@ -298,6 +303,7 @@ is not replaced with an unauthenticated fallback.
 - `callback_site/data/ssh_keys/` — generated SSH key material
 - `callback_site/data/node_reports/` — stored hardware-report payloads
 - `callback_site/data/boot_logs/` — boot logs pulled from nodes, one folder per node
+- `callback_site/data/archived_nodes.json` — reversible archive registry; all other records remain in place
 - `callback_site/data/helm_configurations.json` — Helm configurations and last submitted inputs (may contain secrets; git-ignored)
 
 ## Testing
@@ -340,11 +346,69 @@ if you want to keep its data.
 For nodes to call back to this site, configure their callback URL with the
 Windows host's LAN IP and port, not `127.0.0.1`. Docker Desktop publishes the
 web port; Windows Firewall may also need to allow inbound connections on that
-port. This Windows deployment does not pass physical SD-card devices or the
-host's Tailscale daemon into the container. SD-card flashing and host-tailnet
-discovery therefore require a Linux host with those devices and services
-available. Keep the site on a trusted network; it is not intended for direct
+port. The default deployment does not pass physical USB/SD-card devices or the
+host's Tailscale daemon into the container. Hardware access needs an explicit
+setup (below); host-tailnet discovery also needs the relevant service available
+inside the container. Keep the site on a trusted network; it is not intended for direct
 public-internet exposure.
+
+### USB devices, WSL and Docker
+
+Boot-log routes are **network SSH routes**, not USB transports. Passing through a
+USB serial adapter or card reader does not create a node connection profile.
+Base Compose intentionally remains non-root, unprivileged and device-free.
+No USB attachment or host configuration is performed automatically.
+
+**Windows / Docker Desktop:** a Windows drive letter, COM port or USB device is
+not a Linux `/dev` device. First follow Microsoft's
+[WSL USB guide](https://learn.microsoft.com/en-us/windows/wsl/connect-usb).
+Install `usbipd-win`, keep a WSL 2 shell open, identify the intended device with
+`usbipd list`, then share only its bus ID using an elevated PowerShell:
+
+```powershell
+usbipd bind --busid <BUSID>
+```
+
+Attach from ordinary PowerShell with `usbipd attach --wsl --busid <BUSID>`.
+Verify the device inside WSL using `lsusb` and, for storage, `lsblk`; device
+drivers must exist in that Linux kernel. While attached, Windows cannot use
+the device. Detach using `usbipd detach --busid <BUSID>` before returning it to
+Windows. Restrict the USB/IP firewall rule to trusted hosts.
+
+WSL visibility alone does **not** prove visibility to the Docker daemon.
+Docker Desktop has its own Linux environment: follow Docker's
+[USB/IP instructions](https://docs.docker.com/desktop/features/usbip/) and verify
+the device there before adding a container device mapping. That procedure uses
+a separate privileged attachment helper which must stay running; do not give
+the dashboard those privileges. Docker does not guarantee support for every
+USB device. No physical Windows USB/card-reader setup has been validated here.
+
+**Native Linux Docker:** once the intended device exists on the daemon host,
+an operator-managed Compose override can expose only that device. For a serial
+adapter, resolve its stable `/dev/serial/by-id/...` symlink to the current device
+and use its numeric device-group ID:
+
+```yaml
+services:
+  callback-site:
+    devices:
+      - "${USB_DEVICE:?Set the verified Linux device path}:/dev/ttyUSB0:rw"
+    group_add:
+      - "${USB_DEVICE_GID:?Set the numeric device group ID}"
+```
+
+Combine that override with base Compose (and the Kubernetes override if used).
+Recheck identity after unplug/replug; `/dev/ttyUSB0` and `/dev/sdX` names can be
+reassigned. Device mappings grant access but do not install a serial console
+or add a USB transport to this app.
+
+For an SD reader, exposing the whole verified block device is only one
+prerequisite: the existing flashing workflow also needs privileged mount/write
+operations and access to partition devices. The default non-root image is
+**not a validated SD flasher**, and `--device` alone does not fix that. Prefer
+the existing native Linux flashing workflow rather than making the web app
+privileged. Unmount the intended card on the host, verify size/model/serial,
+and never expose a system disk or mount the host's entire `/dev` into the app.
 
 ### Docker Desktop Kubernetes and Helm
 

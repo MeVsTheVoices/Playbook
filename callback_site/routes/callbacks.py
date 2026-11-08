@@ -19,6 +19,7 @@ from services.callback_payload import (
     _recent_event_defaults,
 )
 from services.events import _clear_events, _read_events, _store_callback_event
+from services.node_archive import active_nodes
 from services.network import _header_or_payload, _resolve_source_ip
 from services.node_views import _trigger_initial_callback_closer
 from services.reports import _decode_node_report_payload, _read_node_report, _store_node_report
@@ -31,7 +32,7 @@ INITIAL_CALLBACK_LOCK = threading.Lock()
 def register_callback_routes(app: Any) -> None:
     @app.get("/api/cloud-init/events")
     def events() -> Any:
-        return jsonify({"events": _read_events(limit=500)})
+        return jsonify({"events": active_nodes(_read_events(limit=500))})
 
     @app.post("/api/cloud-init/events/clear")
     def clear_events() -> Any:

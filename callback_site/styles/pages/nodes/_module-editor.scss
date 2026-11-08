@@ -74,7 +74,7 @@ tr.module-row-selected td:first-child {
 }
 
 .module-fields {
-  @include mixins.auto-grid(260px, 0.95rem 1.1rem);
+  @include mixins.auto-grid(min(260px, 100%), 0.95rem 1.1rem);
   align-items: start;
 }
 

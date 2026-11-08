@@ -7,7 +7,8 @@ Callback Site is the control plane for the rack workflow: cloud-init bootstrap, 
 Styles are authored in `styles/` using Dart Sass modules, not edited in the
 generated `static/*.css` files:
 
-- `styles/*.scss`: ten small entrypoints, one per existing static stylesheet.
+- `styles/*.scss`: small entrypoints, one per static stylesheet, including the
+  shared node connection-route dialog.
 - `styles/shared/`: design tokens, shell/navigation, typography, controls,
   layouts, tables, logs, status, disclosures and responsive/accessibility rules.
 - `styles/pages/<feature>/`: feature-owned modules (for example, dashboard
@@ -471,7 +472,9 @@ For a broader validation pass, use:
 
 ### Docker Compose
 
-From the repository root, build and start the callback site:
+Docker Compose is the standard application runtime on Linux and Windows.
+Keep the Python virtual environment for development/tests, not a second live
+server. From the repository root, build and start the callback site:
 
 ```powershell
 docker compose up --build -d
@@ -488,6 +491,22 @@ The `callback-site-data` Docker volume keeps catalog pulls, callbacks, node
 reports, SSH keys, and operator edits across image rebuilds and container
 recreation. `docker compose down` leaves that volume intact; do not add `-v`
 if you want to keep its data.
+
+**Existing host deployments:** stop the host Python server before publishing
+the same port. Back up `callback_site/data/` and copy its contents into the
+Compose data volume before the first start, preserving private key/session
+permissions and assigning ownership to container UID/GID `10001:10001`.
+Rewrite saved absolute paths under the old data directory to `/data` (for
+example image-history `download_path` and SSH archive `archive_path`); copying
+files alone does not make host paths usable inside the container. Keep the
+original host data until the migrated UI and a container recreation are verified.
+Never bake data, logs or keys into the image.
+
+On Linux with Docker Desktop, start it with
+`systemctl --user start docker-desktop` and use the `desktop-linux` Docker
+context. Enable its user service if it should start at login. With Docker
+Engine, use its system service and default context instead; do not run both
+engines for this application.
 
 For nodes to call back to this site, configure their callback URL with the
 Windows host's LAN IP and port, not `127.0.0.1`. Docker Desktop publishes the

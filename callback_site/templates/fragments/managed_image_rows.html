@@ -19,6 +19,7 @@
     {% else %}
       <span class="download-state missing"><span class="mark">❌</span> <span>missing</span></span>
     {% endif %}
+    <button type="button" class="compact-list-inline-btn" onclick='editManagedImage({{ row.id | tojson }})'>Edit</button>
     <button type="button" class="compact-list-inline-btn secondary" onclick='deleteManagedImage({{ row.id | tojson }}, {{ (row.label or "Retrieved image") | tojson }})'>Delete</button>
   </div>
 </div>

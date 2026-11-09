@@ -11,6 +11,7 @@
     <script src="{{ url_for('static', filename='config_check.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='home.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
+    {% include "fragments/structured_output_assets.html" %}
   </head>
   <body>
     {% include "_sidebar.html" %}
@@ -51,7 +52,7 @@
             <h1>SD Card Imager 🧰</h1>
             <span class="pill">Operator Mode 🧪</span>
           </div>
-          <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init plus callback metadata. Zero drama, maximum bytes 😎</p>
+          <p>Prepares cloud-init and callback metadata, then flashes through the local Linux host or the optional isolated Flash Helper. Helper mode only uses explicitly discovered removable devices and requires a fresh erase confirmation. 😎</p>
         </div>
         <div class="stats-grid">
           <div class="stat-card">
@@ -72,8 +73,10 @@
           </div>
         </div>
         <form id="sd-form">
-          <div class="fieldset">
-            <h2>Target Settings</h2>
+          <details class="fieldset" id="sd-target-settings" name="sd-setup-section" open>
+            <summary>
+              <span class="fieldset-title">Target Settings <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
+            </summary>
             <div class="form-grid">
               <div>
                 <label for="profile">Profile</label>
@@ -82,7 +85,10 @@
                   <option value="pi4">pi4</option>
                   <option value="pi3bplus">pi3bplus</option>
                   <option value="network-toolkit">Network Toolkit (Pi 3B+)</option>
+                  <option value="uefi-x86_64">UEFI installer USB (x86_64)</option>
+                  <option value="uefi-arm64">UEFI installer USB (ARM64)</option>
                 </select>
+                <div class="hint" id="installer-workflow-status" role="status" hidden></div>
               </div>
               <div>
                 <label for="distribution">Distribution</label>
@@ -110,10 +116,12 @@
                 <input id="callback_url" name="callback_url" value="{{ callback_url_default }}" required>
               </div>
             </div>
-          </div>
+          </details>
 
-          <div class="fieldset">
-            <h2>Image Source And Integrity</h2>
+          <details class="fieldset" id="sd-image-settings" name="sd-setup-section">
+            <summary>
+              <span class="fieldset-title">Image Source And Integrity <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
+            </summary>
             <div class="form-grid">
               <div>
                 <label for="distro_family">Distro Family</label>
@@ -150,10 +158,12 @@
             </div>
             <div class="muted-note" id="os-preset-note" style="margin-top: 0.7rem;"></div>
             <div class="catalog-meta" id="catalog-meta"></div>
-          </div>
+          </details>
 
-          <div class="fieldset">
-            <h2>SSH Access</h2>
+          <details class="fieldset" id="sd-ssh-settings" name="sd-setup-section">
+            <summary>
+              <span class="fieldset-title">SSH Access <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
+            </summary>
             <p class="hint">Every Pi profile enables passwordless sudo for its administrative user by default. SSH password-login settings are separate; the Network Toolkit browser-console user keeps its restricted permissions.</p>
             <div>
               <label for="ssh_key_name">First-Time SSH Key Generation (optional)</label>
@@ -187,7 +197,7 @@
               <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
               <p class="hint">Generated or loaded website keys are also fetched and verified during first boot from the callback host's public-key endpoint. Keep the matching private key for future SSH access. Uploaded or edited keys are embedded only. The callback address must be reachable from the node, not localhost.</p>
             </div>
-          </div>
+          </details>
 
           <details class="fieldset" id="cloud-init-optional-settings">
             <summary>
@@ -691,7 +701,7 @@ server: https://local-machine-ip:6443
           <button type="button" id="payload-inspect-clear" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;">Clear Selection</button>
         </div>
         <p class="note" id="payload-inspect-meta">Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.</p>
-        <pre id="payload-inspect-json" class="payload-view">No payload selected yet.</pre>
+        <pre id="payload-inspect-json" class="payload-view" data-format="json">No payload selected yet.</pre>
       </details>
       </div>
     </div>

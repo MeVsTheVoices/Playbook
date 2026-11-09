@@ -1,6 +1,10 @@
 # Confirm the target, write the image and mount the boot partition.
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
 
+if [[ -n "${FLASH_EXPECTED_IDENTITY:-}" ]]; then
+  python3 "$SCRIPT_DIR/../flash_helper/devices.py" "$DEVICE" "$FLASH_EXPECTED_IDENTITY"
+fi
+
 if ! DEVICE_INFO="$(lsblk -dnbo TYPE,SIZE "$DEVICE")"; then
   echo "Cannot inspect target type and capacity: $DEVICE; refusing to overwrite it." >&2
   exit 1
@@ -69,7 +73,13 @@ if [[ -n "$MOUNTED_DEVICES" ]]; then
 fi
 
 echo "Flashing image..."
-dd if="$IMG_TO_WRITE" of="$DEVICE" bs=8M conv=fsync status=progress
+WRITE_DEVICE="$DEVICE"
+if [[ -n "${FLASH_EXPECTED_IDENTITY:-}" ]]; then
+  exec 7<>"$DEVICE"
+  python3 "$SCRIPT_DIR/../flash_helper/devices.py" "$DEVICE" "$FLASH_EXPECTED_IDENTITY"
+  WRITE_DEVICE="/proc/self/fd/7"
+fi
+dd if="$IMG_TO_WRITE" of="$WRITE_DEVICE" bs=8M conv=fsync status=progress
 sync
 echo "Verifying the entire written image from the card..."
 blockdev --flushbufs "$DEVICE"
@@ -77,16 +87,24 @@ if ! cmp -n "$IMAGE_BYTES" -- "$IMG_TO_WRITE" "$DEVICE"; then
   echo "Image readback verification failed. Check the card, reader and USB connection; card is not ready." >&2
   exit 1
 fi
+if [[ -n "${FLASH_EXPECTED_IDENTITY:-}" ]]; then
+  python3 "$SCRIPT_DIR/../flash_helper/devices.py" "$DEVICE" "$FLASH_EXPECTED_IDENTITY"
+fi
 if ! partprobe "$DEVICE"; then
   echo "Cannot refresh partition table on $DEVICE; stopping before cloud-init injection." >&2
   exit 1
 fi
 udevadm settle
 
-if [[ "$DEVICE" =~ (mmcblk|nvme) ]]; then
-  BOOT_PART="${DEVICE}p1"
+if [[ "${FLASH_MEDIA_ONLY:-false}" == "true" ]]; then
+  return 0
+fi
+
+DEVICE_PATH="$(readlink -f -- "$DEVICE")"
+if [[ "$DEVICE_PATH" =~ (mmcblk|nvme) ]]; then
+  BOOT_PART="${DEVICE_PATH}p1"
 else
-  BOOT_PART="${DEVICE}1"
+  BOOT_PART="${DEVICE_PATH}1"
 fi
 
 if [[ ! -b "$BOOT_PART" ]]; then
@@ -96,3 +114,6 @@ fi
 
 echo "Mounting boot partition: $BOOT_PART"
 mount "$BOOT_PART" "$TMP_DIR/boot"
+if [[ -n "${FLASH_EXPECTED_IDENTITY:-}" ]]; then
+  python3 "$SCRIPT_DIR/../flash_helper/devices.py" "$DEVICE" "$FLASH_EXPECTED_IDENTITY"
+fi

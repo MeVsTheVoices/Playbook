@@ -57,40 +57,41 @@
         <div class="panel settings-utilities" id="settings-utilities">
           <h2>Rack, Catalog &amp; Diagnostics</h2>
           <details class="settings-utility">
-          <summary>Rack Identity</summary>
-          <p class="note">Set the main rack name used for rack-aware defaults (for example in Tailscale ACL planner tags).</p>
-          <label for="rack-name">Rack Name</label>
-          <input id="rack-name" placeholder="homelab">
-          <div class="button-row">
-            <button id="save-rack-name" class="primary">Save Rack Name</button>
-          </div>
-          <div id="rack-status" class="status">Loading rack settings...</div>
+            <summary>Rack Identity</summary>
+            <p class="note">Set the main rack name used for rack-aware defaults (for example in Tailscale ACL planner tags).</p>
+            <label for="rack-name">Rack Name</label>
+            <input id="rack-name" placeholder="homelab">
+            <div class="button-row">
+              <button id="save-rack-name" class="primary">Save Rack Name</button>
+            </div>
+            <div id="rack-status" class="status">Loading rack settings...</div>
           </details>
 
           <details class="settings-utility">
-          <summary>Image Catalog Health</summary>
-          <p class="note">Quick validation for YAML-backed catalog entries and local cache availability.</p>
-          <div class="button-row"><button id="check-catalog-health" class="primary">Check Catalog State</button><a href="/images#catalog-source-panel">Open Image Library</a></div>
-          <div id="catalog-health-status" class="status">Idle.</div>
-          <details>
-          <summary>Catalog Source Of Truth</summary>
-          <p class="note">Catalog entries are maintained in a YAML file for easier human edits and separation from code. Image Library and Dashboard preset availability both read from this source.</p>
-          <div class="status">File: callback_site/catalogs/image_catalog.yml
+            <summary>Image Catalog Health</summary>
+            <p class="note">Quick validation for YAML-backed catalog entries and local cache availability.</p>
+            <div class="button-row"><button id="check-catalog-health" class="primary">Check Catalog State</button><a href="/images#catalog-source-panel">Open Image Library</a></div>
+            <div id="catalog-health-status" class="status">Idle.</div>
+          </details>
+
+          <details class="settings-utility">
+            <summary>Catalog Source Of Truth</summary>
+            <p class="note">Catalog entries are maintained in a YAML file for easier human edits and separation from code. Image Library and Dashboard preset availability both read from this source.</p>
+            <div class="status">File: callback_site/catalogs/image_catalog.yml
 Loaded at runtime by: callback_site/domain_defaults.py
 Parser mode: PyYAML if installed, fallback parser otherwise.</div>
           </details>
-          </details>
 
           <details class="settings-utility">
-          <summary>Logging and Diagnostics</summary>
-          <p class="note">Configure logging verbosity and view recent logs for troubleshooting.</p>
-          <div class="button-row">
-            <button id="enable-verbose-logging" class="primary">Enable Verbose Logging</button>
-            <button id="disable-verbose-logging" class="primary">Disable Verbose Logging</button>
-            <button id="view-recent-logs" class="primary">View Recent Logs (100 lines)</button>
-          </div>
-          <div id="logging-status" class="status">Idle.</div>
-          <div id="logging-output" class="log-output"></div>
+            <summary>Logging and Diagnostics</summary>
+            <p class="note">Configure logging verbosity and view recent logs for troubleshooting.</p>
+            <div class="button-row">
+              <button id="enable-verbose-logging" class="primary">Enable Verbose Logging</button>
+              <button id="disable-verbose-logging" class="primary">Disable Verbose Logging</button>
+              <button id="view-recent-logs" class="primary">View Recent Logs (100 lines)</button>
+            </div>
+            <div id="logging-status" class="status">Idle.</div>
+            <div id="logging-output" class="log-output"></div>
           </details>
         </div>
 

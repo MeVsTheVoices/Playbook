@@ -51,3 +51,24 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)roles/raspberry_pi(?:_3bplus|4|5)/tasks/main\.yml$''']
 regexes = ['''^raspberry_pi(?:_3bplus|4|5)_[A-Za-z0-9_]+$''']
+
+[[rules.allowlists]]
+description = "Escaped shell-variable expansion prefix captured from generated Influx configuration"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)scripts/(?:lib/user_data_scripts|prepare_sd_cloud_init)\.sh$''']
+regexes = ['''^\\\$$''']
+
+[[rules.allowlists]]
+description = "Verified change-me placeholder in the historical Pi 5 Vault example"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)group_vars/rpi5/vault\.example\.yml$''']
+regexes = ['''^tskey-secret-CHANGE_ME$''']
+
+[[rules.allowlists]]
+description = "Verified substitution placeholder in the historical router example"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)personal/gateways/configure_gl_inet_wireless_bridge\.yaml$''']
+regexes = ['''^tskey-auth-yourkeyhere$''']

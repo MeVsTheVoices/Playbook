@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='test_terminal.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='connection_routes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
+    {% include "fragments/structured_output_assets.html" %}
   </head>
   <body>
     {% include "_sidebar.html" %}
@@ -77,7 +78,7 @@
           <label for="check-id">Selected task</label>
           <select id="check-id"></select>
           <p class="muted" id="check-description">Choose a predefined task.</p>
-          <details class="command-preview"><summary>What will run?</summary><pre id="check-command">Select a task to preview its command.</pre></details>
+          <details class="command-preview"><summary>What will run?</summary><pre id="check-command" data-format="bash">Select a task to preview its command.</pre></details>
         </div>
         <div class="actions">
           <button id="start-check" disabled>Run selected task</button>

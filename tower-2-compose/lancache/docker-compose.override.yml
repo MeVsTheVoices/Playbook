@@ -1,6 +1,0 @@
-services:
-  lancache:
-    labels:
-      net.unraid.docker.icon: https://raw.githubusercontent.com/redvex2460/docker-templates/master/redvex2460/images/lancache.png
-      net.unraid.docker.managed: dockerman
-      net.unraid.docker.shell: ''

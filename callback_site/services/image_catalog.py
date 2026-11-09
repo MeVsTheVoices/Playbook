@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List
-from urllib import parse as urlparse, request as urlrequest
+from urllib import parse as urlparse
 
 from domain_defaults import IMAGE_CATALOG
 
@@ -24,6 +24,7 @@ from services.images import (
     _read_image_history,
 )
 from services.storage import IMAGE_CACHE_DIR, _ensure_image_cache_dir
+from services.image_download import download
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def _image_state_summary() -> Dict[str, Any]:
 
 def _safe_catalog_filename(url: str, entry_id: str) -> str:
     parsed = urlparse.urlparse(url)
-    suffix = ".img.xz" if parsed.path.endswith(".xz") else ".img"
+    suffix = ".iso" if parsed.path.endswith(".iso") else ".img.xz" if parsed.path.endswith(".xz") else ".img"
     return hashlib.sha256(url.encode()).hexdigest() + suffix
 
 
@@ -106,31 +107,7 @@ def _download_catalog_image(
     target: Path,
     on_progress: Callable[[int, int | None], None] | None = None,
 ) -> str:
-    req = urlrequest.Request(url, headers={"User-Agent": "callback-site-catalog-pull/1.0"})
-    digest = hashlib.sha256()
-    with urlrequest.urlopen(req, timeout=60) as resp, target.open("wb") as dst:  # nosec B310
-        total_bytes_raw = resp.headers.get("Content-Length")
-        total_bytes: int | None = None
-        if total_bytes_raw:
-            try:
-                total_bytes = int(total_bytes_raw)
-            except (TypeError, ValueError):
-                total_bytes = None
-
-        downloaded_bytes = 0
-        if on_progress:
-            on_progress(downloaded_bytes, total_bytes)
-
-        while True:
-            chunk = resp.read(1024 * 1024)
-            if not chunk:
-                break
-            dst.write(chunk)
-            digest.update(chunk)
-            downloaded_bytes += len(chunk)
-            if on_progress:
-                on_progress(downloaded_bytes, total_bytes)
-    return digest.hexdigest()
+    return download(url, target, on_progress)
 
 
 def _catalog_entry_with_availability(entry: Dict[str, Any], available_urls: set[str] | None = None) -> Dict[str, Any]:

@@ -281,7 +281,7 @@ def _render_openwrt_inventory_preview(
     ]
 
     if password:
-        lines.append(f"          ansible_password: {password}")
+        lines.append('          ansible_password: "<redacted>"')
     if private_key_path:
         lines.append(f"          ansible_ssh_private_key_file: {private_key_path}")
     if become:

@@ -169,6 +169,10 @@ function snapshot(profile, distribution) {
     securityStarterHidden: getComputedStyle(sdOptionsSecurityDefaultsBtn).display === "none",
     invalidHidden: sdOptionsInputEls.filter(el => !el.disabled && el.required && !el.checkValidity())
       .some(el => !el.getClientRects().length),
+    submitDisabled: form.querySelector("button[type='submit']").disabled,
+    catalogIds: [...form.os_preset.options].map(el => el.value),
+    imageFile: form.image_file.value,
+    imageUrl: form.image_url.value,
     viewportWidth: innerWidth, pageWidth: document.documentElement.scrollWidth,
   };
 }
@@ -196,6 +200,12 @@ try {
   results.push(snapshot("network-toolkit", "standard"));
   await resetCloudInitOptions();
   results.push(snapshot("network-toolkit", "standard"));
+  for (const profile of ["uefi-x86_64", "uefi-arm64"]) {
+    deviceBackend = "native";
+    results.push({...snapshot(profile, "k3s"), backend: "native"});
+    deviceBackend = "helper";
+    results.push({...snapshot(profile, "k3s"), backend: "helper"});
+  }
   document.body.innerHTML = '<pre id="matrix-result"></pre>';
   document.getElementById("matrix-result").textContent = JSON.stringify(results);
 } catch (error) {
@@ -227,7 +237,8 @@ try {
         toolkit = {"toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry"}
         for snapshot in snapshots:
             with self.subTest(profile=snapshot["profile"], distribution=snapshot["distribution"]):
-                expected = set(toolkit if snapshot["profile"] == "network-toolkit" else general)
+                installer = snapshot["profile"].startswith("uefi-")
+                expected = {"identity", "access"} if installer else set(toolkit if snapshot["profile"] == "network-toolkit" else general)
                 if snapshot["profile"] == "pi5":
                     expected.add("pi")
                 if snapshot["distribution"] == "k3s":
@@ -236,7 +247,16 @@ try {
                 self.assertFalse(snapshot["invalidHidden"])
                 self.assertEqual(snapshot["viewportWidth"], 390)
                 self.assertLessEqual(snapshot["pageWidth"], snapshot["viewportWidth"])
-                if snapshot["profile"] == "network-toolkit":
+                if installer:
+                    self.assertEqual(snapshot["distribution"], "standard")
+                    self.assertEqual(set(snapshot["enabled"]), {"username", "timezone", "locale"})
+                    self.assertTrue(snapshot["securityStarterHidden"])
+                    self.assertFalse(snapshot["requiredKey"])
+                    self.assertEqual(snapshot["submitDisabled"], snapshot["backend"] != "helper")
+                    self.assertEqual(len(snapshot["catalogIds"]), 5)
+                    self.assertEqual(snapshot["imageFile"], "")
+                    self.assertTrue(snapshot["imageUrl"].endswith(".iso"))
+                elif snapshot["profile"] == "network-toolkit":
                     self.assertEqual(snapshot["distribution"], "standard")
                     self.assertTrue(snapshot["requiredKey"])
                     self.assertTrue(snapshot["securityStarterHidden"])

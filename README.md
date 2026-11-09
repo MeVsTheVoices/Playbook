@@ -102,7 +102,6 @@ Before committing deployment changes, install the
 | [roles/](roles/) | Ansible provisioning for rack devices and the network toolkit. |
 | [inventory.yml](inventory.yml) · [site.yml](site.yml) | Device inventory and the main provisioning playbook. |
 | [compose.yaml](compose.yaml) · [compose.kubernetes.yaml](compose.kubernetes.yaml) | Portal runtime and optional kubeconfig mount. |
-| [tower-2-compose/](tower-2-compose/README.md) | Recovered, credential-free legacy Compose projects; separate from the portal. |
 
 ---
 

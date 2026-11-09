@@ -18,6 +18,8 @@ from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
 from network_toolkit import PROFILE as TOOLKIT_PROFILE
 from services.ssh_keys import _is_safe_key_name
 from services.storage import KEYS_DIR
+from services import flash_helper
+from services.installer_config import UEFI_PROFILES, is_installer
 
 from services.k3s_config import _check_longform
 from services.sd_devices import (
@@ -84,6 +86,9 @@ def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
     }
     if payload.get("profile") == TOOLKIT_PROFILE:
         profiles[next_name]["profile"] = TOOLKIT_PROFILE
+    elif is_installer(payload):
+        profiles[next_name].update(profile=payload["profile"], workflow="uefi-installer",
+                                   catalog_id=payload["catalog_id"])
     _save_sd_option_profiles(profiles)
     _set_preferred_sd_option_profile(next_name)
     return next_name
@@ -171,6 +176,9 @@ def register_sd_routes(app: Any) -> None:
         }
         if payload.get("profile") == TOOLKIT_PROFILE:
             profiles[name]["profile"] = TOOLKIT_PROFILE
+        elif payload.get("profile") in UEFI_PROFILES:
+            profiles[name].update(profile=payload["profile"], workflow="uefi-installer",
+                                 catalog_id=str(payload.get("catalog_id", "")))
         _save_sd_option_profiles(profiles)
         _retain_sd_session_secrets(name, resolved_options, clear)
         if bool(payload.get("set_preferred", False)):
@@ -191,12 +199,30 @@ def register_sd_routes(app: Any) -> None:
 
     @app.get("/api/sd/devices")
     def sd_devices() -> Any:
+        if flash_helper.enabled():
+            try:
+                return jsonify(devices=flash_helper.devices(), errors=[], backend="helper")
+            except flash_helper.HelperError as exc:
+                app.logger.warning("Flash helper discovery unavailable: %s", exc)
+                return jsonify(devices=[], errors=[str(exc)], backend="helper"), 503
         _ensure_device_monitor_started()
         prereq_errors = _ensure_prereqs()
-        return jsonify({"devices": _list_sd_devices(), "errors": prereq_errors})
+        return jsonify({"devices": _list_sd_devices(), "errors": prereq_errors, "backend": "native"})
+
+    @app.get("/api/sd/backend")
+    def sd_backend() -> Any:
+        return jsonify(ok=True, backend="helper" if flash_helper.enabled() else "native",
+                       discovery="poll" if flash_helper.enabled() else "sse",
+                       workflows=["pi", "uefi-installer"] if flash_helper.enabled() else ["pi"],
+                       installer_profiles=list(UEFI_PROFILES),
+                       installer_options=["username", "timezone", "locale"],
+                       installer_disk_policy="single-internal-disk",
+                       installer_requires_authorization=True)
 
     @app.get("/api/sd/devices/webhook")
     def sd_device_webhook() -> Response:
+        if flash_helper.enabled():
+            return Response("Helper mode uses GET /api/sd/devices polling.", status=409, mimetype="text/plain")
         _ensure_device_monitor_started()
 
         def event_stream() -> Any:
@@ -230,7 +256,7 @@ def register_sd_routes(app: Any) -> None:
     @app.post("/api/sd/prepare")
     @sd_storage_errors
     def sd_prepare() -> Any:
-        prereq_errors = _ensure_prereqs()
+        prereq_errors = [] if flash_helper.enabled() else _ensure_prereqs()
         if prereq_errors:
             return jsonify({"ok": False, "errors": prereq_errors}), 400
 
@@ -285,7 +311,7 @@ def register_sd_routes(app: Any) -> None:
         if missing:
             return jsonify({"ok": False, "errors": [f"Missing fields: {', '.join(missing)}"]}), 400
 
-        sd_profiles = (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE)
+        sd_profiles = (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE, *UEFI_PROFILES)
         if payload["profile"] not in sd_profiles:
             return jsonify({"ok": False, "errors": [f"profile must be one of: {', '.join(sd_profiles)}"]}), 400
 
@@ -293,6 +319,8 @@ def register_sd_routes(app: Any) -> None:
         if distribution not in {"standard", "k3s"}:
             return jsonify({"ok": False, "errors": ["distribution must be standard or k3s"]}), 400
         payload["distribution"] = distribution
+        if is_installer(payload) and not flash_helper.enabled():
+            return jsonify(ok=False, errors=["UEFI unattended media requires the isolated Linux flashing helper."]), 400
         if payload.get("config_errors"):
             errors = payload["config_errors"]
             return jsonify({"ok": False, "errors": errors}), 400
@@ -300,6 +328,12 @@ def register_sd_routes(app: Any) -> None:
             k3s_check = _check_longform("k3s_config", payload["cloud_init_options"].get("k3s_config", ""))
             if not k3s_check["ok"]:
                 return jsonify({"ok": False, "errors": [f"K3s config: {err}" for err in k3s_check["errors"]]}), 400
+        if flash_helper.enabled():
+            try:
+                flash_helper.validate_confirmation(payload)
+            except flash_helper.HelperError as exc:
+                app.logger.warning("Flash helper preparation rejected: %s", exc)
+                return jsonify(ok=False, errors=[str(exc)]), 409
         payload["sd_options_profile"] = _auto_generate_sd_option_profile(payload)
         _retain_sd_session_secrets(payload["sd_options_profile"], payload["cloud_init_options"])
 
@@ -314,6 +348,9 @@ def register_sd_routes(app: Any) -> None:
                     "distribution": payload["distribution"],
                     "hostname": payload["hostname"],
                     "device": payload["device"],
+                    "workflow": payload.get("workflow", "pi"),
+                    "catalog_id": payload.get("catalog_id", ""),
+                    "install_authorized": payload.get("install_authorized", False),
                     "callback_url": payload["callback_url"],
                     "image_sha256": str(payload.get("image_sha256", "")).strip(),
                     "sd_options_profile": str(payload.get("sd_options_profile", "")).strip(),

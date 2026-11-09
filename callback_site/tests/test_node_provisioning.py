@@ -26,6 +26,8 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         text = response.get_data(as_text=True)
         self.assertIn("User-defined profile segments", text)
         self.assertIn("Ansible Galaxy requirements", text)
+        self.assertIn("not currently injected into provisioning runs", text)
+        self.assertIn("does not change a profile or the data sent during a provisioning run", text)
 
     def test_profile_segments_api_round_trips(self) -> None:
         response = self.client.post(

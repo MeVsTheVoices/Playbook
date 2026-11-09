@@ -78,11 +78,14 @@ await tick();
 check(!requests.some(r => r.method === "DELETE"), "no permanent node deletion introduced");
 """)
 
-    def test_catalog_health_and_source_share_one_panel(self) -> None:
+    def test_catalog_health_and_source_are_siblings_in_one_panel(self) -> None:
         text = self.client.get("/settings").get_data(as_text=True)
-        start = text.index("<summary>Image Catalog Health</summary>")
-        end = text.index('<details class="settings-utility">', start)
-        self.assertIn("<summary>Catalog Source Of Truth</summary>", text[start:end])
+        start = text.index('<div class="panel settings-utilities" id="settings-utilities">')
+        end = text.index('<div class="panel" id="node-state-maintenance">', start)
+        section = text[start:end]
+        self.assertEqual(section.count('<details class="settings-utility">'), 4)
+        self.assertLess(section.index("<summary>Image Catalog Health</summary>"),
+                        section.index("<summary>Catalog Source Of Truth</summary>"))
         self.assertNotIn("<h2>Catalog Source Of Truth</h2>", text)
 
     def test_utilities_share_one_panel_and_expand_independently(self) -> None:
@@ -95,8 +98,8 @@ window.fetch = async () => ({ok: true, json: async () => ({
 await tick();
 const panel = document.querySelector("#settings-utilities");
 const sections = Array.from(panel.querySelectorAll(":scope > details"));
-check(sections.length === 3 && sections.every(section => !section.open),
-  "three utilities collapsed inside one panel");
+check(sections.length === 4 && sections.every(section => !section.open),
+  "four utilities collapsed inside one panel");
 check(panel.getBoundingClientRect().height < 260, "collapsed utility panel stays below 260px");
 for (const id of ["rack-name", "save-rack-name", "rack-status", "check-catalog-health",
   "catalog-health-status", "enable-verbose-logging", "disable-verbose-logging",
@@ -105,11 +108,14 @@ for (const id of ["rack-name", "save-rack-name", "rack-status", "check-catalog-h
   check(document.querySelectorAll(`#${id}`).length === 1, `unique control: ${id}`);
 }
 sections[0].querySelector("summary").click();
-check(sections[0].open && !sections[1].open && !sections[2].open, "rack expands independently");
+check(sections[0].open && sections.slice(1).every(section => !section.open), "rack expands independently");
 sections[1].querySelector("summary").click();
-check(sections[0].open && sections[1].open, "opening catalog preserves rack form");
-check(sections[1].querySelector(":scope > details > summary").textContent === "Catalog Source Of Truth",
-  "catalog source remains a nested disclosure");
+check(sections[0].open && sections[1].open && sections.slice(2).every(section => !section.open),
+  "opening catalog health preserves rack form");
+check(sections[2].querySelector(":scope > summary").textContent === "Catalog Source Of Truth",
+  "catalog source is a sibling utility");
+sections[2].querySelector("summary").click();
+check(sections[1].open && sections[2].open, "catalog source expands independently of catalog health");
 check(document.querySelector("#rack-name").value === "test-rack", "rack settings still populate");
 """)
 

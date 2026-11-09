@@ -8,6 +8,10 @@ on:
       - "callback_site/build_styles.py"
       - "callback_site/requirements-styles.txt"
       - "callback_site/tests/test_style_build.py"
+      - "callback_site/frontend/**"
+      - "callback_site/build_frontend.mjs"
+      - "callback_site/package*.json"
+      - "callback_site/static/structured_output*"
       - ".github/workflows/styles.yml"
   push:
     paths:
@@ -16,6 +20,10 @@ on:
       - "callback_site/build_styles.py"
       - "callback_site/requirements-styles.txt"
       - "callback_site/tests/test_style_build.py"
+      - "callback_site/frontend/**"
+      - "callback_site/build_frontend.mjs"
+      - "callback_site/package*.json"
+      - "callback_site/static/structured_output*"
       - ".github/workflows/styles.yml"
   workflow_dispatch:
 
@@ -35,3 +43,12 @@ jobs:
       - run: python -m pip install -r callback_site/requirements-styles.txt
       - run: python callback_site/build_styles.py --check
       - run: python -m unittest callback_site.tests.test_style_build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: callback_site/package-lock.json
+      - run: npm ci
+        working-directory: callback_site
+      - run: npm run check
+        working-directory: callback_site

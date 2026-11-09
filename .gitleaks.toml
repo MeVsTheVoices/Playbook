@@ -4,7 +4,7 @@ title = "Playbook secret detection"
 useDefault = true
 
 [[allowlists]]
-description = "Public Python image signing-key fingerprint, not a private credential"
+description = "Public signing-key fingerprint in historical retired Tower-2 Compose files, not a private credential"
 condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)tower-2-compose/(?:discord_bot|dockerbot)/docker-compose\.yml$''']
@@ -29,13 +29,25 @@ description = "Discord bot token"
 regex = '''\b[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,110}\b'''
 
 [[rules]]
-id = "compose-literal-credential"
-description = "Compose credential fields must use private environment references, not literals"
-path = '''(?:^|/)(?:docker-)?compose(?:\.[^/]*)?\.ya?ml$'''
-regex = '''(?im)^[ \t]*(?:#[ \t]*)?(?:-[ \t]*)?["']?[A-Za-z0-9_.-]*(?:TOKEN|PASSWORD|PASSWD|AUTHKEY|AUTH_KEY|APIKEY|API_KEY|SECRET|SECRET_KEY|PRIVATE_KEY)[ \t]*(?:=|:[ \t]*)["']?([^\s$"'{}][^\s"'{}]*)'''
+id = "literal-credential-assignment"
+description = "Credential fields in configuration files must use secret references, not literals"
+path = '''(?:^|/)(?:[^/]+\.(?:ya?ml|json|toml|ini|cfg|conf|properties|env|bash|sh)|\.env(?:\.[^/]*)?)$'''
+regex = '''(?im)^[ \t]*(?:#[ \t]*)?(?:export[ \t]+)?(?:-[ \t]*)?(?:[,{][ \t]*)?["']?[A-Za-z0-9_.-]*(?:TOKEN|PASSWORD(?:[_-]HASH)?|PASSWD(?:[_-]HASH)?|SECRET|API[_-]?KEY|ACCESS[_-]?(?:KEY|TOKEN)|AUTH(?:ORIZATION|[_-]?(?:KEY|TOKEN))?|PRIVATE[_-]?KEY|TLS[_-]?KEY|CREDENTIALS?|VAULT[_-]?(?:PASS(?:WORD)?|KEY)|ENCRYPTION[_-]?KEY|SIGNING[_-]?KEY)[ \t]*["']?[ \t]*(?:=|:[ \t]*)["']?([^\s,#"'{}$|>][^\s,#"'{}]*)'''
 secretGroup = 1
 
 [[rules.allowlists]]
 description = "Explicit historical redaction marker"
 regexTarget = "secret"
 regexes = ['''^REDACTED$''']
+
+[[rules.allowlists]]
+description = "Obvious example placeholders and non-secret boolean values"
+regexTarget = "secret"
+regexes = ['''(?i)^(?:CHANGE[_-]?ME|REPLACE[_-]?ME|YOUR[_-].*|EXAMPLE|DUMMY|TRUE|FALSE|YES|NO|ON|OFF|NULL|NONE|TOKEN|BASIC|BEARER|DIGEST|REQUIRED|OPTIONAL|DISABLED)$''']
+
+[[rules.allowlists]]
+description = "Ansible variable references in K3s config maps, not literal tokens"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)roles/raspberry_pi(?:_3bplus|4|5)/tasks/main\.yml$''']
+regexes = ['''^raspberry_pi(?:_3bplus|4|5)_[A-Za-z0-9_]+$''']

@@ -19,7 +19,9 @@ reachable history, preventing an old clone from reintroducing known credentials.
 CI checks all history reachable from
 the refs in its checkout, including pull-request commits, with the same digest-pinned
 Gitleaks version and repository rules for Tailscale, Discord, and literal
-credential fields in Compose files (including commented-out assignments).
+credential assignments in configuration files such as Ansible variables,
+Kubernetes manifests, Compose files, and environment files (including
+commented-out assignments).
 Findings are redacted; the scanner runs without network access.
 The first run needs network access to pull the public scanner image.
 

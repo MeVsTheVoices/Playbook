@@ -755,6 +755,7 @@
 
       const optionsEl = document.createElement("pre");
       optionsEl.className = "job-log";
+      optionsEl.dataset.format = "json";
       optionsEl.style.maxHeight = "150px";
       optionsEl.style.marginTop = "0.5rem";
       optionsEl.textContent = JSON.stringify(profile.options || {}, null, 2);

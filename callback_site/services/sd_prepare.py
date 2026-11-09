@@ -33,6 +33,8 @@ from services.storage import IMAGE_CACHE_DIR, INVENTORY_FILE, SCRIPT_PATH
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options
 from network_toolkit import EXTRA_PACKAGES_OPTION, extra_packages
 from package_options import package_names
+from services import flash_helper
+from services.installer_config import is_installer, validate as validate_installer
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,11 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "sd_options_profile",
         "pi_only",
         "cloud_init_options",
+        "device_identity",
+        "confirm_device",
+        "workflow",
+        "catalog_id",
+        "install_authorized",
     }
     cleaned: Dict[str, Any] = {}
     for key in allowed_keys:
@@ -92,6 +99,12 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         cleaned["cloud_init_options"] = {}
     cleaned["sd_options_profile"] = str(cleaned.get("sd_options_profile", "")).strip()
     cleaned["pi_only"] = bool(cleaned.get("pi_only", False))
+    if is_installer(cleaned):
+        try:
+            validate_installer(cleaned)
+        except ValueError as exc:
+            cleaned["config_errors"] = [str(exc)]
+        return cleaned
     cloud_options = cleaned["cloud_init_options"]
     if cleaned.get("profile") != TOOLKIT_PROFILE:
         option_errors = []
@@ -384,6 +397,11 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
 
 
 def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
+    if flash_helper.enabled():
+        flash_helper.run_prepare_job(job_id, form)
+        return
+    if is_installer(form):
+        raise RuntimeError("UEFI installation must run in the isolated flashing helper.")
     hostname = form.get("hostname", "unknown")
     profile = form.get("profile", "unknown")
     device = form.get("device", "unknown")
@@ -458,6 +476,8 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         distribution = str(form.get("distribution", "standard")).strip().lower() or "standard"
         env["CLOUD_INIT_DISTRIBUTION"] = distribution
         env["CLOUD_INIT_SSH_PUBLIC_KEY_URL"] = str(form.get("ssh_public_key_url", ""))
+        if form.get("device_identity"):
+            env["FLASH_EXPECTED_IDENTITY"] = str(form["device_identity"])
 
         cloud_init_options = form.get("cloud_init_options", {})
         if isinstance(cloud_init_options, dict):

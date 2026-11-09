@@ -20,6 +20,11 @@ select {
   text-overflow: ellipsis;
 }
 
+select[multiple] {
+  overflow: auto;
+  text-overflow: clip;
+}
+
 textarea {
   min-height: 90px;
   resize: vertical;

@@ -1,0 +1,13 @@
+{
+  "name": "playbook-portal-assets",
+  "private": true,
+  "scripts": {
+    "build": "node build_frontend.mjs",
+    "check": "node build_frontend.mjs --check"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "highlight.js": "11.11.1",
+    "json-stringify-pretty-compact": "4.0.0"
+  }
+}

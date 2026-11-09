@@ -49,6 +49,34 @@ assets are not rewritten. Source maps are not published.
 The `Portal styles` GitHub Actions workflow checks reproducibility and build
 failure behavior whenever stylesheet sources, assets or build tooling change.
 
+### Structured output formatting
+
+Read-only JSON payloads, reports, hardware details, image-profile options and
+Kubernetes status use compact, width-aware formatting. Helm YAML manifests and
+terminal command previews receive syntax colors without changing their text.
+The ACL planner keeps its server-generated layout and Copy JSON behavior.
+Live logs and editable fields are intentionally untouched.
+
+The shared `pre[data-format]` renderer observes asynchronous updates and uses
+locally bundled Highlight.js and json-stringify-pretty-compact (no CDN requests).
+JSON with numeric spellings that cannot round-trip through JavaScript is only
+highlighted, never rewritten. Invalid JSON stays visible with an explanatory
+tooltip. Blocks over 200,000 characters retain their original text to avoid
+blocking the browser. Syntax styles live in `styles/shared/_structured-output.scss`.
+
+Rebuild the committed bundle and third-party license notices with Node.js/npm
+(build-only; neither is needed by Flask or deployed containers):
+
+```bash
+cd callback_site
+npm ci
+npm run build
+npm run check
+```
+
+Dependencies are pinned in `package.json` and `package-lock.json`; edit
+`frontend/structured_output.js`, not the generated `static/structured_output.js`.
+
 Keep source modules below 300 lines and group by responsibility rather than
 splitting arbitrarily. Before introducing new shared rules, check for existing
 owners/mixins; avoid page-specific copies of the shell or controls.
@@ -87,6 +115,13 @@ image files still work, and existing catalog caches remain usable. The dashboard
 shows when the latest available image was cached, formatted in the browser's local
 date/time. CLI imaging uses the same cache by default; `IMAGE_CACHE_DIR` overrides
 its location. These changes do not require interrupting an already-running flash.
+
+Target Settings, Image Source And Integrity, and SSH Access form a compact
+accordion on the dashboard: opening one closes the other two. Target Settings
+starts open; Cloud-Init Settings remains independently collapsible.
+
+The Tailscale ACL planner keeps tag, port, user, and other simple value lists
+on one line in its generated JSON; policy objects remain indented.
 
 Before overwriting a card, the flasher unmounts all mounted target filesystems
 and checks again. An unmount or inspection failure aborts before the write;
@@ -482,7 +517,7 @@ cd /home/jdizzle/Playbook
 For a broader validation pass, use:
 
 ```bash
-./scripts/validate_callback_site.sh
+python3 scripts/validate_callback_site.py
 ```
 
 ## Deployment Notes
@@ -536,6 +571,22 @@ inside the container. Keep the site on a trusted network; it is not intended for
 public-internet exposure.
 
 ### USB devices, WSL and Docker
+
+An optional [isolated Linux flashing helper](../flash_helper/README.md) now
+provides authenticated device discovery and preparation without running the
+dashboard as root. Its opt-in Helm chart starts an idle-expiring Job on dashboard
+discovery, pinned to a Linux reader host. This does not bypass Windows USB
+passthrough requirements; the default deployment remains hardware-free.
+The helper separates raw Pi imaging from unattended UEFI installer USB creation
+for Ubuntu Server LTS and Rocky Linux on x86_64/ARM64. UEFI media requires explicit
+creation-time authorization to erase the target machine's sole eligible internal
+disk; there is no boot-time installation confirmation. See the helper guide's
+disk-selection policy and hardware acceptance-test limits before using it.
+
+Catalog downloads retry transient failures up to four times with validated
+HTTP Range/If-Range resumption when the server provides an object validator.
+Servers that ignore ranges trigger a clean restart. Incomplete declared
+Content-Length responses are never published as successful cache entries.
 
 Boot-log routes are **network SSH routes**, not USB transports. Passing through a
 USB serial adapter or card reader does not create a node connection profile.

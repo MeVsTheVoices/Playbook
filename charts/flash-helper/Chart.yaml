@@ -1,0 +1,6 @@
+apiVersion: v2
+name: flash-helper
+description: Optional idle-expiring Linux disk preparation helper, woken by Playbook
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

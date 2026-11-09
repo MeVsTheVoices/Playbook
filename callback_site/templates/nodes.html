@@ -202,13 +202,13 @@
           <summary>
             <div class="collapsible-summary">
               <h2>User-defined profile segments 🧩</h2>
-              <p class="collapsible-subtitle">Reusable profile blocks with defaults and optional Galaxy requirements. A segment is a named config block attached to one profile; it is merged in whenever that profile is run.</p>
+              <p class="collapsible-subtitle">Saved profile-segment catalog, keyed by profile ID. Each named entry can include a config block, defaults JSON, and optional Galaxy requirements; entries are not currently injected into provisioning runs.</p>
               <p class="collapsible-count" id="profile-segment-summary">Loading segments...</p>
             </div>
             <span class="collapsible-indicator" aria-hidden="true">›</span>
           </summary>
           <div class="collapsible-body">
-            <p class="note">Save a segment once, then re-use it across profile runs with less repetitive editing.</p>
+            <p class="note">Segments are stored separately from module profiles for review and reuse. Saving one does not change a profile or the data sent during a provisioning run.</p>
             <div class="grid">
               <div>
                 <label for="profile-segment-profile">Target Profile</label>
@@ -248,7 +248,7 @@
           <summary>
             <div class="collapsible-summary">
               <h2>OpenWrt routers 📡</h2>
-              <p class="collapsible-subtitle">A router is a host in group "openwrt". Probe its SSH login and push a saved key. More router actions will land here.</p>
+              <p class="collapsible-subtitle">This list is built from Node Ops shared state and includes hosts in group "openwrt". Add or edit routers in the manual-node editor, then probe SSH or push a saved key. The password entered here is sent with the request, not stored by this panel.</p>
               <p class="collapsible-count" id="openwrt-host-summary">No router hosts yet</p>
             </div>
             <span class="collapsible-indicator" aria-hidden="true">›</span>

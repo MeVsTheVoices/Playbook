@@ -1,9 +1,0 @@
-services:
-  qbittorrent:
-    labels:
-      net.unraid.docker.icon: https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/qbittorrent-logo.png
-      net.unraid.docker.managed: dockerman
-      net.unraid.docker.shell: ''
-      net.unraid.docker.tailscale.hostname: tower-2-qbittorrent
-      net.unraid.docker.tailscale.webui: https://[hostname][magicdns]
-      net.unraid.docker.webui: http://192.168.8.224:8123

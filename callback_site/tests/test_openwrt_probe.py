@@ -45,6 +45,8 @@ class OpenWrtProbeTests(BaseCallbackSiteTest):
         self.assertIn("stats", payload)
         self.assertIn("inventory_preview", payload)
         self.assertEqual(payload["request"]["host"], "192.168.1.1")
+        self.assertNotIn("secret", payload["inventory_preview"])
+        self.assertIn('ansible_password: "<redacted>"', payload["inventory_preview"])
 
     def test_openwrt_push_key_endpoint_reuses_dashboard_keys(self) -> None:
         generated = self.client.post(

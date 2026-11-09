@@ -39,7 +39,9 @@ function refreshActivityBanner() {
   }
   if (activityMood.device === "offline") {
     activityBannerEl.className = "activity-banner warn";
-    activityBannerEl.textContent = "🔌 Device watcher is reconnecting. Snapshot polling will keep watch meanwhile.";
+    activityBannerEl.textContent = deviceBackend === "helper"
+      ? "🧰 Flash helper is starting or reconnecting. Discovery will retry while this page is visible."
+      : "🔌 Device watcher is reconnecting. Snapshot polling will keep watch meanwhile.";
     return;
   }
   activityBannerEl.className = "activity-banner waiting";
@@ -100,9 +102,11 @@ function updateDeviceActivity(devicesCount, connected) {
       activityDeviceStateEl,
       activityDeviceDetailEl,
       "ok",
-      `🔌 Online (${devicesCount})`,
+      deviceBackend === "helper" ? `🧰 Helper (${devicesCount})` : `🔌 Online (${devicesCount})`,
       devicesCount > 0
-        ? "Removable target(s) detected and ready."
+        ? deviceBackend === "helper"
+          ? "Flash helper detected targets. Review device identity before writing."
+          : "Removable target(s) detected and ready."
         : "Connected but no removable target detected yet."
     );
   } else {
@@ -112,8 +116,10 @@ function updateDeviceActivity(devicesCount, connected) {
       activityDeviceStateEl,
       activityDeviceDetailEl,
       "warn",
-      "🛰️ Reconnecting",
-      "Live device stream dropped. Fallback polling remains active."
+      deviceBackend === "helper" ? "🧰 Warming up" : "🛰️ Reconnecting",
+      deviceBackend === "helper"
+        ? "Flash helper is starting or disconnected. Visible-page discovery retries."
+        : "Live device stream dropped. Fallback polling remains active."
     );
   }
   refreshActivityBanner();

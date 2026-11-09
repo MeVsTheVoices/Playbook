@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from network_toolkit import PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS
+from services.installer_config import UEFI_PROFILES
 
 from services.storage import (
     PROFILE_SEGMENTS_FILE,
@@ -46,6 +47,9 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
         }
         if profile.get("profile") == TOOLKIT_PROFILE:
             out[profile_name]["profile"] = TOOLKIT_PROFILE
+        elif profile.get("profile") in UEFI_PROFILES:
+            out[profile_name].update(profile=profile["profile"], workflow="uefi-installer",
+                                     catalog_id=str(profile.get("catalog_id", "")))
     return out
 
 

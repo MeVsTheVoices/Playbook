@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='kubernetes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
+    {% include "fragments/structured_output_assets.html" %}
   </head>
   <body>
     {% include "_sidebar.html" %}
@@ -97,7 +98,7 @@
                 <button type="button" class="kube-btn" id="helm-deploy">Deploy / upgrade</button>
               </div>
               <p class="kube-subtle" id="helm-submission"></p>
-              <details><summary>Rendered manifests</summary><pre class="kube-raw" id="helm-manifest">Preview before deploying.</pre></details>
+              <details><summary>Rendered manifests</summary><pre class="kube-raw" id="helm-manifest" data-format="yaml">Preview before deploying.</pre></details>
             </div>
             <div class="status" id="helm-status" role="status" aria-live="polite"></div>
           </form>
@@ -236,7 +237,7 @@
               </div>
               <div class="kube-note-block">
                 <p class="kube-subtle">Raw JSON snapshot</p>
-                <pre class="kube-raw" id="kube-raw-json">Loading Kubernetes status...</pre>
+                <pre class="kube-raw" id="kube-raw-json" data-format="json">Loading Kubernetes status...</pre>
               </div>
             </div>
           </div>

@@ -17,6 +17,64 @@ import services.storage
 
 
 class SdCardTests(BaseCallbackSiteTest):
+    def test_dashboard_setup_sections_open_one_at_a_time(self) -> None:
+        self.browser_probe("/", [], "", """
+const target = document.querySelector("#sd-target-settings");
+const image = document.querySelector("#sd-image-settings");
+const ssh = document.querySelector("#sd-ssh-settings");
+check(target.open && !image.open && !ssh.open, "only target settings opens initially");
+image.querySelector("summary").click();
+check(image.open && !target.open && !ssh.open, "image settings closes target settings");
+ssh.querySelector("summary").click();
+check(ssh.open && !target.open && !image.open, "SSH access closes image settings");
+target.querySelector("summary").click();
+check(target.open && !image.open && !ssh.open, "target settings closes SSH access");
+target.querySelector("summary").click();
+check(!target.open && !image.open && !ssh.open, "all setup sections can be collapsed");
+document.querySelector("#cloud-init-optional-settings").open = true;
+image.querySelector("summary").click();
+check(document.querySelector("#cloud-init-optional-settings").open,
+  "cloud-init settings remains independent of the setup accordion");
+""")
+
+    def test_flash_helper_requires_current_device_identity(self) -> None:
+        checks = self.browser_probe("/", ["home/state.js", "home/catalog_filters.js", "home/devices.js"], """
+const initialSdOptionProfiles = {};
+function updateDeviceActivity() {}
+let confirmations = [];
+window.confirm = message => { confirmations.push(message); return true; };
+""", """
+updateDeviceDiscoveryMode("helper");
+const device = {
+  path: "/dev/sdb", size: "32G", model: "USB Reader", serial: "reader-123",
+  transport: "usb", identity: "device-v1"
+};
+replaceDeviceOptions([device]);
+form.confirm_overwrite.checked = true;
+const confirmation = confirmHelperTarget();
+check(
+  confirmation.device_identity === "device-v1"
+    && confirmation.confirm_device === "/dev/sdb",
+  "confirmed device identity is returned for the request"
+);
+check(confirmations[0].includes("Permanently erase")
+  && confirmations[0].includes("Serial: reader-123"), "confirmation identifies the destructive target");
+replaceDeviceOptions([{...device, identity: "device-v2"}]);
+check(!form.confirm_overwrite.checked, "changed device identity clears overwrite consent");
+check(deviceWebhookStatusEl.textContent.includes("identity changed"), "identity change is visible to the operator");
+window.fetch = async () => ({
+  ok: false,
+  json: async () => ({
+    backend: "helper", devices: [], errors: ["Flash helper is starting; discovery will retry."]
+  })
+});
+const ready = await pollDevicesSnapshot();
+check(!ready && form.device.value === "", "unavailable helper cannot leave a stale write target selected");
+check(deviceWebhookStatusEl.textContent.includes("Flash helper is starting"),
+  "helper startup errors are visible in the device status");
+""")
+        self.assertIn("changed device identity clears overwrite consent", checks)
+
     def test_misc_options_are_visible_and_map_to_provisioning(self) -> None:
         page = self.page_text(self.client.get("/"))
         self.assertIn('data-cloud-init-section="misc"', page)

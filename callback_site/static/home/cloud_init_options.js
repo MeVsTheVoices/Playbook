@@ -21,6 +21,8 @@ function updateSdSavedSecretHint(el) {
     : "";
 }
 const CLOUD_INIT_PROFILE_MATRIX = {
+  "uefi-x86_64": { sections: ["identity", "access"], optionKeys: ["username", "timezone", "locale"] },
+  "uefi-arm64": { sections: ["identity", "access"], optionKeys: ["username", "timezone", "locale"] },
   pi5: { sections: [...GENERAL_CLOUD_INIT_SECTIONS, "pi"] },
   pi4: { sections: GENERAL_CLOUD_INIT_SECTIONS },
   pi3bplus: { sections: GENERAL_CLOUD_INIT_SECTIONS },
@@ -52,7 +54,7 @@ function updateCloudInitSectionsVisibility() {
     const key = section.dataset.cloudInitSection;
     section.hidden = !matrix?.sections.includes(key) || (key === "k3s" && form.distribution.value !== "k3s");
   }
-  sdOptionsSecurityDefaultsBtn.hidden = toolkit;
+  sdOptionsSecurityDefaultsBtn.hidden = toolkit || isUefiInstaller();
   const authKey = document.getElementById("opt_tailscale_auth_key");
   authKey.required = toolkit;
   document.querySelector("label[for='opt_tailscale_auth_key']").textContent = toolkit
@@ -70,8 +72,8 @@ function updateCloudInitSectionsVisibility() {
 
 function ensureK3sConfigDefaults() {
   const toolkit = form.profile.value === "network-toolkit";
-  if (toolkit) form.distribution.value = "standard";
-  form.distribution.disabled = toolkit;
+  if (toolkit || isUefiInstaller()) form.distribution.value = "standard";
+  form.distribution.disabled = toolkit || isUefiInstaller();
   updateCloudInitSectionsVisibility();
   const toolkitSection = document.getElementById("network-toolkit-section");
   if (toolkitSection) {
@@ -340,9 +342,17 @@ async function loadSelectedSdOptionProfile(retainSelection = true) {
     return;
   }
   const isPiOnlyProfile = Boolean(profile.pi_only);
-  if (profile.profile === "network-toolkit") {
-    form.profile.value = "network-toolkit";
+  if (profile.profile === "network-toolkit" || ["uefi-x86_64", "uefi-arm64"].includes(profile.profile)) {
+    form.profile.value = profile.profile;
     form.profile.dispatchEvent(new Event("change"));
+    if (isUefiInstaller() && profile.catalog_id) {
+      form.distro_family.value = "";
+      form.distro_release.value = "";
+      form.image_search.value = "";
+      rebuildCatalogFilters();
+      form.os_preset.value = profile.catalog_id;
+      applyOsPreset();
+    }
   }
   const profileDistribution = String(profile.distribution || "").trim().toLowerCase();
   if (!isPiOnlyProfile && (profileDistribution === "k3s" || profileDistribution === "standard")) {
@@ -390,6 +400,12 @@ async function saveCurrentSdOptionProfile() {
       .map(el => el.dataset.optionKey),
   };
   if (form.profile.value === "network-toolkit") payload.profile = "network-toolkit";
+  if (isUefiInstaller()) {
+    payload.profile = form.profile.value;
+    payload.workflow = "uefi-installer";
+    payload.catalog_id = form.os_preset.value;
+    payload.pi_only = false;
+  }
   try {
     const res = await fetch("/api/sd/options-profiles", {
       method: "POST",

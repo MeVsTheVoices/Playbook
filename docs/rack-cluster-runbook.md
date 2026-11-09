@@ -206,7 +206,7 @@ Rollout: merge the sections rather than replacing your policy, keep the default 
 
 ## Preflight Before Flashing
 1. Run the full callback-site validation script from the repo root:
-   - `./scripts/validate_callback_site.sh`
+   - `python3 scripts/validate_callback_site.py`
 2. Confirm hot-plug update on the Home page target device selector:
    - remove SD card and verify the selector updates to no-device state
    - reinsert SD card and verify the expected `/dev/*` target reappears

@@ -1,5 +1,135 @@
 version: 1
 image_catalog:
+  - id: ubuntu-22.04-uefi-amd64
+    label: Ubuntu Server 22.04.5 LTS (UEFI x86_64 unattended installer)
+    distro: Ubuntu
+    release: 22.04 LTS
+    arch: amd64
+    profiles: [uefi-x86_64]
+    workflow: uefi-installer
+    installer_family: ubuntu
+    recommended: false
+    image_url: https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso
+    image_sha256: 9bc6028870aef3f74f4e16b900008179e78b130e6b0b9a140635434a46aa98b0
+    docs_url: https://canonical-subiquity.readthedocs-hosted.com/en/latest/intro-to-autoinstall.html
+    notes: Unattended UEFI installation; erases the sole eligible internal disk. Not a Raspberry Pi raw image.
+  - id: ubuntu-22.04-uefi-arm64
+    label: Ubuntu Server 22.04.5 LTS (UEFI ARM64 unattended installer)
+    distro: Ubuntu
+    release: 22.04 LTS
+    arch: arm64
+    profiles: [uefi-arm64]
+    workflow: uefi-installer
+    installer_family: ubuntu
+    recommended: false
+    image_url: https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-live-server-arm64.iso
+    image_sha256: eafec62cfe760c30cac43f446463e628fada468c2de2f14e0e2bc27295187505
+    docs_url: https://canonical-subiquity.readthedocs-hosted.com/en/latest/intro-to-autoinstall.html
+    notes: Requires existing ARM64 UEFI firmware; not directly bootable on stock Raspberry Pi firmware.
+  - id: ubuntu-24.04-uefi-amd64
+    label: Ubuntu Server 24.04.4 LTS (UEFI x86_64 unattended installer)
+    distro: Ubuntu
+    release: 24.04 LTS
+    arch: amd64
+    profiles: [uefi-x86_64]
+    workflow: uefi-installer
+    installer_family: ubuntu
+    recommended: true
+    image_url: https://releases.ubuntu.com/24.04/ubuntu-24.04.4-live-server-amd64.iso
+    image_sha256: e907d92eeec9df64163a7e454cbc8d7755e8ddc7ed42f99dbc80c40f1a138433
+    docs_url: https://canonical-subiquity.readthedocs-hosted.com/en/latest/intro-to-autoinstall.html
+    notes: Baseline Ubuntu with SSH-key administration and callback. Powers off after installation.
+  - id: ubuntu-24.04-uefi-arm64
+    label: Ubuntu Server 24.04.4 LTS (UEFI ARM64 unattended installer)
+    distro: Ubuntu
+    release: 24.04 LTS
+    arch: arm64
+    profiles: [uefi-arm64]
+    workflow: uefi-installer
+    installer_family: ubuntu
+    recommended: true
+    image_url: https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-live-server-arm64.iso
+    image_sha256: 9a6ce6d7e66c8abed24d24944570a495caca80b3b0007df02818e13829f27f32
+    docs_url: https://canonical-subiquity.readthedocs-hosted.com/en/latest/intro-to-autoinstall.html
+    notes: Requires ARM64 UEFI firmware. Stops if destination disk selection is ambiguous.
+  - id: ubuntu-26.04-uefi-amd64
+    label: Ubuntu Server 26.04.1 LTS (UEFI x86_64 unattended installer)
+    distro: Ubuntu
+    release: 26.04 LTS
+    arch: amd64
+    profiles: [uefi-x86_64]
+    workflow: uefi-installer
+    installer_family: ubuntu
+    recommended: false
+    image_url: https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso
+    image_sha256: cc8a95cde20f6ced61a322420de00f10cc3c90ced545daa46cb9c1a117f1d927
+    docs_url: https://canonical-subiquity.readthedocs-hosted.com/en/latest/intro-to-autoinstall.html
+    notes: Newer LTS; verify hardware compatibility before unattended installation.
+  - id: ubuntu-26.04-uefi-arm64
+    label: Ubuntu Server 26.04.1 LTS (UEFI ARM64 unattended installer)
+    distro: Ubuntu
+    release: 26.04 LTS
+    arch: arm64
+    profiles: [uefi-arm64]
+    workflow: uefi-installer
+    installer_family: ubuntu
+    recommended: false
+    image_url: https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso
+    image_sha256: af78753c94b924c85c4964c670692a853f7c80299a4064e317edad95462e3168
+    docs_url: https://canonical-subiquity.readthedocs-hosted.com/en/latest/intro-to-autoinstall.html
+    notes: Existing ARM64 UEFI firmware required; not the Raspberry Pi preparation workflow.
+  - id: rocky-9-uefi-x86_64
+    label: Rocky Linux 9.8 Minimal (UEFI x86_64 unattended installer)
+    distro: Rocky Linux
+    release: "9"
+    arch: amd64
+    profiles: [uefi-x86_64]
+    workflow: uefi-installer
+    installer_family: rocky
+    recommended: true
+    image_url: https://dl.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.8-x86_64-minimal.iso
+    image_sha256: d338032cd1cdd41c67139f2f71b4c832c8e4a21943106519db9c7137df7a63d4
+    docs_url: https://docs.rockylinux.org/guides/automation/kickstart/
+    notes: Kickstart baseline with SSH keys; no Pi or K3s settings. Erases the sole eligible internal disk.
+  - id: rocky-9-uefi-aarch64
+    label: Rocky Linux 9.8 Minimal (UEFI AArch64 unattended installer)
+    distro: Rocky Linux
+    release: "9"
+    arch: arm64
+    profiles: [uefi-arm64]
+    workflow: uefi-installer
+    installer_family: rocky
+    recommended: true
+    image_url: https://dl.rockylinux.org/pub/rocky/9/isos/aarch64/Rocky-9.8-aarch64-minimal.iso
+    image_sha256: 2924b291feaebe083bc0d0553e472be0a38ed5c91b4841129ec80b0cecc10efd
+    docs_url: https://docs.rockylinux.org/guides/automation/kickstart/
+    notes: Requires ARM64 UEFI firmware and supported hardware; not a stock Pi image.
+  - id: rocky-10-uefi-x86_64
+    label: Rocky Linux 10.2 Minimal (UEFI x86_64 unattended installer)
+    distro: Rocky Linux
+    release: "10"
+    arch: amd64
+    profiles: [uefi-x86_64]
+    workflow: uefi-installer
+    installer_family: rocky
+    recommended: false
+    image_url: https://dl.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10.2-x86_64-minimal.iso
+    image_sha256: aac6ac3ce781b91a91ce78463405f66c611a5dca4b3840c79e5e01d97302f6c8
+    docs_url: https://docs.rockylinux.org/guides/automation/kickstart/
+    notes: Requires x86-64-v3 capable hardware; use Rocky 9 for older CPUs.
+  - id: rocky-10-uefi-aarch64
+    label: Rocky Linux 10.2 Minimal (UEFI AArch64 unattended installer)
+    distro: Rocky Linux
+    release: "10"
+    arch: arm64
+    profiles: [uefi-arm64]
+    workflow: uefi-installer
+    installer_family: rocky
+    recommended: false
+    image_url: https://dl.rockylinux.org/pub/rocky/10/isos/aarch64/Rocky-10.2-aarch64-minimal.iso
+    image_sha256: 1d1c21199df32f6d17eedb4f713ee0d089b49294401a364b640fcf4ffab45f35
+    docs_url: https://docs.rockylinux.org/guides/automation/kickstart/
+    notes: Requires ARMv8.0-A or later compatible UEFI server hardware; verify vendor support.
   - id: network-toolkit-raspios-trixie-arm64-lite
     label: Network Toolkit - Raspberry Pi OS Lite (64-bit, Trixie)
     distro: Raspberry Pi OS

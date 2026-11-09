@@ -201,11 +201,11 @@ function renderHardwareTable() {
           </div>
           <div class='hw-detail-card'>
             <h4>Parsed Hardware Profile</h4>
-            <pre class='mono hw-pre'>${escapeHtml(toPrettyJson(parsedHardwareProfile(node)))}</pre>
+            <pre class='mono hw-pre' data-format='json'>${escapeHtml(toPrettyJson(parsedHardwareProfile(node)))}</pre>
           </div>
           <div class='hw-detail-card'>
             <h4>Raw-ish Callback Data</h4>
-            <pre class='mono hw-pre'>${escapeHtml(toPrettyJson(rawHardwareView(node)))}</pre>
+            <pre class='mono hw-pre' data-format='json'>${escapeHtml(toPrettyJson(rawHardwareView(node)))}</pre>
           </div>
         </div>
       </td>

@@ -22,10 +22,37 @@ document.getElementById("payload-inspect-clear").addEventListener("click", () =>
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   await sdBrowserSessionReady;
-  await pollDevicesSnapshot();
+  if (isUefiInstaller() && deviceBackend !== "helper") {
+    statusEl.textContent = "UEFI installer creation requires a configured Linux flashing helper.";
+    return;
+  }
+  const devicesAvailable = await pollDevicesSnapshot();
+  if (!devicesAvailable) {
+    statusEl.textContent = lastDeviceRefreshError
+      || "Could not verify the current target device. Refresh discovery and try again.";
+    flashMascotEl.classList.remove("active");
+    return;
+  }
   if (!String(form.device.value || "").trim()) {
     statusEl.textContent = "No target SD device selected. Insert a card and try again.";
     flashMascotEl.classList.remove("active");
+    return;
+  }
+  const helperConfirmation = deviceBackend === "helper" ? confirmHelperTarget() : null;
+  if (deviceBackend === "helper" && !helperConfirmation) {
+    form.confirm_overwrite.checked = false;
+    flashMascotEl.classList.remove("active");
+    return;
+  }
+  const installer = isUefiInstaller();
+  if (installer && (!form.os_preset.value || !window.confirm(
+    "Authorize unattended installation?\n\nBooting this USB will ERASE the sole eligible internal disk "
+    + "on the target machine WITHOUT another installation prompt. Existing unmounted partitions do not protect data. "
+    + "Zero or multiple eligible disks stop installation.\n\n"
+    + "The machine powers off when finished. Remove this USB before restarting. "
+    + "Keep this authorized USB physically controlled.\n\nCreate this destructive installer USB?"
+  ))) {
+    statusEl.textContent = "Installer creation cancelled or no pinned catalog image selected. No device was written.";
     return;
   }
   statusEl.textContent = "Submitting...";
@@ -48,6 +75,10 @@ form.addEventListener("submit", async (e) => {
     sd_options_profile: sdOptionsProfileSelectEl.value,
     pi_only: Boolean(sdOptionsProfilePiOnlyEl && sdOptionsProfilePiOnlyEl.checked),
     cloud_init_options: gatherCloudInitOptions(),
+    workflow: installer ? "uefi-installer" : "pi",
+    catalog_id: form.os_preset.value,
+    ...(installer ? { install_authorized: true, image_file: "", workspace: "", pi_only: false } : {}),
+    ...(helperConfirmation || {}),
   };
 
   const res = await fetch("/api/sd/prepare", {
@@ -142,6 +173,7 @@ form.profile.addEventListener("change", () => {
   applyK3sRoleDefaults();
   updateOsScopedOptionsVisibility();
   updateSdOptionsConfiguredCount();
+  updateInstallerWorkflow();
 });
 
 document.getElementById("pi_model_select").addEventListener("change", (event) => {
@@ -215,11 +247,20 @@ updateSdOptionsConfiguredCount();
 
 sdBrowserSessionReady = loadSdOptionProfiles();
 
-startDeviceWebhook();
-
 startDeviceFallbackPolling();
 
-pollDevicesSnapshot();
+fetch("/api/sd/backend").then(async (response) => {
+  if (!response.ok) throw new Error("Could not read flashing backend capabilities.");
+  updateDeviceDiscoveryMode((await response.json()).backend);
+}).catch((error) => {
+  statusEl.textContent = error.message;
+});
+
+pollDevicesSnapshot().then(() => {
+  if (deviceBackend === "native") {
+    startDeviceWebhook();
+  }
+});
 
 loadEvents();
 

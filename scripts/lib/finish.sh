@@ -76,4 +76,7 @@ for seed_dir in "$TMP_DIR/boot" "$TMP_DIR/boot/boot/firmware"; do
 done
 umount "$TMP_DIR/boot"
 
+if [[ -n "${FLASH_EXPECTED_IDENTITY:-}" ]]; then
+  python3 "$SCRIPT_DIR/../flash_helper/devices.py" "$DEVICE" "$FLASH_EXPECTED_IDENTITY"
+fi
 echo "Done. SD card is ready for ${HOSTNAME} (${PROFILE})."

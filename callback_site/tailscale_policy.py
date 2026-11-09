@@ -138,6 +138,25 @@ def _ordered(policy: Dict[str, Any]) -> Dict[str, Any]:
     return {key: policy[key] for key in order if key in policy}
 
 
+def _format_policy(value: Any, level: int = 0, path: Tuple[str, ...] = ()) -> str:
+    if isinstance(value, dict) and value:
+        entries = [
+            f"{'  ' * (level + 1)}{json.dumps(key)}: {_format_policy(item, level + 1, path + (key,))}"
+            for key, item in value.items()
+        ]
+        return "{\n" + ",\n".join(entries) + "\n" + "  " * level + "}"
+    if path[:2] == ("autoApprovers", "routes") and isinstance(value, list):
+        entries = ", ".join(json.dumps(item) for item in value)
+        return "[\n" + "  " * (level + 1) + entries + "\n" + "  " * level + "]"
+    if isinstance(value, list) and any(isinstance(item, (dict, list)) for item in value):
+        entries = [
+            "  " * (level + 1) + _format_policy(item, level + 1, path + (str(index),))
+            for index, item in enumerate(value)
+        ]
+        return "[\n" + ",\n".join(entries) + "\n" + "  " * level + "]"
+    return json.dumps(value)
+
+
 def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
     """Return {"ok", "policy", "rules", "warnings", "errors", "summary"} for the given inputs."""
     errors: List[str] = []
@@ -376,6 +395,6 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
         "ssh": bool(ssh_enabled),
     }
     return {
-        "ok": True, "policy": policy, "policy_text": json.dumps(_ordered(policy), indent=2),
+        "ok": True, "policy": policy, "policy_text": _format_policy(_ordered(policy)),
         "rules": rules, "warnings": warnings, "errors": [], "summary": summary,
     }

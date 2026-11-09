@@ -1,0 +1,95 @@
+{{- if .Values.enabled }}
+{{- $name := include "flash-helper.name" . }}
+{{- $node := required "Set nodeName to the Linux machine with the physical reader." .Values.nodeName }}
+{{- $secret := required "Set existingSecret to the dedicated helper-token Secret." .Values.existingSecret }}
+{{- $account := required "Set portal.serviceAccount to the authorized dashboard ServiceAccount." .Values.portal.serviceAccount }}
+{{- if not .Values.allowedDevices }}{{ fail "Explicit whole-disk allowedDevices are required." }}{{ end }}
+{{- range .Values.allowedDevices }}
+{{- if or (not (regexMatch "^/dev/disk/by-id/[^/]+$" .)) (contains "-part" .) }}
+{{- fail "allowedDevices must contain whole-disk /dev/disk/by-id paths." }}
+{{- end }}
+{{- end }}
+{{- if or (lt (int .Values.idleSeconds) 30) (gt (int .Values.idleSeconds) 3600) }}
+{{- fail "idleSeconds must be between 30 and 3600." }}
+{{- end }}
+{{- if not .Values.portal.podLabels }}{{ fail "portal.podLabels must identify the authorized portal pods." }}{{ end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-template
+data:
+  job.json: {{ include "flash-helper.job" . | fromYaml | toJson | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/name: playbook-flash-helper
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: helper
+      port: 8090
+      targetPort: helper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-lifecycle
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: [{{ printf "%s-template" $name | quote }}]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    resourceNames: [{{ $name | quote }}]
+    verbs: ["get", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-lifecycle
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-lifecycle
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.portal.serviceAccount }}
+    namespace: {{ .Values.portal.namespace }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: playbook-flash-helper
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.portal.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.portal.podLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8090
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

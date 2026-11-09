@@ -1,19 +1,24 @@
+{% macro nav_icon(path) -%}
+<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ path }}"/></svg>
+{%- endmacro %}
 <aside class="sidebar" aria-label="Site navigation">
   <div class="sidebar-brand">
     <div class="sidebar-title">Callback Site 🚀</div>
     <div class="sidebar-subtitle">Cloud-init, imaging, and node operations</div>
   </div>
-  <button class="toggle-btn" id="sidebar-toggle" type="button">Toggle sidebar</button>
-  <nav aria-label="Main">
-    <a class="{% if request.path == '/' %}active{% endif %}" {% if request.path == '/' %}aria-current="page"{% endif %} href="/"><span class="label">Dashboard</span></a>
-    <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" {% if request.path.startswith('/nodes') %}aria-current="page"{% endif %} href="/nodes"><span class="label">Node Ops</span></a>
-    <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" {% if request.path.startswith('/monitor') %}aria-current="page"{% endif %} href="/monitor"><span class="label">Monitor</span></a>
+  <button class="toggle-btn" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Collapse / expand sidebar" aria-controls="sidebar-navigation">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path class="sidebar-chevron" d="m16 9-3 3 3 3"/></svg>
+  </button>
+  <nav id="sidebar-navigation" aria-label="Main">
+    <a class="{% if request.path == '/' %}active{% endif %}" {% if request.path == '/' %}aria-current="page"{% endif %} href="/" aria-label="Dashboard" title="Dashboard">{{ nav_icon("M3 10 12 3l9 7M5 9v12h14V9M9 21v-8h6v8") }}<span class="label">Dashboard</span></a>
+    <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" {% if request.path.startswith('/nodes') %}aria-current="page"{% endif %} href="/nodes" aria-label="Node Ops" title="Node Ops">{{ nav_icon("M4 3h16v7H4zM4 14h16v7H4zM7 6h1M7 17h1M15 6h2M15 17h2") }}<span class="label">Node Ops</span></a>
+    <a class="{% if request.path.startswith('/monitor') %}active{% endif %}" {% if request.path.startswith('/monitor') %}aria-current="page"{% endif %} href="/monitor" aria-label="Monitor" title="Monitor">{{ nav_icon("M3 12h4l3-8 4 16 3-8h4") }}<span class="label">Monitor</span></a>
     {% if kubernetes_available %}
-    <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" {% if request.path.startswith('/kubernetes') %}aria-current="page"{% endif %} href="/kubernetes"><span class="label">Kubernetes</span></a>
+    <a class="{% if request.path.startswith('/kubernetes') %}active{% endif %}" {% if request.path.startswith('/kubernetes') %}aria-current="page"{% endif %} href="/kubernetes" aria-label="Kubernetes" title="Kubernetes">{{ nav_icon("m12 3 9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9") }}<span class="label">Kubernetes</span></a>
     {% endif %}
-    <a class="{% if request.path.startswith('/images') %}active{% endif %}" {% if request.path.startswith('/images') %}aria-current="page"{% endif %} href="/images"><span class="label">Image Library</span></a>
-    <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" {% if request.path.startswith('/tailscale-acl') %}aria-current="page"{% endif %} href="/tailscale-acl"><span class="label">Tailscale ACL</span></a>
-    <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" {% if request.path.startswith('/test-terminal') %}aria-current="page"{% endif %} href="/test-terminal"><span class="label">Terminal</span></a>
-    <a class="{% if request.path.startswith('/settings') %}active{% endif %}" {% if request.path.startswith('/settings') %}aria-current="page"{% endif %} href="/settings"><span class="label">Settings</span></a>
+    <a class="{% if request.path.startswith('/images') %}active{% endif %}" {% if request.path.startswith('/images') %}aria-current="page"{% endif %} href="/images" aria-label="Image Library" title="Image Library">{{ nav_icon("M3 4h18v16H3zM3 16l6-6 5 5 3-3 4 4M16 8h.01") }}<span class="label">Image Library</span></a>
+    <a class="{% if request.path.startswith('/tailscale-acl') %}active{% endif %}" {% if request.path.startswith('/tailscale-acl') %}aria-current="page"{% endif %} href="/tailscale-acl" aria-label="Tailscale ACL" title="Tailscale ACL">{{ nav_icon("M12 3 3 7v6c0 4 9 8 9 8s9-4 9-8V7zM8 12l3 3 5-6") }}<span class="label">Tailscale ACL</span></a>
+    <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" {% if request.path.startswith('/test-terminal') %}aria-current="page"{% endif %} href="/test-terminal" aria-label="Terminal" title="Terminal">{{ nav_icon("m4 5 7 7-7 7M13 19h7") }}<span class="label">Terminal</span></a>
+    <a class="{% if request.path.startswith('/settings') %}active{% endif %}" {% if request.path.startswith('/settings') %}aria-current="page"{% endif %} href="/settings" aria-label="Settings" title="Settings">{{ nav_icon("M4 7h16M4 17h16M8 4v6M16 14v6") }}<span class="label">Settings</span></a>
   </nav>
 </aside>

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import atexit
 import importlib
+import html
+import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -69,6 +72,53 @@ class patch_in:
 
 
 class BaseCallbackSiteTest(unittest.TestCase):
+    def browser_probe(self, path: str, scripts: list[str], bootstrap: str, probe: str) -> Any:
+        """Run real page markup and selected scripts with stubbed requests in Chrome."""
+        chrome = shutil.which("google-chrome") or shutil.which("chromium")
+        if not chrome:
+            self.skipTest("Chrome is required for browser interaction validation")
+        text = self.client.get(path).get_data(as_text=True)
+        text = re.sub(r"<script\b[^>]*>.*?</script>", "", text, flags=re.S)
+        styles = "\n".join(
+            (APP_DIR / "static" / name).read_text()
+            for name in re.findall(r'href="/static/([^"]+\.css)"', text)
+        )
+        text = re.sub(r"<link\b[^>]*>", "", text)
+        text = text.replace("</head>", f"<style>{styles}</style></head>")
+        source = "\n".join((APP_DIR / "static" / name).read_text() for name in scripts)
+        runner = """
+const checks = [];
+function check(condition, label) {
+  if (!condition) throw new Error(label);
+  checks.push(label);
+}
+const tick = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
+async function runProbe() {
+""" + probe + """
+  return checks;
+}
+runProbe().then(checks => finish({checks})).catch(error => finish({error: error.message, checks}));
+function finish(result) {
+  document.body.innerHTML = '<pre id="browser-result"></pre>';
+  document.querySelector("pre").textContent = JSON.stringify(result);
+}
+"""
+        text = text.replace("</body>", f"<script>{bootstrap}\n{source}\n{runner}</script></body>")
+        with tempfile.TemporaryDirectory(prefix="callback-browser-") as tmp:
+            fixture = Path(tmp) / "probe.html"
+            fixture.write_text(text)
+            result = subprocess.run(
+                [chrome, "--headless", "--no-sandbox", "--disable-gpu", "--disable-background-networking",
+                 f"--user-data-dir={tmp}/chrome", "--dump-dom", fixture.as_uri()],
+                capture_output=True, text=True, timeout=60,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        match = re.search(r'<pre id="browser-result">(.*?)</pre>', result.stdout, re.S)
+        self.assertIsNotNone(match, result.stdout[-2000:])
+        output = json.loads(html.unescape(match.group(1)))
+        self.assertNotIn("error", output, output)
+        return output["checks"]
+
     def page_text(self, response) -> str:
         """The page HTML plus the local stylesheets and scripts it links, for assertions on inline-era content."""
         html = response.get_data(as_text=True)

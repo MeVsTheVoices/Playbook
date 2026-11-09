@@ -29,6 +29,7 @@ SHARED_TASKS = (
     "Ensure the K3s config directory exists",
     "Read the K3s server's version",
     "Install K3s when this node does not run it yet",
+    "Wait for the joined K3s control-plane API and datastore",
     "Resolve Telegraf inputs",
     "Validate Telegraf settings",
     "Install Telegraf",
@@ -104,6 +105,25 @@ class RoleBootstrapStructureTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_control_plane_readiness_checks_the_local_server_after_install(self) -> None:
+        for board, info in BOARDS.items():
+            tasks = load_tasks(info["role_dir"])
+            names = by_name(tasks)
+            name = "Wait for the joined K3s control-plane API and datastore"
+            with self.subTest(board=board):
+                readiness = names[name]
+                argv = readiness["ansible.builtin.command"]["argv"]
+                self.assertIn("--kubeconfig=/etc/rancher/k3s/k3s.yaml", argv)
+                self.assertIn("--server=https://127.0.0.1:6443", argv)
+                self.assertIn("--request-timeout=5s", argv)
+                self.assertIn("--raw=/readyz", argv)
+                self.assertIn("not ansible_check_mode", readiness["when"])
+                self.assertIn(f"{info['role_dir']}_k3s_role | default('') == 'control-plane'", readiness["when"])
+                self.assertNotIn("failed_when", readiness)
+                self.assertFalse(readiness["changed_when"])
+                order = [task.get("name") for task in tasks]
+                self.assertGreater(order.index(name), order.index(INSTALL))
+
 
 class RoleBootstrapRenderTests(unittest.TestCase):
     """Run the real task definitions through Ansible, swapping only the side-effecting module."""
@@ -164,6 +184,23 @@ class RoleBootstrapRenderTests(unittest.TestCase):
     def test_unknown_server_version_falls_back_to_the_stable_channel(self) -> None:
         rendered = self.render_install("pi5", "worker")
         self.assertNotIn("INSTALL_K3S_VERSION", rendered["cmd"])
+
+    def test_control_plane_readiness_requires_ok_and_a_successful_exit(self) -> None:
+        name = "Wait for the joined K3s control-plane API and datastore"
+        for stdout, exit_code, expected in (("ok", 0, True), ("not ready", 0, False), ("ok", 1, False)):
+            with self.subTest(stdout=stdout, exit_code=exit_code):
+                task = copy.deepcopy(by_name(load_tasks("raspberry_pi5"))[name])
+                task["ansible.builtin.command"]["argv"] = [
+                    "/bin/sh", "-c", f"printf '%s' '{stdout}'; exit {exit_code}",
+                ]
+                task["retries"] = 1
+                task["delay"] = 0
+                code, output = self.run_play([task], {
+                    "rack_manage_with_ansible": True,
+                    "provision_profile": "kubernetes",
+                    "raspberry_pi5_k3s_role": "control-plane",
+                })
+                self.assertEqual(code == 0, expected, output[-1000:])
 
     def render_docker_daemon(self, board: str, inputs: dict) -> dict | None:
         role_dir = BOARDS[board]["role_dir"]

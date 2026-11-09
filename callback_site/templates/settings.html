@@ -54,19 +54,21 @@
 - /api/kubernetes/summary (when runtime is available)</div>
         </div>
 
-        <div class="panel">
-          <h2>Rack Identity</h2>
+        <div class="panel settings-utilities" id="settings-utilities">
+          <h2>Rack, Catalog &amp; Diagnostics</h2>
+          <details class="settings-utility">
+          <summary>Rack Identity</summary>
           <p class="note">Set the main rack name used for rack-aware defaults (for example in Tailscale ACL planner tags).</p>
           <label for="rack-name">Rack Name</label>
           <input id="rack-name" placeholder="homelab">
-          <div class="button-row" style="margin-top: 0.7rem; margin-bottom: 0;">
+          <div class="button-row">
             <button id="save-rack-name" class="primary">Save Rack Name</button>
           </div>
           <div id="rack-status" class="status">Loading rack settings...</div>
-        </div>
+          </details>
 
-        <div class="panel">
-          <h2>Image Catalog Health</h2>
+          <details class="settings-utility">
+          <summary>Image Catalog Health</summary>
           <p class="note">Quick validation for YAML-backed catalog entries and local cache availability.</p>
           <div class="button-row"><button id="check-catalog-health" class="primary">Check Catalog State</button><a href="/images#catalog-source-panel">Open Image Library</a></div>
           <div id="catalog-health-status" class="status">Idle.</div>
@@ -77,10 +79,10 @@
 Loaded at runtime by: callback_site/domain_defaults.py
 Parser mode: PyYAML if installed, fallback parser otherwise.</div>
           </details>
-        </div>
+          </details>
 
-        <div class="panel">
-          <h2>Logging and Diagnostics</h2>
+          <details class="settings-utility">
+          <summary>Logging and Diagnostics</summary>
           <p class="note">Configure logging verbosity and view recent logs for troubleshooting.</p>
           <div class="button-row">
             <button id="enable-verbose-logging" class="primary">Enable Verbose Logging</button>
@@ -89,29 +91,12 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
           </div>
           <div id="logging-status" class="status">Idle.</div>
           <div id="logging-output" class="log-output"></div>
+          </details>
         </div>
 
-        <div class="panel">
-          <h2>Clean Slate: Node Ops Configuration</h2>
-          <p class="note">
-            Clears saved Node Ops credentials, per-node profile assignments, stored profile inputs, recorded provisioning results,
-            and deletes locally stored SSH key/certificate material.
-          </p>
-          <button id="reset-node-ops" class="danger">Reset Node Ops State</button>
-          <div id="settings-status" class="status">Idle.</div>
-        </div>
-
-        <div class="panel">
-          <h2>Clear Callback Backlog</h2>
-          <p class="note">
-            Deletes all stored callback events so the dashboard event table starts fresh.
-          </p>
-          <button id="clear-callback-backlog" class="danger-alt">Clear Callback Events</button>
-          <div id="callback-clear-status" class="status">Idle.</div>
-        </div>
-
-        <div class="panel">
-          <h2 id="archived-nodes">Archived Nodes</h2>
+        <div class="panel" id="node-state-maintenance">
+          <h2>Node State &amp; Maintenance</h2>
+          <h3 id="archived-nodes">Archived Nodes</h3>
           <p class="note">
             Retire dead or unused nodes from the callback dashboard without deleting their history.
             Archived nodes stay hidden even if new callbacks arrive. Restore them here when needed.
@@ -123,6 +108,38 @@ Parser mode: PyYAML if installed, fallback parser otherwise.</div>
           </div>
           <div id="archive-status" class="status" role="status">Loading archived nodes...</div>
           <div id="archived-node-list" class="module-grid"></div>
+
+          <details class="destructive-maintenance" id="destructive-maintenance">
+            <summary>Destructive maintenance</summary>
+            <p class="note">These actions permanently delete saved data. Archive nodes above to retire them without losing history.</p>
+            <div class="maintenance-actions">
+              <section aria-labelledby="node-ops-reset-heading">
+                <h3 id="node-ops-reset-heading">Clean Slate: Node Ops Configuration</h3>
+                <p class="note">
+                  Clears saved Node Ops credentials, per-node profile assignments, stored profile inputs,
+                  named configurations, recorded provisioning results, connection history, stored boot logs,
+                  and locally stored SSH key/certificate material. The archive registry is not cleared.
+                </p>
+                <button id="reset-node-ops" type="button" class="danger">Reset Node Ops State</button>
+                <div id="settings-status" class="status" role="status">Idle.</div>
+              </section>
+              <section aria-labelledby="callback-clear-heading">
+                <h3 id="callback-clear-heading">Clear Callback Backlog</h3>
+                <p class="note">Deletes all stored callback events, including archived nodes' events, so the dashboard event table starts fresh. This does not restore archived nodes.</p>
+                <button id="clear-callback-backlog" type="button" class="danger-alt">Clear Callback Events</button>
+                <div id="callback-clear-status" class="status" role="status">Idle.</div>
+              </section>
+              <section aria-labelledby="image-cache-clear-heading">
+                <h3 id="image-cache-clear-heading">Clear Image Cache</h3>
+                <p class="note">Delete cached image files to reclaim disk space, or remove only partial downloads. Catalog definitions, image history and files outside the cache are retained. Images must be downloaded again before use.</p>
+                <div class="button-row">
+                  <button id="clear-image-cache" type="button" class="danger">Clear Cached Images</button>
+                  <button id="clear-image-partials" type="button" class="danger-alt">Clear Partial Downloads</button>
+                </div>
+                <div id="image-cache-clear-status" class="status" role="status">Idle.</div>
+              </section>
+            </div>
+          </details>
         </div>
       </div>
     </main>

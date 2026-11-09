@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import fcntl
+from contextlib import ExitStack
 import json
 import re
 import uuid
@@ -10,7 +12,39 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from services.ssh_keys import _resolve_download_path
-from services.storage import IMAGE_HISTORY_FILE, _atomic_write_text, _ensure_image_history_file
+from services.storage import IMAGE_CACHE_DIR, IMAGE_HISTORY_FILE, _atomic_write_text, _ensure_image_history_file
+
+
+def _clear_image_cache(*, partials_only: bool = False) -> Dict[str, int]:
+    if IMAGE_CACHE_DIR.is_symlink():
+        raise ValueError("The image cache directory must not be a symbolic link.")
+    if not IMAGE_CACHE_DIR.exists():
+        return {"deleted_files": 0, "freed_bytes": 0}
+    files = sorted(IMAGE_CACHE_DIR.iterdir())
+    targets = [
+        path for path in files
+        if not path.name.endswith(".lock")
+        and (not partials_only or path.name.endswith(".part"))
+    ]
+    if any(path.is_symlink() or not path.is_file() for path in targets):
+        raise ValueError("Unexpected directory or symbolic link in image cache; no files were deleted.")
+    with ExitStack() as stack:
+        for path in files:
+            if not path.name.endswith(".lock"):
+                continue
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("Unexpected image cache lock; no files were deleted.")
+            handle = stack.enter_context(path.open("rb"))
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise ValueError("An image cache file is in use; try again after imaging completes.") from exc
+        freed_bytes = 0
+        for path in targets:
+            size = path.stat().st_size
+            path.unlink()
+            freed_bytes += size
+    return {"deleted_files": len(targets), "freed_bytes": freed_bytes}
 
 
 def _append_image_history(entry: Dict[str, Any]) -> None:

@@ -677,6 +677,29 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         self.assertTrue(any(item.get("profile_id") == "hardware_check_trigger" for item in result["results"]))
         trigger_mock.assert_called_once()
 
+    def test_apply_stops_modules_after_failure_but_check_continues(self) -> None:
+        profiles = {pid: {"id": pid} for pid in ("baseline", "kubernetes")}
+        for mode, status in (
+            ("apply", "failed"), ("apply", "timeout"), ("apply", "unavailable"), ("check", "failed"),
+        ):
+            with self.subTest(mode=mode, status=status):
+                first = {"profile_id": "baseline", "status": status, "output": "prerequisite failed"}
+                second = {"profile_id": "kubernetes", "status": "ok"}
+                with patch_in("_profile_map", return_value=profiles), \
+                     patch_in("_load_node_provisioning", return_value={"results": {}}), \
+                     patch_in("_node_profile_inputs", return_value={}), \
+                     patch_in("_node_ops_inventory_view", return_value=[{"name": "node-01", "group": "rpi5_active"}]), \
+                     patch_in("_run_node_profile", side_effect=[first, second]) as run, \
+                     patch_in("_run_hardware_check_callback", return_value={"profile_id": "hardware_check_trigger", "status": "ok"}), \
+                     patch_in("_save_node_provisioning"):
+                    result = services.node_runs._apply_node_provisioning(
+                        "node-01", ["baseline", "kubernetes"], mode=mode, run_ansible=True,
+                    )
+                self.assertEqual(run.call_count, 1 if mode == "apply" else 2)
+                self.assertEqual(result["results"][0], first)
+                if mode == "apply":
+                    self.assertEqual(result["results"], [first])
+
     def test_long_run_does_not_overwrite_results_saved_for_other_nodes_meanwhile(self) -> None:
         services.node_state._save_node_provisioning({"node_configs": {}, "results": {}, "node_inputs": {}, "manual_nodes": {}})
         self.addCleanup(services.node_state._save_node_provisioning, {"node_configs": {}, "results": {}, "node_inputs": {}, "manual_nodes": {}})

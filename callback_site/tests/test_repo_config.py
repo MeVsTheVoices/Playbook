@@ -17,6 +17,22 @@ except ImportError:
 
 
 class RepoConfigTests(BaseCallbackSiteTest):
+    def test_compose_preserves_existing_volume_and_optional_kubernetes_credentials(self) -> None:
+        root = APP_DIR.parent
+        base = yaml.safe_load((root / "compose.yaml").read_text())
+        service = base["services"]["callback-site"]
+        self.assertEqual(base["name"], "playbook")
+        self.assertEqual(service["volumes"], ["callback-site-data:/data"])
+        self.assertEqual(base["volumes"]["callback-site-data"]["name"], "playbook_callback-site-data")
+        self.assertEqual(service["restart"], "unless-stopped")
+        self.assertNotIn("privileged", service)
+        override = yaml.safe_load((root / "compose.kubernetes.yaml").read_text())["services"]["callback-site"]
+        mount = override["volumes"][0]
+        self.assertEqual(override["environment"]["KUBECONFIG"], mount["target"])
+        self.assertEqual(mount["source"], "./.local/kubeconfig")
+        self.assertTrue(mount["read_only"])
+        self.assertFalse(mount["bind"]["create_host_path"])
+
     def test_docker_image_includes_the_node_ops_playbook(self) -> None:
         dockerfile = (APP_DIR / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("COPY ansible.cfg inventory.yml site.yml /app/", dockerfile)

@@ -151,7 +151,7 @@ tr.module-row-selected td:first-child {
 }
 
 .module-options {
-  @include mixins.auto-grid(300px, 0.6rem 0.9rem);
+  @include mixins.auto-grid(min(300px, 100%), 0.6rem 0.9rem);
   align-items: start;
 }
 

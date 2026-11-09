@@ -562,6 +562,9 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
             node_certificate=node_certificate or None,
         )
         node_results[pid] = result
+        if mode == "apply" and result["status"] in {"failed", "timeout", "unavailable"}:
+            logger.error("Stopping provisioning for node=%s after profile=%s status=%s", node_name, pid, result["status"])
+            break
 
     ordered_result_ids = list(valid_profile_ids)
     if mode == "check" and run_ansible:

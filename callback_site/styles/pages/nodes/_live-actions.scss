@@ -2,10 +2,13 @@
 
 .module-live-bar {
   @include mixins.action-row(0.55rem, center);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .module-live-status {
-  max-width: 28rem;
+  max-width: min(28rem, 100%);
+  overflow-wrap: anywhere;
   padding: 0.22rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -91,7 +94,7 @@
 
 .module-actions button {
   width: auto;
-  min-width: 9.5rem;
+  min-width: min(9.5rem, 100%);
   padding: 0.55rem 1.1rem;
   font-weight: 600;
 }
@@ -104,4 +107,34 @@
 .module-actions button.ghost:hover {
   background: #f0f9ff;
   box-shadow: none;
+}
+
+.module-named-save {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.module-name-form {
+  @include mixins.action-row(0.5rem);
+  animation: module-name-reveal 0.18s ease-out;
+}
+
+.module-name-form[hidden],
+#module-name-toggle[hidden] {
+  display: none;
+}
+
+.module-name-form input {
+  flex: 1 1 14rem;
+  width: auto;
+  min-width: 0;
+}
+
+.module-name-form button {
+  min-width: 0;
+}
+
+@keyframes module-name-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }

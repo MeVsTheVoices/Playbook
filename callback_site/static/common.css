@@ -42,7 +42,7 @@ body {
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
-  width: 230px;
+  width: 196px;
   padding: 0.8rem;
   overflow-y: auto;
   background: radial-gradient(circle at 20% 20%, rgba(45, 212, 191, 0.16), transparent 42%), var(--side);
@@ -71,7 +71,9 @@ body {
 }
 
 .sidebar a {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
   margin-bottom: 0.25rem;
   padding: 0.55rem;
   border: 1px solid transparent;
@@ -93,7 +95,13 @@ body {
 }
 
 button.toggle-btn {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0.55rem;
+  margin-left: auto;
   margin-bottom: 0.8rem;
   border: 1px solid #334155;
   background: #111827;
@@ -101,7 +109,23 @@ button.toggle-btn {
 }
 
 body.sidebar-collapsed .sidebar {
-  width: 74px;
+  width: 60px;
+  padding-inline: 0.5rem;
+}
+
+.nav-icon, button.toggle-btn svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+body.sidebar-collapsed .sidebar a {
+  justify-content: center;
+}
+
+body.sidebar-collapsed .sidebar-chevron {
+  transform: rotate(180deg);
+  transform-origin: 15px 12px;
 }
 
 body.sidebar-collapsed .sidebar .label,
@@ -110,13 +134,13 @@ body.sidebar-collapsed .sidebar .sidebar-brand {
 }
 
 .content {
-  margin-left: 246px;
+  margin-left: 208px;
   min-width: 0;
   transition: margin-left 0.2s ease;
 }
 
 body.sidebar-collapsed .content {
-  margin-left: 92px;
+  margin-left: 72px;
 }
 
 .wrap {
@@ -515,13 +539,13 @@ code {
 
 @media (max-width: 980px) {
   .sidebar {
-    width: 196px;
+    width: 180px;
   }
   .content {
-    margin-left: 208px;
+    margin-left: 192px;
   }
   body.sidebar-collapsed .content {
-    margin-left: 92px;
+    margin-left: 72px;
   }
 }
 @media (max-width: 760px) {

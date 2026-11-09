@@ -99,7 +99,7 @@ function renderRows() {
       <td>${callbackLabel(status.last_callback || node.last_callback)}</td>
       <td>${selectedHtml}</td>
       <td>${statusBadge(node)}</td>
-      <td>
+      <td class="node-monitor-actions">
         <div class="note" style="margin-bottom:0.35rem;">${escapeHtml(detailSummary || "No callback details yet.")}</div>
         <div class="inline-actions">
           <button type="button" data-node="${node.name}" data-action="check" class="node-action-btn">Get Hardware Profile</button>

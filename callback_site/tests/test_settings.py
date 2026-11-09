@@ -9,12 +9,151 @@ except ImportError:
 
 
 class SettingsTests(BaseCallbackSiteTest):
+    def test_combined_maintenance_preserves_separate_actions_in_browser(self) -> None:
+        self.browser_probe("/settings", ["settings.js"], """
+let confirmed = false, fail = false, release;
+const requests = [], confirmations = [];
+window.confirm = message => { confirmations.push(message); return confirmed; };
+window.fetch = async (url, options = {}) => {
+  if (!options.method) return {ok: true, status: 200, json: async () => ({
+    ok: true, settings: {}, nodes: [{name: "retired-node", archived_at: "2026-11-08T12:00:00Z"}],
+    events: [], entries: [], profiles: [], state: {}, summary: {}
+  })};
+  requests.push({url, method: options.method, body: JSON.parse(options.body)});
+  await new Promise(resolve => { release = resolve; });
+  if (fail) throw new Error("network interrupted");
+  return {ok: true, json: async () => ({ok: true, reset: {cleared: true}, cleared: 3})};
+};
+""", """
+await tick();
+const panel = document.querySelector("#node-state-maintenance");
+const danger = document.querySelector("#destructive-maintenance");
+check(panel && panel.contains(resetNodeOpsBtn) && panel.contains(clearCallbackBtn)
+  && panel.contains(document.querySelector("#archived-node-list")), "all three sections share one panel");
+check(!danger.open && danger.contains(resetNodeOpsBtn) && danger.contains(clearCallbackBtn),
+  "destructive actions collapsed by default");
+check(!danger.contains(document.querySelector("#archived-node-list")), "archive stays outside destructive controls");
+check(document.querySelectorAll("#archived-nodes").length === 1, "archive anchor retained");
+resetNodeOpsBtn.click();
+clearCallbackBtn.click();
+await tick();
+check(requests.length === 0 && confirmations.length === 2, "each cancelled action sends no request");
+danger.open = true;
+confirmed = true;
+resetNodeOpsBtn.click();
+resetNodeOpsBtn.click();
+check(resetNodeOpsBtn.disabled && !clearCallbackBtn.disabled && requests.length === 1,
+  "reset disables only its own button and prevents duplicates");
+check(requests[0].url === "/api/settings/reset" && requests[0].body.scope === "node_ops",
+  "reset scope unchanged");
+release();
+await tick();
+check(!resetNodeOpsBtn.disabled && statusBox.textContent.startsWith("Reset complete:")
+  && callbackClearStatus.textContent === "Idle.", "reset completion uses its own status");
+clearCallbackBtn.click();
+check(requests[1].url === "/api/cloud-init/events/clear" && clearCallbackBtn.disabled,
+  "backlog clearing keeps its endpoint");
+release();
+await tick();
+check(callbackClearStatus.textContent === "Cleared events: 3" && !clearCallbackBtn.disabled,
+  "callback completion separate");
+fail = true;
+resetNodeOpsBtn.click();
+release();
+await tick();
+check(statusBox.textContent.includes("network interrupted") && !resetNodeOpsBtn.disabled,
+  "reset network errors visible and retryable");
+clearCallbackBtn.click();
+release();
+await tick();
+check(callbackClearStatus.textContent.includes("network interrupted") && !clearCallbackBtn.disabled,
+  "clear network errors visible and retryable");
+fail = false;
+document.querySelector("#archived-node-list button").click();
+check(requests.at(-1).url === "/api/nodes/retired-node/archive"
+  && requests.at(-1).method === "PUT" && requests.at(-1).body.archived === false,
+  "restore remains non-destructive");
+release();
+await tick();
+check(!requests.some(r => r.method === "DELETE"), "no permanent node deletion introduced");
+""")
+
     def test_catalog_health_and_source_share_one_panel(self) -> None:
         text = self.client.get("/settings").get_data(as_text=True)
-        start = text.index("<h2>Image Catalog Health</h2>")
-        end = text.index('<div class="panel">', start)
+        start = text.index("<summary>Image Catalog Health</summary>")
+        end = text.index('<details class="settings-utility">', start)
         self.assertIn("<summary>Catalog Source Of Truth</summary>", text[start:end])
         self.assertNotIn("<h2>Catalog Source Of Truth</h2>", text)
+
+    def test_utilities_share_one_panel_and_expand_independently(self) -> None:
+        self.browser_probe("/settings", ["settings.js"], """
+window.fetch = async () => ({ok: true, json: async () => ({
+  ok: true, settings: {rack_name: "test-rack"}, nodes: [], events: [],
+  entries: [], profiles: [], state: {}, summary: {}
+})});
+""", """
+await tick();
+const panel = document.querySelector("#settings-utilities");
+const sections = Array.from(panel.querySelectorAll(":scope > details"));
+check(sections.length === 3 && sections.every(section => !section.open),
+  "three utilities collapsed inside one panel");
+check(panel.getBoundingClientRect().height < 260, "collapsed utility panel stays below 260px");
+for (const id of ["rack-name", "save-rack-name", "rack-status", "check-catalog-health",
+  "catalog-health-status", "enable-verbose-logging", "disable-verbose-logging",
+  "view-recent-logs", "logging-status", "logging-output"]) {
+  check(panel.contains(document.getElementById(id)), `existing control retained: ${id}`);
+  check(document.querySelectorAll(`#${id}`).length === 1, `unique control: ${id}`);
+}
+sections[0].querySelector("summary").click();
+check(sections[0].open && !sections[1].open && !sections[2].open, "rack expands independently");
+sections[1].querySelector("summary").click();
+check(sections[0].open && sections[1].open, "opening catalog preserves rack form");
+check(sections[1].querySelector(":scope > details > summary").textContent === "Catalog Source Of Truth",
+  "catalog source remains a nested disclosure");
+check(document.querySelector("#rack-name").value === "test-rack", "rack settings still populate");
+""")
+
+    def test_image_cache_actions_require_confirmation_and_report_errors(self) -> None:
+        self.browser_probe("/settings", ["settings.js"], """
+let confirmed = false, fail = false, release;
+const requests = [];
+window.confirm = () => confirmed;
+window.fetch = async (url, options = {}) => {
+  if (!options.method) return {ok: true, json: async () => ({
+    ok: true, settings: {}, nodes: [], events: [], entries: [], profiles: [], state: {}, summary: {}
+  })};
+  requests.push({url, body: JSON.parse(options.body)});
+  await new Promise(resolve => { release = resolve; });
+  return {ok: !fail, json: async () => fail
+    ? {ok: false, error: "Image preparation is active"}
+    : {ok: true, deleted_files: 2, freed_bytes: 1048576}};
+};
+""", """
+await tick();
+const danger = document.querySelector("#destructive-maintenance");
+check(danger.contains(clearImageCacheBtn) && danger.contains(clearImagePartialsBtn),
+  "cache actions are in destructive maintenance");
+clearImageCacheBtn.click();
+check(requests.length === 0, "cancel leaves cache untouched");
+confirmed = true;
+clearImageCacheBtn.click();
+clearImagePartialsBtn.click();
+check(requests.length === 1 && clearImageCacheBtn.disabled && clearImagePartialsBtn.disabled,
+  "duplicate cache requests prevented");
+check(requests[0].url === "/api/sd/image-cache/clear" && requests[0].body.confirm === true
+  && requests[0].body.mode === "all", "explicit full-cache request");
+release();
+await tick();
+check(imageCacheClearStatus.textContent.includes("Deleted 2") && !clearImageCacheBtn.disabled,
+  "success reports freed space and enables retry");
+fail = true;
+clearImagePartialsBtn.click();
+check(requests[1].body.mode === "partials", "partial cleanup has a separate mode");
+release();
+await tick();
+check(imageCacheClearStatus.textContent.includes("Image preparation is active")
+  && !clearImagePartialsBtn.disabled, "server refusal visible and retryable");
+""")
 
     def test_health_endpoint(self) -> None:
         response = self.client.get("/health")

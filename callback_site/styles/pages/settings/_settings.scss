@@ -74,6 +74,64 @@
   display: none;
 }
 
+.settings-utilities > h2 {
+  margin-bottom: 0.5rem;
+}
+
+.settings-utility {
+  min-width: 0;
+  padding: 0.65rem 0;
+}
+
+.settings-utility + .settings-utility {
+  border-top: 1px solid var(--line);
+}
+
+.settings-utility > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.settings-utility > input {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.settings-utility .status {
+  overflow-wrap: anywhere;
+}
+
+.settings-utility .button-row {
+  margin-top: 0.5rem;
+}
+
+.destructive-maintenance {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.destructive-maintenance > summary {
+  color: var(--danger);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.maintenance-actions {
+  @include mixins.auto-grid(min(280px, 100%), 1rem);
+}
+
+.maintenance-actions > section {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.maintenance-actions h3 {
+  margin-top: 0;
+}
+
 @media (max-width: 760px) {
   .module-grid {
     grid-template-columns: 1fr;

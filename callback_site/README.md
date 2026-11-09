@@ -55,6 +55,11 @@ owners/mixins; avoid page-specific copies of the shell or controls.
 
 ## At A Glance
 
+- Settings groups Rack Identity, Image Catalog Health and Logging into compact,
+  independently expandable controls. Under Node State & Maintenance, destructive
+  maintenance can clear cached images or only partial downloads after confirmation.
+  Active image jobs block cleanup; catalog definitions and image history remain.
+
 - SD-card imaging for `pi5`, `pi4` and `pi3bplus` profiles.
 - Cloud-init authoring with reusable optional-setting templates.
 - Distribution-aware imaging for `standard` and `k3s` flows.
@@ -141,9 +146,21 @@ Open:
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
 - `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
+  Beside **Save Module Inputs**, **Save as named configuration** opens an inline
+  name field. Save with a name (blank keeps the suggested name), or close it with
+  **Cancel** or Escape. Saving does not apply the module.
+  The fleet table keeps its action controls inside their column and scrolls
+  horizontally within the panel at narrow widths. The sidebar uses a compact
+  icon toggle; collapsed navigation retains labeled icons and hover titles.
 - `/settings` — restore archived nodes without deleting callbacks, saved inputs,
   or historical boot logs. Age-based pruning is retired; archive active nodes
   explicitly from the callback dashboard.
+  **Node State & Maintenance** groups archive/restore controls with a collapsed
+  **Destructive maintenance** section. Node Ops reset and callback-backlog
+  clearing keep separate confirmations and status messages; clearing callbacks
+  also deletes archived nodes' callback events, but does not restore those nodes.
+  Reset also deletes saved named configurations, connection history and boot
+  logs; neither maintenance action clears the archive registry.
 - `/openwrt` — redirects to the OpenWrt routers panel in `/nodes`.
 - `/tailscale-acl` — rack tailnet policy builder (grants, K3s ports, SSH, routes, tests).
 
@@ -489,7 +506,8 @@ To use a different host port, set `CALLBACK_PORT` before starting Compose
 (for example, `$env:CALLBACK_PORT=9821` in PowerShell).
 The `callback-site-data` Docker volume keeps catalog pulls, callbacks, node
 reports, SSH keys, and operator edits across image rebuilds and container
-recreation. `docker compose down` leaves that volume intact; do not add `-v`
+recreation. Compose explicitly uses `playbook_callback-site-data`, preserving
+the existing deployment's volume. `docker compose down` leaves that volume intact; do not add `-v`
 if you want to keep its data.
 
 **Existing host deployments:** stop the host Python server before publishing

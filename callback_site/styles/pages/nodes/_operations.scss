@@ -88,3 +88,32 @@
 .mono {
   font-size: 0.81rem;
 }
+
+.node-monitor-table {
+  min-width: 64rem;
+}
+
+.node-monitor-table th,
+.node-monitor-table td {
+  overflow-wrap: anywhere;
+}
+
+.node-monitor-actions {
+  width: 14rem;
+  min-width: 14rem;
+}
+
+.node-monitor-actions .inline-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.node-monitor-actions button {
+  width: 100%;
+  min-width: 0;
+}
+
+.node-monitor-actions button[data-action="check"] {
+  grid-column: 1 / -1;
+}

@@ -69,6 +69,7 @@ def _run_node_provision_job(
             if isinstance(item, dict) and item.get("name")
         }
         results: list[Dict[str, Any]] = []
+        failures: list[str] = []
         if not target_node_names:
             raise ValueError("No target nodes were supplied.")
         for node_name in target_node_names:
@@ -91,14 +92,27 @@ def _run_node_provision_job(
                             job["finished_at"] = datetime.now(timezone.utc).isoformat()
                             job["updated_at"] = job["finished_at"]
                     return
-            results.append(_apply_node_provisioning(node_name, profile_ids, mode=mode, run_ansible=run_ansible))
+            result = _apply_node_provisioning(node_name, profile_ids, mode=mode, run_ansible=run_ansible)
+            results.append(result)
             with PROVISION_JOBS_LOCK:
                 PROVISION_JOBS[job_id]["results"] = list(results)
+            failed_profiles = [
+                item["profile_id"] for item in result["results"]
+                if item["status"] in {"failed", "timeout", "unavailable"}
+            ]
+            if failed_profiles:
+                failure = f"Provisioning failed for node {node_name}: {', '.join(failed_profiles)}."
+                if mode == "apply":
+                    raise ValueError(failure + " Remaining nodes were not applied.")
+                failures.append(failure)
 
         with PROVISION_JOBS_LOCK:
             job = PROVISION_JOBS.get(job_id)
             if job:
-                job["status"] = "completed"
+                job["status"] = "failed" if failures else "completed"
+                if failures:
+                    job["error"] = " ".join(failures)
+                    logger.error("Provisioning job %s failed: %s", job_id, job["error"])
                 job["results"] = results
                 job["finished_at"] = datetime.now(timezone.utc).isoformat()
                 job["updated_at"] = job["finished_at"]

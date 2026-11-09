@@ -1,0 +1,90 @@
+#!/bin/bash
+# Install or update the Playbook dashboard on this host from its git repository.
+#   playbook-server-activate          deploy the configured ref
+#   playbook-server-activate REF      deploy REF (branch, tag or commit) and keep it configured
+set -euo pipefail
+
+CONFIG=/etc/playbook-server.env
+if [[ $EUID -ne 0 ]]; then
+  exec sudo -- "$0" "$@"
+fi
+exec 9>/run/playbook-server.lock
+flock 9
+
+declare -A cfg=(
+  [PLAYBOOK_REPO_URL]=https://github.com/MeVsTheVoices/Playbook.git
+  [PLAYBOOK_REF]=main
+  [PLAYBOOK_PORT]=8088
+  [PLAYBOOK_INSTALL_FLASHER]=true
+  [PLAYBOOK_DIR]=/opt/playbook
+)
+# Parsed, never sourced, so the file cannot run commands.
+if [[ -f "$CONFIG" ]]; then
+  while IFS='=' read -r key value; do
+    if [[ -v "cfg[$key]" ]]; then
+      cfg[$key]="$value"
+    fi
+  done < <(grep -E '^[A-Z_]+=' "$CONFIG")
+fi
+
+repo="${cfg[PLAYBOOK_REPO_URL]}"
+ref="${1:-${cfg[PLAYBOOK_REF]}}"
+port="${cfg[PLAYBOOK_PORT]}"
+flasher="${cfg[PLAYBOOK_INSTALL_FLASHER]}"
+dir="${cfg[PLAYBOOK_DIR]}"
+
+fail() { echo "playbook-server: $*" >&2; exit 1; }
+log() { echo "playbook-server: $*"; }
+[[ "$repo" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._~/%+-]+$ ]] || fail "invalid PLAYBOOK_REPO_URL: $repo"
+[[ "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]{0,127}$ && "$ref" != *..* && "$ref" != *.lock && "$ref" != */ ]] || fail "invalid ref: $ref"
+[[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) || fail "invalid PLAYBOOK_PORT: $port"
+[[ "$flasher" =~ ^(true|false)$ ]] || fail "PLAYBOOK_INSTALL_FLASHER must be true or false"
+[[ "$dir" =~ ^/[A-Za-z0-9._/-]+$ && "$dir" != *..* ]] || fail "invalid PLAYBOOK_DIR: $dir"
+if [[ $# -gt 0 && "$ref" != "${cfg[PLAYBOOK_REF]}" && -f "$CONFIG" ]]; then
+  sed -i "s|^PLAYBOOK_REF=.*|PLAYBOOK_REF=${ref}|" "$CONFIG"
+fi
+
+systemctl enable --now docker.service
+
+if [[ ! -d "$dir/.git" ]]; then
+  log "cloning $repo into $dir"
+  install -d -m 0755 "$(dirname "$dir")"
+  git clone --quiet --no-checkout "$repo" "$dir"
+fi
+git -C "$dir" remote set-url origin "$repo"
+log "fetching $ref"
+for attempt in 1 2 3 4 5; do
+  if git -C "$dir" fetch --quiet --tags --force origin "$ref"; then
+    break
+  fi
+  [[ $attempt -lt 5 ]] || fail "could not fetch $ref from $repo"
+  sleep $(( attempt * 5 ))
+done
+git -C "$dir" checkout --quiet --force --detach FETCH_HEAD
+log "checked out $(git -C "$dir" rev-parse --short HEAD) ($ref)"
+
+# Compose reads this file on every run, so manual 'docker compose' calls in $dir match this deployment.
+flasher_url=""
+if [[ "$flasher" == "true" ]]; then
+  # Native Docker Engine: bind the flasher to the docker0 gateway, which containers reach as host.docker.internal.
+  gateway="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+  [[ "$gateway" =~ ^[0-9.]+$ ]] || fail "cannot determine the docker0 gateway address"
+  SD_FLASHER_BIND="$gateway" "$dir/scripts/run_sd_flasher.sh" install >/dev/null
+  flasher_url="http://host.docker.internal:8089"
+  log "host SD/USB flasher listening on ${gateway}:8089"
+elif [[ -f /etc/systemd/system/playbook-sd-flasher.service ]]; then
+  "$dir/scripts/run_sd_flasher.sh" uninstall
+fi
+(umask 022 && printf 'CALLBACK_PORT=%s\nSD_FLASHER_URL=%s\n' "$port" "$flasher_url" > "$dir/.env")
+
+log "building and starting the dashboard (first run takes several minutes)"
+docker compose --project-directory "$dir" -f "$dir/compose.yaml" up -d --build --remove-orphans --wait --wait-timeout 900
+
+for _ in $(seq 1 60); do
+  if curl -fsS --max-time 5 "http://127.0.0.1:${port}/health" >/dev/null; then
+    log "dashboard ready on port ${port}"
+    exit 0
+  fi
+  sleep 5
+done
+fail "dashboard did not become healthy on port ${port}"

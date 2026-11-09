@@ -8,6 +8,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -23,6 +24,7 @@ from k3s_lightweight import (
     strip_options as _strip_k3s_lightweight_options,
 )
 
+from services import sd_flasher_client
 from services.images import _record_image_history
 from services.image_catalog import _catalog_entry_with_availability
 from domain_defaults import IMAGE_CATALOG
@@ -32,6 +34,7 @@ from services.ssh_keys import _archive_ssh_public_key
 from services.storage import IMAGE_CACHE_DIR, INVENTORY_FILE, SCRIPT_PATH
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options
 from network_toolkit import EXTRA_PACKAGES_OPTION, extra_packages
+from playbook_server import INPUT_SPECS as SERVER_SPECS, PROFILE as SERVER_PROFILE, validate_options as validate_server_options
 from package_options import package_names
 from services import flash_helper
 from services.installer_config import is_installer, validate as validate_installer
@@ -43,13 +46,26 @@ JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 JOBS_LOCK = threading.Lock()
+# Profiles whose default image comes from the catalog, so it is cached and shown like a picked image.
+_DEFAULT_CATALOG_ENTRY = {
+    TOOLKIT_PROFILE: "network-toolkit-raspios-trixie-arm64-lite",
+    SERVER_PROFILE: "playbook-server-ubuntu-noble-amd64",
+}
 SD_SECRET_OPTIONS = {"tailscale_auth_key", "password", "telegraf_influx_token", *TOOLKIT_SECRETS}
 
 
 def _ensure_prereqs() -> List[str]:
     errors: List[str] = []
-    if not SCRIPT_PATH.exists():
-        errors.append(f"Missing script: {SCRIPT_PATH}")
+    if sd_flasher_client.enabled():
+        errors.extend(sd_flasher_client.prereq_errors())
+    else:
+        if not SCRIPT_PATH.exists():
+            errors.append(f"Missing script: {SCRIPT_PATH}")
+        if sd_flasher_client.running_in_container():
+            errors.append(
+                "This dashboard runs in a container and cannot see host SD/USB devices. "
+                "Start the host flasher with scripts/run_sd_flasher.sh and set SD_FLASHER_URL."
+            )
     if not INVENTORY_FILE.exists():
         errors.append(f"Missing inventory file: {INVENTORY_FILE}")
     return errors
@@ -143,6 +159,13 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "fancy_motd": False, "install_telegraf": False,
             "enable_firewall_baseline": False,
         })
+        if errors:
+            cleaned["config_errors"] = errors
+    elif cleaned.get("profile") == SERVER_PROFILE:
+        errors = validate_server_options(cloud_options, boot=True)
+        if distribution != "standard" or k3s_config:
+            errors.append("playbook-server requires the standard distribution, not K3s.")
+        cloud_options.pop("k3s_config", None)
         if errors:
             cleaned["config_errors"] = errors
     elif distribution != "k3s" and k3s_config:
@@ -243,7 +266,7 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
     if EXTRA_PACKAGES_OPTION in cloud_init_options:
         env["CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES"] = " ".join(extra_packages(cloud_init_options))
         enabled_options.append(EXTRA_PACKAGES_OPTION)
-    for spec in TOOLKIT_SPECS:
+    for spec in (*TOOLKIT_SPECS, *SERVER_SPECS):
         key = spec["id"]
         if key in cloud_init_options:
             value = cloud_init_options[key]
@@ -433,8 +456,7 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         image_sha256 = form.get("image_sha256", "").strip()
         catalog_entry = next((entry for entry in IMAGE_CATALOG if
             (image_url and entry.get("image_url") == image_url) or
-            (not image_url and not image_file and form["profile"] == "network-toolkit"
-             and entry.get("id") == "network-toolkit-raspios-trixie-arm64-lite")), None)
+            (not image_url and not image_file and entry.get("id") == _DEFAULT_CATALOG_ENTRY.get(form["profile"]))), None)
         if catalog_entry and not image_file:
             image_url = str(catalog_entry["image_url"])
             image_sha256 = image_sha256 or str(catalog_entry.get("image_sha256") or "")
@@ -448,8 +470,9 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         if workspace:
             cmd.extend(["--workspace", workspace])
 
+        remote = sd_flasher_client.enabled()
         run_cmd: List[str]
-        if os.geteuid() == 0:
+        if remote or os.geteuid() == 0:
             run_cmd = cmd
         else:
             suggested = " ".join(["sudo"] + cmd)
@@ -501,6 +524,10 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
                 "The selected device will be overwritten.\n"
             )
 
+        if remote:
+            _run_remote_prepare_job(job_id, form, env, ssh_public_key, image_url, image_file, image_sha256, catalog_entry)
+            return
+
         proc = subprocess.Popen(
             run_cmd,
             stdout=subprocess.PIPE,
@@ -534,3 +561,99 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
             logger.error(f"SD preparation failed: job_id={job_id}, hostname={hostname}, exit_code={proc.returncode}")
 
         _record_image_history(form, "".join(output_chunks), proc.returncode)
+
+
+REMOTE_POLL_SECONDS = 1.0
+REMOTE_LOST_CONTACT_SECONDS = 60.0
+
+
+def _remote_image_spec(image_url: str, image_file: str, image_sha256: str, catalog_entry: Any) -> Dict[str, str]:
+    spec = {"image_url": image_url, "image_sha256": image_sha256, "image_name": ""}
+    if image_file:
+        path = Path(image_file).expanduser()
+        if path.parent.resolve() != IMAGE_CACHE_DIR.resolve():
+            raise ValueError("The host SD flasher can only use images from the image library cache.")
+        spec["image_name"] = path.name
+        match = next((entry for entry in IMAGE_CATALOG
+                      if Path(_catalog_entry_with_availability(entry)["cache_path"]).name == path.name), None)
+        if match:
+            # Let the flasher download the same catalog image if its own cache lacks it.
+            spec["image_url"] = str(match["image_url"])
+            spec["image_sha256"] = image_sha256 or str(match.get("image_sha256") or "")
+    elif catalog_entry:
+        spec["image_name"] = Path(_catalog_entry_with_availability(catalog_entry)["cache_path"]).name
+    return spec
+
+
+def _finish_job(job_id: str, stdout: str, stderr: str, exit_code: int) -> None:
+    with JOBS_LOCK:
+        JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+        JOBS[job_id]["stdout"] = stdout[-50000:]
+        JOBS[job_id]["stderr"] = stderr
+        JOBS[job_id]["exit_code"] = exit_code
+        JOBS[job_id]["status"] = "completed" if exit_code == 0 else "failed"
+
+
+def _run_remote_prepare_job(
+    job_id: str,
+    form: Dict[str, Any],
+    env: Dict[str, str],
+    ssh_public_key: str,
+    image_url: str,
+    image_file: str,
+    image_sha256: str,
+    catalog_entry: Any,
+) -> None:
+    with JOBS_LOCK:
+        header = str(JOBS[job_id].get("stdout") or "")
+    try:
+        spec: Dict[str, Any] = {
+            "profile": form["profile"],
+            "hostname": form["hostname"],
+            "device": form["device"],
+            "callback_url": form["callback_url"],
+            "ssh_public_key": ssh_public_key,
+            **_remote_image_spec(image_url, image_file, image_sha256, catalog_entry),
+            "env": {key: value for key, value in env.items() if key.startswith("CLOUD_INIT_")},
+        }
+        remote_id = sd_flasher_client.submit_job(spec)
+    except (ValueError, sd_flasher_client.FlasherError) as exc:
+        logger.error(f"SD preparation could not be delegated: job_id={job_id}: {exc}")
+        _finish_job(job_id, header, f"Host SD flasher refused the job: {exc}", 1)
+        return
+
+    header += f"Delegated to the host SD flasher (job {remote_id}).\n"
+    with JOBS_LOCK:
+        JOBS[job_id]["remote_job_id"] = remote_id
+        JOBS[job_id]["stdout"] = header
+    output = ""
+    last_contact = time.monotonic()
+    while True:
+        time.sleep(REMOTE_POLL_SECONDS)
+        try:
+            remote = sd_flasher_client.get_job(remote_id)
+        except sd_flasher_client.FlasherError as exc:
+            if time.monotonic() - last_contact < REMOTE_LOST_CONTACT_SECONDS:
+                continue
+            logger.error(f"Lost contact with SD flasher: job_id={job_id}, remote_job_id={remote_id}")
+            _finish_job(job_id, header + output, (
+                f"Lost contact with the host SD flasher ({exc}). The card may still be in use; "
+                "check the flasher before retrying."
+            ), 1)
+            _record_image_history(form, output, 1)
+            return
+        last_contact = time.monotonic()
+        output = str(remote.get("output") or "")
+        with JOBS_LOCK:
+            JOBS[job_id]["stdout"] = (header + output)[-50000:]
+        if remote.get("status") in {"completed", "failed"}:
+            code = remote.get("exit_code")
+            exit_code = code if isinstance(code, int) else 1
+            break
+
+    _finish_job(job_id, header + output, "", exit_code)
+    if exit_code == 0:
+        logger.info(f"SD preparation completed by host flasher: job_id={job_id}")
+    else:
+        logger.error(f"SD preparation failed on host flasher: job_id={job_id}, exit_code={exit_code}")
+    _record_image_history(form, output, exit_code)

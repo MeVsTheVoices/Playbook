@@ -96,7 +96,7 @@ if ! partprobe "$DEVICE"; then
 fi
 udevadm settle
 
-if [[ "${FLASH_MEDIA_ONLY:-false}" == "true" ]]; then
+if [[ "${FLASH_MEDIA_ONLY:-false}" == "true" || "$PROFILE" == "playbook-server" ]]; then
   return 0
 fi
 

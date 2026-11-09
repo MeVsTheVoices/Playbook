@@ -3,19 +3,20 @@
 
 usage() {
   cat <<'EOF'
-Prepare an SD card with a cloud-init enabled Raspberry Pi image and callback metadata.
+Prepare an SD card or disk with a cloud-init enabled image and callback metadata.
 
 Usage:
   scripts/prepare_sd_cloud_init.sh \
-    --profile pi5|pi4|pi3bplus|network-toolkit \
+    --profile pi5|pi4|pi3bplus|network-toolkit|playbook-server \
     --hostname HOSTNAME \
-    --device /dev/sdX \
+    --device /dev/sdX | --output-dir DIR \
     --ssh-key-file ~/.ssh/id_ed25519.pub \
     --callback-url http://HOST:PORT/api/cloud-init/callback \
     [--image-url URL] \
     [--image-file /path/to/image.img|.img.xz] \
     [--image-sha256 HEX] \
     [--workspace /path/to/workdir] \
+    [--arch amd64|arm64] [--formats raw.xz,qcow2,raw] [--disk-size 20G] \
     [--yes]
 
 Notes:
@@ -23,6 +24,10 @@ Notes:
 - Pi 5, Pi 4 and Pi 3B+ default to Ubuntu 24.04 preinstalled server ARM64.
 - Legacy Pi OS Bookworm/Bullseye images do not support this cloud-init workflow.
 - Network Toolkit defaults to Pi OS Lite 64-bit Trixie; set its Wi-Fi, browser password hash and Tailscale auth key before imaging.
+- playbook-server is plain Ubuntu Server 24.04 (generic UEFI, amd64 or arm64) that clones this repository
+  and runs the dashboard under Docker on first boot. Its seed is written into the image before flashing.
+- --output-dir (playbook-server only) writes seeded image files instead of a device; --arch, --formats
+  and --disk-size (qcow2 virtual size) apply to it. scripts/build_server_image.sh wraps this mode.
 - User-data is validated before erasing; the written image and injected seed are read back before reporting ready.
 EOF
 }
@@ -40,6 +45,14 @@ toolkit_render() {
     interpreter="$(command -v python3)"
   fi
   "$interpreter" "$SCRIPT_DIR/../callback_site/network_toolkit.py" "$1"
+}
+
+server_render() {
+  local interpreter="$SCRIPT_DIR/../.venv/bin/python"
+  if [[ ! -x "$interpreter" ]]; then
+    interpreter="$(command -v python3)"
+  fi
+  "$interpreter" "$SCRIPT_DIR/../callback_site/playbook_server.py" "$@"
 }
 
 validate_http_url() {

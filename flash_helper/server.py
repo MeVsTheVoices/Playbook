@@ -21,6 +21,7 @@ from werkzeug.serving import make_server
 from flash_helper.devices import discover, verify
 from services.sd_prepare import JOBS, JOBS_LOCK, _run_prepare_job, _sanitize_sd_prepare_payload
 from services.installer_config import UEFI_PROFILES, is_installer
+from playbook_server import PROFILE as SERVER_PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,8 @@ def _validate(payload: Any) -> dict[str, Any]:
             raise ValueError(f"{key} must be a string without NUL characters.")
     if not isinstance(payload.get("cloud_init_options", {}), dict):
         raise ValueError("cloud_init_options must be an object.")
-    if payload.get("profile") not in {"pi5", "pi4", "pi3bplus", "network-toolkit", *UEFI_PROFILES}:
-        raise ValueError("Select a supported Pi profile.")
+    if payload.get("profile") not in {"pi5", "pi4", "pi3bplus", "network-toolkit", SERVER_PROFILE, *UEFI_PROFILES}:
+        raise ValueError("Select a supported provisioning profile.")
     if payload.get("distribution", "standard") not in {"standard", "k3s"}:
         raise ValueError("distribution must be standard or k3s.")
     if not re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", payload.get("hostname", "")):

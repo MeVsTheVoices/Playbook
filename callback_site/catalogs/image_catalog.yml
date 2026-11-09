@@ -142,6 +142,30 @@ image_catalog:
     image_sha256: 483db18a48da399b5b7022ffae9a07bc6d99daab30e593aedac09b69ff422843
     docs_url: https://www.raspberrypi.com/news/cloud-init-on-raspberry-pi-os/
     notes: Pi 3B+ network appliance. Wi-Fi uplink, dedicated Ethernet, USB serial tools, authenticated browser terminal and opt-in Funnel. No desktop or K3s.
+  - id: playbook-server-ubuntu-noble-amd64
+    label: Playbook Server - Ubuntu Server 24.04 LTS cloud image (amd64)
+    distro: Ubuntu
+    release: 24.04 LTS (noble, 20261017)
+    arch: amd64
+    profiles:
+      - playbook-server
+    recommended: true
+    image_url: https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-amd64.img
+    image_sha256: 04e8f2461a16a44e78a370284471f29616cdd9baf1893df25807b71f985b6c94
+    docs_url: https://cloud-images.ubuntu.com/releases/noble/
+    notes: Generic UEFI PC or VM disk. First boot installs Docker, clones this repository and runs the dashboard. The seed is written into the image before flashing.
+  - id: playbook-server-ubuntu-noble-arm64
+    label: Playbook Server - Ubuntu Server 24.04 LTS cloud image (arm64)
+    distro: Ubuntu
+    release: 24.04 LTS (noble, 20261017)
+    arch: arm64
+    profiles:
+      - playbook-server
+    recommended: true
+    image_url: https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img
+    image_sha256: 50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e
+    docs_url: https://cloud-images.ubuntu.com/releases/noble/
+    notes: Generic arm64 UEFI server or VM disk (not Raspberry Pi firmware). Same first-boot self-deployment as amd64.
   - id: raspios-trixie-arm64
     label: Raspberry Pi OS (64-bit, Trixie)
     distro: Raspberry Pi OS

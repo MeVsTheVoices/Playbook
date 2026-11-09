@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        bash ca-certificates cloud-init curl mount openssl parted udev util-linux xz-utils xorriso \
+        bash ca-certificates cloud-init curl mount openssl parted qemu-utils udev util-linux xz-utils xorriso \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -17,6 +17,7 @@ COPY callback_site/requirements.txt /tmp/requirements.txt
 RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt
 COPY callback_site/ /app/callback_site/
 COPY scripts/ /app/scripts/
+COPY roles/ /app/roles/
 COPY flash_helper/ /app/flash_helper/
 COPY inventory.yml /app/inventory.yml
 RUN mkdir -p /data /work && chmod 700 /data /work

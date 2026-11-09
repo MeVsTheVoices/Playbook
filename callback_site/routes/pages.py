@@ -22,6 +22,7 @@ from services.sd_profiles import _load_sd_option_profiles
 from services.sd_prepare import _redact_sd_secret_options
 from services.settings import _load_app_settings, _tailscale_policy_defaults
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS
+from playbook_server import BOOT_INPUT_SPECS as SERVER_SPECS
 
 
 def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[Dict[str, Any]]]) -> None:
@@ -54,6 +55,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
             k3s_role_taints=K3S_ROLE_TAINTS,
             image_catalog=image_catalog,
             toolkit_specs=TOOLKIT_SPECS,
+            server_specs=SERVER_SPECS,
         )
 
     @pages.get("/tailscale-acl")

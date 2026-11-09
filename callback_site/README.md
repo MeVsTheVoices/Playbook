@@ -2,6 +2,33 @@
 
 Callback Site is the control plane for the rack workflow: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, post-boot node provisioning, and the shared monitoring views that tie those steps together.
 
+### Self-hosting Ubuntu server (experimental)
+
+The `playbook-server` profile seeds Ubuntu Server 24.04 generic cloud images for
+amd64 or arm64 UEFI machines, separately from the Raspberry Pi profiles. First
+boot installs Docker, clones the configured public repository/ref, starts this
+dashboard and optionally installs its local host SD/USB flasher. Node Ops assigns
+only the Playbook Server module to `playbook_server_active` nodes.
+
+To generate artifacts without writing a physical disk, run from the repository root:
+
+```sh
+scripts/build_server_image.sh --arch amd64 --ssh-key-file ~/.ssh/id_ed25519.pub \
+  --ref reconcile/server-and-portal --output-dir dist/server-image
+```
+
+Use a ref containing this feature until it is merged to main. The builder requires
+Linux, sudo, loop devices, `qemu-img`, cloud-init, Python with PyYAML/Jinja2 and the
+normal flashing-script prerequisites. It writes `.img.xz`, a 20G virtual-size
+`.qcow2`, a JSON manifest and `SHA256SUMS`; `--formats` selects outputs and
+`--disk-size` changes the qcow2 size. Keep generated images private if their
+cloud-init seed contains credentials. On the node, `sudo playbook-update [ref]`
+rebuilds the deployment. The optional flasher binds to the Docker bridge gateway.
+
+Renderer, profile wiring and flashing-backend integration have regression tests.
+A full built-image/first-boot VM validation is still pending. No GitHub image-build
+workflow is enabled; CI image generation remains a separate discussion.
+
 ### Shared interface styles
 
 Styles are authored in `styles/` using Dart Sass modules, not edited in the
@@ -26,7 +53,10 @@ retain only their specialized layouts and state indicators; declarations already
 owned by shared rules have been removed. Keep this load order: shared control and
 responsive policies intentionally take precedence over feature decoration.
 Navigation is rendered from `templates/_sidebar.html`
-so labels, active-page states and mobile navigation stay consistent. Phone layouts
+so labels, active-page states and mobile navigation stay consistent. The compact
+sidebar header has an icon-only toggle with state-specific accessible labels.
+Decorated cards such as `.panel.acl-hero` use scoped selectors so their contrast
+survives the later shared `.panel` background rule. Phone layouts
 use a two-column navigation grid, fit controls to available width and preserve
 local scrolling for wide tables. Reduced-motion preferences disable decoration
 and transition animations without changing operational state.
@@ -82,6 +112,10 @@ splitting arbitrarily. Before introducing new shared rules, check for existing
 owners/mixins; avoid page-specific copies of the shell or controls.
 
 ## At A Glance
+
+- Dashboard setup follows Target Settings, Image Source and Integrity, then SSH
+  Access. Target Settings starts open; opening another step closes the previous
+  one without clearing inputs. Cloud-Init Settings expands independently.
 
 - Settings groups Rack Identity, Image Catalog Health and Logging into compact,
   independently expandable controls. Under Node State & Maintenance, destructive
@@ -570,6 +604,48 @@ setup (below); host-tailnet discovery also needs the relevant service available
 inside the container. Keep the site on a trusted network; it is not intended for direct
 public-internet exposure.
 
+### SD/USB flashing from Docker (host flasher)
+
+The container cannot see host SD cards or USB drives; under Docker Desktop it
+runs inside a VM. SD preparation is therefore delegated to a small host agent,
+`callback_site/sd_flasher.py`. It is standard library only, runs as root, and
+serves a token-authenticated JSON API on `127.0.0.1:8089`. The dashboard keeps
+all validation, templates and secrets. The agent lists only removable disks
+and only runs `scripts/prepare_sd_cloud_init.sh` against a disk it currently
+lists, with `CLOUD_INIT_*` options only. It never accepts commands, arbitrary
+paths or host environment overrides.
+
+```bash
+scripts/run_sd_flasher.sh install   # systemd service, survives reboots
+docker compose up -d --force-recreate callback-site   # first time only, loads the token
+```
+
+`scripts/run_sd_flasher.sh` (no argument) runs the agent in the foreground
+instead; `status` and `uninstall` manage the service. The first run creates
+`.local/sd-flasher.env` (mode 0600, gitignored). Compose loads it into the
+dashboard and points `SD_FLASHER_URL` at `http://host.docker.internal:8089`;
+set `SD_FLASHER_URL=` to disable delegation. When the agent is unreachable, the
+home page shows the reason next to the device picker instead of an empty list.
+
+The agent uses its own image cache, `callback_site/data/image_cache` (the
+native deployment's cache; override with `SD_FLASHER_IMAGE_CACHE_DIR`). Catalog
+images missing there are downloaded and verified by the script; custom library
+files must be copied there by name. It decompresses into
+`/var/tmp/playbook-sd-flasher` (`SD_FLASHER_WORK_DIR`), so leave room for a full
+image. Because it runs on the host, the K3s server default is the host's LAN
+IP, not the container's. Anyone who can edit this checkout can change code
+that runs as root, so keep the checkout owned by a trusted admin.
+
+With native Docker Engine, `host.docker.internal` maps to the bridge gateway, so start the
+agent with `--bind` set to that gateway address (for example `172.17.0.1`), not
+loopback; the token still guards every request.
+
+`compose.sd-flasher.yaml` sketches a privileged containerised flasher for
+unrestricted native Engine hosts, the step towards a Kubernetes one-shot Job.
+It is **unsupported and unvalidated**. It cannot work under Docker Desktop, the
+image lacks `parted`, `udev` and `xz`, and it mounts the host's `/dev`. Use it
+only for experiments on a dedicated machine.
+
 ### USB devices, WSL and Docker
 
 An optional [isolated Linux flashing helper](../flash_helper/README.md) now
@@ -639,8 +715,8 @@ or add a USB transport to this app.
 For an SD reader, exposing the whole verified block device is only one
 prerequisite: the existing flashing workflow also needs privileged mount/write
 operations and access to partition devices. The default non-root image is
-**not a validated SD flasher**, and `--device` alone does not fix that. Prefer
-the existing native Linux flashing workflow rather than making the web app
+**not a validated SD flasher**, and `--device` alone does not fix that. Use the
+host flasher above rather than making the web app
 privileged. Unmount the intended card on the host, verify size/model/serial,
 and never expose a system disk or mount the host's entire `/dev` into the app.
 

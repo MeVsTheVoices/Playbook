@@ -95,3 +95,11 @@ all:
       children:
         network_toolkit_active:
           hosts: {}
+    playbook_server:
+      vars:
+        rack_node_family: ubuntu-server
+        rack_node_class: playbook-server
+        rack_node_storage_profile: disk
+      children:
+        playbook_server_active:
+          hosts: {}

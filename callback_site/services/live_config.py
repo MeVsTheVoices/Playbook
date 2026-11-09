@@ -36,6 +36,13 @@ yesno() { if "$@" >/dev/null 2>&1; then echo true; else echo false; fi; }
 '''
 
 _READERS: Dict[str, str] = {
+    "playbook-server": r'''
+conf() { sed -n "s/^$1=//p" /etc/playbook-server.env 2>/dev/null | tail -n1; }
+emit server_repo_url "$(conf PLAYBOOK_REPO_URL)"
+emit server_ref "$(conf PLAYBOOK_REF)"
+emit server_port "$(conf PLAYBOOK_PORT)"
+emit server_install_flasher "$(conf PLAYBOOK_INSTALL_FLASHER)"
+''',
     "network-toolkit": r'''
 emit toolkit_enable_funnel "$(yesno systemctl is-enabled --quiet rack-toolkit-funnel.service)"
 ''',

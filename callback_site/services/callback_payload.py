@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
 from network_toolkit import PROFILE as TOOLKIT_PROFILE
+from playbook_server import PROFILE as SERVER_PROFILE
 
 from services.events import _read_events
 
@@ -25,6 +26,8 @@ def _infer_profile_from_text(*values: str) -> str:
             continue
         if TOOLKIT_PROFILE in text or "network_toolkit" in text:
             return TOOLKIT_PROFILE
+        if SERVER_PROFILE in text or "playbook_server" in text:
+            return SERVER_PROFILE
         if "pi3bplus" in text or "pi-3bplus" in text or "pi3b+" in text or "pi-3b+" in text or "3bplus" in text:
             return "pi3bplus"
         if "pi4" in text or "pi-4" in text or "rpi4" in text:
@@ -49,7 +52,7 @@ def _extract_payload_profile(payload: Any, depth: int = 0) -> str:
             "provision_profile",
         ):
             value = str(payload.get(key, "")).strip().lower()
-            if value in (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE):
+            if value in (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE, SERVER_PROFILE):
                 return value
             inferred = _infer_profile_from_text(value)
             if inferred:

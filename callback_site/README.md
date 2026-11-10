@@ -1183,6 +1183,24 @@ services:
 > machine's sole eligible internal disk** — there is no boot-time installation confirmation.
 > Read the helper guide's disk-selection policy and hardware acceptance-test limits first.
 
+<a id="linux-k3s-host"></a>
+### ☸️ K3s on the Linux Docker host
+
+The sidebar shows **Kubernetes** only when the dashboard can reach a cluster. When the
+container runs on a host that is also a K3s server, connect it once from the repository root:
+
+```bash
+scripts/connect_k3s_kubeconfig.sh
+```
+
+- Exports `/etc/rancher/k3s/k3s.yaml` (with `sudo`) to the git-ignored `.local/kubeconfig`,
+  pointing the API at this host's LAN address. Set `K3S_API_HOST` to use another address in
+  the API certificate (for example the Tailscale IP).
+- Adds `COMPOSE_FILE=compose.yaml:compose.kubernetes.yaml` to `.env`, so later
+  `docker compose up` runs keep the kubeconfig mount.
+- Recreates the dashboard and runs `kubectl get nodes` inside it.
+- Rerun it after rebuilding K3s or rotating its certificates.
+
 <a id="docker-desktop-kubernetes-and-helm"></a>
 ### ☸️ Docker Desktop Kubernetes and Helm
 

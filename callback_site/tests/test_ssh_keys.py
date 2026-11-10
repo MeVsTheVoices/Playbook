@@ -12,6 +12,77 @@ import services.storage
 
 
 class SshKeyTests(BaseCallbackSiteTest):
+    def test_new_named_pair_preserves_original_and_rejects_reuse(self) -> None:
+        original = self.client.post("/api/ssh/generate", json={
+            "key_name": "original-key", "mode": "generate",
+        }).get_json()
+        private = (services.storage.KEYS_DIR / "original-key").read_bytes()
+        fresh = self.client.post("/api/ssh/generate", json={
+            "key_name": "original-key-2", "mode": "generate",
+        })
+        self.assertEqual(fresh.status_code, 200)
+        self.assertNotEqual(original["public_key"], fresh.get_json()["public_key"])
+        self.assertEqual((services.storage.KEYS_DIR / "original-key").read_bytes(), private)
+        self.assertEqual((services.storage.KEYS_DIR / "original-key.pub").read_text().strip(),
+                         original["public_key"].strip())
+        self.assertEqual(self.client.post("/api/ssh/generate", json={
+            "key_name": "original-key", "mode": "generate",
+        }).status_code, 409)
+        self.assertEqual((services.storage.KEYS_DIR / "original-key").read_bytes(), private)
+
+    def test_regeneration_ui_creates_new_name_and_preserves_selection_on_failure(self) -> None:
+        self.browser_probe("/", ["home/state.js", "home/ssh_keys.js"], """
+const initialSdOptionProfiles = {};
+let savedSelection = "";
+async function saveSdBrowserSelection(value) { savedSelection = value.ssh_key_name; }
+let requests = [];
+let fail = false;
+let names = ["original", "original-2"];
+window.fetch = async (url, options) => {
+  if (url === "/api/ssh/keys") return {
+    ok: true, json: async () => ({ok: true, keys: names.map(key_name => ({key_name, public_key_exists: true}))})
+  };
+  const body = JSON.parse(options.body);
+  requests.push(body);
+  if (fail) return {ok: false, json: async () => ({ok: false, errors: ["Name already exists"]})};
+  names.push(body.key_name);
+  return {ok: true, json: async () => ({
+    ok: true, created: true, mode: "generate", key_name: body.key_name,
+    public_key: "ssh-ed25519 fresh", private_key_path: "/private/path"
+  })};
+};
+""", """
+await refreshSshKeyChoices("original");
+check(!document.getElementById("regenerate-ssh-key").disabled, "saved selection enables regeneration");
+toggleSshKeyRegeneration(true);
+const input = document.getElementById("ssh_key_new_name");
+check(input.value === "original-3", "suggestion skips existing names");
+check(!document.getElementById("ssh-key-regeneration").hidden, "inline name editor opens");
+input.value = "original";
+await regenerateSelectedSshKey();
+check(requests.length === 0, "existing name cannot be regenerated");
+input.value = "fresh-name";
+fail = true;
+await regenerateSelectedSshKey();
+check(sshKeySelectEl.value === "original" && !document.getElementById("ssh-key-regeneration").hidden,
+  "failure preserves old selection and editor");
+check(sshKeyStatusEl.textContent.includes("Name already exists"), "server error is shown");
+fail = false;
+await regenerateSelectedSshKey();
+check(requests.at(-1).mode === "generate" && requests.at(-1).key_name === "fresh-name",
+  "regeneration uses create-only endpoint with new name");
+check(form.ssh_public_key.value === "ssh-ed25519 fresh" && form.ssh_public_key.dataset.keyName === "fresh-name",
+  "fresh public key is loaded for provisioning");
+check(sshKeySelectEl.value === "fresh-name" && savedSelection === "fresh-name",
+  "new key is selected and retained");
+check(document.getElementById("key-links").textContent.includes("Download private key"),
+  "new private key download is available");
+check(document.getElementById("ssh-key-regeneration").hidden, "editor closes after success");
+toggleSshKeyRegeneration(true);
+toggleSshKeyRegeneration(false);
+check(sshKeySelectEl.value === "fresh-name", "cancel does not change current key");
+""")
+
     def test_public_endpoint_serves_only_public_key_as_uncached_text(self) -> None:
         self.client.post("/api/ssh/generate", json={"key_name": "endpoint-key", "mode": "generate"})
         response = self.client.get("/api/ssh/public/endpoint-key")

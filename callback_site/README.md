@@ -2,6 +2,13 @@
 
 Callback Site is the control plane for the rack workflow: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, post-boot node provisioning, and the shared monitoring views that tie those steps together.
 
+### Regenerating SSH keys
+
+In the dashboard's SSH Access panel, select a saved generated key and choose
+**Regenerate Selected** to create a fresh pair under a different name. The old
+pair is preserved, and existing nodes' authorized keys are not changed. Download
+the new private key; the new public key is selected for subsequent provisioning.
+
 ### Self-hosting Ubuntu server (experimental)
 
 The `playbook-server` profile seeds Ubuntu Server 24.04 generic cloud images for

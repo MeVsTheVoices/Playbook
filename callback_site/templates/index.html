@@ -186,6 +186,18 @@
                 <button type="button" id="load-selected-ssh-key">Use Selected</button>
                 <button type="button" id="refresh-ssh-key-list" class="secondary">Refresh List</button>
               </div>
+              <button type="button" id="regenerate-ssh-key" class="secondary" aria-expanded="false" aria-controls="ssh-key-regeneration" disabled>Regenerate Selected</button>
+              <div id="ssh-key-regeneration" hidden>
+                <p class="hint">Create a fresh key under a different name. The original key is kept; existing nodes are not changed. Download the new private key before using it.</p>
+                <div class="key-picker-row">
+                  <div>
+                    <label for="ssh_key_new_name">New key name</label>
+                    <input id="ssh_key_new_name" autocomplete="off" placeholder="rack-bootstrap-ed25519-2">
+                  </div>
+                  <button type="button" id="confirm-regenerate-ssh-key">Create New Key</button>
+                  <button type="button" id="cancel-regenerate-ssh-key" class="secondary">Cancel</button>
+                </div>
+              </div>
               <div class="key-upload-row">
                 <div>
                   <label for="ssh_key_upload">Upload Public Key File</label>

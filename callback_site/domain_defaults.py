@@ -154,6 +154,29 @@ K3S_API_ENDPOINT_DEFAULT = "https://100.65.24.76:6443"
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
+        "id": "cgroups",
+        "label": "Pi Cgroups",
+        "description": "Ensure cpuset and memory boot flags in the existing Pi cmdline. Reboot manually to activate; no automatic reboot.",
+        "tags": ["cgroups"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", TOOLKIT_GROUP],
+        "input_specs": [],
+    },
+    {
+        "id": "systemd",
+        "label": "Systemd Service",
+        "description": "Manage one existing service. Stopping services can disconnect access; check the selected unit before applying.",
+        "tags": ["systemd"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", TOOLKIT_GROUP, SERVER_GROUP],
+        "input_specs": [
+            {"id": "service_name", "label": "Service unit", "placeholder": "docker.service",
+             "input_type": "text", "required": True},
+            {"id": "service_state", "label": "Runtime state", "input_type": "select",
+             "options": ["started", "stopped"], "default": "started", "required": True},
+            {"id": "service_enabled", "label": "Start at boot", "input_type": "select",
+             "options": ["true", "false"], "default": "true", "required": True},
+        ],
+    },
+    {
         "id": "network-toolkit",
         "label": "Network Toolkit (Pi 3B+)",
         "description": "Serial/Ethernet tools, a restricted browser terminal and opt-in authenticated Tailscale Funnel. Wi-Fi uplink; no forwarding.",

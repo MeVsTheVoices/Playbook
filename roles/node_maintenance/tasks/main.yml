@@ -1,0 +1,10 @@
+---
+- name: Configure Pi cgroup boot flags
+  ansible.builtin.import_tasks: cgroups.yml
+  when: (provision_profile | default('')) == 'cgroups'
+  tags: [cgroups]
+
+- name: Manage selected systemd service
+  ansible.builtin.import_tasks: systemd.yml
+  when: (provision_profile | default('')) == 'systemd'
+  tags: [systemd]

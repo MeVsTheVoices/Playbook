@@ -111,14 +111,16 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Then open **<http://127.0.0.1:8088/>** on the host. 🎉
+Then open **<http://127.0.0.1:8089/>** on the host and create the dashboard account. 🎉
+Nodes call back on port **8088**, which answers only node endpoints.
 
 This starts the portal only — it does not configure the router or provision nodes.
 
 > [!WARNING]
-> 🔐 **Keep management private.** Base Compose publishes the portal port on host
-> interfaces. Restrict it with host firewall rules to trusted LAN/tailnet paths and
-> **never port-forward the dashboard to the internet.**
+> 🔐 **Keep management private.** The dashboard binds to `127.0.0.1` and needs a sign-in;
+> open it to the LAN or tailnet [deliberately](callback_site/README.md#dashboard-access).
+> Port 8088 is on every host interface for nodes. **Never port-forward either port to the
+> internet.**
 
 > [!IMPORTANT]
 > 💾 State lives in the `callback-site-data` volume. It survives rebuilds, but it is

@@ -174,19 +174,33 @@ class UefiInstallerTests(unittest.TestCase):
     def test_installer_preflight_handles_wrapped_and_unwrapped_ubuntu_configs(self):
         from flash_helper import installer_target
         snapshot = self.snapshot()
-        for wrapped in (True, False):
-            document = {"storage": {"layout": {"name": "direct", "match": {"serial": "BLOCKED"}}}}
-            if wrapped:
-                document = {"autoinstall": document}
-            target = unittest.mock.Mock()
-            target.read_text.return_value = yaml.safe_dump(document)
-            with patch.object(installer_target, "choose_disks", return_value=snapshot["blockdevices"][1]), \
-                 patch.object(installer_target.subprocess, "run", return_value=unittest.mock.Mock(stdout="{}")), \
-                 patch.object(installer_target, "Path", return_value=target):
-                installer_target.main("ubuntu")
-            output = yaml.safe_load(target.write_text.call_args.args[0])
-            storage = output.get("autoinstall", output)["storage"]
-            self.assertEqual(storage["layout"]["match"], {"serial": "disk-one"})
+        cases = (
+            ("ID_SERIAL=Samsung_SSD_970_EVO_disk-one\nID_SERIAL_SHORT=disk-one\n", {"serial": "Samsung_SSD_970_EVO_disk-one"}),
+            ("ID_SERIAL=Odd*Disk?[1]\n", {"serial": "Odd[*]Disk[?][[]1]"}),
+            ("ID_SERIAL_SHORT=disk-one\n", {"path": "/dev/nvme0n1"}),
+        )
+        for udev, expected in cases:
+            for wrapped in (True, False):
+                document = {"storage": {"layout": {"name": "direct", "match": {"serial": "BLOCKED"}}}}
+                if wrapped:
+                    document = {"autoinstall": document}
+                target = unittest.mock.Mock()
+                target.read_text.return_value = yaml.safe_dump(document)
+
+                def run(command, udev=udev, **kwargs):
+                    if command[0] == "udevadm":
+                        self.assertEqual(command[-1], "--name=/dev/nvme0n1")
+                        return unittest.mock.Mock(stdout=f"DEVNAME=/dev/nvme0n1\n{udev}")
+                    return unittest.mock.Mock(stdout="{}")
+
+                with self.subTest(udev=udev, wrapped=wrapped), \
+                     patch.object(installer_target, "choose_disks", return_value=snapshot["blockdevices"][1]), \
+                     patch.object(installer_target.subprocess, "run", side_effect=run), \
+                     patch.object(installer_target, "Path", return_value=target):
+                    installer_target.main("ubuntu")
+                    output = yaml.safe_load(target.write_text.call_args.args[0])
+                    storage = output.get("autoinstall", output)["storage"]
+                    self.assertEqual(storage["layout"]["match"], expected)
 
     @unittest.skipUnless(shutil.which("xorriso"), "xorriso is required for actual ISO remaster validation")
     def test_iso_remaster_preserves_efi_boot_catalog_and_embeds_seeds(self):

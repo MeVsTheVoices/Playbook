@@ -16,6 +16,7 @@ from services.ssh_keys import (
     _ansible_known_hosts_args,
     _is_safe_key_name,
     _seed_known_host,
+    _ssh_destination,
     _ssh_private_key_preflight,
 )
 from services.storage import KEYS_DIR
@@ -180,6 +181,10 @@ def _run_remote_script(node_name: str, script: str) -> Dict[str, Any]:
     cert = str(node_entry.get("certificate", "") or "").strip()
     key_path = str(KEYS_DIR / (cert if cert and _is_safe_key_name(cert) else "rack-bootstrap-ed25519"))
     target = f"{user}@{host} ({source})"
+    try:
+        destination = _ssh_destination(user, host)
+    except ValueError as exc:
+        return {"stdout": "", "target": target, "error": str(exc)}
 
     key_error = _ssh_private_key_preflight(key_path)
     if key_error:
@@ -192,7 +197,8 @@ def _run_remote_script(node_name: str, script: str) -> Dict[str, Any]:
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=6",
         *_ansible_known_hosts_args().split(),
-        f"{user}@{host}",
+        "--",
+        destination,
         _wrap_for_ssh(script),
     ]
     try:

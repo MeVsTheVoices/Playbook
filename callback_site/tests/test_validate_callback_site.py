@@ -39,6 +39,29 @@ class ValidateCallbackSiteTests(unittest.TestCase):
         self.assertIn("older build", output.getvalue())
         self.assertIn("Restart callback_site", output.getvalue())
 
+    def test_signed_out_dashboard_api_counts_as_reachable(self) -> None:
+        error = HTTPError("http://localhost", 401, "Unauthorized", {}, BytesIO(b'{"ok": false}'))
+        output = StringIO()
+        with patch.object(validate_callback_site, "urlopen", side_effect=error):
+            with redirect_stdout(output):
+                result = validate_callback_site.require_endpoint("/api/cloud-init/events")
+        self.assertTrue(result)
+        self.assertIn("sign-in required", output.getvalue())
+
+    def test_node_only_port_404_points_at_the_dashboard_port(self) -> None:
+        body = b"This port only serves node callbacks. Open the dashboard on port 8089."
+        error = HTTPError("http://localhost", 404, "Not Found", {}, BytesIO(body))
+        output = StringIO()
+        with patch.object(validate_callback_site, "urlopen", side_effect=error) as urlopen:
+            with redirect_stdout(output):
+                result = validate_callback_site.require_endpoint(
+                    "/api/test-terminal/checks", "http://127.0.0.1:8088"
+                )
+        self.assertFalse(result)
+        self.assertEqual(urlopen.call_args.args[0], "http://127.0.0.1:8088/api/test-terminal/checks")
+        self.assertIn("CALLBACK_ADMIN_BASE", output.getvalue())
+        self.assertNotIn("older build", output.getvalue())
+
     def test_require_endpoint_reports_connection_errors(self) -> None:
         output = StringIO()
         with patch.object(

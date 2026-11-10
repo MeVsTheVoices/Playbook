@@ -1,0 +1,59 @@
+@use "../../abstracts/mixins";
+
+.auth-wrap {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - 3.5rem);
+  max-width: 460px;
+}
+
+.auth-card {
+  width: 100%;
+  padding: 1.6rem;
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.auth-form .hint {
+  margin: 0.35rem 0 0;
+}
+
+.auth-form button {
+  justify-self: start;
+  padding-inline: 1.2rem;
+}
+
+.auth-error {
+  margin: 0.8rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  @include mixins.state(error);
+  font-weight: 600;
+}
+
+.auth-help {
+  margin-top: 1.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.auth-help summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.auth-help pre {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  @include mixins.state-colors(#0b1020, #d6deeb);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}

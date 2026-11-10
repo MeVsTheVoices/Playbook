@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -44,6 +45,21 @@ def choose_disks(snapshot: dict) -> dict:
     return disk
 
 
+def udev_serial(path: str) -> str:
+    """Return udev ID_SERIAL, the value Subiquity's match.serial compares (lsblk shows the short serial)."""
+    result = subprocess.run(["udevadm", "info", "--query=property", f"--name={path}"],
+                            capture_output=True, text=True, check=True)
+    for line in result.stdout.splitlines():
+        key, _, value = line.partition("=")
+        if key == "ID_SERIAL":
+            return value.strip()
+    return ""
+
+
+def glob_literal(value: str) -> str:
+    return re.sub(r"([*?\[])", r"[\1]", value)
+
+
 def main(mode: str) -> None:
     if not Path("/sys/firmware/efi").is_dir():
         raise ValueError("This media supports UEFI boot only.")
@@ -60,7 +76,8 @@ def main(mode: str) -> None:
         document = yaml.safe_load(config.read_text())
         autoinstall = document.get("autoinstall", document)
         storage = autoinstall["storage"]
-        storage["layout"]["match"] = {"serial": disk["serial"]} if disk.get("serial") else {"path": disk["path"]}
+        serial = udev_serial(disk["path"])
+        storage["layout"]["match"] = {"serial": glob_literal(serial)} if serial else {"path": glob_literal(disk["path"])}
         config.write_text(yaml.safe_dump(document, sort_keys=False))
     elif mode == "rocky":
         name = Path(disk["path"]).name

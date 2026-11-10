@@ -463,24 +463,34 @@ class SdCloudInitRenderTests(unittest.TestCase):
         self.assertIn("seq 1 90", command)
         self.assertIn("sleep 2", command)
         self.assertIn("exit 1", command)
+        cmds = [" ".join(c) if isinstance(c, list) else str(c) for c in self.runcmd(data)]
+        cleanup = cmds.index("rm -f /etc/apt/apt.conf.d/00-rack-clock")
+        self.assertGreater(cleanup, next(i for i, c in enumerate(cmds) if "NTPSynchronized" in c))
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name, content in {
-                "timedatectl": '#!/bin/sh\n[ "$1" = set-ntp ] && exit 0\nprintf "%s\\n" "$SYNCED"\n',
+                "timedatectl": '#!/bin/sh\n[ "$1" = set-ntp ] && exit "$NTP_RC"\nprintf "%s\\n" "$SYNCED"\n',
                 "sleep": "#!/bin/sh\nexit 0\n",
                 "seq": "#!/bin/sh\nprintf '1\\n2\\n'\n",
+                "rm": '#!/bin/sh\nprintf "%s\\n" "$*" >> "$RM_LOG"\n',
             }.items():
                 path = root / name
                 path.write_text(content)
                 path.chmod(0o755)
-            for synced, expected in (("yes", 0), ("no", 1)):
+            rm_log = root / "rm.log"
+            for synced, ntp_rc, expected in (("yes", "0", 0), ("yes", "1", 0), ("no", "0", 1)):
+                rm_log.unlink(missing_ok=True)
                 result = subprocess.run(
                     ["/bin/sh", "-c", command], capture_output=True, text=True,
-                    env={"PATH": tmp, "SYNCED": synced}, executable="/bin/sh",
+                    env={"PATH": tmp, "SYNCED": synced, "NTP_RC": ntp_rc, "RM_LOG": str(rm_log)},
+                    executable="/bin/sh",
                 )
                 self.assertEqual(result.returncode, expected, result.stderr)
                 if expected:
                     self.assertIn("clock not synced after 180s", result.stderr)
+                    self.assertFalse(rm_log.exists(), "the hook stays until the clock syncs")
+                else:
+                    self.assertEqual(rm_log.read_text(), "-f /etc/apt/apt.conf.d/00-rack-clock\n")
 
     def test_default_tags_follow_the_profile(self) -> None:
         for profile, expected in (("pi3bplus", "tag:rpi-3bplus,tag:homelab"), ("pi5", "tag:rpi5,tag:homelab"), ("pi4", "tag:rpi4,tag:homelab")):

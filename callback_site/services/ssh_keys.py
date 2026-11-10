@@ -106,7 +106,7 @@ def _ensure_known_hosts_file() -> None:
 
 def _seed_known_host(host: str, port: int = 22) -> None:
     host_text = str(host or "").strip()
-    if not host_text:
+    if not host_text or not _is_safe_ssh_host(host_text):
         return
 
     _ensure_known_hosts_file()
@@ -129,7 +129,7 @@ def _seed_known_host(host: str, port: int = 22) -> None:
         scan_cmd = ["ssh-keyscan", "-T", "5"]
         if int(port or 22) != 22:
             scan_cmd.extend(["-p", str(int(port))])
-        scan_cmd.append(host_text)
+        scan_cmd.extend(["--", host_text])
         scan_proc = subprocess.run(scan_cmd, check=False, capture_output=True, text=True)
         scanned = str(scan_proc.stdout or "").strip()
         if scan_proc.returncode != 0 or not scanned:
@@ -213,6 +213,27 @@ def _archive_ssh_public_key(job_id: str, form: Dict[str, Any], public_key: str) 
 
 def _is_safe_key_name(name: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9._-]+", name))
+
+
+# The first character can never be "-", so ssh and ssh-keyscan cannot read the value as an option.
+_SSH_USER_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,31}")
+_SSH_HOST_PATTERN = re.compile(r"[A-Za-z0-9_:\[][A-Za-z0-9._:%\[\]-]{0,253}")
+
+
+def _is_safe_ssh_user(name: str) -> bool:
+    return bool(_SSH_USER_PATTERN.fullmatch(str(name or "")))
+
+
+def _is_safe_ssh_host(host: str) -> bool:
+    return bool(_SSH_HOST_PATTERN.fullmatch(str(host or "")))
+
+
+def _ssh_destination(user: str, host: str) -> str:
+    if not _is_safe_ssh_user(user):
+        raise ValueError("invalid SSH username")
+    if not _is_safe_ssh_host(host):
+        raise ValueError("invalid SSH host")
+    return f"{user}@{host}"
 
 
 def _ensure_ssh_key_permissions(private_key: Path, public_key: Path) -> None:

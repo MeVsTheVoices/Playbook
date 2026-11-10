@@ -251,6 +251,7 @@ class TerminalCheckTests(BaseCallbackSiteTest):
             self.assertIn("hostname && whoami && uname -a", command)
             self.assertIn("StrictHostKeyChecking=yes", command)
             self.assertIn(f"UserKnownHostsFile={services.storage.KNOWN_HOSTS_FILE}", command)
+            self.assertEqual(command[command.index("--") + 1], "ops@10.0.0.10")
 
         thread_cls.assert_called_once()
         _, kwargs = thread_cls.call_args
@@ -258,6 +259,32 @@ class TerminalCheckTests(BaseCallbackSiteTest):
 
         with services.terminal_checks.TEST_TERMINAL_LOCK:
             services.terminal_checks.TEST_TERMINAL_JOBS.pop(job_id, None)
+
+    def test_test_terminal_start_rejects_option_like_username_and_host(self) -> None:
+        create_key = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "rack-bootstrap-ed25519", "comment": "test", "mode": "generate"},
+        )
+        self.assertIn(create_key.status_code, (200, 409))
+
+        cases = (
+            {"host": "10.0.0.10", "username": "-oProxyCommand=touch /tmp/pwned"},
+            {"host": "10.0.0.10", "username": "ops@evil"},
+            {"host": "-oProxyCommand=touch /tmp/pwned", "username": "ops"},
+            {"host": "node one", "username": "ops"},
+        )
+        with patch("threading.Thread") as thread_cls, patch("subprocess.run") as run_mock:
+            for case in cases:
+                with self.subTest(case=case):
+                    response = self.client.post(
+                        "/api/test-terminal/start",
+                        json={**case, "key_name": "rack-bootstrap-ed25519", "check_id": "identity", "port": 22},
+                    )
+                    self.assertEqual(response.status_code, 400)
+                    self.assertFalse(response.get_json()["ok"])
+        thread_cls.assert_not_called()
+        ssh_calls = [c for c in run_mock.call_args_list if c.args and str(c.args[0][0]).startswith("ssh")]
+        self.assertEqual(ssh_calls, [])
 
     def test_test_terminal_start_resolves_hostname_to_callback_ip(self) -> None:
         create_key = self.client.post(

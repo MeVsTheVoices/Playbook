@@ -10,6 +10,57 @@ commands, paths, ports, APIs, data files and safety boundaries.
 > SD writes are destructive — only target the intended device. Run the portal on a
 > trusted machine and network; it is not intended for direct public-internet exposure.
 
+### Regenerating SSH keys
+
+In the dashboard's SSH Access panel, select a saved generated key and choose
+**Regenerate Selected** to create a fresh pair under a different name. The old
+pair is preserved, and existing nodes' authorized keys are not changed. Download
+the new private key; the new public key is selected for subsequent provisioning.
+
+### Self-hosting Ubuntu server (experimental)
+
+The `playbook-server` profile seeds Ubuntu Server 24.04 generic cloud images for
+amd64 or arm64 UEFI machines, separately from the Raspberry Pi profiles. First
+boot installs Docker, clones the configured public repository/ref, starts this
+dashboard and optionally installs its local host SD/USB flasher. Node Ops assigns
+only the Playbook Server module to `playbook_server_active` nodes.
+
+To generate artifacts without writing a physical disk, run from the repository root:
+
+```sh
+scripts/build_server_image.sh --arch amd64 --ssh-key-file ~/.ssh/id_ed25519.pub \
+  --ref reconcile/server-and-portal --output-dir dist/server-image
+```
+
+Use a ref containing this feature until it is merged to main. The builder requires
+Linux, sudo, loop devices, `qemu-img`, cloud-init, Python with PyYAML/Jinja2 and the
+normal flashing-script prerequisites. It writes `.img.xz`, a 20G virtual-size
+`.qcow2`, a JSON manifest and `SHA256SUMS`; `--formats` selects outputs and
+`--disk-size` changes the qcow2 size. Keep generated images private if their
+cloud-init seed contains credentials. On the node, `sudo playbook-update [ref]`
+rebuilds the deployment. The optional flasher binds to the Docker bridge gateway.
+
+Renderer, profile wiring and flashing-backend integration have regression tests.
+A full built-image/first-boot VM validation is still pending. No GitHub image-build
+workflow is enabled; CI image generation remains a separate discussion.
+
+### Shared interface styles
+
+Every page still loads `static/common.css` after its feature stylesheet. It owns the
+palette, typography, sidebar, content width, cards, controls, tables, disclosure
+panels, log surfaces, focus indicators and responsive shell. Feature stylesheets
+retain only their specialized layouts and state indicators; declarations already
+owned by shared rules have been removed. Keep this load order: shared control and
+responsive policies intentionally take precedence over feature decoration.
+Navigation is rendered from `templates/_sidebar.html`
+so labels, active-page states and mobile navigation stay consistent. The compact
+sidebar header has an icon-only toggle with state-specific accessible labels.
+Decorated cards such as `.panel.acl-hero` use scoped selectors so their contrast
+survives the later shared `.panel` background rule. Phone layouts
+use a two-column navigation grid, fit controls to available width and preserve
+local scrolling for wide tables. Reduced-motion preferences disable decoration
+and transition animations without changing operational state.
+
 <a id="contents"></a>
 ## 🗺️ Contents
 
@@ -67,6 +118,95 @@ Callbacks, Hardware Monitor and Node Ops all read one
 > [!TIP]
 > Docker Compose is the standard runtime — see [🐳 Docker Compose](#docker-compose).
 > The local virtual environment below is for development and tests, not a second live server.
+
+From the repository root:
+
+```bash
+cd callback_site
+npm ci
+npm run build
+npm run check
+```
+
+Dependencies are pinned in `package.json` and `package-lock.json`; edit
+`frontend/structured_output.js`, not the generated `static/structured_output.js`.
+
+Keep source modules below 300 lines and group by responsibility rather than
+splitting arbitrarily. Before introducing new shared rules, check for existing
+owners/mixins; avoid page-specific copies of the shell or controls.
+
+### Feature overview
+
+- Dashboard setup follows Target Settings, Image Source and Integrity, then SSH
+  Access. Target Settings starts open; opening another step closes the previous
+  one without clearing inputs. Cloud-Init Settings expands independently.
+
+- Settings groups Rack Identity, Image Catalog Health and Logging into compact,
+  independently expandable controls. Under Node State & Maintenance, destructive
+  maintenance can clear cached images or only partial downloads after confirmation.
+  Active image jobs block cleanup; catalog definitions and image history remain.
+
+- SD-card imaging for `pi5`, `pi4` and `pi3bplus` profiles.
+- Cloud-init authoring with reusable optional-setting templates.
+- Distribution-aware imaging for `standard` and `k3s` flows.
+- Catalog management with cache checks and bulk pulls (select several presets, or pull everything missing).
+- Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
+- Boot log exchange: nodes flashed from this site send their own boot logs (journal, cloud-init, dmesg) to `/api/cloud-init/boot-log` after the final callback and on every power restore, which works behind NAT. For other nodes the site pulls them over SSH shortly after a callback (skipped when a push just arrived; `CALLBACK_AUTO_BOOT_LOGS=0` turns the automatic pull off). The last 10 per node are kept.
+- Retire a node with **Archive node** on its newest callback. This hides it from active callbacks, Hardware Monitor, Node Ops and Terminal targets without deleting history, configuration, inventory or Kubernetes resources. New callbacks do not restore it or schedule automatic checks/SSH log collection. Restore it under **Settings > Archived Nodes**. Boot logs live below provisioning output in **Node Ops**, including read-only logs for archived nodes. Selecting an active node collects fresh logs over its preferred connection route; choosing another route attempts that route with its SSH user, key and port. Selecting a stored log only displays history. Collection can take up to 90 seconds and reports failures without erasing stored logs. The payload inspector is collapsed at the bottom of the callback dashboard and opens when a callback is selected.
+- Node Ops connects to a node at its tailnet address when `tailscale status` on the site host lists it online, ahead of the LAN/NAT address a callback reports; the monitor pings the same target.
+- Connection profiles (in active development): each node keeps several ways to reach it (callback, inventory, tailnet IP, tailnet FQDN, DNS, hostname) in `data/connection_profiles.json`, and a replaceable strategy picks one (`prefer_tailnet` default, `prefer_fqdn`, `lan_first`; set `CALLBACK_CONNECTION_STRATEGY` or `register_strategy`). The FQDN profile is only chosen when this host can resolve the MagicDNS name, and every tailnet profile carries the node's `fqdn` for later HTTPS with Tailscale certificates. `GET /api/nodes/<node>/connection-profiles` shows the candidates and the pick. Pinned profiles, per-profile user/key/port, failover and HTTPS via `tailscale cert` are planned next.
+- Terminal: browse predefined SSH diagnostics under System, Boot & logs, and Inventory, filter by search, and preview the exact command before running. The host field is the task target; editing it overrides the discovered-host selection. The route preview uses the same hostname resolution as the task runner. Node Ops **Routes** and Terminal **All node routes** open a compact connection-path modal showing type, preferred strategy, and local interface/gateway when known. These are known candidates, not proof of live SSH reachability. Route lookups use Linux `iproute2` (included in Docker); in Docker the interface belongs to the container, not the Windows host or remote node. Hostname-only routes are resolved by SSH at connection time. Add `?routes=1` to the connection-profile API for these optional route details; `/api/test-terminal/route?host=<host>` previews the terminal target without connecting.
+- Initial callbacks are saved before their automatic closer check is queued in the existing Node Ops job runner. The callback response includes `closer_job_id` when a job is started; inspect it through `/api/nodes/provision/jobs/<id>`. Checks no longer block callback delivery, and repeated callbacks do not start another initial check. Jobs are process-local and do not resume after a restart.
+- Terminal tasks retain the last 20,000 characters of output and stop the local SSH process after 120 seconds, recording a failed job with an explicit timeout. Disconnecting SSH is not a guarantee that every remote child process has stopped.
+- OpenWrt routers as Node Ops hosts (group `openwrt`) with SSH probe and key push, SSH key management, and Tailscale ACL planning.
+- Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
+
+## Runtime Contract
+
+Image URL downloads during flashing now populate the persistent `image_cache/`
+catalog cache and are reused on subsequent runs. Flashing and catalog pulls share
+per-image locks, so concurrent requests for the same URL download only once.
+Complete downloads are published atomically after any supplied/discovered SHA256
+check; failed downloads are not reusable. Without a publisher checksum, a saved
+digest checks local integrity on reuse, not publisher authenticity. Explicit local
+image files still work, and existing catalog caches remain usable. The dashboard
+shows when the latest available image was cached, formatted in the browser's local
+date/time. CLI imaging uses the same cache by default; `IMAGE_CACHE_DIR` overrides
+its location. These changes do not require interrupting an already-running flash.
+
+Target Settings, Image Source And Integrity, and SSH Access form a compact
+accordion on the dashboard: opening one closes the other two. Target Settings
+starts open; Cloud-Init Settings remains independently collapsible.
+
+The Tailscale ACL planner keeps tag, port, user, and other simple value lists
+on one line in its generated JSON; policy objects remain indented.
+
+Before overwriting a card, the flasher unmounts all mounted target filesystems
+and checks again. An unmount or inspection failure aborts before the write;
+close file managers or terminals using the card and retry rather than forcing it.
+After the image is flushed, `partprobe` refreshes its partition table before the
+boot partition is mounted for cloud-init injection.
+Cloud-init rendering and schema validation now happen **before** any unmount/write.
+The target must be a whole disk large enough for the image; system filesystems
+and swap are refused. A device lock refuses overlapping preparations on the same
+device. After flushing the device buffers, the entire written image
+is compared byte-for-byte with the source. The injected user-data, meta-data and
+toolkit network-config are also compared after unmounting and reopening the boot
+partition read-only. Any mismatch fails the job rather than reporting the card ready.
+This adds a full-card-image read to each flash and detects write-path failures;
+it does not guarantee stable power or reliable storage on the Pi during first boot.
+Legacy Pi OS Bookworm/Bullseye catalog images remain downloadable but are excluded
+from SD provisioning because they lack cloud-init. Preset changes replace the
+previous image path, URL and checksum together, including clearing stale checksums.
+
+Everything that should survive restarts or container recreation lives under `CALLBACK_APPDATA_DIR`.
+
+- Default path: `callback_site/data/`
+- Override path with `CALLBACK_APPDATA_DIR`
+- The app can re-exec through `sudo` only when `CALLBACK_SITE_REQUIRE_ROOT=1` is set.
+- The app stays normal-user friendly by default; elevated startup is opt-in.
+
+## Run the local development server
 
 From the repository root:
 
@@ -860,6 +1000,48 @@ flowchart LR
   copying files alone does not make host paths usable inside the container.
 - Keep the original host data until the migrated UI and a container recreation are verified.
 
+### SD/USB flashing from Docker (host flasher)
+
+The container cannot see host SD cards or USB drives; under Docker Desktop it
+runs inside a VM. SD preparation is therefore delegated to a small host agent,
+`callback_site/sd_flasher.py`. It is standard library only, runs as root, and
+serves a token-authenticated JSON API on `127.0.0.1:8089`. The dashboard keeps
+all validation, templates and secrets. The agent lists only removable disks
+and only runs `scripts/prepare_sd_cloud_init.sh` against a disk it currently
+lists, with `CLOUD_INIT_*` options only. It never accepts commands, arbitrary
+paths or host environment overrides.
+
+```bash
+scripts/run_sd_flasher.sh install   # systemd service, survives reboots
+docker compose up -d --force-recreate callback-site   # first time only, loads the token
+```
+
+`scripts/run_sd_flasher.sh` (no argument) runs the agent in the foreground
+instead; `status` and `uninstall` manage the service. The first run creates
+`.local/sd-flasher.env` (mode 0600, gitignored). Compose loads it into the
+dashboard and points `SD_FLASHER_URL` at `http://host.docker.internal:8089`;
+set `SD_FLASHER_URL=` to disable delegation. When the agent is unreachable, the
+home page shows the reason next to the device picker instead of an empty list.
+
+The agent uses its own image cache, `callback_site/data/image_cache` (the
+native deployment's cache; override with `SD_FLASHER_IMAGE_CACHE_DIR`). Catalog
+images missing there are downloaded and verified by the script; custom library
+files must be copied there by name. It decompresses into
+`/var/tmp/playbook-sd-flasher` (`SD_FLASHER_WORK_DIR`), so leave room for a full
+image. Because it runs on the host, the K3s server default is the host's LAN
+IP, not the container's. Anyone who can edit this checkout can change code
+that runs as root, so keep the checkout owned by a trusted admin.
+
+With native Docker Engine, `host.docker.internal` maps to the bridge gateway, so start the
+agent with `--bind` set to that gateway address (for example `172.17.0.1`), not
+loopback; the token still guards every request.
+
+`compose.sd-flasher.yaml` sketches a privileged containerised flasher for
+unrestricted native Engine hosts, the step towards a Kubernetes one-shot Job.
+It is **unsupported and unvalidated**. It cannot work under Docker Desktop, the
+image lacks `parted`, `udev` and `xz`, and it mounts the host's `/dev`. Use it
+only for experiments on a dedicated machine.
+
 <a id="usb-devices-wsl-and-docker"></a>
 ### 🔌 USB devices, WSL and Docker
 
@@ -937,8 +1119,8 @@ services:
 > **SD readers:** exposing the whole verified block device is only one prerequisite —
 > flashing also needs privileged mount/write operations and partition devices. The default
 > non-root image is **not a validated SD flasher**, and `--device` alone does not fix that.
-> Prefer the native Linux flashing workflow over making the web app privileged. Unmount the
-> card on the host, verify size/model/serial, and never expose a system disk or mount the
+> Use the host flasher above rather than making the web app privileged. Unmount the
+> intended card, verify size/model/serial, and never expose a system disk or mount the
 > host's entire `/dev` into the app.
 
 **Optional flashing helper** — the [isolated Linux flashing helper](../flash_helper/README.md):

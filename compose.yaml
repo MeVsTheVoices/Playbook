@@ -15,6 +15,13 @@ services:
       CALLBACK_APPDATA_DIR: /data
       CALLBACK_ADMIN_PORT: "${CALLBACK_ADMIN_PORT:-8089}"
       CALLBACK_ADMIN_HOSTS: "${CALLBACK_ADMIN_HOSTS:-}"
+      # Host SD/USB flasher (scripts/run_sd_flasher.sh); set to "" to disable.
+      SD_FLASHER_URL: ${SD_FLASHER_URL-http://host.docker.internal:8089}
+    env_file:
+      - path: .local/sd-flasher.env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - callback-site-data:/data
     restart: unless-stopped

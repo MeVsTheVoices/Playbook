@@ -105,6 +105,17 @@ document.getElementById("kload-ssh-key").addEventListener("click", () => runSshK
 document.getElementById("load-selected-ssh-key").addEventListener("click", () => loadSelectedSshKey());
 
 document.getElementById("refresh-ssh-key-list").addEventListener("click", () => refreshSshKeyChoices());
+document.getElementById("regenerate-ssh-key").addEventListener("click", () => toggleSshKeyRegeneration(true));
+document.getElementById("cancel-regenerate-ssh-key").addEventListener("click", () => toggleSshKeyRegeneration(false));
+document.getElementById("confirm-regenerate-ssh-key").addEventListener("click", regenerateSelectedSshKey);
+document.getElementById("ssh_key_new_name").addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    regenerateSelectedSshKey();
+  } else if (event.key === "Escape") {
+    toggleSshKeyRegeneration(false);
+  }
+});
 
 document.getElementById("clear-ssh-key-file").addEventListener("click", () => {
   sshKeyUploadEl.value = "";
@@ -112,6 +123,8 @@ document.getElementById("clear-ssh-key-file").addEventListener("click", () => {
 });
 
 sshKeySelectEl.addEventListener("change", () => {
+  toggleSshKeyRegeneration(false);
+  document.getElementById("regenerate-ssh-key").disabled = !sshKeySelectEl.value;
   refreshKeyLinks(String(sshKeySelectEl.value || ""));
 });
 

@@ -29,3 +29,9 @@
   roles:
     - role: raspberry_pi_3bplus
     - role: network_toolkit
+
+- name: Configure self-hosted Playbook servers
+  hosts: playbook_server_active
+  become: true
+  roles:
+    - role: playbook_server

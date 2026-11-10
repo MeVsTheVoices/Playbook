@@ -24,6 +24,17 @@ DEVICE_MONITOR_LOCK = threading.Lock()
 
 
 def _list_sd_devices() -> List[Dict[str, Any]]:
+    from services import sd_flasher_client
+
+    if sd_flasher_client.enabled():
+        try:
+            return sd_flasher_client.list_devices()
+        except sd_flasher_client.FlasherError:
+            return []
+    return _local_sd_devices()
+
+
+def _local_sd_devices() -> List[Dict[str, Any]]:
     try:
         result = subprocess.run(
             [
@@ -85,7 +96,7 @@ def _device_event_message(devices: List[Dict[str, Any]]) -> str:
         "count": len(devices),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    return f"event: devices\\ndata: {json.dumps(payload, separators=(',', ':'))}\\n\\n"
+    return f"event: devices\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
 
 
 def _broadcast_device_update(devices: List[Dict[str, Any]]) -> None:

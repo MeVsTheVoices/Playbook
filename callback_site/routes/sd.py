@@ -16,6 +16,7 @@ from flask import g, jsonify, request, Response, stream_with_context
 
 from k3s_lightweight import ROLE_PROFILES as K3S_ROLE_PROFILES
 from network_toolkit import PROFILE as TOOLKIT_PROFILE
+from playbook_server import PROFILE as SERVER_PROFILE
 from services.ssh_keys import _is_safe_key_name
 from services.storage import KEYS_DIR
 from services import flash_helper
@@ -84,8 +85,8 @@ def _auto_generate_sd_option_profile(payload: Dict[str, Any]) -> str:
         "options": options,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    if payload.get("profile") == TOOLKIT_PROFILE:
-        profiles[next_name]["profile"] = TOOLKIT_PROFILE
+    if payload.get("profile") in (TOOLKIT_PROFILE, SERVER_PROFILE):
+        profiles[next_name]["profile"] = payload["profile"]
     elif is_installer(payload):
         profiles[next_name].update(profile=payload["profile"], workflow="uefi-installer",
                                    catalog_id=payload["catalog_id"])
@@ -174,8 +175,8 @@ def register_sd_routes(app: Any) -> None:
             "options": _redact_sd_secret_options(options),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        if payload.get("profile") == TOOLKIT_PROFILE:
-            profiles[name]["profile"] = TOOLKIT_PROFILE
+        if payload.get("profile") in (TOOLKIT_PROFILE, SERVER_PROFILE):
+            profiles[name]["profile"] = payload["profile"]
         elif payload.get("profile") in UEFI_PROFILES:
             profiles[name].update(profile=payload["profile"], workflow="uefi-installer",
                                  catalog_id=str(payload.get("catalog_id", "")))
@@ -237,7 +238,7 @@ def register_sd_routes(app: Any) -> None:
                     try:
                         yield sub.get(timeout=20)
                     except queue.Empty:
-                        yield "event: ping\\ndata: {}\\n\\n"
+                        yield "event: ping\ndata: {}\n\n"
             finally:
                 with DEVICE_SUBSCRIBERS_LOCK:
                     if sub in DEVICE_SUBSCRIBERS:
@@ -311,7 +312,7 @@ def register_sd_routes(app: Any) -> None:
         if missing:
             return jsonify({"ok": False, "errors": [f"Missing fields: {', '.join(missing)}"]}), 400
 
-        sd_profiles = (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE, *UEFI_PROFILES)
+        sd_profiles = (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE, SERVER_PROFILE, *UEFI_PROFILES)
         if payload["profile"] not in sd_profiles:
             return jsonify({"ok": False, "errors": [f"profile must be one of: {', '.join(sd_profiles)}"]}), 400
 

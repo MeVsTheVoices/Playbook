@@ -96,6 +96,12 @@ class HelperApiTests(unittest.TestCase):
         self.thread.assert_not_called()
         self.assertFalse(self.lease.active)
 
+    def test_self_hosting_server_profile_is_accepted(self) -> None:
+        response = self.app.post("/jobs", headers=self.headers,
+                                 json={**payload(), "profile": "playbook-server"})
+        self.assertEqual(response.status_code, 202, response.get_json())
+        self.thread.assert_called_once()
+
     def test_single_writer_and_idempotent_submission(self) -> None:
         self.assertEqual(self.app.post("/jobs", headers=self.headers, json=payload()).status_code, 202)
         self.assertTrue(self.lease.active)

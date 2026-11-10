@@ -37,7 +37,11 @@ const CLOUD_INIT_PROFILE_MATRIX = {
       "enable_power_restore_callback", "boot_summary", "enable_unattended_upgrades",
     ],
   },
+  "playbook-server": {
+    sections: ["server", "identity", "network", "packages", "misc", "hardening", "access", "tailscale", "telemetry"],
+  },
 };
+const SD_FIXED_STANDARD_PROFILES = new Set(["network-toolkit", "playbook-server"]);
 
 function cloudInitProfileScopeMatches(el) {
   const matrix = CLOUD_INIT_PROFILE_MATRIX[form.profile.value];
@@ -72,8 +76,9 @@ function updateCloudInitSectionsVisibility() {
 
 function ensureK3sConfigDefaults() {
   const toolkit = form.profile.value === "network-toolkit";
-  if (toolkit || isUefiInstaller()) form.distribution.value = "standard";
-  form.distribution.disabled = toolkit || isUefiInstaller();
+  const fixedStandard = SD_FIXED_STANDARD_PROFILES.has(form.profile.value) || isUefiInstaller();
+  if (fixedStandard) form.distribution.value = "standard";
+  form.distribution.disabled = fixedStandard;
   updateCloudInitSectionsVisibility();
   const toolkitSection = document.getElementById("network-toolkit-section");
   if (toolkitSection) {
@@ -342,7 +347,7 @@ async function loadSelectedSdOptionProfile(retainSelection = true) {
     return;
   }
   const isPiOnlyProfile = Boolean(profile.pi_only);
-  if (profile.profile === "network-toolkit" || ["uefi-x86_64", "uefi-arm64"].includes(profile.profile)) {
+  if (SD_FIXED_STANDARD_PROFILES.has(profile.profile) || ["uefi-x86_64", "uefi-arm64"].includes(profile.profile)) {
     form.profile.value = profile.profile;
     form.profile.dispatchEvent(new Event("change"));
     if (isUefiInstaller() && profile.catalog_id) {
@@ -399,7 +404,7 @@ async function saveCurrentSdOptionProfile() {
       .filter(el => SD_SECRET_KEYS.has(el.dataset.optionKey) && el.dataset.savedSecret === "1" && !el.value)
       .map(el => el.dataset.optionKey),
   };
-  if (form.profile.value === "network-toolkit") payload.profile = "network-toolkit";
+  if (SD_FIXED_STANDARD_PROFILES.has(form.profile.value)) payload.profile = form.profile.value;
   if (isUefiInstaller()) {
     payload.profile = form.profile.value;
     payload.workflow = "uefi-installer";

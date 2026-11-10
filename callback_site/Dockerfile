@@ -4,6 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     CALLBACK_APPDATA_DIR=/data \
+    CALLBACK_RUNTIME=container \
     ANSIBLE_CONFIG=/app/ansible.cfg \
     PYTHONPATH=/app/callback_site \
     HOST=0.0.0.0 \

@@ -5,7 +5,7 @@ from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 SD_SCRIPT = SCRIPTS_DIR / "prepare_sd_cloud_init.sh"
-_SOURCE_LINE = re.compile(r'^# shellcheck source=lib/[\w.]+\nsource "\$SCRIPT_DIR/lib/([\w.]+)"\n', re.M)
+_SOURCE_LINE = re.compile(r'^[ \t]*# shellcheck source=lib/[\w.]+\n[ \t]*source "\$SCRIPT_DIR/lib/([\w.]+)"\n', re.M)
 
 
 def read_sd_script() -> str:

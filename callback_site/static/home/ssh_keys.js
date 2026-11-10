@@ -37,6 +37,51 @@ async function refreshSshKeyChoices(selectedKeyName = "") {
   if (previous) {
     sshKeySelectEl.value = previous;
   }
+  document.getElementById("regenerate-ssh-key").disabled = !sshKeySelectEl.value;
+}
+
+function toggleSshKeyRegeneration(open) {
+  const button = document.getElementById("regenerate-ssh-key");
+  document.getElementById("ssh-key-regeneration").hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  const source = sshKeySelectEl.value;
+  if (!source) {
+    toggleSshKeyRegeneration(false);
+    sshKeyStatusEl.textContent = "Select a saved key first.";
+    return;
+  }
+  const names = new Set([...sshKeySelectEl.options].map(option => option.value));
+  let suffix = 2;
+  while (names.has(`${source}-${suffix}`)) suffix++;
+  const input = document.getElementById("ssh_key_new_name");
+  input.value = `${source}-${suffix}`;
+  input.focus();
+  input.select();
+}
+
+async function regenerateSelectedSshKey() {
+  const name = document.getElementById("ssh_key_new_name").value.trim();
+  if (!sshKeySelectEl.value) {
+    sshKeyStatusEl.textContent = "Select a saved key first.";
+    return;
+  }
+  if (!name || [...sshKeySelectEl.options].some(option => option.value === name)) {
+    sshKeyStatusEl.textContent = "Enter a different, unused key name. Existing keys will not be replaced.";
+    return;
+  }
+  const button = document.getElementById("confirm-regenerate-ssh-key");
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    if (await runSshKeyAction("generate", name)) {
+      toggleSshKeyRegeneration(false);
+    }
+  } catch (error) {
+    sshKeyStatusEl.textContent = `Could not regenerate key: ${error.message}. Refresh the key list before retrying.`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function loadSelectedSshKey(retainSelection = true) {
@@ -93,8 +138,8 @@ function handleSshKeyUpload() {
   reader.readAsText(file);
 }
 
-async function runSshKeyAction(mode) {
-  const keyNameInput = document.getElementById("ssh_key_name").value.trim();
+async function runSshKeyAction(mode, newKeyName = "") {
+  const keyNameInput = newKeyName || document.getElementById("ssh_key_name").value.trim();
   const verb = mode === "generate" ? "Generating" : "Loading";
   sshKeyStatusEl.textContent = `${verb} key...`;
   const res = await fetch("/api/ssh/generate", {
@@ -105,8 +150,9 @@ async function runSshKeyAction(mode) {
   const data = await res.json();
   if (!res.ok || !data.ok) {
     sshKeyStatusEl.textContent = (data.errors || ["SSH key action failed"]).join("; ");
-    return;
+    return false;
   }
+  document.getElementById("ssh_key_name").value = data.key_name;
   form.ssh_public_key.value = data.public_key;
   form.ssh_public_key.dataset.keyName = data.key_name;
   refreshKeyLinks(data.key_name);
@@ -117,4 +163,10 @@ async function runSshKeyAction(mode) {
   } catch (error) {
     sshKeyStatusEl.textContent = `Key ready, but session selection could not be retained: ${error.message}`;
   }
+  try {
+    await refreshSshKeyChoices(data.key_name);
+  } catch (error) {
+    sshKeyStatusEl.textContent = `Key ready, but saved keys could not be refreshed: ${error.message}`;
+  }
+  return true;
 }

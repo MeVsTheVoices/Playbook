@@ -3,12 +3,16 @@
 {%- endmacro %}
 <aside class="sidebar" aria-label="Site navigation">
   <div class="sidebar-brand">
-    <div class="sidebar-title">Callback Site 🚀</div>
-    <div class="sidebar-subtitle">Cloud-init, imaging, and node operations</div>
+    <div class="sidebar-brand-copy">
+      <div class="sidebar-title">Callback Site 🚀</div>
+      <div class="sidebar-subtitle">Cloud-init, imaging, and node operations</div>
+    </div>
+    <button class="toggle-btn" id="sidebar-toggle" type="button" title="Collapse / expand sidebar" aria-controls="sidebar-navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path class="sidebar-collapse-icon" d="m16 9-3 3 3 3"/><path class="sidebar-expand-icon" d="m13 9 3 3-3 3"/></svg>
+      <span class="sidebar-toggle-label sidebar-collapse-label">Collapse sidebar</span>
+      <span class="sidebar-toggle-label sidebar-expand-label">Expand sidebar</span>
+    </button>
   </div>
-  <button class="toggle-btn" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Collapse / expand sidebar" aria-controls="sidebar-navigation">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path class="sidebar-chevron" d="m16 9-3 3 3 3"/></svg>
-  </button>
   <nav id="sidebar-navigation" aria-label="Main">
     <a class="{% if request.path == '/' %}active{% endif %}" {% if request.path == '/' %}aria-current="page"{% endif %} href="/" aria-label="Dashboard" title="Dashboard">{{ nav_icon("M3 10 12 3l9 7M5 9v12h14V9M9 21v-8h6v8") }}<span class="label">Dashboard</span></a>
     <a class="{% if request.path.startswith('/nodes') %}active{% endif %}" {% if request.path.startswith('/nodes') %}aria-current="page"{% endif %} href="/nodes" aria-label="Node Ops" title="Node Ops">{{ nav_icon("M4 3h16v7H4zM4 14h16v7H4zM7 6h1M7 17h1M15 6h2M15 17h2") }}<span class="label">Node Ops</span></a>

@@ -73,9 +73,10 @@
           </div>
         </div>
         <form id="sd-form">
-          <details class="fieldset" id="sd-target-settings" name="sd-setup-section" open>
+          <details class="fieldset" id="sd-target-settings" name="sd-setup" open>
             <summary>
               <span class="fieldset-title">Target Settings <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
+              <span class="fieldset-summary-note">Step 1 · Choose the node and device</span>
             </summary>
             <div class="form-grid">
               <div>
@@ -87,6 +88,7 @@
                   <option value="network-toolkit">Network Toolkit (Pi 3B+)</option>
                   <option value="uefi-x86_64">UEFI installer USB (x86_64)</option>
                   <option value="uefi-arm64">UEFI installer USB (ARM64)</option>
+                  <option value="playbook-server">Playbook Server (Ubuntu amd64/arm64)</option>
                 </select>
                 <div class="hint" id="installer-workflow-status" role="status" hidden></div>
               </div>
@@ -118,9 +120,10 @@
             </div>
           </details>
 
-          <details class="fieldset" id="sd-image-settings" name="sd-setup-section">
+          <details class="fieldset" id="sd-image-settings" name="sd-setup">
             <summary>
               <span class="fieldset-title">Image Source And Integrity <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
+              <span class="fieldset-summary-note">Step 2 · Choose and verify the image</span>
             </summary>
             <div class="form-grid">
               <div>
@@ -160,9 +163,10 @@
             <div class="catalog-meta" id="catalog-meta"></div>
           </details>
 
-          <details class="fieldset" id="sd-ssh-settings" name="sd-setup-section">
+          <details class="fieldset" id="sd-ssh-settings" name="sd-setup">
             <summary>
               <span class="fieldset-title">SSH Access <span class="fieldset-disclosure" aria-hidden="true">▾</span></span>
+              <span class="fieldset-summary-note">Step 3 · Set up access</span>
             </summary>
             <p class="hint">Every Pi profile enables passwordless sudo for its administrative user by default. SSH password-login settings are separate; the Network Toolkit browser-console user keeps its restricted permissions.</p>
             <div>
@@ -181,6 +185,18 @@
                 </div>
                 <button type="button" id="load-selected-ssh-key">Use Selected</button>
                 <button type="button" id="refresh-ssh-key-list" class="secondary">Refresh List</button>
+              </div>
+              <button type="button" id="regenerate-ssh-key" class="secondary" aria-expanded="false" aria-controls="ssh-key-regeneration" disabled>Regenerate Selected</button>
+              <div id="ssh-key-regeneration" hidden>
+                <p class="hint">Create a fresh key under a different name. The original key is kept; existing nodes are not changed. Download the new private key before using it.</p>
+                <div class="key-picker-row">
+                  <div>
+                    <label for="ssh_key_new_name">New key name</label>
+                    <input id="ssh_key_new_name" autocomplete="off" placeholder="rack-bootstrap-ed25519-2">
+                  </div>
+                  <button type="button" id="confirm-regenerate-ssh-key">Create New Key</button>
+                  <button type="button" id="cancel-regenerate-ssh-key" class="secondary">Cancel</button>
+                </div>
               </div>
               <div class="key-upload-row">
                 <div>
@@ -243,6 +259,19 @@
                   <div data-os-option-wrapper="1">
                     <label for="opt_{{ spec.id }}">{{ spec.label }}</label>
                     <input id="opt_{{ spec.id }}" data-option-key="{{ spec.id }}" data-option-type="{{ spec.input_type }}" data-option-profile="network-toolkit" data-option-default="{{ spec.default | default('') }}" type="{{ 'checkbox' if spec.input_type == 'checkbox' else ('password' if spec.sensitive | default(false) else 'text') }}" value="{{ spec.default | default('') }}" placeholder="{{ spec.placeholder | default('') }}" autocomplete="off"{% if spec.required %} required{% endif %}>
+                  </div>
+                  {% endfor %}
+                </div>
+              </details>
+              <details id="playbook-server-section" data-cloud-init-section="server" class="segment" hidden>
+                <summary>Playbook Server (Ubuntu)</summary>
+                <p class="segment-hint">Ubuntu Server 24.04 cloud image for a UEFI PC, VM or arm64 server. First boot installs Docker, clones the repository at the chosen ref and runs this dashboard on the port below. Re-run <code>sudo playbook-update [ref]</code> on the node, or the Playbook Server module in Node Ops, to update.</p>
+                <p class="segment-hint">Pick the amd64 or arm64 server image in the catalog. The USB/SD flasher listens only on the Docker bridge, so only the node's own dashboard can use it.</p>
+                <div class="form-grid">
+                  {% for spec in server_specs %}
+                  <div data-os-option-wrapper="1"{% if spec.input_type == 'checkbox' %} class="checkbox-row"{% endif %}>
+                    <label for="opt_{{ spec.id }}">{{ spec.label }}</label>
+                    <input id="opt_{{ spec.id }}" data-option-key="{{ spec.id }}" data-option-type="{{ spec.input_type }}" data-option-profile="playbook-server" data-option-default="{{ spec.default | default('') }}" type="{{ 'checkbox' if spec.input_type == 'checkbox' else 'text' }}"{% if spec.input_type == 'checkbox' %}{% if spec.default %} checked{% endif %}{% else %} value="{{ spec.default | default('') }}"{% endif %} placeholder="{{ spec.placeholder | default('') }}" autocomplete="off"{% if spec.required %} required{% endif %}>
                   </div>
                   {% endfor %}
                 </div>
@@ -598,7 +627,7 @@ server: https://local-machine-ip:6443
                       <summary class="segment-hint" style="cursor: pointer;">Embeddable variables</summary>
                       <ul class="segment-hint" style="margin: 0.4rem 0 0; padding-left: 1.1rem;">
                         <li><code>${HOSTNAME}</code> — node hostname</li>
-                        <li><code>${PROFILE}</code> — image profile (pi5 / pi4 / pi3bplus / network-toolkit)</li>
+                        <li><code>${PROFILE}</code> — image profile (pi5 / pi4 / pi3bplus / network-toolkit / playbook-server)</li>
                         <li><code>${DISTRIBUTION}</code> — standard or k3s</li>
                         <li><code>${CALLBACK_URL}</code> — configured callback endpoint</li>
                       </ul>

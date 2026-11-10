@@ -109,6 +109,7 @@ let deviceOptionsBackend = "native";
 let currentDevices = [];
 
 let lastDeviceRefreshError = "";
+let deviceProblem = "";
 
 let allEvents = [];
 

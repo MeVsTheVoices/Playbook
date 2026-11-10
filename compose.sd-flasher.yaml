@@ -1,0 +1,36 @@
+# UNSUPPORTED / UNVALIDATED: run the SD flasher as a privileged container.
+#
+# Only for a native Linux Docker Engine host that you are prepared to give a
+# root container full device access to. It does not work with Docker Desktop
+# (its VM cannot see host USB disks), the image lacks some flashing tools
+# (parted, udev, xz), and it has not been tested against real hardware.
+# The supported path is the native host agent: scripts/run_sd_flasher.sh.
+#
+#   SD_FLASHER_TOKEN=$(openssl rand -hex 32) \
+#   docker compose -f compose.yaml -f compose.sd-flasher.yaml up -d
+services:
+  callback-site:
+    environment:
+      SD_FLASHER_URL: http://sd-flasher:8089
+      SD_FLASHER_TOKEN: ${SD_FLASHER_TOKEN:?Set SD_FLASHER_TOKEN (32+ characters)}
+
+  sd-flasher:
+    image: playbook-callback-site
+    user: "0:0"
+    privileged: true
+    command:
+      - python
+      - /app/callback_site/sd_flasher.py
+      - --bind=0.0.0.0
+      - --image-cache-dir=/data/image_cache
+      - --work-dir=/data/sd-flasher-work
+    environment:
+      SD_FLASHER_TOKEN: ${SD_FLASHER_TOKEN:?Set SD_FLASHER_TOKEN (32+ characters)}
+    volumes:
+      - callback-site-data:/data
+      # Hot-plugged disks and their partitions appear only through the host /dev.
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    healthcheck:
+      disable: true
+    restart: unless-stopped

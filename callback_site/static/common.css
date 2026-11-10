@@ -45,6 +45,7 @@ body {
   width: 196px;
   padding: 0.8rem;
   overflow-y: auto;
+  scrollbar-width: thin;
   background: radial-gradient(circle at 20% 20%, rgba(45, 212, 191, 0.16), transparent 42%), var(--side);
   border-right: 1px solid rgba(148, 163, 184, 0.2);
   color: var(--side-ink);
@@ -52,7 +53,11 @@ body {
 }
 
 .sidebar-brand {
-  padding: 0.25rem 0.45rem 0.8rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: start;
+  gap: 0.5rem;
+  padding: 0.25rem 0 0.8rem;
   margin-bottom: 0.7rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
@@ -95,22 +100,41 @@ body {
 }
 
 button.toggle-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 42px;
   height: 42px;
   padding: 0.55rem;
-  margin-left: auto;
-  margin-bottom: 0.8rem;
+  margin: 0;
   border: 1px solid #334155;
   background: #111827;
   color: var(--side-ink);
 }
 
+button.toggle-btn:hover:not(:disabled) {
+  background: #1e293b;
+  border-color: #64748b;
+}
+
+.sidebar-toggle-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sidebar-expand-icon, .sidebar-expand-label {
+  display: none;
+}
+
 body.sidebar-collapsed .sidebar {
   width: 60px;
-  padding-inline: 0.5rem;
+  padding-inline: 0.2rem;
 }
 
 .nav-icon, button.toggle-btn svg {
@@ -123,13 +147,20 @@ body.sidebar-collapsed .sidebar a {
   justify-content: center;
 }
 
-body.sidebar-collapsed .sidebar-chevron {
-  transform: rotate(180deg);
-  transform-origin: 15px 12px;
+body.sidebar-collapsed .sidebar-brand {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+body.sidebar-collapsed .sidebar-expand-icon,
+body.sidebar-collapsed .sidebar-expand-label {
+  display: inline;
 }
 
 body.sidebar-collapsed .sidebar .label,
-body.sidebar-collapsed .sidebar .sidebar-brand {
+body.sidebar-collapsed .sidebar .sidebar-brand-copy,
+body.sidebar-collapsed .sidebar-collapse-icon,
+body.sidebar-collapsed .sidebar-collapse-label {
   display: none;
 }
 
@@ -632,10 +663,16 @@ pre.structured-output {
   .sidebar a {
     margin: 0;
   }
+  .sidebar-brand {
+    grid-template-columns: minmax(0, 1fr);
+  }
   body.sidebar-collapsed .sidebar .label {
     display: inline;
   }
   body.sidebar-collapsed .sidebar .sidebar-brand {
+    display: block;
+  }
+  body.sidebar-collapsed .sidebar .sidebar-brand-copy {
     display: block;
   }
   button.toggle-btn {

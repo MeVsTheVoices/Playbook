@@ -13,8 +13,10 @@
   }
   .sidebar nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; }
   .sidebar a { margin: 0; }
+  .sidebar-brand { grid-template-columns: minmax(0, 1fr); }
   body.sidebar-collapsed .sidebar .label { display: inline; }
   body.sidebar-collapsed .sidebar .sidebar-brand { display: block; }
+  body.sidebar-collapsed .sidebar .sidebar-brand-copy { display: block; }
   button.toggle-btn { display: none; }
   .content, body.sidebar-collapsed .content { margin-left: 0; overflow-wrap: anywhere; }
   .wrap { margin: 1rem auto; padding: 0 0.75rem; }

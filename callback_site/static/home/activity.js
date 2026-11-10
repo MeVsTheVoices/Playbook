@@ -94,8 +94,18 @@ function updateSdActivityFromJob(job) {
   refreshActivityBanner();
 }
 
-function updateDeviceActivity(devicesCount, connected) {
-  if (connected) {
+function updateDeviceActivity(devicesCount, connected, problem = "") {
+  if (problem) {
+    activityMood.device = "offline";
+    setActivityCard(
+      activityDeviceCardEl,
+      activityDeviceStateEl,
+      activityDeviceDetailEl,
+      "warn",
+      "⚠️ Unavailable",
+      problem
+    );
+  } else if (connected) {
     activityMood.device = "online";
     setActivityCard(
       activityDeviceCardEl,

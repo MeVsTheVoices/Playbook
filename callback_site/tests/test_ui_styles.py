@@ -19,6 +19,38 @@ PAGES = ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/
 
 
 class SharedStyleTests(BaseCallbackSiteTest):
+    def test_sidebar_toggle_keeps_state_specific_icon_and_accessible_label(self) -> None:
+        checks = self.browser_probe(
+            "/tailscale-acl", ["tailscale_acl.js"],
+            'localStorage.setItem("sidebar-collapsed", "0");',
+            """
+const toggle = document.querySelector("#sidebar-toggle");
+const visible = selector => getComputedStyle(document.querySelector(selector)).display !== "none";
+check(toggle.closest(".sidebar-brand") !== null, "toggle is integrated into sidebar header");
+check(visible(".sidebar-collapse-label") && !visible(".sidebar-expand-label"),
+  "expanded sidebar offers collapse action");
+check(visible(".sidebar-collapse-icon") && !visible(".sidebar-expand-icon"),
+  "expanded sidebar uses a fixed left arrow");
+toggle.click();
+check(document.body.classList.contains("sidebar-collapsed")
+  && localStorage.getItem("sidebar-collapsed") === "1", "collapse persists");
+check(visible(".sidebar-expand-label") && !visible(".sidebar-collapse-label"),
+  "collapsed sidebar offers expand action");
+check(visible(".sidebar-expand-icon") && !visible(".sidebar-collapse-icon"),
+  "collapsed sidebar uses a fixed right arrow");
+document.querySelector(".sidebar").getAnimations().forEach(animation => animation.finish());
+const bounds = toggle.getBoundingClientRect(), header = document.querySelector(".sidebar-brand").getBoundingClientRect();
+check(bounds.width === 42 && Math.abs((bounds.left + bounds.right) / 2 - (header.left + header.right) / 2) < 1,
+  "collapsed toggle stays full-sized and centered, even with a sidebar scrollbar");
+toggle.click();
+check(!document.body.classList.contains("sidebar-collapsed")
+  && localStorage.getItem("sidebar-collapsed") === "0", "expand persists");
+check(visible(".sidebar-collapse-label") && visible(".sidebar-collapse-icon"),
+  "expanded action and icon are restored");
+""",
+        )
+        self.assertEqual(len(checks), 9)
+
     def test_every_page_uses_shared_styles_and_navigation(self) -> None:
         for path in PAGES:
             with self.subTest(path=path), patch_in("_detect_kubernetes_runtime", return_value={
@@ -157,6 +189,17 @@ function measure(frame) {
       helmSelectionArrow: doc.querySelector("#helm-selection") ? style(doc.querySelector("#helm-selection")).backgroundImage : null,
       sidebarWidth: doc.querySelector(".sidebar").getBoundingClientRect().width,
       sidebarToggleWidth: doc.querySelector("#sidebar-toggle").getBoundingClientRect().width,
+      sidebarToggleFitsHeader: (() => {
+        const button = doc.querySelector("#sidebar-toggle").getBoundingClientRect();
+        const header = doc.querySelector(".sidebar-brand").getBoundingClientRect();
+        return !button.width || (button.left >= header.left && button.right <= header.right + 1
+          && button.top >= header.top && button.bottom <= header.bottom + 1);
+      })(),
+      sidebarBrandVisible: style(doc.querySelector(".sidebar-brand-copy")).display !== "none",
+      aclHeroBackground: doc.querySelector(".acl-hero")
+        ? style(doc.querySelector(".acl-hero")).backgroundImage : null,
+      aclHeroInk: doc.querySelector(".acl-hero") ? style(doc.querySelector(".acl-hero")).color : null,
+      aclSmileys: doc.querySelectorAll(".acl-hero .hero-corner").length,
       navigationIcons: [...doc.querySelectorAll("nav a")].every(link =>
         link.querySelector("svg")?.getBoundingClientRect().width > 0
         && link.getAttribute("aria-label") && link.title),
@@ -209,6 +252,14 @@ function measure(frame) {
                 self.assertEqual(snapshot["danger"], "rgb(185, 28, 28)")
                 self.assertLess(snapshot["checkboxWidth"], 30)
                 self.assertTrue(snapshot["navigationIcons"])
+                self.assertTrue(snapshot["sidebarToggleFitsHeader"])
+                self.assertEqual(snapshot["sidebarBrandVisible"],
+                                 snapshot["viewport"] <= 760 or snapshot["state"] == "default")
+                if snapshot["path"] == "/tailscale-acl":
+                    self.assertIn("linear-gradient", snapshot["aclHeroBackground"])
+                    self.assertIn("11, 139, 110", snapshot["aclHeroBackground"])
+                    self.assertEqual(snapshot["aclHeroInk"], "rgb(230, 254, 247)")
+                    self.assertEqual(snapshot["aclSmileys"], 2)
                 if snapshot["viewport"] <= 760:
                     self.assertEqual(len(snapshot["navigationColumns"].split()), 2)
                 else:

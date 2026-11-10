@@ -3,6 +3,7 @@
 .venv
 **/.venv
 **/node_modules
+**/.venv-security
 **/__pycache__
 **/*.py[cod]
 **/.pytest_cache
@@ -18,7 +19,6 @@ callback_site/logs
 **/*.key
 **/.env
 **/.env.*
+**/.filter-repo-replacements*
 collections/ansible_collections
 .local
-**/.venv-security
-**/.filter-repo-replacements*

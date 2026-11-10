@@ -33,6 +33,13 @@ class RepoConfigTests(BaseCallbackSiteTest):
         self.assertTrue(mount["read_only"])
         self.assertFalse(mount["bind"]["create_host_path"])
 
+    def test_k3s_connect_script_persists_the_kubernetes_overlay(self) -> None:
+        script = (APP_DIR.parent / "scripts" / "connect_k3s_kubeconfig.sh").read_text(encoding="utf-8")
+        self.assertIn("/etc/rancher/k3s/k3s.yaml", script)
+        self.assertIn(".local/kubeconfig", script)
+        self.assertIn('OVERLAY="compose.yaml:compose.kubernetes.yaml"', script)
+        self.assertIn("COMPOSE_FILE=", script)
+
     def test_docker_image_includes_the_node_ops_playbook(self) -> None:
         dockerfile = (APP_DIR / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("COPY ansible.cfg inventory.yml site.yml /app/", dockerfile)
@@ -94,8 +101,8 @@ class RepoConfigTests(BaseCallbackSiteTest):
         self.assertIn('--data-binary "\\$PAYLOAD_JSON"', script_text)
         self.assertIn('SOURCE_IP="\\$(/usr/local/bin/rack-local-ip', script_text)
         self.assertIn('PAYLOAD_JSON="\\$(INSTANCE_ID="\\${INSTANCE_ID:-\\$(hostname)}"', script_text)
-        self.assertIn('if [[ -n "\\${CALLBACK_URL:-}" ]]; then', script_text)
-        self.assertIn('-d "\\${PAYLOAD_JSON}" "\\${CALLBACK_URL}" || true', script_text)
+        self.assertIn(': "\\${CALLBACK_URL:?Callback URL is not configured}"', script_text)
+        self.assertIn('--retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\\${PAYLOAD_JSON}" "\\${CALLBACK_URL}"\n', script_text)
         self.assertIn('INFLUX_URL="\\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"', script_text)
         self.assertIn('CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"', script_text)
         self.assertIn('CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"', script_text)

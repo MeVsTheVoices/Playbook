@@ -34,7 +34,7 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
                     "hostname": "rack-node-3b-01",
                     "device": "/dev/sdb",
                     "ssh_public_key": "ssh-ed25519 AAAA",
-                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",
                     "cloud_init_options": {},
                 },

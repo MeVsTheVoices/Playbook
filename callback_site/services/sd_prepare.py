@@ -26,6 +26,7 @@ from k3s_lightweight import (
 
 from services import sd_flasher_client
 from services.images import _record_image_history
+from services.node_archive import set_archived
 from services.image_catalog import _catalog_entry_with_availability
 from domain_defaults import IMAGE_CATALOG
 from services.k3s_config import _default_k3s_config, _normalize_k3s_node_name
@@ -48,6 +49,9 @@ JOBS: Dict[str, Dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
 # Profiles whose default image comes from the catalog, so it is cached and shown like a picked image.
 _DEFAULT_CATALOG_ENTRY = {
+    "pi5": "ubuntu-24.04-pi-arm64",
+    "pi4": "ubuntu-24.04-pi-arm64",
+    "pi3bplus": "ubuntu-24.04-pi-arm64",
     TOOLKIT_PROFILE: "network-toolkit-raspios-trixie-arm64-lite",
     SERVER_PROFILE: "playbook-server-ubuntu-noble-amd64",
 }
@@ -548,19 +552,14 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         proc.wait()
         final_stdout = "".join(output_chunks)[-50000:]
 
-        with JOBS_LOCK:
-            JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
-            JOBS[job_id]["stdout"] = final_stdout
-            JOBS[job_id]["stderr"] = ""
-            JOBS[job_id]["exit_code"] = proc.returncode
-            JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        exit_code = _finish_job(job_id, final_stdout, "", proc.returncode, hostname=form["hostname"])
 
-        if proc.returncode == 0:
+        if exit_code == 0:
             logger.info(f"SD preparation completed successfully: job_id={job_id}, hostname={hostname}")
         else:
-            logger.error(f"SD preparation failed: job_id={job_id}, hostname={hostname}, exit_code={proc.returncode}")
+            logger.error(f"SD preparation failed: job_id={job_id}, hostname={hostname}, exit_code={exit_code}")
 
-        _record_image_history(form, "".join(output_chunks), proc.returncode)
+        _record_image_history(form, "".join(output_chunks), exit_code)
 
 
 REMOTE_POLL_SECONDS = 1.0
@@ -585,13 +584,21 @@ def _remote_image_spec(image_url: str, image_file: str, image_sha256: str, catal
     return spec
 
 
-def _finish_job(job_id: str, stdout: str, stderr: str, exit_code: int) -> None:
+def _finish_job(job_id: str, stdout: str, stderr: str, exit_code: int, *, hostname: str = "") -> int:
+    if exit_code == 0 and hostname:
+        try:
+            set_archived(hostname, False)
+        except (OSError, RuntimeError, ValueError):
+            logger.exception("Card written but node could not be restored: %s", hostname)
+            stderr = "Card written, but the node could not be restored to active views. Restore it in Settings > Archived Nodes before booting."
+            exit_code = 1
     with JOBS_LOCK:
         JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
         JOBS[job_id]["stdout"] = stdout[-50000:]
         JOBS[job_id]["stderr"] = stderr
         JOBS[job_id]["exit_code"] = exit_code
         JOBS[job_id]["status"] = "completed" if exit_code == 0 else "failed"
+    return exit_code
 
 
 def _run_remote_prepare_job(
@@ -651,7 +658,7 @@ def _run_remote_prepare_job(
             exit_code = code if isinstance(code, int) else 1
             break
 
-    _finish_job(job_id, header + output, "", exit_code)
+    exit_code = _finish_job(job_id, header + output, "", exit_code, hostname=form["hostname"])
     if exit_code == 0:
         logger.info(f"SD preparation completed by host flasher: job_id={job_id}")
     else:

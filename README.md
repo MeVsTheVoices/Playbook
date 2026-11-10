@@ -111,7 +111,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Then open **<http://127.0.0.1:8089/>** on the host and create the dashboard account. 🎉
+Then open **<http://127.0.0.1:8091/>** on the host and create the dashboard account. 🎉
 Nodes call back on port **8088**, which answers only node endpoints.
 
 This starts the portal only — it does not configure the router or provision nodes.

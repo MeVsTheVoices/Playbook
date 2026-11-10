@@ -6,6 +6,11 @@ cat >> "$USER_DATA_OUT" <<ADMIN_RUNCMD
   - [ bash, -c, 'set -euo pipefail; rule="${CLOUD_INIT_USERNAME} ALL=(ALL) NOPASSWD: ALL"; printf "%s\n" "\$rule" | visudo -cf -; printf "%s\n" "\$rule" | install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; visudo -cf /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; runuser -u ${CLOUD_INIT_USERNAME} -- sudo -n true' ]
 ADMIN_RUNCMD
 
+# Queue delivery before optional installers; systemd retries independently of cloud-init.
+cat >> "$USER_DATA_OUT" <<'CALLBACK_RUNCMD'
+  - [ sh, -c, 'systemctl daemon-reload && systemctl start --no-block rack-power-restored-callback.service' ]
+CALLBACK_RUNCMD
+
 cat >> "$USER_DATA_OUT" <<'SSH_RUNCMD'
   - [ systemctl, enable, ssh ]
   - [ systemctl, restart, ssh ]
@@ -165,7 +170,7 @@ RUNCMD_EOF
 
 if [[ "$CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ sh, -c, 'systemctl daemon-reload && systemctl enable --now rack-power-restored-callback.service' ]
+  - [ sh, -c, 'systemctl daemon-reload && systemctl enable --now --no-block rack-power-restored-callback.service' ]
 RUNCMD_EOF
 fi
 

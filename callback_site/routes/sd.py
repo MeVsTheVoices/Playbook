@@ -6,7 +6,6 @@ import queue
 import re
 import threading
 import uuid
-import ipaddress
 from urllib.parse import urlsplit, urlunsplit, quote
 from datetime import datetime, timezone
 from functools import wraps
@@ -19,6 +18,7 @@ from network_toolkit import PROFILE as TOOLKIT_PROFILE
 from playbook_server import PROFILE as SERVER_PROFILE
 from services.ssh_keys import _is_safe_key_name
 from services.storage import KEYS_DIR
+from services.network import _validate_node_callback_url
 from services import flash_helper
 from services.installer_config import UEFI_PROFILES, is_installer
 
@@ -272,6 +272,15 @@ def register_sd_routes(app: Any) -> None:
                 app.logger.warning("Cloud-init credential restore rejected: %s", exc)
                 return jsonify(ok=False, errors=[str(exc)]), 400
         payload = _sanitize_sd_prepare_payload(payload_raw if isinstance(payload_raw, dict) else {})
+        required = ["profile", "hostname", "device", "ssh_public_key", "callback_url"]
+        missing = [k for k in required if not str(payload.get(k, "")).strip()]
+        if missing:
+            return jsonify({"ok": False, "errors": [f"Missing fields: {', '.join(missing)}"]}), 400
+        try:
+            _validate_node_callback_url(str(payload["callback_url"]))
+        except ValueError as exc:
+            app.logger.warning("SD callback URL rejected: %s", exc)
+            return jsonify(ok=False, errors=[str(exc)]), 400
         # Derive the endpoint locally; never accept an arbitrary key-fetch URL.
         payload.pop("ssh_public_key_url", None)
         key_name = str(payload.get("ssh_key_name") or "").strip()
@@ -288,30 +297,10 @@ def register_sd_routes(app: Any) -> None:
                 return jsonify({"ok": False, "errors": ["Unable to read selected SSH public key."]}), 500
             if not public_key or public_key != str(payload.get("ssh_public_key") or "").strip():
                 return jsonify({"ok": False, "errors": ["Selected website key does not match the SSH public key. Reload the key."]}), 400
-            try:
-                callback = urlsplit(str(payload.get("callback_url") or ""))
-                host = callback.hostname or ""
-                callback.port
-                if callback.scheme not in {"http", "https"} or not host or callback.username or callback.password:
-                    raise ValueError("Invalid callback URL.")
-                if host.lower() == "localhost" or host.lower().endswith(".localhost"):
-                    raise ValueError("The node cannot fetch a website key from localhost.")
-                try:
-                    address = ipaddress.ip_address(host)
-                except ValueError:
-                    address = None
-                if address is not None and (address.is_loopback or address.is_unspecified):
-                    raise ValueError("Use a callback host address reachable from the node, not loopback.")
-            except ValueError as exc:
-                return jsonify({"ok": False, "errors": [str(exc)]}), 400
+            callback = urlsplit(str(payload["callback_url"]))
             payload["ssh_public_key_url"] = urlunsplit((
                 callback.scheme, callback.netloc, f"/api/ssh/public/{quote(key_name, safe='')}", "", "",
             ))
-        required = ["profile", "hostname", "device", "ssh_public_key", "callback_url"]
-        missing = [k for k in required if not str(payload.get(k, "")).strip()]
-        if missing:
-            return jsonify({"ok": False, "errors": [f"Missing fields: {', '.join(missing)}"]}), 400
-
         sd_profiles = (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE, SERVER_PROFILE, *UEFI_PROFILES)
         if payload["profile"] not in sd_profiles:
             return jsonify({"ok": False, "errors": [f"profile must be one of: {', '.join(sd_profiles)}"]}), 400

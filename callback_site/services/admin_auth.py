@@ -232,7 +232,7 @@ def gate_request() -> Optional[Response]:
     if _on_node_only_port():
         if is_node_path(path):
             return None
-        admin_port = os.getenv("CALLBACK_ADMIN_PORT", "8089")
+        admin_port = os.getenv("CALLBACK_ADMIN_PORT", "8091")
         return _refuse(
             404,
             f"This port only serves node callbacks. Open the dashboard on port {admin_port} "

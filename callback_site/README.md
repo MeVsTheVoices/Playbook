@@ -260,7 +260,7 @@ flowchart LR
   end
   nodes --> node
   other -- "❌ 404 for dashboard paths" --> node
-  you -- "127.0.0.1:8089" --> admin
+  you -- "127.0.0.1:8091" --> admin
   other -. "only with CALLBACK_ADMIN_BIND=0.0.0.0" .-> admin
   ts -. "🛰️ tailnet devices" .-> admin
 ```
@@ -269,9 +269,9 @@ flowchart LR
 sequenceDiagram
   autonumber
   actor You as 🧑‍💻 You
-  participant D as 🔐 Dashboard :8089
+  participant D as 🔐 Dashboard host :8091
   participant F as 🗂️ /data
-  You->>D: open http://127.0.0.1:8089/
+  You->>D: open http://127.0.0.1:8091/
   D-->>You: ➡️ /setup — no account yet
   You->>D: 👋 username + password, 12+ characters
   D->>F: admin_auth.json — hashed, 0600
@@ -280,9 +280,9 @@ sequenceDiagram
 
 | 🎯 Want | 🛠️ Do |
 | --- | --- |
-| 🖥️ Use it at the machine | Nothing — `http://127.0.0.1:8089/` is the default |
+| 🖥️ Use it at the machine | Nothing — `http://127.0.0.1:8091/` is the default |
 | 🏠 Open it to the LAN | `.env`: `CALLBACK_ADMIN_BIND=0.0.0.0`, then `docker compose up -d` |
-| 🛰️ Reach it over the tailnet | On the host: `tailscale serve --bg 8089` |
+| 🛰️ Reach it over the tailnet | On the host: `tailscale serve --bg 8091` |
 | 🔑 Reset a forgotten password | `docker compose exec callback-site rm /data/admin_auth.json`, reload, set up again |
 | 🚪 Sign out every browser | Same as a reset — the new account signs out all old sessions |
 
@@ -384,7 +384,7 @@ Everything that must survive restarts or container recreation lives under
 | `CALLBACK_SITE_REQUIRE_ROOT` | unset | `1` lets the app re-exec through `sudo` |
 | `IMAGE_CACHE_DIR` | the persistent `image_cache/` | Overrides the image cache location (CLI imaging uses the same cache by default) |
 | `CALLBACK_PORT` | `8088` | Host port Compose publishes for node callbacks |
-| `CALLBACK_ADMIN_PORT` | `8089` | Host port Compose publishes for the dashboard |
+| `CALLBACK_ADMIN_PORT` | `8091` | Host port Compose publishes for the dashboard (container port 8089) |
 | `CALLBACK_ADMIN_BIND` | `127.0.0.1` | Host address the dashboard port binds to; `0.0.0.0` opens it to the LAN |
 | `CALLBACK_ADMIN_HOSTS` | unset | Extra hostnames, comma-separated, allowed to run first-time setup |
 | `CALLBACK_SECURE_COOKIES` | unset | `1` sends the sign-in cookie over HTTPS only |
@@ -450,6 +450,27 @@ flowchart TD
 
 <a id="sd-and-cloud-init-flow"></a>
 ## 💾 SD and Cloud-Init Flow
+
+Docker deployments must explicitly set `CALLBACK_PUBLIC_URL` (or
+`CALLBACK_PUBLIC_HOST` and `CALLBACK_PUBLIC_PORT`) to the Docker host's address
+reachable from the Pi. Use the published node callback port, not the
+dashboard-only port. The form no longer advertises a Docker bridge IP when this
+setting is missing. Localhost and container-local targets are rejected before
+flashing. A Tailscale address requires the Pi to join that tailnet during setup.
+
+First-boot callbacks start asynchronously at the beginning of `runcmd`, after
+cloud-init's package module but before optional installer commands, and retry
+through systemd after delivery failures; enabling power-restore callbacks also
+starts that service on later boots. Successful explicit SD preparation restores
+an archived hostname without removing its callback history. Failed flashes and
+unsolicited callbacks do not restore archived nodes.
+
+Already-written cards retain their original callback URL. Rebuilding the dashboard
+does not repair them: reflash with the corrected address, or update the node's
+`/etc/rack-node.env`, generated callback scripts and service configuration before
+restarting the callback service. Check `cloud-init status --long` and
+`journalctl -b -u rack-power-restored-callback.service` on the Pi. Package-install
+errors remain real provisioning failures even when a callback has been received.
 
 - Imaging script: `scripts/prepare_sd_cloud_init.sh`.
 - Required inputs: `profile`, `hostname`, `device`, `ssh_public_key`, `callback_url`.
@@ -585,6 +606,11 @@ flowchart LR
 Both **Misc** options default off, save into SD option templates and apply only to newly
 provisioned images, not running nodes. Network Toolkit keeps its own diagnostic-package
 controls and does not expose or apply them.
+
+Use the package name `neovim`, not its executable name `nvim`. Both the dashboard
+and CLI reject `nvim` in extra package lists before writing a card. Other missing
+packages or repository/network failures still need to be corrected on the node;
+they are not reported as successful provisioning.
 
 <a id="callbacks-jobs-and-boot-logs"></a>
 ## 📡 Callbacks, Jobs and Boot Logs
@@ -968,11 +994,11 @@ docker compose down
 
 ```mermaid
 flowchart LR
-  browser["🌐 Browser<br/>http://127.0.0.1:8089/"] --> aport
+  browser["🌐 Browser<br/>http://127.0.0.1:8091/"] --> aport
   nodes["🥧 Nodes"] -- "host LAN IP and port,<br/>never 127.0.0.1" --> fw["🧱 Windows Firewall<br/>may need an inbound rule"] --> nport
   subgraph host["🖥️ Docker host"]
     nport["CALLBACK_PORT<br/>default 8088, all interfaces<br/>🔓 node endpoints only"] --> ctr
-    aport["CALLBACK_ADMIN_PORT<br/>default 8089, 127.0.0.1<br/>🔐 sign-in"] --> ctr
+    aport["CALLBACK_ADMIN_PORT<br/>default 8091, 127.0.0.1<br/>🔐 sign-in"] --> ctr
     ctr["🐳 callback-site<br/>Gunicorn, 1 worker plus threads<br/>non-root, unprivileged"]
     ctr --> vol[("🗂️ /data<br/>playbook_callback-site-data")]
   end
@@ -984,6 +1010,8 @@ flowchart LR
   concurrent requests.
 - Different host ports: set `CALLBACK_PORT` or `CALLBACK_ADMIN_PORT` first, e.g.
   `$env:CALLBACK_ADMIN_PORT=9821` in PowerShell. Exposure options: [🔐 dashboard access](#dashboard-access).
+- Dashboard port 8091 deliberately differs from the native host flasher's port
+  8089. Container-internal dashboard port 8089 is unchanged.
 - The `callback-site-data` volume (explicitly named `playbook_callback-site-data` to keep the
   existing deployment's volume) holds catalog pulls, callbacks, node reports, SSH keys and
   operator edits across rebuilds and recreation. Never bake data, logs or keys into the image.
@@ -1378,7 +1406,7 @@ sources. From the repository root:
 .venv/bin/python -m unittest discover -s callback_site/tests -t callback_site/tests
 ```
 
-For a broader validation pass (Docker: add `CALLBACK_ADMIN_BASE=http://127.0.0.1:8089`):
+For a broader validation pass (Docker: add `CALLBACK_ADMIN_BASE=http://127.0.0.1:8091`):
 
 ```bash
 python3 scripts/validate_callback_site.py

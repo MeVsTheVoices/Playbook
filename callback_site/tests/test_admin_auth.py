@@ -172,6 +172,13 @@ class NodeOnlyPortTests(BaseCallbackSiteTest):
         anonymous = app.test_client(authenticated=False)
         self.assertEqual(anonymous.get("/", base_url="http://localhost:8089").status_code, 302)
 
+    def test_default_dashboard_guidance_avoids_the_host_flasher_port(self) -> None:
+        with patch.dict(os.environ):
+            os.environ.pop("CALLBACK_ADMIN_PORT", None)
+            response = self.client.get("/", base_url="http://localhost:8088")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("port 8091", response.get_data(as_text=True))
+
 
 class SignedInHarnessTests(BaseCallbackSiteTest):
     def test_shared_harness_account_signs_in_with_its_password(self) -> None:

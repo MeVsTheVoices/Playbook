@@ -37,6 +37,10 @@ for pkg in "${extra_package_names[@]}"; do
     echo "Invalid extra package: ${pkg}. Use Debian package names, not versions, URLs or command options." >&2
     exit 1
   fi
+  if [[ "$pkg" == "nvim" ]]; then
+    echo "Invalid extra package: nvim. Use neovim, the Debian/Ubuntu package name." >&2
+    exit 1
+  fi
 done
 CLOUD_INIT_INSTALL_TELEGRAF="${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
 CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"

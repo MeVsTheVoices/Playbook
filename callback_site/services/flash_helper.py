@@ -160,7 +160,7 @@ def validate_confirmation(form: dict[str, Any]) -> None:
 
 def run_prepare_job(job_id: str, form: dict[str, Any]) -> None:
     from services.images import _record_image_history
-    from services.sd_prepare import JOBS, JOBS_LOCK
+    from services.sd_prepare import JOBS, JOBS_LOCK, _finish_job
     from services.ssh_keys import _archive_ssh_public_key
 
     try:
@@ -180,7 +180,9 @@ def run_prepare_job(job_id: str, form: dict[str, Any]) -> None:
                     "status", "stdout", "stderr", "exit_code", "started_at", "finished_at",
                 }})
             if job["status"] in {"completed", "failed"}:
-                _record_image_history(form, job.get("stdout", ""), job.get("exit_code", 1))
+                exit_code = _finish_job(job_id, job.get("stdout", ""), job.get("stderr", ""),
+                                        job.get("exit_code", 1), hostname=form["hostname"])
+                _record_image_history(form, job.get("stdout", ""), exit_code)
                 return
             time.sleep(1)
     except (HelperError, OSError, ValueError, KeyError, TypeError) as exc:

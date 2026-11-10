@@ -123,9 +123,9 @@ cat >> "$USER_DATA_OUT" <<EOF
       print(json.dumps(payload, separators=(",", ":")))
       PY
       )"
-      curl -fsS -X POST -H 'Content-Type: application/json' \\
+      curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H 'Content-Type: application/json' \\
         --data-binary "\$PAYLOAD_JSON" \
-        '${CALLBACK_URL}' || true
+        '${CALLBACK_URL}'
   - path: /usr/local/bin/rack-callback-payload
     permissions: "0755"
     content: |
@@ -150,13 +150,13 @@ cat >> "$USER_DATA_OUT" <<EOF
     content: |
       #!/bin/bash
       set -euo pipefail
+      . /etc/rack-node.env
       SOURCE_IP="\$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"
       NODE_REPORT_B64="\$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"
       # Generated payload includes the stage field: {"stage": "power_restore"}
       PAYLOAD_JSON="\$(INSTANCE_ID="\${INSTANCE_ID:-\$(hostname)}" HOSTNAME="\${HOSTNAME:-\$(hostname)}" PROFILE="\${PROFILE:-}" SOURCE_IP="\${SOURCE_IP}" NODE_REPORT_B64="\${NODE_REPORT_B64}" STAGE="power_restore" /usr/local/bin/rack-callback-payload)"
-      if [[ -n "\${CALLBACK_URL:-}" ]]; then
-        curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "\${CALLBACK_URL}" || true
-      fi
+      : "\${CALLBACK_URL:?Callback URL is not configured}"
+      curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "\${PAYLOAD_JSON}" "\${CALLBACK_URL}"
       /usr/local/bin/rack-boot-log power_restore || true
   - path: /usr/local/bin/rack-boot-log
     permissions: "0755"
@@ -209,9 +209,13 @@ cat >> "$USER_DATA_OUT" <<EOF
       Description=Rack node callback after power restore
       Wants=network-online.target
       After=network-online.target
+      StartLimitIntervalSec=0
 
       [Service]
       Type=oneshot
+      Restart=on-failure
+      RestartSec=30
+      TimeoutStartSec=10min
       Environment="CALLBACK_URL=${CALLBACK_URL}"
       Environment="PROFILE=${PROFILE}"
       Environment="INSTANCE_ID=${INSTANCE_ID}"

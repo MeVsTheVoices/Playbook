@@ -10,10 +10,13 @@ services:
       # Nodes call back here from the LAN; this listener answers only node endpoints.
       - "${CALLBACK_PORT:-8088}:8088"
       # Dashboard: this machine only. Set CALLBACK_ADMIN_BIND=0.0.0.0 in .env to open it to the LAN.
-      - "${CALLBACK_ADMIN_BIND:-127.0.0.1}:${CALLBACK_ADMIN_PORT:-8089}:8089"
+      - "${CALLBACK_ADMIN_BIND:-127.0.0.1}:${CALLBACK_ADMIN_PORT:-8091}:8089"
     environment:
       CALLBACK_APPDATA_DIR: /data
-      CALLBACK_ADMIN_PORT: "${CALLBACK_ADMIN_PORT:-8089}"
+      CALLBACK_PUBLIC_URL: ${CALLBACK_PUBLIC_URL:-}
+      CALLBACK_PUBLIC_HOST: ${CALLBACK_PUBLIC_HOST:-}
+      CALLBACK_PUBLIC_PORT: ${CALLBACK_PUBLIC_PORT:-${CALLBACK_PORT:-8088}}
+      CALLBACK_ADMIN_PORT: "${CALLBACK_ADMIN_PORT:-8091}"
       CALLBACK_ADMIN_HOSTS: "${CALLBACK_ADMIN_HOSTS:-}"
       # Host SD/USB flasher (scripts/run_sd_flasher.sh); set to "" to disable.
       SD_FLASHER_URL: ${SD_FLASHER_URL-http://host.docker.internal:8089}

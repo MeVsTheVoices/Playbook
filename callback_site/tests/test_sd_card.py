@@ -131,6 +131,7 @@ check(openPanels().length === 0 && optional.open, "active step can be closed wit
         for options in (
             {"packages": ["curl;reboot"]}, {"packages": ["--help"]},
             {"packages": ["git=1.0"]}, {"packages": [42]},
+            {"packages": ["nvim"]},
             {"configure_neovim": "false"}, {"install_cli_tools": 1},
         ):
             with self.subTest(options=options):
@@ -447,7 +448,7 @@ check(openPanels().length === 0 && optional.open, "active step can be closed wit
                     "hostname": "rack-node-auto",
                     "device": "/dev/sdb",
                     "ssh_public_key": "ssh-ed25519 AAAA test",
-                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",
                     "pi_only": True,
                     "cloud_init_options": {
@@ -509,7 +510,7 @@ check(openPanels().length === 0 && optional.open, "active step can be closed wit
                     "hostname": "rack-node-02",
                     "device": "/dev/sdb",
                     "ssh_public_key": "ssh-ed25519 AAAA test",
-                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",
                     "sd_options_profile": "base-profile",
                     "cloud_init_options": {

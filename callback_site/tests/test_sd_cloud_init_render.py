@@ -104,6 +104,7 @@ class SdCloudInitRenderTests(unittest.TestCase):
                 self.assertIn(["/usr/local/bin/rack-neovim-bootstrap", "jdizzle"], data["runcmd"])
                 self.assertNotIn("update-alternatives", "\n".join(self.runcmd(data)))
         for env in ({"CLOUD_INIT_EXTRA_PACKAGES": "--help"}, {"CLOUD_INIT_EXTRA_PACKAGES": "git;reboot"},
+                    {"CLOUD_INIT_EXTRA_PACKAGES": "nvim"},
                     {"CLOUD_INIT_EXTRA_PACKAGES": "*"},
                     {"CLOUD_INIT_CONFIGURE_NEOVIM": "yes"}):
             code, _, err = self.render(**env)
@@ -346,15 +347,16 @@ class SdCloudInitRenderTests(unittest.TestCase):
                         else:
                             self.assertNotIn("power_state", data)
                         service_commands = [c for c in commands if "rack-power-restored-callback.service" in c]
-                        self.assertEqual(len(service_commands), 1 if callback == "true" else 0)
-                        if service_commands:
-                            self.assertEqual(commands[-1], service_commands[0])
-                            self.assertIn("systemctl enable --now", service_commands[0])
+                        self.assertEqual(len(service_commands), 2 if callback == "true" else 1)
+                        self.assertIn("systemctl start --no-block", service_commands[0])
+                        if callback == "true":
+                            self.assertEqual(commands[-1], service_commands[-1])
+                            self.assertIn("systemctl enable --now --no-block", service_commands[-1])
 
     def test_power_restore_service_setup_reports_systemctl_failures(self) -> None:
         code, data, err = self.render(CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK="true")
         self.assertEqual(code, 0, err)
-        command = next(c for c in data["runcmd"] if "rack-power-restored-callback.service" in c[-1])
+        command = next(c for c in data["runcmd"] if "systemctl enable" in c[-1])
         with tempfile.TemporaryDirectory() as tmp:
             systemctl = Path(tmp) / "systemctl"
             systemctl.write_text(

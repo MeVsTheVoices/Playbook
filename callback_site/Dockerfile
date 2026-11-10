@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HOST=0.0.0.0 \
     PORT=8088 \
     CALLBACK_NODE_ONLY_PORT=8088 \
-    CALLBACK_ADMIN_PORT=8089
+    CALLBACK_ADMIN_PORT=8091
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

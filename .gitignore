@@ -37,6 +37,10 @@ node_modules/
 .build/
 .local/
 callback_site/data/helm_configurations.json
+callback_site/data/admin_auth.json
+callback_site/data/admin_secret_key
+callback_site/data/.admin_*
+callback_site/data/sd_profile_sessions/
 .venv-security/
 !scripts/check_secrets.sh
 !.github/workflows/secrets.yml

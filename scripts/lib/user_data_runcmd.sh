@@ -20,6 +20,7 @@ fi
 # A Pi has no RTC and boots on the image build date, so HTTPS installers fail with "certificate is not yet valid".
 cat >> "$USER_DATA_OUT" <<'CLOCK_RUNCMD'
   - [ sh, -c, 'timedatectl set-ntp true || true; for i in $(seq 1 90); do [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ] && exit 0; sleep 2; done; echo "rack: clock not synced after 180s" >&2; exit 0' ]
+  - [ rm, -f, /etc/apt/apt.conf.d/00-rack-clock ]
 CLOCK_RUNCMD
 
 if [[ -n "$CLOUD_INIT_SSH_PUBLIC_KEY_URL" ]]; then

@@ -7,7 +7,13 @@ import shutil
 import subprocess
 from typing import Any, Dict
 
-from services.ssh_keys import _ensure_keys_dir, _seed_known_host, _ssh_private_key_preflight
+from services.ssh_keys import (
+    _ensure_keys_dir,
+    _is_safe_key_name,
+    _seed_known_host,
+    _ssh_destination,
+    _ssh_private_key_preflight,
+)
 from services.storage import KEYS_DIR, KNOWN_HOSTS_FILE
 
 
@@ -24,6 +30,7 @@ def _inspect_openwrt_probe(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("port must be between 1 and 65535")
 
     username = str(payload.get("username", "root")).strip() or "root"
+    _ssh_destination(username, host)
     password = str(payload.get("password", ""))
     connection = str(payload.get("connection", "ssh")).strip().lower() or "ssh"
     if connection not in {"ssh", "paramiko", "local"}:
@@ -98,6 +105,8 @@ def _resolve_openwrt_ssh_key(key_name: str) -> Dict[str, str]:
     name = str(key_name or "").strip()
     if not name:
         raise ValueError("ssh key name is required")
+    if not _is_safe_key_name(name):
+        raise ValueError("invalid ssh key name")
 
     private_key = KEYS_DIR / name
     public_key = KEYS_DIR / f"{name}.pub"
@@ -115,6 +124,7 @@ def _resolve_openwrt_ssh_key(key_name: str) -> Dict[str, str]:
 
 
 def _probe_ssh_target(*, host: str, port: int, username: str, password: str, private_key_path: str | None = None) -> Dict[str, Any]:
+    destination = _ssh_destination(username, host)
     _seed_known_host(host, port)
     cmd = [
         "ssh",
@@ -138,7 +148,7 @@ def _probe_ssh_target(*, host: str, port: int, username: str, password: str, pri
         if key_preflight_error:
             return {"ok": False, "error": key_preflight_error, "details": key_preflight_error, "timed_out": False}
         cmd.extend(["-i", private_key_path])
-    cmd.extend([f"{username}@{host}", "true"])
+    cmd.extend(["--", destination, "true"])
 
     password_input = f"{password}\n" if password else None
     try:
@@ -155,7 +165,7 @@ def _probe_ssh_target(*, host: str, port: int, username: str, password: str, pri
 
 
 def _push_ssh_key_to_target(*, host: str, port: int, username: str, password: str, public_key: str, public_key_path: str, key_name: str) -> Dict[str, Any]:
-    target = f"{username}@{host}"
+    target = _ssh_destination(username, host)
     _seed_known_host(host, port)
     ssh_opts = [
         "-o",
@@ -181,7 +191,7 @@ def _push_ssh_key_to_target(*, host: str, port: int, username: str, password: st
     env = os.environ.copy()
     env["PUBLIC_KEY"] = public_key
 
-    cmd = ["ssh", *ssh_opts, target, "sh", "-c", remote_script]
+    cmd = ["ssh", *ssh_opts, "--", target, "sh", "-c", remote_script]
     password_input = f"{password}\n" if password else None
     try:
         proc = subprocess.run(cmd, input=password_input, capture_output=True, text=True, timeout=20, check=False, env=env)

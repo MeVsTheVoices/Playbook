@@ -26,9 +26,10 @@ flowchart LR
 
 All local and CI scans use the same digest-pinned Gitleaks version and the repository
 rules in [.gitleaks.toml](.gitleaks.toml): Tailscale keys, Discord tokens, and literal
-credential assignments in configuration files — Ansible variables, Kubernetes
-manifests, Compose files, and environment files, **including commented-out
-assignments**. Findings are redacted and the scanner runs without network access.
+credential assignments in configuration files — Ansible variables (including `*_pass`),
+Kubernetes manifests, Compose files, environment files, Jinja templates and cloud-init
+`user-data`/`network-config`, **including commented-out assignments and `$6$`-style
+password hashes**. Findings are redacted and the scanner runs without network access.
 
 > [!WARNING]
 > Hooks can be bypassed and CI runs after a push, so neither replaces server-side push
@@ -86,9 +87,9 @@ flowchart TD
   without putting the value in shell history. Tailscale role tasks use `no_log` so it
   stays out of Ansible output.
 - 🔒 **Permissions:** credential files `chmod 600`, their directories `chmod 700`.
-- 💾 **Portal data volumes and backups** can contain SSH keys, connection profiles, and
-  provisioning credentials — protect them. Access to the Docker daemon also grants
-  access to these secrets.
+- 💾 **Portal data volumes and backups** can contain SSH keys, connection profiles,
+  provisioning credentials, and the dashboard password hash and cookie-signing key —
+  protect them. Access to the Docker daemon also grants access to these secrets.
 - 📜 **Logs:** never print credentials. Don't share `docker compose config` output
   without inspecting and redacting it. Use short-lived, least-privilege tokens.
 

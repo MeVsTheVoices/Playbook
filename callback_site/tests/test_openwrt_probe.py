@@ -81,3 +81,24 @@ class OpenWrtProbeTests(BaseCallbackSiteTest):
         self.assertTrue(result["ok"])
         self.assertEqual(result["details"], "login ok")
         self.assertEqual(run_mock.call_args.kwargs["input"], "secret\n")
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[command.index("--") + 1:], ["root@router", "true"])
+
+    def test_openwrt_endpoints_reject_option_like_targets_and_key_paths(self) -> None:
+        generated = self.client.post(
+            "/api/ssh/generate",
+            json={"key_name": "openwrt-reject-key", "comment": "openwrt", "mode": "generate"},
+        )
+        self.assertIn(generated.status_code, (200, 409))
+        with patch("subprocess.run") as run_mock:
+            for path, body in (
+                ("/api/openwrt/inspect", {"host": "192.168.1.1", "username": "-oProxyCommand=id"}),
+                ("/api/openwrt/inspect", {"host": "-oProxyCommand=id", "username": "root"}),
+                ("/api/openwrt/push-key", {"host": "192.168.1.1", "username": "-oProxyCommand=id", "key_name": "openwrt-reject-key"}),
+                ("/api/openwrt/push-key", {"host": "192.168.1.1", "username": "root", "key_name": "../../etc/passwd"}),
+            ):
+                with self.subTest(path=path, body=body):
+                    response = self.client.post(path, json=body)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertFalse(response.get_json()["ok"])
+        run_mock.assert_not_called()

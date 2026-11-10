@@ -27,6 +27,26 @@ if str(APP_DIR) not in sys.path:
 
 import app as callback_app  # noqa: E402
 from app import app  # noqa: E402
+from flask.testing import FlaskClient  # noqa: E402
+from services import admin_auth  # noqa: E402
+
+TEST_ADMIN_USERNAME = "test-admin"
+TEST_ADMIN_PASSWORD = "test-admin-password"
+admin_auth.create_account(TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD)
+
+
+class SignedInClient(FlaskClient):
+    """Every test client starts signed in; pass authenticated=False to exercise the gate."""
+
+    def __init__(self, *args: Any, authenticated: bool = True, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        account = admin_auth.load_account() if authenticated else None
+        if account is not None:
+            with self.session_transaction() as sess:
+                sess.update(admin_auth.session_claims(account))
+
+
+app.test_client_class = SignedInClient
 
 
 def _cleanup_test_data_dir() -> None:

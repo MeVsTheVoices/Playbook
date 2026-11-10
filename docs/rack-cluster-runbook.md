@@ -629,8 +629,8 @@ sudo scripts/prepare_sd_cloud_init.sh --profile pi3bplus --hostname rpi-3bplus-0
 
 For a Pi 4 use `--profile pi4` (same image; default Tailscale tags `tag:rpi4,tag:homelab`).
 
-**Step 4 · 📡 Insert the SD card, boot the node, then watch callback events** at
-`http://<callback-host>:8088/`.
+**Step 4 · 📡 Insert the SD card, boot the node, then watch callback events** on the
+dashboard: `http://127.0.0.1:8089/` on the callback host (Docker). Nodes keep using `:8088`.
 
 **Step 5 · 🔌 NAT and `source_ip`.** If the callback host is reached through the router WAN
 or another NAT hop, the dashboard shows that upstream address in `source_ip`. For example,
@@ -750,10 +750,10 @@ flowchart LR
 # from callback_site/
 python -m unittest discover -s tests
 
-# quick smoke checks
-curl -i http://127.0.0.1:8088/
-curl -s http://127.0.0.1:8088/health
-curl -s http://127.0.0.1:8088/api/cloud-init/events
+# quick smoke checks (Docker; the dev server serves everything on 8088)
+curl -s http://127.0.0.1:8088/health                  # node port
+curl -i http://127.0.0.1:8089/                        # 302 to /setup or /login
+curl -s http://127.0.0.1:8089/api/cloud-init/events   # 401 until signed in
 ```
 
 <a id="shared-state-model"></a>

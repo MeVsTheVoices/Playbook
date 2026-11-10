@@ -21,7 +21,7 @@ commands, paths, ports, APIs, data files and safety boundaries.
 | [💾 SD and cloud-init](#sd-and-cloud-init-flow) | [🔗 Key APIs](#key-apis) | [☸️ Kubernetes and Helm](#docker-desktop-kubernetes-and-helm) |
 | [📡 Callbacks and boot logs](#callbacks-jobs-and-boot-logs) | [🗂️ Data files](#data-files) | [🩹 Release / recreate](#release--recreate) |
 | [🔁 Archive and restore](#node-archive-and-restore) | [🧪 Testing](#testing) | [🚫 Notes](#notes) |
-| [🛰️ Connection profiles](#connection-profiles-and-routes) | [🛠️ Styles and front-end build](#shared-interface-styles) | |
+| [🛰️ Connection profiles](#connection-profiles-and-routes) | [🛠️ Styles and front-end build](#shared-interface-styles) | [🔐 Dashboard access](#dashboard-access) |
 | [🧰 Network Toolkit](#network-toolkit-pi-3b) | [🐄 Longhorn](#longhorn-notes) | |
 
 <a id="at-a-glance"></a>
@@ -80,7 +80,72 @@ For SD flashing or other root-required paths, still from the repository root:
 sudo -E "$PWD/.venv/bin/python3" callback_site/app.py
 ```
 
-Then open http://127.0.0.1:8088/ and explore the [pages](#pages).
+Then open http://127.0.0.1:8088/, create the dashboard account on first visit
+([🔐 dashboard access](#dashboard-access)) and explore the [pages](#pages). The dev server
+serves the dashboard and node endpoints on one port; Docker splits them.
+
+<a id="dashboard-access"></a>
+## 🔐 Dashboard Access
+
+```mermaid
+flowchart LR
+  subgraph lan["🏠 LAN"]
+    nodes["🥧 Nodes and installers"]
+    other["💻 Other machines"]
+  end
+  subgraph host["🖥️ Docker host"]
+    you["🧑‍💻 You, at the machine"]
+    ts["🛰️ tailscale serve<br/>optional"]
+    subgraph ctr["🐳 callback-site"]
+      node[":8088 🔓 node-only<br/>callback · boot-log ·<br/>public keys · health"]
+      admin[":8089 🔐 dashboard<br/>sign-in required"]
+    end
+  end
+  nodes --> node
+  other -- "❌ 404 for dashboard paths" --> node
+  you -- "127.0.0.1:8089" --> admin
+  other -. "only with CALLBACK_ADMIN_BIND=0.0.0.0" .-> admin
+  ts -. "🛰️ tailnet devices" .-> admin
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor You as 🧑‍💻 You
+  participant D as 🔐 Dashboard :8089
+  participant F as 🗂️ /data
+  You->>D: open http://127.0.0.1:8089/
+  D-->>You: ➡️ /setup — no account yet
+  You->>D: 👋 username + password, 12+ characters
+  D->>F: admin_auth.json — hashed, 0600
+  D-->>You: ✅ signed in for 7 days
+```
+
+| 🎯 Want | 🛠️ Do |
+| --- | --- |
+| 🖥️ Use it at the machine | Nothing — `http://127.0.0.1:8089/` is the default |
+| 🏠 Open it to the LAN | `.env`: `CALLBACK_ADMIN_BIND=0.0.0.0`, then `docker compose up -d` |
+| 🛰️ Reach it over the tailnet | On the host: `tailscale serve --bg 8089` |
+| 🔑 Reset a forgotten password | `docker compose exec callback-site rm /data/admin_auth.json`, reload, set up again |
+| 🚪 Sign out every browser | Same as a reset — the new account signs out all old sessions |
+
+| 🔓 Open without sign-in | Called by |
+| --- | --- |
+| `POST /api/cloud-init/callback` | cloud-init `phone_home`, installer scripts |
+| `POST /api/cloud-init/boot-log` | Node boot-log push |
+| `GET /api/ssh/public/<key_name>` | First-boot key fetch |
+| `GET /health` | Container healthcheck |
+
+> [!IMPORTANT]
+> 👋 Finish setup **before** opening the dashboard to the LAN — the first visitor to
+> `/setup` owns the account. Setup only answers on `localhost` or an IP address unless the
+> hostname is listed in `CALLBACK_ADMIN_HOSTS`.
+
+- 📡 Already-flashed nodes keep calling `:8088` — nothing to re-flash.
+- 🔁 Wrong passwords back off (2 s doubling up to 5 min after five misses), shared by all
+  clients because Docker Desktop hides the caller's address.
+- 🍪 The sign-in cookie is `HttpOnly` and `SameSite=Strict`; set `CALLBACK_SECURE_COOKIES=1`
+  when every visit is over HTTPS (for example through `tailscale serve`).
 
 <a id="pages"></a>
 ## 🗺️ Pages
@@ -161,7 +226,12 @@ Everything that must survive restarts or container recreation lives under
 | `CALLBACK_APPDATA_DIR` | `callback_site/data/` (Compose: `/data`) | Persistent app data — see [data files](#data-files) |
 | `CALLBACK_SITE_REQUIRE_ROOT` | unset | `1` lets the app re-exec through `sudo` |
 | `IMAGE_CACHE_DIR` | the persistent `image_cache/` | Overrides the image cache location (CLI imaging uses the same cache by default) |
-| `CALLBACK_PORT` | `8088` | Host port published by Compose |
+| `CALLBACK_PORT` | `8088` | Host port Compose publishes for node callbacks |
+| `CALLBACK_ADMIN_PORT` | `8089` | Host port Compose publishes for the dashboard |
+| `CALLBACK_ADMIN_BIND` | `127.0.0.1` | Host address the dashboard port binds to; `0.0.0.0` opens it to the LAN |
+| `CALLBACK_ADMIN_HOSTS` | unset | Extra hostnames, comma-separated, allowed to run first-time setup |
+| `CALLBACK_SECURE_COOKIES` | unset | `1` sends the sign-in cookie over HTTPS only |
+| `CALLBACK_NODE_ONLY_PORT` | image: `8088` | Container port that answers only [node endpoints](#dashboard-access) |
 | `CALLBACK_AUTO_BOOT_LOGS` | on | `0` turns off the automatic SSH boot-log pull |
 | `CALLBACK_CONNECTION_STRATEGY` | `prefer_tailnet` | `prefer_fqdn` or `lan_first` — see [connection profiles](#connection-profiles-and-routes) |
 | `CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES` | unset | CLI imaging: extra Network Toolkit packages, space- or comma-separated |
@@ -299,8 +369,9 @@ flowchart LR
 - Retained secrets: Tailscale auth keys, toolkit Wi-Fi passwords and browser hashes, login
   passwords and Influx tokens. Template APIs, page HTML and job records never return them.
 - Another browser session inherits nothing (though browser session-restore may keep
-  session cookies across restarts). Old records stay on the volume but are not exposed to
-  a new session. Deleting a template clears its current-session record.
+  session cookies across restarts). ⏳ A session record unused for **24 hours** is deleted
+  with its secrets; any use resets the clock. Deleting a template clears its
+  current-session record.
 - Previously discarded keys cannot be recovered — enter them once and save. Expired or
   single-use Tailscale keys still need replacement.
 
@@ -352,7 +423,7 @@ flowchart LR
 | --- | --- | --- |
 | **Misc → Neovim with sensible defaults** (Pi 5/4/3B+) | Distro `neovim` and a plugin-free `~/.config/nvim/init.vim` for the admin user | Existing `init.vim`/`init.lua` (including symlinks) is preserved; no plugin downloads, editor alternatives or shell defaults change |
 | **Misc → Everyday CLI tools** (Pi 5/4/3B+) | `tmux`, `ripgrep`, `fd-find`, `fzf`, `jq`, `unzip`, `bash-completion` | Debian/Ubuntu names the fd executable `fdfind` |
-| **Packages and First-Boot Commands → Package List** | Your packages, added to the profile defaults (duplicates removed) | Debian package names only — no versions, URLs or command options. Uses the NTP-aware APT hook; unavailable packages are reported as cloud-init errors |
+| **Packages and First-Boot Commands → Package List** | Your packages, added to the profile defaults (duplicates removed) | Debian package names only — no versions, URLs or command options. Uses the first-boot NTP-aware APT hook (removed after first boot); unavailable packages are reported as cloud-init errors |
 
 Both **Misc** options default off, save into SD option templates and apply only to newly
 provisioned images, not running nodes. Network Toolkit keeps its own diagnostic-package
@@ -740,10 +811,12 @@ docker compose down
 
 ```mermaid
 flowchart LR
-  browser["🌐 Browser<br/>http://127.0.0.1:8088/"] --> port
-  nodes["🥧 Nodes"] -- "host LAN IP and port,<br/>never 127.0.0.1" --> fw["🧱 Windows Firewall<br/>may need an inbound rule"] --> port
+  browser["🌐 Browser<br/>http://127.0.0.1:8089/"] --> aport
+  nodes["🥧 Nodes"] -- "host LAN IP and port,<br/>never 127.0.0.1" --> fw["🧱 Windows Firewall<br/>may need an inbound rule"] --> nport
   subgraph host["🖥️ Docker host"]
-    port["CALLBACK_PORT<br/>default 8088"] --> ctr["🐳 callback-site<br/>Gunicorn, 1 worker plus threads<br/>non-root, unprivileged"]
+    nport["CALLBACK_PORT<br/>default 8088, all interfaces<br/>🔓 node endpoints only"] --> ctr
+    aport["CALLBACK_ADMIN_PORT<br/>default 8089, 127.0.0.1<br/>🔐 sign-in"] --> ctr
+    ctr["🐳 callback-site<br/>Gunicorn, 1 worker plus threads<br/>non-root, unprivileged"]
     ctr --> vol[("🗂️ /data<br/>playbook_callback-site-data")]
   end
   usb["🔌 USB and SD devices"] -. "❌ not passed in by default" .-> ctr
@@ -752,7 +825,8 @@ flowchart LR
 
 - One Gunicorn worker because background job status is process-local; threads handle
   concurrent requests.
-- Different host port: set `CALLBACK_PORT` first, e.g. `$env:CALLBACK_PORT=9821` in PowerShell.
+- Different host ports: set `CALLBACK_PORT` or `CALLBACK_ADMIN_PORT` first, e.g.
+  `$env:CALLBACK_ADMIN_PORT=9821` in PowerShell. Exposure options: [🔐 dashboard access](#dashboard-access).
 - The `callback-site-data` volume (explicitly named `playbook_callback-site-data` to keep the
   existing deployment's volume) holds catalog pulls, callbacks, node reports, SSH keys and
   operator edits across rebuilds and recreation. Never bake data, logs or keys into the image.
@@ -994,9 +1068,15 @@ mindmap
 <details>
 <summary>📚 Reference: endpoints</summary>
 
+Everything except the [🔓 node endpoints](#dashboard-access) needs a signed-in session;
+signed-out API calls get HTTP 401 JSON.
+
 | Method | Endpoint | Notes |
 | --- | --- | --- |
-| GET | `/health` | |
+| GET | `/health` | 🔓 |
+| GET, POST | `/setup` | First-run account form; redirects to `/login` once an account exists |
+| GET, POST | `/login` | `?next=/path` returns there after sign-in |
+| POST | `/logout` | |
 | POST | `/api/sd/prepare` | Start an SD preparation job |
 | GET | `/api/sd/jobs/<job_id>` | SD job status |
 | GET | `/api/sd/options-profiles` | Templates, plus this session's `selected_profile`, `ssh_key_name` and masked credential indicators |
@@ -1004,8 +1084,8 @@ mindmap
 | POST | `/api/sd/options-profiles/session` | Remember `name` and/or `ssh_key_name` in the current browser session |
 | DELETE | `/api/sd/options-profiles/<name>` | |
 | GET | `/api/cloud-init/events` | |
-| POST | `/api/cloud-init/callback` | Response includes `closer_job_id` when a check starts |
-| POST | `/api/cloud-init/boot-log` | Node-pushed boot logs |
+| POST | `/api/cloud-init/callback` | 🔓 Response includes `closer_job_id` when a check starts |
+| POST | `/api/cloud-init/boot-log` | 🔓 Node-pushed boot logs |
 | GET | `/api/state/source-of-truth` | Shared payload |
 | GET | `/api/nodes/summary` | |
 | GET | `/api/nodes/archive` | Archived nodes and timestamps |
@@ -1024,7 +1104,7 @@ mindmap
 | DELETE | `/api/nodes/module-presets/<id>` | |
 | POST | `/api/ssh/generate` | |
 | GET | `/api/ssh/keys` | |
-| GET | `/api/ssh/public/<key_name>` | Plain-text public key for verified first-boot SSH setup |
+| GET | `/api/ssh/public/<key_name>` | 🔓 Plain-text public key for verified first-boot SSH setup |
 | GET | `/api/helm/configurations` | Saved Helm configurations and the included example |
 | POST | `/api/helm/configurations/import` | Import a public GitHub chart and its default values |
 | PUT | `/api/helm/configurations/<id>` | Save edited values, release, namespace and configuration name |
@@ -1058,6 +1138,10 @@ flowchart LR
       cp["connection_profiles.json"]
       helm["🔐 helm_configurations.json"]
     end
+    subgraph access["🔐 Dashboard access"]
+      auth["🔐 admin_auth.json"]
+      skey["🔐 admin_secret_key"]
+    end
   end
 ```
 
@@ -1079,6 +1163,8 @@ flowchart LR
 | `callback_site/data/archived_nodes.json` | Reversible archive registry; all other records remain in place |
 | `callback_site/data/connection_profiles.json` | Per-node connection candidates |
 | `callback_site/data/helm_configurations.json` | 🔐 Helm configurations and last submitted inputs — may contain secrets; git-ignored |
+| `callback_site/data/admin_auth.json` | 🔐 Dashboard username, password hash and session epoch (0600); delete it to [reset](#dashboard-access) |
+| `callback_site/data/admin_secret_key` | 🔐 Sign-in cookie signing key (0600); delete it and restart to sign everyone out |
 
 </details>
 
@@ -1093,7 +1179,7 @@ sources. From the repository root:
 .venv/bin/python -m unittest discover -s callback_site/tests -t callback_site/tests
 ```
 
-For a broader validation pass:
+For a broader validation pass (Docker: add `CALLBACK_ADMIN_BASE=http://127.0.0.1:8089`):
 
 ```bash
 python3 scripts/validate_callback_site.py

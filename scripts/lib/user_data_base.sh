@@ -86,15 +86,17 @@ write_files:
       provisioner=cloud-init
 EOF
 
+# First-boot apt gate: the hook removes itself once the clock syncs; runcmd removes it otherwise.
 cat >> "$USER_DATA_OUT" <<'CLOCK_FILES'
   - path: /usr/local/bin/rack-clock-wait
     permissions: "0755"
     content: |
       #!/bin/sh
       set -eu
-      timedatectl set-ntp true
+      timedatectl set-ntp true || true
       for i in $(seq 1 90); do
-          if [ "$(timedatectl show -p NTPSynchronized --value)" = yes ]; then
+          if [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ]; then
+              rm -f /etc/apt/apt.conf.d/00-rack-clock || true
               exit 0
           fi
           sleep 2

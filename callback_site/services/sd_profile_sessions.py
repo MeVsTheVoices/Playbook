@@ -1,9 +1,11 @@
 """Browser-session cloud-init selection and private credential storage."""
 
 import json
+import os
 import re
 import secrets
 import threading
+import time
 
 from flask import g, request
 from services.sd_prepare import SD_SECRET_OPTIONS
@@ -13,6 +15,8 @@ CONFIGURED_SECRET = "__CONFIGURED__"
 SESSION_COOKIE = "playbook_sd_session"
 SESSION_DIR = APPDATA_DIR / "sd_profile_sessions"
 SESSION_LOCK = threading.RLock()
+SESSION_IDLE_TTL_SECONDS = 24 * 60 * 60
+_SESSION_FILE = re.compile(r"[a-f0-9]{64}\.json(\..+\.tmp)?")
 
 
 def _sd_session_id() -> str:
@@ -25,8 +29,31 @@ def _sd_session_id() -> str:
     return g.sd_profile_session_id
 
 
+def _prune_expired_sd_sessions() -> None:
+    """Delete plaintext session records (and crash leftovers) idle past the TTL."""
+    cutoff = time.time() - SESSION_IDLE_TTL_SECONDS
+    with SESSION_LOCK:
+        try:
+            entries = list(SESSION_DIR.iterdir())
+        except FileNotFoundError:
+            return
+        for path in entries:
+            try:
+                if _SESSION_FILE.fullmatch(path.name) and path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def _load_sd_session() -> dict:
-    path = SESSION_DIR / f"{_sd_session_id()}.json"
+    with SESSION_LOCK:
+        if not g.get("sd_profile_sessions_pruned"):
+            _prune_expired_sd_sessions()
+            g.sd_profile_sessions_pruned = True
+        return _read_sd_session(SESSION_DIR / f"{_sd_session_id()}.json")
+
+
+def _read_sd_session(path) -> dict:
     if not path.exists():
         return {"selected_profile": "", "selected_ssh_key": "", "credentials": {}}
     try:
@@ -40,6 +67,7 @@ def _load_sd_session() -> dict:
     state.setdefault("selected_ssh_key", "")
     if not isinstance(state["selected_ssh_key"], str):
         raise RuntimeError("Saved SSH-key selection has an invalid format.")
+    os.utime(path)
     return state
 
 

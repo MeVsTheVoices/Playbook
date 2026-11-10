@@ -184,3 +184,26 @@ check(sshKeySelectEl.value === "fresh-name", "cancel does not change current key
         self.assertEqual(response.status_code, 400)
         payload = response.get_json()
         self.assertFalse(payload["ok"])
+
+    def test_ssh_destination_refuses_values_ssh_would_parse_as_options(self) -> None:
+        from services.ssh_keys import _seed_known_host, _ssh_destination
+
+        for user, host in (("jdizzle", "10.0.0.10"), ("ops", "pi-rack-1.tail1234.ts.net"), ("root", "fe80::1%eth0"), ("_svc", "[::1]")):
+            with self.subTest(user=user, host=host):
+                self.assertEqual(_ssh_destination(user, host), f"{user}@{host}")
+
+        for user, host in (
+            ("-oProxyCommand=touch /tmp/pwned", "10.0.0.10"),
+            ("ops@evil", "10.0.0.10"),
+            ("", "10.0.0.10"),
+            ("ops", "-oProxyCommand=touch /tmp/pwned"),
+            ("ops", "-f/etc/hosts"),
+            ("ops", "node one"),
+            ("ops", ""),
+        ):
+            with self.subTest(user=user, host=host), self.assertRaises(ValueError):
+                _ssh_destination(user, host)
+
+        with patch("subprocess.run") as run_mock:
+            _seed_known_host("-f/etc/hosts")
+        run_mock.assert_not_called()

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <title>{{ "Set up the dashboard" if mode == "setup" else "Sign in" }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
+  </head>
+  <body>
+    <main class="wrap auth-wrap">
+      <section class="panel hero auth-card" aria-labelledby="auth-title">
+        <p class="section-kicker">Callback Site 🚀</p>
+        {% if mode == "setup" %}
+        <h1 id="auth-title">👋 First run: create your account</h1>
+        <p class="hint">One account unlocks the dashboard. Nodes keep calling back without it.</p>
+        {% else %}
+        <h1 id="auth-title">🔐 Sign in</h1>
+        {% endif %}
+        {% if error %}<p class="auth-error" role="alert">⚠️ {{ error }}</p>{% endif %}
+        {% if not blocked %}
+        <form class="auth-form" method="post" action="{{ url_for('auth_setup' if mode == 'setup' else 'auth_login') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if mode == "login" %}<input type="hidden" name="next" value="{{ next_path }}">{% endif %}
+          <div>
+            <label for="auth-username">Username</label>
+            <input id="auth-username" name="username" value="{{ username }}" autocomplete="username" maxlength="64" required autofocus>
+          </div>
+          <div>
+            <label for="auth-password">Password</label>
+            <input id="auth-password" name="password" type="password" maxlength="1024" required
+              {% if mode == "setup" %}autocomplete="new-password" minlength="{{ min_password_length }}" aria-describedby="auth-password-hint"{% else %}autocomplete="current-password"{% endif %}>
+            {% if mode == "setup" %}<p class="hint" id="auth-password-hint">{{ min_password_length }}+ characters. A passphrase works well.</p>{% endif %}
+          </div>
+          {% if mode == "setup" %}
+          <div>
+            <label for="auth-confirm">Confirm password</label>
+            <input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" minlength="{{ min_password_length }}" maxlength="1024" required>
+          </div>
+          {% endif %}
+          <button type="submit">{{ "✨ Create account" if mode == "setup" else "Sign in" }}</button>
+        </form>
+        {% endif %}
+        <details class="auth-help">
+          <summary>🔑 Forgot the password?</summary>
+          <p class="hint">Delete the account file, then reload this page to run setup again. Everyone is signed out.</p>
+          <pre>docker compose exec callback-site rm /data/admin_auth.json</pre>
+        </details>
+      </section>
+    </main>
+  </body>
+</html>

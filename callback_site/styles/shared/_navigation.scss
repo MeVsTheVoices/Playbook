@@ -123,3 +123,30 @@ body.sidebar-collapsed .sidebar-collapse-icon,
 body.sidebar-collapsed .sidebar-collapse-label {
   display: none;
 }
+
+.sidebar-signout {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.sidebar-signout button {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: 0;
+  padding: 0.55rem;
+  border: 1px solid transparent;
+  @include mixins.state-colors(transparent, var(--side-ink));
+  font-weight: 500;
+  text-align: left;
+}
+
+.sidebar-signout button:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.16);
+}
+
+body.sidebar-collapsed .sidebar-signout button {
+  justify-content: center;
+}

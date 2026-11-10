@@ -25,4 +25,9 @@
     <a class="{% if request.path.startswith('/test-terminal') %}active{% endif %}" {% if request.path.startswith('/test-terminal') %}aria-current="page"{% endif %} href="/test-terminal" aria-label="Terminal" title="Terminal">{{ nav_icon("m4 5 7 7-7 7M13 19h7") }}<span class="label">Terminal</span></a>
     <a class="{% if request.path.startswith('/settings') %}active{% endif %}" {% if request.path.startswith('/settings') %}aria-current="page"{% endif %} href="/settings" aria-label="Settings" title="Settings">{{ nav_icon("M4 7h16M4 17h16M8 4v6M16 14v6") }}<span class="label">Settings</span></a>
   </nav>
+  {% if admin_user %}
+  <form class="sidebar-signout" method="post" action="/logout">
+    <button type="submit" aria-label="Sign out {{ admin_user }}" title="Sign out {{ admin_user }}">{{ nav_icon("M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10") }}<span class="label">Sign out</span></button>
+  </form>
+  {% endif %}
 </aside>

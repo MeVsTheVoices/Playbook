@@ -13,6 +13,9 @@ from urllib.request import Request, urlopen
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CALLBACK_BASE = os.environ.get("CALLBACK_BASE", "http://127.0.0.1:8088")
+# Docker serves dashboard APIs on a separate local-only port (8089); the dev server uses one port.
+CALLBACK_ADMIN_BASE = os.environ.get("CALLBACK_ADMIN_BASE", CALLBACK_BASE)
+NODE_ONLY_MARKER = "only serves node callbacks"
 
 
 def virtualenv_python() -> Path:
@@ -21,12 +24,18 @@ def virtualenv_python() -> Path:
     return ROOT_DIR / ".venv" / "bin" / "python"
 
 
-def require_endpoint(path: str) -> bool:
+def require_endpoint(path: str, base: str | None = None) -> bool:
+    base = base or CALLBACK_BASE
+    body = ""
     try:
-        with urlopen(f"{CALLBACK_BASE}{path}", timeout=10) as response:
+        with urlopen(f"{base}{path}", timeout=10) as response:
             code = response.status
     except HTTPError as error:
         code = error.code
+        try:
+            body = error.read(4096).decode("utf-8", "replace")
+        except OSError:
+            body = ""
     except URLError as error:
         print(f"ERROR {path} request failed: {error.reason}")
         return False
@@ -34,6 +43,15 @@ def require_endpoint(path: str) -> bool:
     if code == 200:
         print(f"OK {path}")
         return True
+
+    if code == 401:
+        print(f"OK {path} (reachable; dashboard sign-in required)")
+        return True
+
+    if code == 404 and NODE_ONLY_MARKER in body:
+        print(f"ERROR {path} hit the node-only port {base}.")
+        print("Set CALLBACK_ADMIN_BASE=http://127.0.0.1:8089 for the Docker dashboard port.")
+        return False
 
     if code == 404 and path == "/api/test-terminal/checks":
         print(
@@ -105,8 +123,10 @@ def main() -> int:
         return result.returncode
 
     print("[2/3] Checking local callback endpoints", flush=True)
-    for path in ("/health", "/api/cloud-init/events", "/api/test-terminal/checks"):
-        if not require_endpoint(path):
+    if not require_endpoint("/health"):
+        return 1
+    for path in ("/api/cloud-init/events", "/api/test-terminal/checks"):
+        if not require_endpoint(path, CALLBACK_ADMIN_BASE):
             return 1
 
     print("[3/3] Posting a synthetic callback event", flush=True)

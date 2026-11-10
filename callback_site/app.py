@@ -8,6 +8,7 @@ from typing import Any, Dict
 from flask import Flask
 
 from launch import maybe_reexec_with_sudo
+from routes.auth import register_auth_routes
 from routes.boot_logs import register_boot_log_routes
 from routes.callbacks import register_callback_routes
 from routes.connection_profiles import register_connection_profile_routes
@@ -70,6 +71,7 @@ def inject_runtime_flags() -> Dict[str, Any]:
     return {"kubernetes_available": bool(kube_state.get("available", False)) or k3s_installed}
 
 
+register_auth_routes(app)
 register_page_routes(app, catalog_entries_for_ui=catalog_entries_for_ui)
 register_openwrt_routes(app)
 register_settings_routes(app, log_file=LOG_FILE, root_logger=root_logger, logger=logger)

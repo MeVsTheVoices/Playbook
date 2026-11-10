@@ -49,5 +49,8 @@ node_modules/
 .build/
 .local/
 callback_site/data/helm_configurations.json
-/dist/
+callback_site/data/admin_auth.json
+callback_site/data/admin_secret_key
+callback_site/data/.admin_*
 callback_site/data/sd_profile_sessions/
+/dist/

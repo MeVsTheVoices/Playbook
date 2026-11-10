@@ -10,7 +10,7 @@ from typing import Any
 
 from flask import jsonify, request
 
-from services.ssh_keys import _is_safe_key_name, _seed_known_host, _ssh_private_key_preflight
+from services.ssh_keys import _is_safe_key_name, _seed_known_host, _ssh_destination, _ssh_private_key_preflight
 from services.storage import KEYS_DIR, KNOWN_HOSTS_FILE
 from services.connection_profiles import describe_route
 from services.terminal_checks import (
@@ -76,6 +76,11 @@ def register_test_terminal_routes(app: Any) -> None:
 
         if not host:
             return jsonify({"ok": False, "error": "host is required"}), 400
+        try:
+            destination = _ssh_destination(username, resolved_host)
+        except ValueError as exc:
+            logger.warning("Terminal request rejected: %s", exc)
+            return jsonify({"ok": False, "error": str(exc)}), 400
         if not _is_safe_key_name(key_name):
             return jsonify({"ok": False, "error": "invalid key_name"}), 400
         if port < 1 or port > 65535:
@@ -110,7 +115,8 @@ def register_test_terminal_routes(app: Any) -> None:
             str(key_path),
             "-p",
             str(port),
-            f"{username}@{resolved_host}",
+            "--",
+            destination,
             remote_command,
         ]
 

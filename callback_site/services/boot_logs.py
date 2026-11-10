@@ -20,6 +20,7 @@ from services.ssh_keys import (
     _ansible_known_hosts_args,
     _is_safe_key_name,
     _seed_known_host,
+    _ssh_destination,
     _ssh_private_key_preflight,
 )
 from services.storage import BOOT_LOGS_DIR, KEYS_DIR
@@ -148,6 +149,11 @@ def _fetch_boot_logs(node_name: str, trigger: str = "manual", address: str | Non
     cert = (route.key if route else "") or str(node_entry.get("certificate", "") or "").strip()
     key_path = str(KEYS_DIR / (cert if cert and _is_safe_key_name(cert) else "rack-bootstrap-ed25519"))
     meta["target"] = f"{user}@{host} ({source})"
+    try:
+        destination = _ssh_destination(user, host)
+    except ValueError as exc:
+        meta["error"] = str(exc)
+        return _write_entry(name, meta, "")
 
     key_error = _ssh_private_key_preflight(key_path)
     if key_error:
@@ -162,7 +168,8 @@ def _fetch_boot_logs(node_name: str, trigger: str = "manual", address: str | Non
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=10",
         *_ansible_known_hosts_args().split(),
-        f"{user}@{host}",
+        "--",
+        destination,
         "bash -s",
     ]
     try:

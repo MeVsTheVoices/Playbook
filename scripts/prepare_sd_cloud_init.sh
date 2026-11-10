@@ -223,9 +223,14 @@ if [[ "$PROFILE" == "playbook-server" ]]; then
   require_cmd blkid
 fi
 
+# Serialize writers without locking the block device: udev needs that device lock
+# to process the partition-change events triggered by partprobe.
 if [[ -n "$DEVICE" ]]; then
-  if ! exec 8<"$DEVICE"; then
-    echo "Cannot open target device: $DEVICE" >&2
+  DEVICE_LOCK_ID="$(stat -Lc '%t-%T' -- "$DEVICE")"
+  DEVICE_LOCK_DIR=/run/playbook-sd-locks
+  mkdir -p "$DEVICE_LOCK_DIR"
+  if ! exec 8>"$DEVICE_LOCK_DIR/$DEVICE_LOCK_ID.lock"; then
+    echo "Cannot open writer lock for target device: $DEVICE" >&2
     exit 1
   fi
   if ! flock -n 8; then

@@ -1,4 +1,11 @@
 ---
+- name: Run explicit Node Ops host maintenance modules
+  hosts: rpi5_active:rpi4_active:rpi_3bplus_active:network_toolkit_active:playbook_server_active
+  become: true
+  roles:
+    - role: node_maintenance
+      when: (provision_profile | default('')) in ['cgroups', 'systemd']
+
 - name: Configure active Raspberry Pi 5 hosts
   hosts: rpi5_active
   become: true

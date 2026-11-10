@@ -2,6 +2,13 @@
 
 Callback Site is the control plane for the rack workflow: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, post-boot node provisioning, and the shared monitoring views that tie those steps together.
 
+### SD writer locking
+
+SD flashing serializes writers with per-device lock files under
+`/run/playbook-sd-locks`, identified by the target's device major/minor numbers.
+It must not hold a `flock` on the disk itself: that blocks udev partition-change
+events and prevents cloud-init seed injection after the image write.
+
 ### Regenerating SSH keys
 
 In the dashboard's SSH Access panel, select a saved generated key and choose
@@ -119,6 +126,16 @@ splitting arbitrarily. Before introducing new shared rules, check for existing
 owners/mixins; avoid page-specific copies of the shell or controls.
 
 ## At A Glance
+
+- Node Ops **Pi Cgroups** preserves the existing single-line kernel command line
+  and adds `cgroup_enable=cpuset cgroup_enable=memory cgroup_memory=1`, preferring
+  `/boot/firmware/cmdline.txt` with `/boot/cmdline.txt` fallback. Apply does not
+  reboot: reboot manually to activate boot changes. These are boot flags, not a
+  guarantee of controller availability on every kernel; they do not enable swap.
+- Node Ops **Systemd Service** starts/stops one existing `.service` unit and
+  enables/disables it at boot. It does not install units or manage masked units.
+  Check mode previews changes. Stopping SSH, networking or the portal can cut off
+  access. Neither maintenance module runs during normal unselected provisioning.
 
 - Dashboard setup follows Target Settings, Image Source and Integrity, then SSH
   Access. Target Settings starts open; opening another step closes the previous

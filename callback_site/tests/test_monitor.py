@@ -9,6 +9,51 @@ except ImportError:
 
 import services.images
 import services.node_state
+from subprocess import CompletedProcess
+from unittest.mock import patch
+
+from services.node_inventory import _ping_status
+
+
+class ReachabilityTests(BaseCallbackSiteTest):
+    def test_icmp_success_does_not_open_tcp_connection(self) -> None:
+        with patch("services.node_inventory.subprocess.run", return_value=CompletedProcess(
+            [], 0, stdout="time=0.714 ms", stderr=""
+        )), patch("services.node_inventory.socket.create_connection") as connect:
+            result = _ping_status("192.0.2.1")
+        self.assertTrue(result["reachable"])
+        self.assertEqual(result["latency_ms"], 0.714)
+        self.assertEqual(result["probe"], "icmp")
+        connect.assert_not_called()
+
+    def test_tcp_success_when_icmp_is_blocked(self) -> None:
+        with patch("services.node_inventory.subprocess.run", return_value=CompletedProcess(
+            [], 1, stdout="100% packet loss", stderr=""
+        )), patch("services.node_inventory.socket.create_connection") as connect:
+            result = _ping_status("192.0.2.1", port=2222)
+        connect.assert_called_once_with(("192.0.2.1", 2222), timeout=1)
+        self.assertTrue(result["reachable"])
+        self.assertGreaterEqual(result["latency_ms"], 0)
+        self.assertEqual(result["probe"], "tcp")
+        self.assertEqual(result["error"], "")
+
+    def test_missing_ping_still_checks_tcp(self) -> None:
+        with patch("services.node_inventory.subprocess.run", side_effect=FileNotFoundError), patch(
+            "services.node_inventory.socket.create_connection"
+        ):
+            result = _ping_status("192.0.2.1")
+        self.assertTrue(result["reachable"])
+        self.assertEqual(result["probe"], "tcp")
+
+    def test_both_failures_are_reported(self) -> None:
+        with patch("services.node_inventory.subprocess.run", return_value=CompletedProcess(
+            [], 1, stdout="", stderr="ICMP blocked"
+        )), patch("services.node_inventory.socket.create_connection", side_effect=TimeoutError("timed out")):
+            result = _ping_status("192.0.2.1")
+        self.assertFalse(result["reachable"])
+        self.assertIsNone(result["latency_ms"])
+        self.assertIn("ICMP blocked", result["error"])
+        self.assertIn("TCP port 22: timed out", result["error"])
 
 
 class MonitorTests(BaseCallbackSiteTest):

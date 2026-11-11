@@ -226,6 +226,7 @@ def register_monitor_routes(app: Any) -> None:
                 "address": address,
                 "reachable": bool(status.get("reachable")),
                 "latency_ms": status.get("latency_ms"),
+                "probe": status.get("probe", ""),
                 "error": str(status.get("error", "")),
             }
         )

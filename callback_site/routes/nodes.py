@@ -130,7 +130,7 @@ def register_node_routes(app: Any) -> None:
             chosen = select_profile(profiles)
             connect_target = chosen.address if chosen else ""
             connect_source = chosen.source if chosen else "none"
-            status = _ping_status(connect_target or node["address"])
+            status = _ping_status(connect_target or node["address"], port=chosen.port if chosen else 22)
             remember_profiles(node["name"], profiles, chosen.id if chosen else "", status["reachable"])
             statuses.append(
                 {
@@ -142,6 +142,7 @@ def register_node_routes(app: Any) -> None:
                     "address_source": node.get("address_source", "inventory"),
                     "reachable": status["reachable"],
                     "latency_ms": status["latency_ms"],
+                    "probe": status.get("probe", ""),
                     "last_callback": str(node.get("last_callback", "")),
                     "error": status["error"],
                 }

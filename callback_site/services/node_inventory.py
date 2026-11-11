@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import socket
 import subprocess
+import time
 from typing import Any, Dict, List
 
 from k3s_lightweight import BOARDS, group_for_profile as _k3s_group_for_profile, NODE_GROUPS as K3S_NODE_GROUPS
@@ -149,7 +151,7 @@ def _inventory_nodes_from_yaml_fallback() -> List[Dict[str, Any]]:
     return nodes
 
 
-def _ping_status(address: str) -> Dict[str, Any]:
+def _ping_status(address: str, port: int = 22) -> Dict[str, Any]:
     try:
         proc = subprocess.run(
             ["ping", "-c", "1", "-W", "1", address],
@@ -158,15 +160,31 @@ def _ping_status(address: str) -> Dict[str, Any]:
             check=False,
         )
     except FileNotFoundError:
-        return {"reachable": False, "latency_ms": None, "error": "ping command not found"}
+        ping_error = "ping command not found"
+    else:
+        if proc.returncode == 0:
+            match = re.search(r"time=([0-9.]+)\s*ms", proc.stdout or "")
+            return {
+                "reachable": True,
+                "latency_ms": float(match.group(1)) if match else None,
+                "error": "",
+                "probe": "icmp",
+            }
+        ping_error = (proc.stderr or proc.stdout).strip() or "ping failed"
 
-    reachable = proc.returncode == 0
-    latency = None
-    if reachable:
-        match = re.search(r"time=([0-9.]+)\s*ms", proc.stdout or "")
-        if match:
-            latency = float(match.group(1))
-    return {"reachable": reachable, "latency_ms": latency, "error": "" if reachable else (proc.stderr or proc.stdout).strip()}
+    # Docker Desktop and router firewalls can block ICMP while SSH still works.
+    started = time.monotonic()
+    try:
+        with socket.create_connection((address, port), timeout=1):
+            latency = round((time.monotonic() - started) * 1000, 3)
+    except OSError as exc:
+        return {
+            "reachable": False,
+            "latency_ms": None,
+            "error": f"{ping_error}; TCP port {port}: {exc}",
+            "probe": "icmp+tcp",
+        }
+    return {"reachable": True, "latency_ms": latency, "error": "", "probe": "tcp"}
 
 
 def _last_callback_by_host() -> Dict[str, str]:

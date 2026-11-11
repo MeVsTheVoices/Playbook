@@ -116,6 +116,7 @@
               <div>
                 <label for="callback_url">Callback URL</label>
                 <input id="callback_url" name="callback_url" value="{{ callback_url_default }}" required>
+                <p class="hint">Use this server's LAN or Tailscale address and callback port, not localhost, a Docker address, or the dashboard-only port. A Tailscale address requires the Pi to join that tailnet during setup.</p>
               </div>
             </div>
           </details>

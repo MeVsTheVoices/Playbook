@@ -8,7 +8,7 @@
 - Raspberry Pi 3B+: 2 slots reserved. Pi 3B+ nodes run 64-bit images and SD-card storage only. **Their role is selectable per node: `light-worker` (default, a tainted K3s agent), `utility` (no Kubernetes), or `control-plane` (not recommended, see the K3s section).**
 
 ## Power-Restore / IP-Change Note
-- Every device provisioned by this workflow now tries to call home again on every boot or power restoration by enabling a persistent local systemd callback.
+- Newly prepared nodes attempt a first-boot callback. The power-restore option enables the persistent local systemd callback on later boots and power restorations.
 - The callback is intentionally simple and unencrypted for now, so when a PoE power cycle causes a different DORA lease or a new upstream IP, we still need at least CHAP-level reauthentication before accepting that new IP as the node's canonical address.
 - In other words: DHCP can change the TCP/IP endpoint, but the identity update still needs an authenticated reauth step to avoid stale or wrong lease data.
 
@@ -43,7 +43,12 @@
 - Node Ops targets a node by its Tailscale IP when one is known (callback or saved `node_ip`), ahead of any LAN or NAT address. A Pi behind the router (`192.168.174.x`, seen as `10.255.45.243`) is not reachable from the NucBox until it joins the tailnet.
 - Pi 5 nodes default to `worker`; a Pi 5 can also be `control-plane`. Secrets encryption: disabled on the NucBox; joining server units must not carry `--secrets-encryption`.
 - Tailscale tags and policy: the NucBox is tagged `tag:homelab`; each Pi carries its board tag (`tag:rpi5`, `tag:rpi4`, `tag:rpi-3bplus`) plus `tag:homelab`. Build the matching policy on the Tailscale ACL page (see "Tailscale Policy Page" below). Without rules letting those tags reach each other on the K3s ports, a tagged node sees no peers and K3s cannot join.
-- Current state (2026-10-31, after the outage): the Pi 3B+ control nodes were too small to carry etcd reliably and quorum was lost twice. The cluster is being rebuilt from the NucBox alone with the lightweight profile below. The old `jd-shorty-rack-alpha-*`, `jd-shorty-rack-beta-*` and Pi 5 node records are stale and removed by the fresh-start script.
+- Observed 2026-11-14: the NucBox was `Ready` as `control-plane,etcd`;
+  `jd-shorty-rack-alpha-9dd49125` and `jd-shorty-rack-bravo-e4578098` were
+  `Ready` as workers. This is a snapshot, not an assurance of current health.
+  The earlier Pi 3B+ control nodes were too small to carry etcd reliably and
+  quorum was lost twice; do not treat the worker Pis as replacement etcd
+  voters without an explicit, planned role migration.
 
 ### Node Roles (all boards)
 Chosen on the Home page (K3s section, once a Pi profile is selected; switching boards always returns to that board's safe default role) or per node in Node Ops under the Kubernetes module.

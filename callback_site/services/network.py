@@ -174,8 +174,41 @@ def _tailscale_peer_ip(node_name: str) -> str:
     return _tailscale_peers().get(str(node_name or "").strip().lower(), "")
 
 
-def _tailscale_peer_fqdn(node_name: str) -> str:
-    return _load_tailnet()[1].get(str(node_name or "").strip().lower(), "")
+_TAILNET_REVERSE_CACHE: Dict[str, Tuple[float, str]] = {}
+
+
+def _tailscale_peer_fqdn(node_name: str, address: str = "") -> str:
+    name = str(node_name or "").strip().rstrip(".").lower()
+    if name.endswith(".ts.net"):
+        return name
+    known = _load_tailnet()[1].get(name, "")
+    if known or not _is_tailscale_ip(address):
+        return known
+    cached = _TAILNET_REVERSE_CACHE.get(address)
+    if cached and time.monotonic() - cached[0] < TAILNET_CACHE_SECONDS:
+        return cached[1]
+    names: List[str] = []
+
+    def lookup() -> None:
+        try:
+            hostname, aliases, _ = socket.gethostbyaddr(address)
+        except OSError as exc:
+            logger.debug("Tailnet reverse DNS unavailable for %s: %s", address, exc)
+            return
+        names.extend(
+            value.strip().rstrip(".").lower()
+            for value in [hostname, *aliases]
+            if value.strip().rstrip(".").lower().endswith(".ts.net")
+        )
+
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(2.0)
+    if worker.is_alive():
+        logger.warning("Tailnet reverse DNS timed out for %s", address)
+    fqdn = names[0] if names else ""
+    _TAILNET_REVERSE_CACHE[address] = (time.monotonic(), fqdn)
+    return fqdn
 
 
 def _is_usable_callback_ip(ip: str) -> bool:

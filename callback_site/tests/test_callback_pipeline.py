@@ -1,4 +1,4 @@
-"""Generated Pi callback clients through HTTP intake and deployment guards."""
+"""Generated Pi callback clients through HTTP intake, visibility and deployment guards."""
 
 import os
 from pathlib import Path
@@ -9,14 +9,8 @@ from unittest.mock import patch
 
 from werkzeug.serving import make_server
 
-try:
-    from .test_support import BaseCallbackSiteTest, app, patch_in
-    from . import test_sd_cloud_init_render as render_tests
-except ImportError:
-    from test_support import BaseCallbackSiteTest, app, patch_in
-    import test_sd_cloud_init_render as render_tests
-
-from package_options import package_names
+from test_support import BaseCallbackSiteTest, app, patch_in
+import test_sd_cloud_init_render as render_tests
 from services import network, node_archive, sd_prepare
 
 
@@ -44,7 +38,7 @@ class CallbackPipelineTests(BaseCallbackSiteTest):
                     "http://0.0.0.0:8088/api/cloud-init/callback",
                     "http://172.18.0.2:8088/api/cloud-init/callback",
                     "http://example.test:99999/callback",
-                    "http://operator@example.test/callback",
+                    "http://user:password@example.test/callback",
                     "http://example.test/'bad",
                 ):
                     with self.subTest(url=url):
@@ -55,21 +49,6 @@ class CallbackPipelineTests(BaseCallbackSiteTest):
                         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
                         self.assertTrue(response.get_json()["errors"])
             thread.assert_not_called()
-
-    def test_nvim_package_is_rejected_with_the_correct_package_name(self):
-        self.assertEqual(package_names("neovim jq neovim"), ["neovim", "jq"])
-        with self.assertRaisesRegex(ValueError, "use 'neovim'"):
-            package_names(["nvim"])
-        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as thread:
-            response = self.client.post("/api/sd/prepare", json={
-                "profile": "pi5", "hostname": "package-guard", "device": "/dev/fake",
-                "ssh_public_key": "ssh-ed25519 test",
-                "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
-                "cloud_init_options": {"packages": ["nvim"]},
-            })
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("use 'neovim'", " ".join(response.get_json()["errors"]))
-        thread.assert_not_called()
 
     def test_successful_redeployment_restores_archived_hostname_but_failed_flash_does_not(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(

@@ -98,17 +98,8 @@ let currentJob = null;
 
 let deviceWebhookRetry = null;
 
-let deviceWebhookSource = null;
-
 let deviceFallbackPollTimer = null;
 
-let deviceBackend = "native";
-
-let deviceOptionsBackend = "native";
-
-let currentDevices = [];
-
-let lastDeviceRefreshError = "";
 let deviceProblem = "";
 
 let allEvents = [];

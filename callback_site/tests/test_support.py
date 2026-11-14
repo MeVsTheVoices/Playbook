@@ -15,6 +15,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Iterable
 from unittest.mock import MagicMock, patch
+from flask.testing import FlaskClient
 
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="callback-site-tests-"))
 os.environ["CALLBACK_APPDATA_DIR"] = str(TEST_DATA_DIR)
@@ -27,7 +28,6 @@ if str(APP_DIR) not in sys.path:
 
 import app as callback_app  # noqa: E402
 from app import app  # noqa: E402
-from flask.testing import FlaskClient  # noqa: E402
 from services import admin_auth  # noqa: E402
 
 TEST_ADMIN_USERNAME = "test-admin"

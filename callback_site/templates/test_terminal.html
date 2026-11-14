@@ -10,7 +10,6 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='test_terminal.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='connection_routes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
-    {% include "fragments/structured_output_assets.html" %}
   </head>
   <body>
     {% include "_sidebar.html" %}
@@ -66,7 +65,7 @@
           <div><span class="eyebrow">SSH route from this dashboard</span><p id="terminal-route" role="status">Choose a host to see where your task will connect.</p></div>
           <button class="mini-btn" id="terminal-routes" type="button" disabled>All node routes</button>
         </div>
-        <h2><span class="step-number">2</span> Find your next task</h2>
+        <h2 class="task-section-heading"><span class="step-number">2</span> Find your next task</h2>
         <p class="muted">Browse by category or search. These are the available checks, not an unrestricted shell.</p>
         <div class="task-toolbar">
           <label for="task-search">Find a task<input id="task-search" type="search" placeholder="Try kernel, services, or cloud-init"></label>
@@ -78,13 +77,13 @@
           <label for="check-id">Selected task</label>
           <select id="check-id"></select>
           <p class="muted" id="check-description">Choose a predefined task.</p>
-          <details class="command-preview"><summary>What will run?</summary><pre id="check-command" data-format="bash">Select a task to preview its command.</pre></details>
+          <details class="command-preview"><summary>What will run?</summary><pre id="check-command">Select a task to preview its command.</pre></details>
         </div>
         <div class="actions">
           <button id="start-check" disabled>Run selected task</button>
           <button id="refresh-keys" class="secondary">Refresh Keys</button>
         </div>
-        <h2><span class="step-number">3</span> Follow the results</h2>
+        <h2 class="task-section-heading"><span class="step-number">3</span> Follow the results</h2>
         <div id="job-status" class="status" role="status" aria-live="polite">Ready when you are.</div>
         <div id="dns-hint" class="dns-hint"></div>
         <pre id="job-output" class="terminal" aria-label="Task output">Your task output will appear here.</pre>

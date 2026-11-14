@@ -45,10 +45,10 @@ callback_site/data/ssh_keys/*
 !callback_site/data/ssh_keys/.gitkeep
 callback_site/.venv/
 callback_site/.build/
-node_modules/
 .build/
 .local/
 callback_site/data/helm_configurations.json
+node_modules/
 callback_site/data/admin_auth.json
 callback_site/data/admin_secret_key
 callback_site/data/.admin_*

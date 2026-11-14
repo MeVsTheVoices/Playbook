@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a seeded Ubuntu Server 24.04 image that runs this repository's dashboard on first boot.
-# Suitable for local or future CI builds; needs root (loop mounts), via sudo.
+# Used for local builds and by .github/workflows/server-image.yml; needs root (loop mounts), via sudo.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

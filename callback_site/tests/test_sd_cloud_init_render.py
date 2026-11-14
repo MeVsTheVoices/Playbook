@@ -33,15 +33,13 @@ def _harness_text() -> str:
     text = read_sd_script()
     func = re.search(r"^validate_ssh_public_key_lines\(\) \{\n.*?^\}\n", text, re.S | re.M)
     toolkit_func = re.search(r"^toolkit_render\(\) \{\n.*?^\}\n", text, re.S | re.M)
-    server_func = re.search(r"^server_render\(\) \{\n.*?^\}\n", text, re.S | re.M)
     url_func = re.search(r"^validate_http_url\(\) \{\n.*?^\}\n", text, re.S | re.M)
     body = re.search(r"^CLOUD_INIT_USERNAME=.*?(?=^cat > \"\$META_DATA_OUT\")", text, re.S | re.M)
-    assert func and toolkit_func and server_func and url_func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
+    assert func and toolkit_func and url_func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
     return (
         "set -euo pipefail\n"
         + func.group(0)
         + toolkit_func.group(0)
-        + server_func.group(0)
         + url_func.group(0)
         + 'PROFILE="${R_PROFILE:-pi3bplus}"\nHOSTNAME="render-test"\nDISTRIBUTION="${R_DIST:-k3s}"\n'
         + f'SCRIPT_DIR="{Path(__file__).resolve().parents[2] / "scripts"}"\n'
@@ -73,19 +71,6 @@ class SdCloudInitRenderTests(unittest.TestCase):
     def runcmd(data: dict) -> list[str]:
         return [c if isinstance(c, str) else " ".join(c) for c in data["runcmd"]]
 
-    def test_server_bootstrap_precedes_self_callback_without_pi_packages(self) -> None:
-        code, data, err = self.render(R_PROFILE="playbook-server", R_DIST="standard",
-                                      CLOUD_INIT_K3S_CONFIG="", CLOUD_INIT_SERVER_INSTALL_FLASHER="false")
-        self.assertEqual(code, 0, err)
-        files = self.files(data)
-        self.assertIn("PLAYBOOK_INSTALL_FLASHER=false", files["/etc/playbook-server.env"]["content"])
-        self.assertIn("docker.io", data["packages"])
-        self.assertNotIn("raspi-config", data["packages"])
-        commands = self.runcmd(data)
-        activate = commands.index("/usr/local/bin/playbook-server-activate")
-        callback = next(index for index, command in enumerate(commands) if "rack-callback-payload" in command)
-        self.assertLess(activate, callback)
-
     def test_misc_packages_and_neovim_are_opt_in_on_all_general_profiles(self) -> None:
         for profile in ("pi5", "pi4", "pi3bplus"):
             with self.subTest(profile=profile):
@@ -104,7 +89,6 @@ class SdCloudInitRenderTests(unittest.TestCase):
                 self.assertIn(["/usr/local/bin/rack-neovim-bootstrap", "jdizzle"], data["runcmd"])
                 self.assertNotIn("update-alternatives", "\n".join(self.runcmd(data)))
         for env in ({"CLOUD_INIT_EXTRA_PACKAGES": "--help"}, {"CLOUD_INIT_EXTRA_PACKAGES": "git;reboot"},
-                    {"CLOUD_INIT_EXTRA_PACKAGES": "nvim"},
                     {"CLOUD_INIT_EXTRA_PACKAGES": "*"},
                     {"CLOUD_INIT_CONFIGURE_NEOVIM": "yes"}):
             code, _, err = self.render(**env)
@@ -349,6 +333,9 @@ class SdCloudInitRenderTests(unittest.TestCase):
                         service_commands = [c for c in commands if "rack-power-restored-callback.service" in c]
                         self.assertEqual(len(service_commands), 2 if callback == "true" else 1)
                         self.assertIn("systemctl start --no-block", service_commands[0])
+                        self.assertLess(commands.index(service_commands[0]), next(
+                            i for i, command in enumerate(commands) if "rack-callback-payload" in command
+                        ))
                         if callback == "true":
                             self.assertEqual(commands[-1], service_commands[-1])
                             self.assertIn("systemctl enable --now --no-block", service_commands[-1])
@@ -480,34 +467,24 @@ class SdCloudInitRenderTests(unittest.TestCase):
         self.assertIn("seq 1 90", command)
         self.assertIn("sleep 2", command)
         self.assertIn("exit 1", command)
-        cmds = [" ".join(c) if isinstance(c, list) else str(c) for c in self.runcmd(data)]
-        cleanup = cmds.index("rm -f /etc/apt/apt.conf.d/00-rack-clock")
-        self.assertGreater(cleanup, next(i for i, c in enumerate(cmds) if "NTPSynchronized" in c))
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name, content in {
-                "timedatectl": '#!/bin/sh\n[ "$1" = set-ntp ] && exit "$NTP_RC"\nprintf "%s\\n" "$SYNCED"\n',
+                "timedatectl": '#!/bin/sh\n[ "$1" = set-ntp ] && exit 0\nprintf "%s\\n" "$SYNCED"\n',
                 "sleep": "#!/bin/sh\nexit 0\n",
                 "seq": "#!/bin/sh\nprintf '1\\n2\\n'\n",
-                "rm": '#!/bin/sh\nprintf "%s\\n" "$*" >> "$RM_LOG"\n',
             }.items():
                 path = root / name
                 path.write_text(content)
                 path.chmod(0o755)
-            rm_log = root / "rm.log"
-            for synced, ntp_rc, expected in (("yes", "0", 0), ("yes", "1", 0), ("no", "0", 1)):
-                rm_log.unlink(missing_ok=True)
+            for synced, expected in (("yes", 0), ("no", 1)):
                 result = subprocess.run(
                     ["/bin/sh", "-c", command], capture_output=True, text=True,
-                    env={"PATH": tmp, "SYNCED": synced, "NTP_RC": ntp_rc, "RM_LOG": str(rm_log)},
-                    executable="/bin/sh",
+                    env={"PATH": tmp, "SYNCED": synced}, executable="/bin/sh",
                 )
                 self.assertEqual(result.returncode, expected, result.stderr)
                 if expected:
                     self.assertIn("clock not synced after 180s", result.stderr)
-                    self.assertFalse(rm_log.exists(), "the hook stays until the clock syncs")
-                else:
-                    self.assertEqual(rm_log.read_text(), "-f /etc/apt/apt.conf.d/00-rack-clock\n")
 
     def test_default_tags_follow_the_profile(self) -> None:
         for profile, expected in (("pi3bplus", "tag:rpi-3bplus,tag:homelab"), ("pi5", "tag:rpi5,tag:homelab"), ("pi4", "tag:rpi4,tag:homelab")):

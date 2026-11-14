@@ -140,7 +140,7 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
             "hostname": "rack-node-bad",
             "device": "/dev/sdb",
             "ssh_public_key": "ssh-ed25519 AAAA test",
-            "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+            "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
             "distribution": "k3s",
             "cloud_init_options": {"k3s_config": BAD_YAML},
         }

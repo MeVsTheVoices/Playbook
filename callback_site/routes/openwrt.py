@@ -4,7 +4,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from services.openwrt import _inspect_openwrt_probe, _push_ssh_key_to_target, _resolve_openwrt_ssh_key
+from services.openwrt import _inspect_openwrt_probe, _push_ssh_key_to_target, _resolve_openwrt_ssh_key, read_openwrt_uci
 
 
 def register_openwrt_routes(app: Any) -> None:
@@ -50,5 +50,16 @@ def register_openwrt_routes(app: Any) -> None:
         except FileNotFoundError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 404
         return jsonify({"ok": True, **result})
+
+    @openwrt.post("/api/openwrt/uci")
+    def openwrt_uci() -> Any:
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = read_openwrt_uci(str(payload.get("node", "")).strip(), int(payload.get("port", 22) or 22))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except FileNotFoundError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        return jsonify({"ok": not result["error"], **result})
 
     app.register_blueprint(openwrt)

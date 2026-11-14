@@ -108,6 +108,34 @@ Order: reset the cluster to the NucBox alone (`scripts/k3s_fresh_start.sh`), fla
 4. Apply the Kubernetes module, confirm `etcdctl member list` shows the new peer on its Tailscale address, then join the next node. A dry run cannot show file content, so confirm the written `/etc/rancher/k3s/config.yaml` is multi-line YAML before relying on it.
 5. A Node Ops run that matches no hosts is reported as failed (Ansible itself exits 0 for it), and validation messages are no longer hidden by `no_log`.
 
+### Two Pi 5s joining the existing control plane
+
+The existing server plus two Pi 5 servers gives three embedded-etcd voters.
+Verify that the existing server already uses embedded etcd; a standalone SQLite
+server must be migrated before additional servers can join. Do not initialize a
+new cluster on either Pi or reset a healthy existing cluster for this expansion.
+
+- Use fresh Tailscale credentials and the current K3s **server** token from a
+  private source. Previously exposed tokens must be rotated, not reused.
+- Re-image former agents before selecting `control-plane`; Node Ops deliberately
+  refuses implicit agent-to-server conversion. Remove an old server's etcd
+  membership safely before reflashing it. Use SSD-backed `/var/lib`.
+- In the web interface, select each Pi's Kubernetes module and `control-plane`
+  role. Set the existing server's reachable Tailscale endpoint and server token.
+  Leave the raw config override empty to use structured settings, and leave the
+  node IP empty for automatic Tailscale discovery. Match the existing server's
+  encryption and critical component/network settings.
+- Join one Pi at a time. The Ansible module now polls that Pi's local API
+  `/readyz` (including datastore readiness) after installation or reconfiguration.
+  It reports failure rather than success if readiness is not reached. Confirm
+  node `Ready` status and etcd membership before starting the second Pi; there
+  is no failure tolerance during the temporary two-voter stage.
+- Multi-node Apply runs process nodes serially and stop after the first failed,
+  timed-out, or unavailable module. Later modules on that node and later nodes
+  are not applied. The job preserves failure output for the web interface.
+  Check mode still gathers results across nodes, but marks failed checks as
+  failed; it does not run the readiness probe or prove that a live join works.
+
 ## Provisioning Flow
 1. Bootstrap the local workspace once:
    - `./scripts/bootstrap_project.sh`

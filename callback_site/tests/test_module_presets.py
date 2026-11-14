@@ -19,6 +19,102 @@ SECRET = "tskey-auth-SECRETVALUE"
 
 
 class ModulePresetTests(BaseCallbackSiteTest):
+    def test_inline_named_save_preserves_context_and_drafts_in_browser(self) -> None:
+        self.browser_probe("/nodes", ["nodes/state.js", "nodes/module_config.js", "nodes/module_presets.js"], """
+const posts = [];
+let failed = false, releaseActivation, holdActivation = false, releaseListing, holdListing = false;
+window.fetch = async (url, options = {}) => {
+  if (!options.method) {
+    if (holdListing) {
+      holdListing = false;
+      await new Promise(resolve => { releaseListing = resolve; });
+    }
+    return {ok: true, json: async () => ({ok: true, presets: [], sources: []})};
+  }
+  posts.push({url, body: JSON.parse(options.body)});
+  if (url.endsWith("node-configs") && holdActivation) {
+    holdActivation = false;
+    await new Promise(resolve => { releaseActivation = resolve; });
+  }
+  if (failed) throw new Error("network interrupted");
+  return {ok: true, json: async () => ({ok: true, name: "Lab"})};
+};
+async function loadSummary() { await renderModulePresets(); }
+""", """
+check(moduleNameToggle.disabled && getComputedStyle(moduleNameForm).display === "none",
+  "editor collapsed and disabled without selection");
+check(document.querySelector("#module-named-save").previousElementSibling.id === "module-save-inputs",
+  "inline editor beside Save Module Inputs");
+provisionNode.innerHTML = '<option value="node-a">A</option><option value="node-b">B</option>';
+nodes = [{name: "node-a", selected_profiles: []}, {name: "node-b", selected_profiles: []}];
+selectedModuleId = "baseline";
+moduleDetailEl.innerHTML = '<input data-module-field="timezone" data-module-type="text" value="UTC">';
+await renderModulePresets();
+check(!moduleNameToggle.disabled && !modulePresetsEl.textContent.includes("Saved configurations"),
+  "ready editor without verbose empty saved section");
+moduleNameToggle.click();
+check(document.activeElement === moduleNameInput && moduleNameToggle.hidden && !moduleNameForm.hidden,
+  "opening replaces button and focuses input");
+moduleNameInput.value = "draft";
+await renderModulePresets();
+check(moduleNameInput.value === "draft" && !moduleNameForm.hidden, "refresh preserves draft");
+moduleNameCancel.click();
+check(moduleNameForm.hidden && !moduleNameInput.value && document.activeElement === moduleNameToggle,
+  "cancel resets and restores focus");
+moduleNameToggle.click();
+moduleNameInput.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+check(moduleNameForm.hidden && posts.length === 0, "Escape cancels without saving");
+moduleNameToggle.click();
+moduleNameInput.value = "  Lab  ";
+moduleNameForm.requestSubmit();
+moduleNameForm.requestSubmit();
+check([...moduleNameForm.elements].every(control => control.disabled)
+  && moduleNameForm.getAttribute("aria-busy") === "true", "pending editor disabled");
+await tick();
+check(posts.length === 3 && posts[2].body.name === "Lab" && posts[2].body.module === "baseline",
+  "one trimmed named save");
+check(moduleNameForm.hidden && !moduleNameInput.value && document.activeElement === moduleNameToggle,
+  "successful save resets and focuses toggle");
+failed = true;
+moduleNameToggle.click();
+moduleNameInput.value = "keep me";
+moduleNameForm.requestSubmit();
+await tick();
+check(!moduleNameForm.hidden && moduleNameInput.value === "keep me"
+  && moduleStatusEl.textContent.includes("network interrupted") && !moduleNameInput.disabled,
+  "failure keeps draft and shows retryable error");
+failed = false;
+moduleNameInput.value = "";
+moduleNameForm.requestSubmit();
+await tick();
+check(posts.at(-1).body.name === "" && moduleNameForm.hidden, "blank uses suggested name");
+moduleNameToggle.click();
+moduleNameInput.value = "old context";
+holdActivation = true;
+const start = posts.length;
+moduleNameForm.requestSubmit();
+provisionNode.value = "node-b";
+selectedModuleId = "tailscale";
+moduleDetailEl.innerHTML = '<input data-module-field="tailnet" data-module-type="text" value="new">';
+await renderModulePresets();
+check(moduleNameForm.hidden && !moduleNameInput.value && moduleNameToggle.disabled,
+  "selection change resets pending editor");
+releaseActivation();
+await tick();
+check(posts[start + 1].body.node === "node-a"
+  && posts[start + 1].body.profile_inputs.baseline.timezone === "UTC"
+  && posts[start + 2].body.node === "node-a" && posts[start + 2].body.module === "baseline",
+  "async save retains original node module and inputs");
+holdListing = true;
+const listing = renderModulePresets();
+selectedModuleId = "";
+await renderModulePresets();
+releaseListing();
+await listing;
+check(moduleNameToggle.disabled && !modulePresetsEl.textContent, "clearing selection invalidates pending listing");
+check(posts.every(p => !p.url.includes("provision")), "named save never applies");
+""")
+
     def setUp(self) -> None:
         super().setUp()
         services.module_presets._save_presets([])

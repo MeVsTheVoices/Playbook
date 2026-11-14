@@ -534,18 +534,20 @@ async function testInfluxConnection(button, resultEl) {
 
 async function saveModuleInputs() {
   const nodeName = provisionNode.value;
+  const moduleId = selectedModuleId;
   if (!nodeName) {
     moduleStatusEl.textContent = "Select a node first.";
     return false;
   }
-  if (!selectedModuleId) {
+  if (!moduleId) {
     moduleStatusEl.textContent = "Select a module first.";
     return false;
   }
 
+  const inputs = collectModuleInputs();
   const selected = new Set(selectedProfileIdsForNode(nodeName));
-  if (!selected.has(selectedModuleId)) {
-    selected.add(selectedModuleId);
+  if (!selected.has(moduleId)) {
+    selected.add(moduleId);
     const res = await fetch("/api/nodes/node-configs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -561,14 +563,14 @@ async function saveModuleInputs() {
   const res = await fetch("/api/nodes/node-inputs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ node: nodeName, profile_inputs: { [selectedModuleId]: collectModuleInputs() } }),
+    body: JSON.stringify({ node: nodeName, profile_inputs: { [moduleId]: inputs } }),
   });
   const data = await res.json();
   if (!res.ok || !data.ok) {
     moduleStatusEl.textContent = data.error || "Could not save module inputs.";
     return false;
   }
-  moduleStatusEl.textContent = `Saved inputs for module '${selectedModuleId}'.`;
+  moduleStatusEl.textContent = `Saved inputs for module '${moduleId}'.`;
   await loadSummary();
   return true;
 }

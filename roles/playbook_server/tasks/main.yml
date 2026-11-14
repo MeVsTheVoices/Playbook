@@ -1,0 +1,60 @@
+---
+- name: Configure the Playbook dashboard server
+  tags:
+    - playbook-server
+  when: rack_manage_with_ansible | bool
+  block:
+    - name: Resolve server inputs
+      ansible.builtin.set_fact:
+        server_repo_url: "{{ (provision_inputs | default({})).server_repo_url | default(server_repo_url, true) }}"
+        server_ref: "{{ (provision_inputs | default({})).server_ref | default(server_ref, true) }}"
+        server_port: "{{ (provision_inputs | default({})).server_port | default(server_port, true) | int }}"
+        server_install_flasher: "{{ (provision_inputs | default({})).server_install_flasher | default(server_install_flasher) | bool }}"
+
+    - name: Require Ubuntu and valid server inputs
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_major_version | int >= 22
+          - ansible_architecture in ['x86_64', 'aarch64']
+          - server_repo_url is match('^https?://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._~/%+-]+$')
+          - server_ref is match('^[A-Za-z0-9_][A-Za-z0-9._/-]{0,127}$')
+          - "'..' not in server_ref"
+          - server_port | int >= 1 and server_port | int <= 65535
+        fail_msg: "playbook-server needs Ubuntu 22.04+ on amd64/arm64, an http(s) repository URL, a branch/tag/commit ref and a TCP port."
+
+    - name: Install Docker, git and the host flasher prerequisites
+      ansible.builtin.apt:
+        name: "{{ server_packages }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        lock_timeout: 300
+
+    - name: Install server helpers
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/usr/local/bin/{{ item | basename }}"
+        owner: root
+        group: root
+        mode: '0755'
+      with_fileglob:
+        - "{{ role_path }}/files/*"
+
+    - name: Write server settings
+      ansible.builtin.template:
+        src: playbook-server.env.j2
+        dest: /etc/playbook-server.env
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Deploy the dashboard from the configured ref
+      ansible.builtin.command: /usr/local/bin/playbook-server-activate
+      register: server_activate
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Show deployment result
+      ansible.builtin.debug:
+        msg: "{{ server_activate.stdout_lines | default([]) }}"

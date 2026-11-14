@@ -17,6 +17,38 @@ import services.storage
 
 
 class SdCardTests(BaseCallbackSiteTest):
+    def test_setup_panels_take_turns_without_affecting_cloud_init_or_inputs(self) -> None:
+        checks = self.browser_probe("/", [], "", """
+const panels = [...document.querySelectorAll('#sd-form > details[name="sd-setup"]')];
+const target = document.querySelector("#sd-target-settings");
+const image = document.querySelector("#sd-image-settings");
+const ssh = document.querySelector("#sd-ssh-settings");
+const optional = document.querySelector("#cloud-init-optional-settings");
+const openPanels = () => panels.filter(panel => panel.open);
+check(panels.length === 3 && panels[0] === target && panels[1] === image && panels[2] === ssh,
+  "three setup panels follow target, image, access order");
+check(openPanels().length === 1 && target.open, "only Target Settings starts open");
+document.querySelector("#hostname").value = "accordion-node";
+target.querySelector("summary").focus();
+image.querySelector("summary").click();
+check(openPanels().length === 1 && image.open && !target.open, "image step closes target");
+document.querySelector("#image_url").value = "https://example.invalid/image.img.xz";
+ssh.querySelector("summary").click();
+check(openPanels().length === 1 && ssh.open && !image.open, "access step closes image");
+optional.open = true;
+check(openPanels().length === 1 && ssh.open && optional.open, "Cloud-Init Settings remains independent");
+target.querySelector("summary").click();
+check(openPanels().length === 1 && target.open && !ssh.open, "earlier steps can be reopened");
+check(document.querySelector("#hostname").value === "accordion-node"
+  && document.querySelector("#image_url").value === "https://example.invalid/image.img.xz",
+  "switching steps preserves input values");
+image.open = true;
+check(openPanels().length === 1 && image.open, "programmatic opening also stays exclusive");
+image.querySelector("summary").click();
+check(openPanels().length === 0 && optional.open, "active step can be closed without affecting Cloud-Init");
+""")
+        self.assertEqual(len(checks), 9)
+
     def test_misc_options_are_visible_and_map_to_provisioning(self) -> None:
         page = self.page_text(self.client.get("/"))
         self.assertIn('data-cloud-init-section="misc"', page)
@@ -358,7 +390,7 @@ class SdCardTests(BaseCallbackSiteTest):
                     "hostname": "rack-node-auto",
                     "device": "/dev/sdb",
                     "ssh_public_key": "ssh-ed25519 AAAA test",
-                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",
                     "pi_only": True,
                     "cloud_init_options": {
@@ -420,7 +452,7 @@ class SdCardTests(BaseCallbackSiteTest):
                     "hostname": "rack-node-02",
                     "device": "/dev/sdb",
                     "ssh_public_key": "ssh-ed25519 AAAA test",
-                    "callback_url": "http://127.0.0.1:8088/api/cloud-init/callback",
+                    "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",
                     "sd_options_profile": "base-profile",
                     "cloud_init_options": {

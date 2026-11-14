@@ -121,13 +121,30 @@ function renderSourceOfTruth() {
 
 async function loadSummary() {
   monitorStatus.textContent = "Loading...";
-  const sotRes = await fetch("/api/state/source-of-truth");
-  const sotPayload = await sotRes.json();
-  if (!sotRes.ok || !sotPayload.ok) {
-    monitorStatus.textContent = sotPayload.error || "Failed to load monitor summary.";
+  if (latestChecksBodyEl) {
+    latestChecksBodyEl.innerHTML = "<tr><td colspan='5'>Loading saved provision check outcomes...</td></tr>";
+  }
+  let sotPayload;
+  try {
+    const sotRes = await fetchJsonWithTimeout("/api/state/source-of-truth", { cache: "no-store" });
+    sotPayload = await sotRes.json();
+    if (!sotRes.ok || !sotPayload.ok) {
+      throw new Error(sotPayload.error || "Failed to load monitor summary.");
+    }
+    if (!sotPayload.state || !Array.isArray(sotPayload.state.nodes)) {
+      throw new Error("Monitor summary did not include node state.");
+    }
+  } catch (err) {
+    const message = err && err.name === "AbortError"
+      ? "Monitor summary request timed out."
+      : `Failed to load monitor summary: ${String(err && err.message ? err.message : err)}`;
+    monitorStatus.textContent = `${message} Use Refresh to retry.`;
+    if (latestChecksBodyEl) {
+      latestChecksBodyEl.innerHTML = `<tr><td colspan='5'>${escapeHtml(message)} Use Refresh to retry loading saved provision check outcomes.</td></tr>`;
+    }
     return;
   }
-  sourceOfTruthState = sotPayload.state || null;
+  sourceOfTruthState = sotPayload.state;
   const allNodes = Array.isArray(sourceOfTruthState && sourceOfTruthState.nodes) ? sourceOfTruthState.nodes : [];
   nodes = allNodes.filter((node) => node && node.in_monitor_view);
   renderHardwareTable();

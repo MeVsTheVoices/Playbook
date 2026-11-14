@@ -233,3 +233,7 @@ fi
 if [[ "$PROFILE" == "network-toolkit" ]]; then
   toolkit_render files >> "$USER_DATA_OUT"
 fi
+# The self-hosting server installs the same helpers and settings file as roles/playbook_server.
+if [[ "$PROFILE" == "playbook-server" ]]; then
+  server_render files >> "$USER_DATA_OUT"
+fi

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Update this node's dashboard: playbook-update [branch|tag|commit]
+exec /usr/local/bin/playbook-server-activate "$@"

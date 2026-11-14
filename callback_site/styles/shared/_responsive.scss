@@ -1,7 +1,7 @@
 @media (max-width: 980px) {
-  .sidebar { width: 196px; }
-  .content { margin-left: 208px; }
-  body.sidebar-collapsed .content { margin-left: 92px; }
+  .sidebar { width: 180px; }
+  .content { margin-left: 192px; }
+  body.sidebar-collapsed .content { margin-left: 72px; }
 }
 
 @media (max-width: 760px) {
@@ -13,8 +13,10 @@
   }
   .sidebar nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; }
   .sidebar a { margin: 0; }
+  .sidebar-brand { grid-template-columns: minmax(0, 1fr); }
   body.sidebar-collapsed .sidebar .label { display: inline; }
   body.sidebar-collapsed .sidebar .sidebar-brand { display: block; }
+  body.sidebar-collapsed .sidebar .sidebar-brand-copy { display: block; }
   button.toggle-btn { display: none; }
   .content, body.sidebar-collapsed .content { margin-left: 0; overflow-wrap: anywhere; }
   .wrap { margin: 1rem auto; padding: 0 0.75rem; }

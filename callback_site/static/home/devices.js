@@ -46,8 +46,13 @@ async function pollDevicesSnapshot() {
       throw new Error((payload.errors || ["device refresh failed"])[0]);
     }
     const devices = Array.isArray(payload.devices) ? payload.devices : [];
+    const errors = Array.isArray(payload.errors) ? payload.errors.map(String).filter(Boolean) : [];
+    deviceProblem = errors.join(" ");
     replaceDeviceOptions(devices);
-    updateDeviceActivity(devices.length, true);
+    if (deviceProblem) {
+      deviceWebhookStatusEl.textContent = `SD/USB devices unavailable: ${deviceProblem}`;
+    }
+    updateDeviceActivity(devices.length, true, deviceProblem);
   } catch (err) {
     if (!String(deviceWebhookStatusEl.textContent || "").startsWith("Live device monitor disconnected")) {
       deviceWebhookStatusEl.textContent = `Device refresh error: ${String(err.message || err)}`;
@@ -69,8 +74,10 @@ function startDeviceWebhook() {
       const devices = Array.isArray(payload.devices) ? payload.devices : [];
       replaceDeviceOptions(devices);
       const updated = payload.updated_at ? payload.updated_at.replace("T", " ").replace("+00:00", " UTC") : "just now";
-      deviceWebhookStatusEl.textContent = `Live device monitor: ${devices.length} device(s), updated ${updated}`;
-      updateDeviceActivity(devices.length, true);
+      deviceWebhookStatusEl.textContent = deviceProblem
+        ? `SD/USB devices unavailable: ${deviceProblem}`
+        : `Live device monitor: ${devices.length} device(s), updated ${updated}`;
+      updateDeviceActivity(devices.length, true, deviceProblem);
     } catch (err) {
       deviceWebhookStatusEl.textContent = "Live device monitor: invalid update payload.";
       updateDeviceActivity(0, false);
@@ -78,7 +85,7 @@ function startDeviceWebhook() {
   });
 
   es.addEventListener("ping", () => {
-    if (!deviceWebhookStatusEl.textContent.startsWith("Live device monitor:")) {
+    if (!deviceProblem && !deviceWebhookStatusEl.textContent.startsWith("Live device monitor:")) {
       deviceWebhookStatusEl.textContent = "Live device monitor: connected";
     }
   });

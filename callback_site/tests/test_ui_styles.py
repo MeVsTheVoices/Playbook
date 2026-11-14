@@ -19,6 +19,38 @@ PAGES = ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/
 
 
 class SharedStyleTests(BaseCallbackSiteTest):
+    def test_sidebar_toggle_keeps_state_specific_icon_and_accessible_label(self) -> None:
+        checks = self.browser_probe(
+            "/tailscale-acl", ["tailscale_acl.js"],
+            'localStorage.setItem("sidebar-collapsed", "0");',
+            """
+const toggle = document.querySelector("#sidebar-toggle");
+const visible = selector => getComputedStyle(document.querySelector(selector)).display !== "none";
+check(toggle.closest(".sidebar-brand") !== null, "toggle is integrated into sidebar header");
+check(visible(".sidebar-collapse-label") && !visible(".sidebar-expand-label"),
+  "expanded sidebar offers collapse action");
+check(visible(".sidebar-collapse-icon") && !visible(".sidebar-expand-icon"),
+  "expanded sidebar uses a fixed left arrow");
+toggle.click();
+check(document.body.classList.contains("sidebar-collapsed")
+  && localStorage.getItem("sidebar-collapsed") === "1", "collapse persists");
+check(visible(".sidebar-expand-label") && !visible(".sidebar-collapse-label"),
+  "collapsed sidebar offers expand action");
+check(visible(".sidebar-expand-icon") && !visible(".sidebar-collapse-icon"),
+  "collapsed sidebar uses a fixed right arrow");
+document.querySelector(".sidebar").getAnimations().forEach(animation => animation.finish());
+const bounds = toggle.getBoundingClientRect(), header = document.querySelector(".sidebar-brand").getBoundingClientRect();
+check(bounds.width === 42 && Math.abs((bounds.left + bounds.right) / 2 - (header.left + header.right) / 2) < 1,
+  "collapsed toggle stays full-sized and centered, even with a sidebar scrollbar");
+toggle.click();
+check(!document.body.classList.contains("sidebar-collapsed")
+  && localStorage.getItem("sidebar-collapsed") === "0", "expand persists");
+check(visible(".sidebar-collapse-label") && visible(".sidebar-collapse-icon"),
+  "expanded action and icon are restored");
+""",
+        )
+        self.assertEqual(len(checks), 9)
+
     def test_every_page_uses_shared_styles_and_navigation(self) -> None:
         for path in PAGES:
             with self.subTest(path=path), patch_in("_detect_kubernetes_runtime", return_value={
@@ -69,9 +101,30 @@ class SharedStyleTests(BaseCallbackSiteTest):
                 (APP_DIR / "static" / name).read_text()
                 for name in re.findall(r'href="/static/([^"]+\.css)"', text)
             )
+            styles += "\n*, *::before, *::after { animation: none !important; transition: none !important; }"
             text = re.sub(r"<link\b[^>]*>", "", text)
             text = text.replace("</head>", f"<style>{styles}</style></head>")
-            for width in (360, 390, 768, 1440):
+            if path == "/nodes":
+                scripts = "\n".join(
+                    (APP_DIR / "static/nodes" / name).read_text()
+                    for name in ("state.js", "module_config.js", "node_table.js")
+                )
+                scripts += """
+nodes = [{
+  name: "jd-shorty-rack-alpha", group: "rpi5_active", address: "100.82.216.81",
+  address_source: "callback", callback_stage: "hardware-check", manual_node: true,
+  last_callback: "2026-11-08T12:42:28Z",
+  selected_profiles: ["baseline", "tailscale", "telegraf", "docker", "longhorn"],
+  latest_check: {status: "ok", mode: "check", checked_at: "2026-11-08T12:42:07Z"},
+  hardware: {received_at: "now", model: "Ubuntu 24.04.2 LTS", source_ip: "100.82.216.81"},
+  cert: {cert_present: true, cert_subject: "long-certificate-subject-".repeat(12)}
+}];
+profiles = nodes[0].selected_profiles.map(id => ({id, label: id}));
+statusByNode = {"jd-shorty-rack-alpha": {reachable: false}};
+renderRows();
+"""
+                text = text.replace("</body>", f"<script>{scripts}</script></body>")
+            for width in (360, 390, 768, 1024, 1440):
                 frames.append(
                     f'<iframe width="{width}" height="1000" data-path="{path}" data-width="{width}" '
                     f'onload="measure(this)" srcdoc="{html.escape(text, quote=True)}"></iframe>'
@@ -90,11 +143,27 @@ function measure(frame) {
     taskCards.innerHTML = '<button class="task-card" aria-pressed="true"><strong>Identity</strong>'
       + '<span class="muted">Read-only system information</span></button>';
   }
+  const moduleDetail = doc.querySelector("#module-detail");
+  if (moduleDetail) {
+    moduleDetail.classList.remove("collapsed");
+    moduleDetail.innerHTML = '<div class="module-head"><h4>Baseline</h4>'
+      + '<div class="module-live-bar"><span class="module-live-status ok">'
+      + 'Read from a-long-node-name.example.internal just now · 3 fields found</span>'
+      + '<button class="secondary module-live-refresh">Read from node</button></div></div>'
+      + '<div class="module-options"><div class="module-field module-toggle">'
+      + '<label class="module-toggle-row"><input type="checkbox">'
+      + '<span>Enable unattended upgrades</span></label></div></div>';
+    doc.querySelector("#module-name-toggle").disabled = false;
+  }
   const style = element => win.getComputedStyle(element);
   for (const state of ["default", "expanded"]) {
     if (state === "expanded") {
       doc.querySelectorAll("details").forEach(element => { element.open = true; });
       doc.body.classList.add("sidebar-collapsed");
+      if (moduleDetail) {
+        doc.querySelector("#module-name-toggle").hidden = true;
+        doc.querySelector("#module-name-form").hidden = false;
+      }
     }
     const nodeTable = doc.querySelector("#node-rows");
     const statCard = doc.querySelector(".stats-grid .stat-card");
@@ -117,9 +186,41 @@ function measure(frame) {
       taskCardLayout: taskCards ? style(taskCards.firstElementChild).display : null,
       helmSelectionHeight: doc.querySelector("#helm-selection")?.getBoundingClientRect().height ?? null,
       helmSelectionArrow: doc.querySelector("#helm-selection") ? style(doc.querySelector("#helm-selection")).backgroundImage : null,
+      sidebarWidth: doc.querySelector(".sidebar").getBoundingClientRect().width,
+      sidebarToggleWidth: doc.querySelector("#sidebar-toggle").getBoundingClientRect().width,
+      sidebarToggleFitsHeader: (() => {
+        const button = doc.querySelector("#sidebar-toggle").getBoundingClientRect();
+        const header = doc.querySelector(".sidebar-brand").getBoundingClientRect();
+        return !button.width || (button.left >= header.left && button.right <= header.right + 1
+          && button.top >= header.top && button.bottom <= header.bottom + 1);
+      })(),
+      sidebarBrandVisible: style(doc.querySelector(".sidebar-brand-copy")).display !== "none",
+      aclHeroBackground: doc.querySelector(".acl-hero")
+        ? style(doc.querySelector(".acl-hero")).backgroundImage : null,
+      aclHeroInk: doc.querySelector(".acl-hero") ? style(doc.querySelector(".acl-hero")).color : null,
+      aclSmileys: doc.querySelectorAll(".acl-hero .hero-corner").length,
+      navigationIcons: [...doc.querySelectorAll("nav a")].every(link =>
+        link.querySelector("svg")?.getBoundingClientRect().width > 0
+        && link.getAttribute("aria-label") && link.title),
+      nodeActionCount: nodeTable ? nodeTable.querySelectorAll("button").length : null,
+      nodeActionsFit: nodeTable ? [...nodeTable.querySelectorAll("button")].every(button => {
+        const bounds = button.getBoundingClientRect(), cell = button.closest("td").getBoundingClientRect();
+        return bounds.width > 0 && bounds.left >= cell.left && bounds.right <= cell.right
+          && button.scrollWidth <= button.clientWidth + 1;
+      }) : null,
+      moduleOptionsOverflow: moduleDetail ? doc.querySelector(".module-options").scrollWidth
+        - doc.querySelector(".module-options").clientWidth : null,
+      nameFormDisplay: moduleDetail ? style(doc.querySelector("#module-name-form")).display : null,
+      nameToggleDisplay: moduleDetail ? style(doc.querySelector("#module-name-toggle")).display : null,
+      moduleActionsFit: moduleDetail ? [...doc.querySelectorAll(
+        ".module-actions button, .module-name-form input, .module-live-bar button"
+      )].every(element => {
+        const bounds = element.getBoundingClientRect(), parent = element.parentElement.getBoundingClientRect();
+        return !bounds.width || (bounds.right <= parent.right + 1 && bounds.left >= parent.left - 1);
+      }) : null,
     });
   }
-  if (results.length === 64) {
+  if (results.length === 80) {
     const output = document.createElement("pre");
     output.id = "style-result";
     output.textContent = JSON.stringify(results);
@@ -139,7 +240,7 @@ function measure(frame) {
         match = re.search(r'<pre id="style-result">(.*?)</pre>', result.stdout, re.S)
         self.assertIsNotNone(match, result.stdout[-2000:])
         snapshots = json.loads(html.unescape(match.group(1)))
-        self.assertEqual(len(snapshots), 64)
+        self.assertEqual(len(snapshots), 80)
         for snapshot in snapshots:
             with self.subTest(path=snapshot["path"], width=snapshot["viewport"], state=snapshot["state"]):
                 self.assertLessEqual(snapshot["width"], snapshot["viewport"])
@@ -149,12 +250,32 @@ function measure(frame) {
                 self.assertEqual(snapshot["secondaryInk"], "rgb(51, 65, 85)")
                 self.assertEqual(snapshot["danger"], "rgb(185, 28, 28)")
                 self.assertLess(snapshot["checkboxWidth"], 30)
+                self.assertTrue(snapshot["navigationIcons"])
+                self.assertTrue(snapshot["sidebarToggleFitsHeader"])
+                self.assertEqual(snapshot["sidebarBrandVisible"],
+                                 snapshot["viewport"] <= 760 or snapshot["state"] == "default")
+                if snapshot["path"] == "/tailscale-acl":
+                    self.assertIn("linear-gradient", snapshot["aclHeroBackground"])
+                    self.assertIn("11, 139, 110", snapshot["aclHeroBackground"])
+                    self.assertEqual(snapshot["aclHeroInk"], "rgb(230, 254, 247)")
+                    self.assertEqual(snapshot["aclSmileys"], 2)
                 if snapshot["viewport"] <= 760:
                     self.assertEqual(len(snapshot["navigationColumns"].split()), 2)
+                else:
+                    self.assertEqual(snapshot["sidebarToggleWidth"], 42)
+                    self.assertLessEqual(snapshot["sidebarWidth"], 196)
+                    if snapshot["state"] == "expanded":
+                        self.assertEqual(snapshot["sidebarWidth"], 60)
                 if snapshot["path"] == "/nodes":
                     self.assertEqual(snapshot["nodeTableOverflow"], "auto")
                     self.assertEqual(snapshot["statCardPosition"], "relative")
                     self.assertEqual(snapshot["statCardOverflow"], "hidden")
+                    self.assertEqual(snapshot["nodeActionCount"], 4)
+                    self.assertTrue(snapshot["nodeActionsFit"])
+                    self.assertTrue(snapshot["moduleActionsFit"])
+                    self.assertLessEqual(snapshot["moduleOptionsOverflow"], 1)
+                    self.assertEqual(snapshot["nameFormDisplay"], "none" if snapshot["state"] == "default" else "flex")
+                    self.assertEqual(snapshot["nameToggleDisplay"] == "none", snapshot["state"] == "expanded")
                 if snapshot["path"] == "/test-terminal":
                     self.assertEqual(snapshot["taskCardLayout"], "grid")
                     self.assertEqual(snapshot["taskCardBackground"], "rgb(234, 250, 243)")
@@ -162,6 +283,6 @@ function measure(frame) {
                 if snapshot["path"] == "/kubernetes":
                     self.assertGreaterEqual(snapshot["helmSelectionHeight"], 42)
                     self.assertNotEqual(snapshot["helmSelectionArrow"], "none")
-        for width in (360, 390, 768, 1440):
+        for width in (360, 390, 768, 1024, 1440):
             headings = {snapshot["heading"] for snapshot in snapshots if snapshot["viewport"] == width}
             self.assertEqual(len(headings), 1, (width, headings))

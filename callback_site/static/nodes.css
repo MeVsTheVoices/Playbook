@@ -233,7 +233,7 @@ tr.module-row-selected td:first-child {
 
 .module-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: 0.6rem 0.9rem;
   align-items: start;
 }
@@ -272,10 +272,13 @@ tr.module-row-selected td:first-child {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.55rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .module-live-status {
-  max-width: 28rem;
+  max-width: min(28rem, 100%);
+  overflow-wrap: anywhere;
   padding: 0.22rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -371,7 +374,7 @@ tr.module-row-selected td:first-child {
 
 .module-actions button {
   width: auto;
-  min-width: 9.5rem;
+  min-width: min(9.5rem, 100%);
   padding: 0.55rem 1.1rem;
   font-weight: 600;
 }
@@ -387,6 +390,44 @@ tr.module-row-selected td:first-child {
   box-shadow: none;
 }
 
+.module-named-save {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.module-name-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  animation: module-name-reveal 0.18s ease-out;
+}
+
+.module-name-form[hidden],
+#module-name-toggle[hidden] {
+  display: none;
+}
+
+.module-name-form input {
+  flex: 1 1 14rem;
+  width: auto;
+  min-width: 0;
+}
+
+.module-name-form button {
+  min-width: 0;
+}
+
+@keyframes module-name-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .access-card {
   margin-top: 1rem;
   padding: 0;
@@ -604,6 +645,35 @@ tr.module-row-selected td:first-child {
 
 .mono {
   font-size: 0.81rem;
+}
+
+.node-monitor-table {
+  min-width: 64rem;
+}
+
+.node-monitor-table th,
+.node-monitor-table td {
+  overflow-wrap: anywhere;
+}
+
+.node-monitor-actions {
+  width: 14rem;
+  min-width: 14rem;
+}
+
+.node-monitor-actions .inline-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.node-monitor-actions button {
+  width: 100%;
+  min-width: 0;
+}
+
+.node-monitor-actions button[data-action=check] {
+  grid-column: 1/-1;
 }
 
 .hero-badges {

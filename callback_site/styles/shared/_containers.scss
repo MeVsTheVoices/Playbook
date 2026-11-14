@@ -1,13 +1,13 @@
 @use "../abstracts/mixins";
 
 .content {
-  margin-left: 246px;
+  margin-left: 208px;
   min-width: 0;
   transition: margin-left 0.2s ease;
 }
 
 body.sidebar-collapsed .content {
-  margin-left: 92px;
+  margin-left: 72px;
 }
 
 .wrap {

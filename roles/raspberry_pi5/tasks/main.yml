@@ -700,6 +700,31 @@
   tags:
     - kubernetes
 
+- name: Wait for the joined K3s control-plane API and datastore
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+      - --server=https://127.0.0.1:6443
+      - --request-timeout=5s
+      - get
+      - --raw=/readyz
+  register: raspberry_pi5_k3s_readiness
+  changed_when: false
+  retries: 24
+  delay: 5
+  until:
+    - raspberry_pi5_k3s_readiness.rc == 0
+    - raspberry_pi5_k3s_readiness.stdout | trim == 'ok'
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'kubernetes'
+    - raspberry_pi5_k3s_role | default('') == 'control-plane'
+    - not ansible_check_mode
+  tags:
+    - kubernetes
+
 - name: Resolve Docker inputs
   ansible.builtin.set_fact:
     raspberry_pi5_docker_data_root: "{{ provision_inputs.docker_data_root | default('') | string | trim }}"

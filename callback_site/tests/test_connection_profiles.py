@@ -12,7 +12,9 @@ except ImportError:
     from test_support import BaseCallbackSiteTest, patch_in
 
 import services.connection_profiles as cp
+import services.network as network
 import services.storage
+from services.network import _tailscale_peer_fqdn
 
 
 class ConnectionProfileTests(BaseCallbackSiteTest):
@@ -101,6 +103,123 @@ class ConnectionProfileTests(BaseCallbackSiteTest):
             peers, fqdns = network._load_tailnet()
         self.assertEqual(peers["rack-beta"], "100.100.2.3")
         self.assertEqual(fqdns["rack-beta"], "rack-beta.tail.ts.net")
+
+    def test_tailnet_fqdn_uses_cached_reverse_dns_without_local_tailscale(self) -> None:
+        network._TAILNET_REVERSE_CACHE.clear()
+        self.addCleanup(network._TAILNET_REVERSE_CACHE.clear)
+        with patch.object(network, "_load_tailnet", return_value=({}, {})), patch.object(
+            network.socket, "gethostbyaddr", return_value=("Rack-Beta.Tail.ts.net.", [], ["100.100.2.3"])
+        ) as reverse:
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta", "100.100.2.3"), "rack-beta.tail.ts.net")
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta", "100.100.2.3"), "rack-beta.tail.ts.net")
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta.tail.ts.net."), "rack-beta.tail.ts.net")
+        reverse.assert_called_once_with("100.100.2.3")
+
+    def test_tailnet_reverse_dns_rejects_non_magicdns_names_and_lan_ips(self) -> None:
+        network._TAILNET_REVERSE_CACHE.clear()
+        self.addCleanup(network._TAILNET_REVERSE_CACHE.clear)
+        with patch.object(network, "_load_tailnet", return_value=({}, {})), patch.object(
+            network.socket, "gethostbyaddr", return_value=("rack-beta.example.org", [], ["100.100.2.3"])
+        ) as reverse:
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta", "192.168.1.20"), "")
+            reverse.assert_not_called()
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta", "100.100.2.3"), "")
+        with patch.object(network, "_load_tailnet", return_value=({}, {})), patch.object(
+            network.socket, "gethostbyaddr", side_effect=OSError("no PTR record")
+        ):
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta", "100.100.2.4"), "")
+
+    def test_gather_passes_known_tailnet_ip_to_fqdn_discovery(self) -> None:
+        with patch_in("_tailscale_peer_fqdn", ["services.connection_profiles"], return_value="rack-beta.tail.ts.net") as fqdn, \
+             patch_in("_name_resolves", ["services.connection_profiles"], return_value=False):
+            profiles = cp.gather_profiles("rack-beta", "100.100.2.3", "100.100.2.3")
+        fqdn.assert_called_once_with("rack-beta", "100.100.2.3")
+        self.assertTrue(all(p.fqdn == "rack-beta.tail.ts.net" for p in profiles if p.tailnet))
+        self.assertEqual(cp.select_profile(profiles).id, "callback")
+        self.assertFalse(next(p for p in profiles if p.kind == "tailnet_fqdn").usable)
+
+    def test_tailnet_reverse_dns_wait_is_bounded_and_timeout_is_cached(self) -> None:
+        network._TAILNET_REVERSE_CACHE.clear()
+        self.addCleanup(network._TAILNET_REVERSE_CACHE.clear)
+        with patch.object(network, "_load_tailnet", return_value=({}, {})), \
+             patch.object(network.threading, "Thread") as thread, \
+             self.assertLogs("services.network", level="WARNING") as logs:
+            thread.return_value.is_alive.return_value = True
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta", "100.100.2.3"), "")
+            self.assertEqual(_tailscale_peer_fqdn("rack-beta", "100.100.2.3"), "")
+        thread.assert_called_once()
+        thread.return_value.join.assert_called_once_with(2.0)
+        self.assertIn("timed out", logs.output[0])
+
+    def test_route_candidates_merge_sources_and_keep_selected_profile(self) -> None:
+        candidates = [
+            cp.ConnectionProfile("callback", "callback", "100.100.2.3", "callback", True),
+            cp.ConnectionProfile("inventory", "inventory", "100.100.2.3", "inventory", True),
+            cp.ConnectionProfile("tailnet", "tailnet", "100.100.2.3", "tailscale", True),
+            cp.ConnectionProfile("tailnet_fqdn", "tailnet_fqdn", "rack-beta.tail.ts.net", "tailscale_fqdn", True, fqdn="rack-beta.tail.ts.net"),
+        ]
+        with patch("routes.connection_profiles._node_ops_inventory_view", return_value=[{"name": "route-node"}]), \
+             patch("routes.connection_profiles.gather_profiles", return_value=candidates):
+            payload = self.client.get("/api/nodes/route-node/connection-profiles").json
+            with patch("routes.connection_profiles.select_profile", return_value=candidates[1]):
+                inventory_selected = self.client.get("/api/nodes/route-node/connection-profiles").json
+        self.assertEqual(len(payload["candidates"]), 2)
+        self.assertEqual(payload["selected"], "callback")
+        self.assertEqual(payload["candidates"][0]["id"], "callback")
+        self.assertEqual(payload["candidates"][0]["sources"], ["callback", "inventory", "tailscale"])
+        self.assertEqual(payload["candidates"][1]["fqdn"], "rack-beta.tail.ts.net")
+        self.assertEqual(inventory_selected["candidates"][0]["id"], inventory_selected["selected"])
+        self.assertEqual(inventory_selected["candidates"][0]["sources"], ["callback", "inventory", "tailscale"])
+
+    def test_route_candidates_keep_distinct_ports_and_credentials(self) -> None:
+        candidates = [
+            cp.ConnectionProfile("callback", "callback", "100.100.2.3", "callback", port=22, user="ops"),
+            cp.ConnectionProfile("inventory", "inventory", "100.100.2.3", "inventory", port=2222, user="ops"),
+            cp.ConnectionProfile("tailnet", "tailnet", "100.100.2.3", "tailscale", user="admin"),
+        ]
+        with patch("routes.connection_profiles._node_ops_inventory_view", return_value=[{"name": "route-node"}]), \
+             patch("routes.connection_profiles.gather_profiles", return_value=candidates):
+            payload = self.client.get("/api/nodes/route-node/connection-profiles").json
+        self.assertEqual(len(payload["candidates"]), 3)
+
+    def test_inventory_fqdn_merges_certificate_metadata_without_losing_selection(self) -> None:
+        with patch("routes.connection_profiles._node_ops_inventory_view", return_value=[
+            {"name": "route-node", "address": "rack-beta.tail.ts.net"}
+        ]), patch_in("_tailscale_peer_fqdn", ["services.connection_profiles"], return_value="rack-beta.tail.ts.net"), \
+             patch_in("_name_resolves", ["services.connection_profiles"], return_value=True):
+            payload = self.client.get("/api/nodes/route-node/connection-profiles").json
+        fqdn = next(p for p in payload["candidates"] if p["address"] == "rack-beta.tail.ts.net")
+        self.assertEqual(fqdn["sources"], ["inventory", "tailscale_fqdn"])
+        self.assertEqual(fqdn["fqdn"], "rack-beta.tail.ts.net")
+        self.assertTrue(fqdn["tailnet"])
+        self.assertIn(payload["selected"], [p["id"] for p in payload["candidates"]])
+
+    def test_routes_dialog_displays_sources_and_certificate_hostname(self) -> None:
+        checks = self.browser_probe(
+            "/nodes", ["connection_routes.js"],
+            """
+window.fetch = async () => ({ok: true, json: async () => ({
+  ok: true, strategy: "prefer_tailnet", selected: "callback", candidates: [
+    {id: "callback", kind: "callback", source: "callback", sources: ["callback", "inventory"],
+     address: "100.100.2.3", tailnet: true, port: 22, usable: true, route: {interface: "eth0"}},
+    {id: "tailnet_fqdn", kind: "tailnet_fqdn", source: "tailscale_fqdn",
+     address: "rack-beta.tail.ts.net", fqdn: "rack-beta.tail.ts.net", tailnet: true,
+     port: 22, usable: false, route: {error: "Hostname route is resolved by SSH at connection time."}}
+  ]
+})});
+""",
+            """
+await NodeRoutes.open("rack-beta");
+const cards = document.querySelectorAll(".route-path");
+check(cards.length === 2, "one card per destination");
+check(cards[0].textContent.includes("callback, inventory"), "merged provenance shown");
+check(cards[0].textContent.includes("Preferred by Node Ops"), "preferred target retained");
+check(cards[1].textContent.includes("Tailnet FQDN (MagicDNS)"), "FQDN identified");
+check(cards[1].textContent.includes("Certificate hostname: rack-beta.tail.ts.net"), "certificate hostname shown");
+check(cards[1].textContent.includes("unverified / transit"), "unresolved FQDN remains visible");
+""",
+        )
+        self.assertEqual(len(checks), 6)
 
     def test_network_helper_delegates_to_the_active_strategy(self) -> None:
         import services.network
@@ -192,4 +311,5 @@ class ConnectionProfileTests(BaseCallbackSiteTest):
             detailed = self.client.get("/api/nodes/route-node/connection-profiles?routes=1").json
             describe.assert_called_once_with("192.168.1.20")
         self.assertNotIn("route", plain["candidates"][0])
-        self.assertEqual(detailed["candidates"][1]["route"], route)
+        self.assertEqual(len(detailed["candidates"]), 1)
+        self.assertEqual(detailed["candidates"][0]["route"], route)

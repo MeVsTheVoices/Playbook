@@ -6,6 +6,10 @@ if [[ -z "$IMAGE_FILE" ]]; then
     IMAGE_URL="https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-10-06/2026-10-06-raspios-trixie-arm64-lite.img.xz"
     IMAGE_SHA256="${IMAGE_SHA256:-483db18a48da399b5b7022ffae9a07bc6d99daab30e593aedac09b69ff422843}"
   fi
+  if [[ -z "$IMAGE_URL" && "$PROFILE" == "playbook-server" ]]; then
+    read -r IMAGE_URL SERVER_IMAGE_SHA256 < <(server_render image "$SERVER_ARCH")
+    IMAGE_SHA256="${IMAGE_SHA256:-$SERVER_IMAGE_SHA256}"
+  fi
   if [[ -z "$IMAGE_URL" && ( "$PROFILE" == "pi5" || "$PROFILE" == "pi4" || "$PROFILE" == "pi3bplus" ) ]]; then
     IMAGE_URL="https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-arm64+raspi.img.xz"
   fi
@@ -24,7 +28,16 @@ fi
 
 mkdir -p "$WORKSPACE"
 TMP_DIR="$(mktemp -d "${WORKSPACE}/sdprep.XXXXXX")"
-trap 'if mountpoint -q "$TMP_DIR/boot"; then umount "$TMP_DIR/boot"; fi; if [[ -n "${CACHE_PART:-}" ]]; then rm -f "$CACHE_PART" "${CACHE_PART}.sha256"; fi; rm -rf "$TMP_DIR"' EXIT
+cleanup_prepare() {
+  local mount_dir
+  for mount_dir in "$TMP_DIR/boot" "$TMP_DIR/root"; do
+    if mountpoint -q "$mount_dir" 2>/dev/null; then umount "$mount_dir"; fi
+  done
+  if [[ -n "${LOOP_DEV:-}" ]]; then losetup -d "$LOOP_DEV" || true; fi
+  if [[ -n "${CACHE_PART:-}" ]]; then rm -f "$CACHE_PART" "${CACHE_PART}.sha256"; fi
+  rm -rf "$TMP_DIR"
+}
+trap cleanup_prepare EXIT
 mkdir -p "$TMP_DIR/boot"
 
 DOWNLOADED_IMAGE=""
@@ -175,4 +188,12 @@ elif [[ "$SOURCE_IMAGE" == *.img ]]; then
 else
   echo "Unsupported image format. Use .img or .img.xz" >&2
   exit 1
+fi
+
+# Generic cloud images ship as qcow2 even when named .img; a disk needs raw bytes.
+if [[ "$(head -c 4 "$IMG_TO_WRITE" | od -An -tx1 | tr -d ' \n')" == "514649fb" ]]; then
+  require_cmd qemu-img
+  echo "Converting qcow2 image to raw..."
+  qemu-img convert -f qcow2 -O raw "$IMG_TO_WRITE" "$TMP_DIR/base.raw"
+  mv "$TMP_DIR/base.raw" "$IMG_TO_WRITE"
 fi

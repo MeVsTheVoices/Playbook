@@ -2,6 +2,7 @@
 **/.git
 .venv
 **/.venv
+**/.venv-security
 **/__pycache__
 **/*.py[cod]
 **/.pytest_cache
@@ -17,5 +18,6 @@ callback_site/logs
 **/*.key
 **/.env
 **/.env.*
+**/.filter-repo-replacements*
 collections/ansible_collections
 .local

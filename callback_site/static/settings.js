@@ -4,6 +4,9 @@ const statusBox = document.getElementById("settings-status");
 const resetNodeOpsBtn = document.getElementById("reset-node-ops");
 const clearCallbackBtn = document.getElementById("clear-callback-backlog");
 const callbackClearStatus = document.getElementById("callback-clear-status");
+const clearImageCacheBtn = document.getElementById("clear-image-cache");
+const clearImagePartialsBtn = document.getElementById("clear-image-partials");
+const imageCacheClearStatus = document.getElementById("image-cache-clear-status");
 const rackNameInput = document.getElementById("rack-name");
 const saveRackNameBtn = document.getElementById("save-rack-name");
 const rackStatus = document.getElementById("rack-status");
@@ -34,43 +37,80 @@ toggleBtn.addEventListener("click", () => {
 });
 
 async function resetNodeOps() {
-  const confirmed = window.confirm("Reset Node Ops state and delete stored SSH key/certificate files?");
+  if (resetNodeOpsBtn.disabled) return;
+  const confirmed = window.confirm("Reset Node Ops state, named configurations, connection history and boot logs, and delete stored SSH key/certificate files? This cannot be undone.");
   if (!confirmed) {
     return;
   }
 
+  resetNodeOpsBtn.disabled = true;
   statusBox.textContent = "Resetting node ops settings...";
-  const res = await fetch("/api/settings/reset", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scope: "node_ops" }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    statusBox.textContent = data.error || "Reset failed.";
-    return;
+  try {
+    const res = await fetch("/api/settings/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "node_ops" }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Reset failed.");
+    statusBox.textContent = `Reset complete: ${JSON.stringify(data.reset, null, 2)}`;
+  } catch (error) {
+    statusBox.textContent = `Could not reset Node Ops: ${error.message}`;
+  } finally {
+    resetNodeOpsBtn.disabled = false;
   }
-  statusBox.textContent = `Reset complete: ${JSON.stringify(data.reset, null, 2)}`;
 }
 
 async function clearCallbackBacklog() {
-  const confirmed = window.confirm("Clear all stored callback events?");
+  if (clearCallbackBtn.disabled) return;
+  const confirmed = window.confirm("Clear all stored callback events, including archived nodes' events? This cannot be undone and does not restore archived nodes.");
   if (!confirmed) {
     return;
   }
 
+  clearCallbackBtn.disabled = true;
   callbackClearStatus.textContent = "Clearing callback backlog...";
-  const res = await fetch("/api/cloud-init/events/clear", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    callbackClearStatus.textContent = data.error || "Clear failed.";
-    return;
+  try {
+    const res = await fetch("/api/cloud-init/events/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Clear failed.");
+    callbackClearStatus.textContent = `Cleared events: ${data.cleared}`;
+  } catch (error) {
+    callbackClearStatus.textContent = `Could not clear callback events: ${error.message}`;
+  } finally {
+    clearCallbackBtn.disabled = false;
   }
-  callbackClearStatus.textContent = `Cleared events: ${data.cleared}`;
+}
+
+async function clearImageCache(mode) {
+  if (clearImageCacheBtn.disabled || clearImagePartialsBtn.disabled) return;
+  const description = mode === "partials" ? "partial image downloads" : "all cached images and partial downloads";
+  if (!window.confirm(`Permanently delete ${description}? Catalog definitions and history are retained. This cannot be undone.`)) return;
+  clearImageCacheBtn.disabled = true;
+  clearImagePartialsBtn.disabled = true;
+  imageCacheClearStatus.textContent = "Clearing image cache...";
+  try {
+    const response = await fetch("/api/sd/image-cache/clear", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({confirm: true, mode}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Cache cleanup failed.");
+    imageCacheClearStatus.textContent = `Deleted ${data.deleted_files} file(s); freed ${(data.freed_bytes / 1048576).toFixed(1)} MiB.`;
+    refreshDataPipelinesSnapshot();
+    refreshModuleSync();
+    catalogHealthStatus.textContent = "Cache changed. Check Catalog State to refresh availability.";
+  } catch (error) {
+    imageCacheClearStatus.textContent = `Could not clear image cache: ${error.message}`;
+  } finally {
+    clearImageCacheBtn.disabled = false;
+    clearImagePartialsBtn.disabled = false;
+  }
 }
 
 async function loadRackSettings() {
@@ -428,6 +468,8 @@ async function refreshArchivedNodes() {
 
 resetNodeOpsBtn.addEventListener("click", resetNodeOps);
 clearCallbackBtn.addEventListener("click", clearCallbackBacklog);
+clearImageCacheBtn.addEventListener("click", () => clearImageCache("all"));
+clearImagePartialsBtn.addEventListener("click", () => clearImageCache("partials"));
 saveRackNameBtn.addEventListener("click", saveRackSettings);
 checkCatalogHealthBtn.addEventListener("click", checkCatalogHealth);
 enableVerboseBtn.addEventListener("click", () => toggleVerboseLogging(true));

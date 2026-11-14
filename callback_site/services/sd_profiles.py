@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from network_toolkit import PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS
+from playbook_server import PROFILE as SERVER_PROFILE
 
 from services.storage import (
     PROFILE_SEGMENTS_FILE,
@@ -44,8 +45,8 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
             "options": {key: value for key, value in options.items() if key not in TOOLKIT_SECRETS},
             "updated_at": str(profile.get("updated_at", "")).strip(),
         }
-        if profile.get("profile") == TOOLKIT_PROFILE:
-            out[profile_name]["profile"] = TOOLKIT_PROFILE
+        if profile.get("profile") in (TOOLKIT_PROFILE, SERVER_PROFILE):
+            out[profile_name]["profile"] = profile["profile"]
     return out
 
 

@@ -100,6 +100,8 @@ let deviceWebhookRetry = null;
 
 let deviceFallbackPollTimer = null;
 
+let deviceProblem = "";
+
 let allEvents = [];
 
 let sdOptionProfiles = initialSdOptionProfiles || {};

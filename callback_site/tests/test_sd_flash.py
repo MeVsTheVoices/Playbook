@@ -59,7 +59,7 @@ exit 0
                 path.chmod(0o755)
             result = subprocess.run(
                 ["bash", "-c", 'set -euo pipefail; DEVICE=/dev/fake; AUTO_CONFIRM=true; '
-                 'TMP_DIR="$TEST_ROOT"; IMG_TO_WRITE="$TEST_ROOT/image"; source "$1"', "test", str(script)],
+                 'PROFILE=pi5; TMP_DIR="$TEST_ROOT"; IMG_TO_WRITE="$TEST_ROOT/image"; source "$1"', "test", str(script)],
                 env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
                      "TEST_ROOT": tmp, "MODE": mode}, capture_output=True, text=True, timeout=10,
             )
@@ -136,21 +136,22 @@ exit 0
 
     def test_device_lock_refuses_a_second_writer(self) -> None:
         script = (Path(__file__).resolve().parents[2] / "scripts/prepare_sd_cloud_init.sh").read_text()
-        lock = script[script.index('if ! exec 8<"$DEVICE"'):script.index('# shellcheck source=lib/image.sh')]
+        lock = script[script.index('if [[ -n "$DEVICE" ]]; then'):script.index('# shellcheck source=lib/image.sh')]
+        lock = lock.replace("DEVICE_LOCK_DIR=/run/playbook-sd-locks", 'DEVICE_LOCK_DIR="$2"')
         with tempfile.TemporaryDirectory() as tmp:
             device = Path(tmp) / "fake-device"
             device.touch()
-            with device.open("rb") as held:
+            with (Path(tmp) / "0-0.lock").open("w") as held:
                 import fcntl
                 fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 result = subprocess.run(
-                    ["bash", "-c", 'set -euo pipefail; DEVICE="$1"; ' + lock, "test", str(device)],
+                    ["bash", "-c", 'set -euo pipefail; DEVICE="$1"; ' + lock, "test", str(device), tmp],
                     capture_output=True, text=True, timeout=10,
                 )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("refusing concurrent writes", result.stderr)
             result = subprocess.run(
-                ["bash", "-c", 'set -euo pipefail; DEVICE="$1"; ' + lock, "test", str(device)],
+                ["bash", "-c", 'set -euo pipefail; DEVICE="$1"; ' + lock, "test", str(device), tmp],
                 capture_output=True, text=True, timeout=10,
             )
             self.assertEqual(result.returncode, 0, result.stderr)

@@ -21,9 +21,95 @@ except ImportError:
 import domain_defaults
 import services.image_catalog
 import services.storage
+import services.images
+import services.sd_prepare
+import fcntl
 
 
 class ImageLibraryTests(BaseCallbackSiteTest):
+    def test_cache_clear_preserves_history_catalog_and_external_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache = root / "cache"
+            cache.mkdir()
+            image = cache / "image.img"
+            image.write_bytes(b"image")
+            partial = cache / "image.img.123.part"
+            partial.write_bytes(b"part")
+            checksum = cache / "image.img.sha256"
+            checksum.write_bytes(b"sum")
+            lock = cache / "image.img.lock"
+            lock.touch()
+            outside = root / "external.img"
+            outside.write_bytes(b"keep")
+            with patch.object(services.images, "IMAGE_CACHE_DIR", cache), \
+                 patch.dict(services.sd_prepare.JOBS, {}, clear=True), \
+                 patch.dict(services.image_catalog.CATALOG_PULL_JOBS, {}, clear=True):
+                response = self.client.post("/api/sd/image-cache/clear", json={"confirm": True, "mode": "partials"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()["deleted_files"], 1)
+                self.assertEqual(response.get_json()["freed_bytes"], 4)
+                self.assertTrue(image.exists())
+                response = self.client.post("/api/sd/image-cache/clear", json={"confirm": True})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()["deleted_files"], 2)
+                self.assertEqual(response.get_json()["freed_bytes"], 8)
+                self.assertEqual(list(cache.iterdir()), [lock])
+                self.assertEqual(outside.read_bytes(), b"keep")
+                self.assertEqual(self.client.post("/api/sd/image-cache/clear", json={"confirm": True}).get_json()["deleted_files"], 0)
+
+    def test_cache_clear_requires_confirmation_and_valid_mode(self) -> None:
+        for payload in ({}, {"confirm": "true"}, {"confirm": True, "mode": "other"}, []):
+            with self.subTest(payload=payload), patch("routes.images._clear_image_cache") as clear:
+                self.assertEqual(self.client.post("/api/sd/image-cache/clear", json=payload).status_code, 400)
+                clear.assert_not_called()
+
+    def test_cache_clear_refuses_active_jobs(self) -> None:
+        for jobs in (services.sd_prepare.JOBS, services.image_catalog.CATALOG_PULL_JOBS):
+            for status in ("queued", "running"):
+                with self.subTest(status=status), patch.dict(jobs, {"test-active": {"status": status}}), \
+                     patch("routes.images._clear_image_cache") as clear:
+                    response = self.client.post("/api/sd/image-cache/clear", json={"confirm": True})
+                    self.assertEqual(response.status_code, 409)
+                    clear.assert_not_called()
+
+    def test_cache_clear_refuses_symlinks_subdirectories_and_locked_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache = root / "cache"
+            cache.mkdir()
+            keep = cache / "keep.img"
+            keep.write_bytes(b"keep")
+            outside = root / "outside.img"
+            outside.write_bytes(b"outside")
+            with patch.object(services.images, "IMAGE_CACHE_DIR", cache):
+                link = cache / "external.img"
+                link.symlink_to(outside)
+                with self.assertRaises(ValueError):
+                    services.images._clear_image_cache()
+                self.assertTrue(keep.exists())
+                self.assertEqual(outside.read_bytes(), b"outside")
+                link.unlink()
+                nested = cache / "nested"
+                nested.mkdir()
+                with self.assertRaises(ValueError):
+                    services.images._clear_image_cache()
+                nested.rmdir()
+                with (cache / "keep.img.lock").open("w") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    with self.assertRaises(ValueError):
+                        services.images._clear_image_cache()
+                self.assertTrue(keep.exists())
+
+    def test_cache_clear_reports_filesystem_failure(self) -> None:
+        with patch("routes.images._clear_image_cache", side_effect=PermissionError("read only")), \
+             patch.dict(services.sd_prepare.JOBS, {}, clear=True), \
+             patch.dict(services.image_catalog.CATALOG_PULL_JOBS, {}, clear=True):
+            response = self.client.post("/api/sd/image-cache/clear", json={"confirm": True})
+        self.assertEqual(response.status_code, 500)
+        self.assertFalse(response.get_json()["ok"])
+        self.assertIn("some files may already", response.get_json()["error"])
+
     def test_refreshed_managed_cards_keep_edit_delete_and_fit_tablet(self) -> None:
         chrome = shutil.which("google-chrome") or shutil.which("chromium")
         if not chrome:

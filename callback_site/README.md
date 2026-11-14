@@ -26,7 +26,10 @@ retain only their specialized layouts and state indicators; declarations already
 owned by shared rules have been removed. Keep this load order: shared control and
 responsive policies intentionally take precedence over feature decoration.
 Navigation is rendered from `templates/_sidebar.html`
-so labels, active-page states and mobile navigation stay consistent. Phone layouts
+so labels, active-page states and mobile navigation stay consistent. The compact
+sidebar header has an icon-only toggle with state-specific accessible labels.
+Decorated cards such as `.panel.acl-hero` use scoped selectors so their contrast
+survives the later shared `.panel` background rule. Phone layouts
 use a two-column navigation grid, fit controls to available width and preserve
 local scrolling for wide tables. Reduced-motion preferences disable decoration
 and transition animations without changing operational state.
@@ -55,6 +58,15 @@ owners/mixins; avoid page-specific copies of the shell or controls.
 
 ## At A Glance
 
+- Dashboard setup follows Target Settings, Image Source and Integrity, then SSH
+  Access. Target Settings starts open; opening another step closes the previous
+  one without clearing inputs. Cloud-Init Settings expands independently.
+
+- Settings groups Rack Identity, Image Catalog Health and Logging into compact,
+  independently expandable controls. Under Node State & Maintenance, destructive
+  maintenance can clear cached images or only partial downloads after confirmation.
+  Active image jobs block cleanup; catalog definitions and image history remain.
+
 - SD-card imaging for `pi5`, `pi4` and `pi3bplus` profiles.
 - Cloud-init authoring with reusable optional-setting templates.
 - Distribution-aware imaging for `standard` and `k3s` flows.
@@ -63,7 +75,8 @@ owners/mixins; avoid page-specific copies of the shell or controls.
 - Boot log exchange: nodes flashed from this site send their own boot logs (journal, cloud-init, dmesg) to `/api/cloud-init/boot-log` after the final callback and on every power restore, which works behind NAT. For other nodes the site pulls them over SSH shortly after a callback (skipped when a push just arrived; `CALLBACK_AUTO_BOOT_LOGS=0` turns the automatic pull off). The last 10 per node are kept.
 - Retire a node with **Archive node** on its newest callback. This hides it from active callbacks, Hardware Monitor, Node Ops and Terminal targets without deleting history, configuration, inventory or Kubernetes resources. New callbacks do not restore it or schedule automatic checks/SSH log collection. Restore it under **Settings > Archived Nodes**. Boot logs live below provisioning output in **Node Ops**, including read-only logs for archived nodes. Selecting an active node collects fresh logs over its preferred connection route; choosing another route attempts that route with its SSH user, key and port. Selecting a stored log only displays history. Collection can take up to 90 seconds and reports failures without erasing stored logs. The payload inspector is collapsed at the bottom of the callback dashboard and opens when a callback is selected.
 - Node Ops connects to a node at its tailnet address when `tailscale status` on the site host lists it online, ahead of the LAN/NAT address a callback reports; the monitor pings the same target.
-- Connection profiles (in active development): each node keeps several ways to reach it (callback, inventory, tailnet IP, tailnet FQDN, DNS, hostname) in `data/connection_profiles.json`, and a replaceable strategy picks one (`prefer_tailnet` default, `prefer_fqdn`, `lan_first`; set `CALLBACK_CONNECTION_STRATEGY` or `register_strategy`). The FQDN profile is only chosen when this host can resolve the MagicDNS name, and every tailnet profile carries the node's `fqdn` for later HTTPS with Tailscale certificates. `GET /api/nodes/<node>/connection-profiles` shows the candidates and the pick. Pinned profiles, per-profile user/key/port, failover and HTTPS via `tailscale cert` are planned next.
+- Node Ops **Tailscale** asks the selected active node for a fresh, read-only `tailscale status --json` over the existing SSH connection. The dialog shows its own identity, daemon state, health, visible peers, direct endpoints, relay regions and exit-node status; **Ask node again** refreshes it. Filtered JSON includes routes, traffic counters and handshake timestamps when reported, but excludes login URLs, user records and keys. No Tailscale API key is required. SSH access and the Tailscale CLI on the node are required; failures are shown explicitly. This is the node's network-map view, not the dashboard host's view, a historical callback, or an active reachability test.
+- Connection profiles (in active development): each node keeps several ways to reach it (callback, inventory, tailnet IP, tailnet FQDN, DNS, hostname) in `data/connection_profiles.json`, and a replaceable strategy picks one (`prefer_tailnet` default, `prefer_fqdn`, `lan_first`; set `CALLBACK_CONNECTION_STRATEGY` or `register_strategy`). The FQDN profile is only chosen when this host can resolve the MagicDNS name, and every tailnet profile carries the node's `fqdn` for later HTTPS with Tailscale certificates. MagicDNS names come from local Tailscale peer status, an explicit `.ts.net` node/inventory name, or a cached, two-second-bounded reverse-DNS lookup of a known Tailscale IP. This fallback works without a local Tailscale daemon when the dashboard's DNS supports tailnet reverse lookups; names are not guessed. `GET /api/nodes/<node>/connection-profiles` merges duplicate destinations with the same SSH port/user/key into one candidate with a `sources` list, retaining the selected profile ID. Internal selection and stored source history are unchanged. The IP and FQDN remain distinct destinations, even when they resolve to the same IP. The Routes dialog labels the FQDN and certificate hostname, including unresolved candidates, and explains when discovery is unavailable. It does not issue or install certificates. Pinned profiles, per-profile user/key/port, failover and HTTPS via `tailscale cert` are planned next.
 - Terminal: browse predefined SSH diagnostics under System, Boot & logs, and Inventory, filter by search, and preview the exact command before running. The host field is the task target; editing it overrides the discovered-host selection. The route preview uses the same hostname resolution as the task runner. Node Ops **Routes** and Terminal **All node routes** open a compact connection-path modal showing type, preferred strategy, and local interface/gateway when known. These are known candidates, not proof of live SSH reachability. Route lookups use Linux `iproute2` (included in Docker); in Docker the interface belongs to the container, not the Windows host or remote node. Hostname-only routes are resolved by SSH at connection time. Add `?routes=1` to the connection-profile API for these optional route details; `/api/test-terminal/route?host=<host>` previews the terminal target without connecting.
 - Initial callbacks are saved before their automatic closer check is queued in the existing Node Ops job runner. The callback response includes `closer_job_id` when a job is started; inspect it through `/api/nodes/provision/jobs/<id>`. Checks no longer block callback delivery, and repeated callbacks do not start another initial check. Jobs are process-local and do not resume after a restart.
 - Terminal tasks retain the last 20,000 characters of output and stop the local SSH process after 120 seconds, recording a failed job with an explicit timeout. Disconnecting SSH is not a guarantee that every remote child process has stopped.
@@ -141,9 +154,21 @@ Open:
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
 - `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
+  Beside **Save Module Inputs**, **Save as named configuration** opens an inline
+  name field. Save with a name (blank keeps the suggested name), or close it with
+  **Cancel** or Escape. Saving does not apply the module.
+  The fleet table keeps its action controls inside their column and scrolls
+  horizontally within the panel at narrow widths. The sidebar uses a compact
+  icon toggle; collapsed navigation retains labeled icons and hover titles.
 - `/settings` — restore archived nodes without deleting callbacks, saved inputs,
   or historical boot logs. Age-based pruning is retired; archive active nodes
   explicitly from the callback dashboard.
+  **Node State & Maintenance** groups archive/restore controls with a collapsed
+  **Destructive maintenance** section. Node Ops reset and callback-backlog
+  clearing keep separate confirmations and status messages; clearing callbacks
+  also deletes archived nodes' callback events, but does not restore those nodes.
+  Reset also deletes saved named configurations, connection history and boot
+  logs; neither maintenance action clears the archive registry.
 - `/openwrt` — redirects to the OpenWrt routers panel in `/nodes`.
 - `/tailscale-acl` — rack tailnet policy builder (grants, K3s ports, SSH, routes, tests).
 
@@ -171,6 +196,33 @@ Open:
 - Page CSS and JavaScript live in `callback_site/static/` (`home/`, `nodes/` and `monitor/` split the large scripts by area; templates only carry markup and a small data bootstrap).
 
 ## SD and Cloud-Init Flow
+
+### Callback addressing and delivery
+
+For Docker, set `CALLBACK_PUBLIC_URL` in the Compose `.env` to
+`http://<server-LAN-or-Tailscale-IP>:<published-callback-port>/api/cloud-init/callback`
+before starting the dashboard. Compose also accepts `CALLBACK_PUBLIC_HOST` and
+`CALLBACK_PUBLIC_PORT`. Do not use a container bridge address, localhost, or a
+dashboard-only port. A Tailscale endpoint requires a valid first-boot Tailscale
+join configuration on the Pi; a LAN endpoint must be routable from its boot
+network. Without an explicit public host, a container leaves the required
+callback URL field empty rather than advertising its private Docker address.
+Invalid local-only callback targets are rejected before a flash starts.
+General Pi profiles use the Ubuntu ARM64 catalog entry, including its expected
+checksum and shared image-cache location, when no image override is supplied.
+
+Generated user-data starts the callback service asynchronously before optional
+installers. Failed delivery is visible in the service journal and retried every
+30 seconds after each bounded curl attempt, independently of cloud-init.
+The power-restore option controls whether that service also starts on later
+boots; first-boot delivery is always attempted. Hardware and final callbacks
+still report the subsequent bootstrap state.
+
+A successful explicit SD preparation restores that hostname from the archive
+without deleting its previous callback history. Failed flashes leave archived
+nodes archived, and unsolicited callbacks alone still do not restore them.
+If restoring the archive fails after writing a card, the job reports that
+partial outcome rather than claiming the entire deployment is ready.
 
 - The imaging script is `scripts/prepare_sd_cloud_init.sh`.
 - Required inputs: `profile`, `hostname`, `device`, `ssh_public_key`, `callback_url`.
@@ -489,7 +541,8 @@ To use a different host port, set `CALLBACK_PORT` before starting Compose
 (for example, `$env:CALLBACK_PORT=9821` in PowerShell).
 The `callback-site-data` Docker volume keeps catalog pulls, callbacks, node
 reports, SSH keys, and operator edits across image rebuilds and container
-recreation. `docker compose down` leaves that volume intact; do not add `-v`
+recreation. Compose explicitly uses `playbook_callback-site-data`, preserving
+the existing deployment's volume. `docker compose down` leaves that volume intact; do not add `-v`
 if you want to keep its data.
 
 **Existing host deployments:** stop the host Python server before publishing
@@ -516,6 +569,48 @@ host's Tailscale daemon into the container. Hardware access needs an explicit
 setup (below); host-tailnet discovery also needs the relevant service available
 inside the container. Keep the site on a trusted network; it is not intended for direct
 public-internet exposure.
+
+### SD/USB flashing from Docker (host flasher)
+
+The container cannot see host SD cards or USB drives; under Docker Desktop it
+runs inside a VM. SD preparation is therefore delegated to a small host agent,
+`callback_site/sd_flasher.py`. It is standard library only, runs as root, and
+serves a token-authenticated JSON API on `127.0.0.1:8089`. The dashboard keeps
+all validation, templates and secrets. The agent lists only removable disks
+and only runs `scripts/prepare_sd_cloud_init.sh` against a disk it currently
+lists, with `CLOUD_INIT_*` options only. It never accepts commands, arbitrary
+paths or host environment overrides.
+
+```bash
+scripts/run_sd_flasher.sh install   # systemd service, survives reboots
+docker compose up -d --force-recreate callback-site   # first time only, loads the token
+```
+
+`scripts/run_sd_flasher.sh` (no argument) runs the agent in the foreground
+instead; `status` and `uninstall` manage the service. The first run creates
+`.local/sd-flasher.env` (mode 0600, gitignored). Compose loads it into the
+dashboard and points `SD_FLASHER_URL` at `http://host.docker.internal:8089`;
+set `SD_FLASHER_URL=` to disable delegation. When the agent is unreachable, the
+home page shows the reason next to the device picker instead of an empty list.
+
+The agent uses its own image cache, `callback_site/data/image_cache` (the
+native deployment's cache; override with `SD_FLASHER_IMAGE_CACHE_DIR`). Catalog
+images missing there are downloaded and verified by the script; custom library
+files must be copied there by name. It decompresses into
+`/var/tmp/playbook-sd-flasher` (`SD_FLASHER_WORK_DIR`), so leave room for a full
+image. Because it runs on the host, the K3s server default is the host's LAN
+IP, not the container's. Anyone who can edit this checkout can change code
+that runs as root, so keep the checkout owned by a trusted admin.
+
+With native Docker Engine, `host.docker.internal` maps to the bridge gateway, so start the
+agent with `--bind` set to that gateway address (for example `172.17.0.1`), not
+loopback; the token still guards every request.
+
+`compose.sd-flasher.yaml` sketches a privileged containerised flasher for
+unrestricted native Engine hosts, the step towards a Kubernetes one-shot Job.
+It is **unsupported and unvalidated**. It cannot work under Docker Desktop, the
+image lacks `parted`, `udev` and `xz`, and it mounts the host's `/dev`. Use it
+only for experiments on a dedicated machine.
 
 ### USB devices, WSL and Docker
 
@@ -570,8 +665,8 @@ or add a USB transport to this app.
 For an SD reader, exposing the whole verified block device is only one
 prerequisite: the existing flashing workflow also needs privileged mount/write
 operations and access to partition devices. The default non-root image is
-**not a validated SD flasher**, and `--device` alone does not fix that. Prefer
-the existing native Linux flashing workflow rather than making the web app
+**not a validated SD flasher**, and `--device` alone does not fix that. Use the
+host flasher above rather than making the web app
 privileged. Unmount the intended card on the host, verify size/model/serial,
 and never expose a system disk or mount the host's entire `/dev` into the app.
 

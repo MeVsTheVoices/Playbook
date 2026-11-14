@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -13,6 +14,28 @@ from typing import Any, Dict, List, Tuple
 from urllib import parse as urlparse
 
 from flask import request
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_node_callback_url(value: str) -> None:
+    if not value or any(char.isspace() or ord(char) < 32 or char in "'\"\\" for char in value):
+        raise ValueError("Use an HTTP(S) callback URL reachable from the node.")
+    parsed = urlparse.urlsplit(value)
+    host = parsed.hostname or ""
+    parsed.port
+    if parsed.scheme not in {"http", "https"} or not host or parsed.username or parsed.password:
+        raise ValueError("Use an HTTP(S) callback URL without embedded credentials.")
+    if host.lower().rstrip(".") == "localhost" or host.lower().rstrip(".").endswith(".localhost"):
+        raise ValueError("The callback host must be reachable from the node, not localhost.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address and (address.is_loopback or address.is_unspecified or address.is_link_local or address.is_multicast):
+        raise ValueError("Use a callback host address reachable from the node, not loopback or link-local.")
+    if os.getenv("CALLBACK_RUNTIME", "").lower() == "container" and host == _detect_local_ip():
+        raise ValueError("The callback URL points inside Docker. Use the Docker host's LAN or Tailscale address.")
 
 
 def _detect_local_ip() -> str:
@@ -37,6 +60,9 @@ def _default_callback_url() -> str:
 
     host = os.getenv("CALLBACK_PUBLIC_HOST", "").strip()
     if not host:
+        if os.getenv("CALLBACK_RUNTIME", "").lower() == "container":
+            logger.warning("Set CALLBACK_PUBLIC_URL or CALLBACK_PUBLIC_HOST to a node-reachable address; Docker's address cannot be advertised to nodes.")
+            return ""
         host = _detect_local_ip()
 
     if "://" in host:
@@ -148,8 +174,41 @@ def _tailscale_peer_ip(node_name: str) -> str:
     return _tailscale_peers().get(str(node_name or "").strip().lower(), "")
 
 
-def _tailscale_peer_fqdn(node_name: str) -> str:
-    return _load_tailnet()[1].get(str(node_name or "").strip().lower(), "")
+_TAILNET_REVERSE_CACHE: Dict[str, Tuple[float, str]] = {}
+
+
+def _tailscale_peer_fqdn(node_name: str, address: str = "") -> str:
+    name = str(node_name or "").strip().rstrip(".").lower()
+    if name.endswith(".ts.net"):
+        return name
+    known = _load_tailnet()[1].get(name, "")
+    if known or not _is_tailscale_ip(address):
+        return known
+    cached = _TAILNET_REVERSE_CACHE.get(address)
+    if cached and time.monotonic() - cached[0] < TAILNET_CACHE_SECONDS:
+        return cached[1]
+    names: List[str] = []
+
+    def lookup() -> None:
+        try:
+            hostname, aliases, _ = socket.gethostbyaddr(address)
+        except OSError as exc:
+            logger.debug("Tailnet reverse DNS unavailable for %s: %s", address, exc)
+            return
+        names.extend(
+            value.strip().rstrip(".").lower()
+            for value in [hostname, *aliases]
+            if value.strip().rstrip(".").lower().endswith(".ts.net")
+        )
+
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(2.0)
+    if worker.is_alive():
+        logger.warning("Tailnet reverse DNS timed out for %s", address)
+    fqdn = names[0] if names else ""
+    _TAILNET_REVERSE_CACHE[address] = (time.monotonic(), fqdn)
+    return fqdn
 
 
 def _is_usable_callback_ip(ip: str) -> bool:

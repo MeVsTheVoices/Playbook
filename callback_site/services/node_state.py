@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from domain_defaults import NODE_PROVISION_PROFILES
 from network_toolkit import GROUP as TOOLKIT_GROUP
+from playbook_server import GROUP as SERVER_GROUP
 
 from services.storage import (
     BOOT_LOGS_DIR,
@@ -204,6 +205,8 @@ def _save_node_config(payload: Dict[str, Any]) -> Dict[str, Any]:
 def _default_profiles_for_group(group: str) -> List[str]:
     if group == TOOLKIT_GROUP:
         return ["baseline", "tailscale", "network-toolkit"]
+    if group == SERVER_GROUP:
+        return ["playbook-server"]
     defaults = ["baseline", "tailscale", "telegraf"]
     if group == "rpi5_active":
         defaults.append("docker")

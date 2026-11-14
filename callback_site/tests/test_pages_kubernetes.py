@@ -267,14 +267,14 @@ try {
         self.assertFalse(snapshots[10]["options"]["toolkit_enable_funnel"])
         self.assertNotIn("toolkit_extra_packages", snapshots[10]["options"])
 
-    def test_sidebar_hides_kubernetes_link_when_runtime_unavailable(self) -> None:
+    def test_sidebar_shows_kubernetes_link_when_runtime_unavailable(self) -> None:
         with patch_in("_detect_kubernetes_runtime",
             return_value={"available": False, "active_service": "", "reason": "inactive"},
         ):
             response = self.client.get("/settings")
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
-        self.assertNotIn('href="/kubernetes"', text)
+        self.assertIn('href="/kubernetes"', text)
 
     def test_sidebar_shows_kubernetes_link_when_runtime_available(self) -> None:
         with patch_in("_detect_kubernetes_runtime",

@@ -19,12 +19,14 @@ from services.image_catalog import (
     _run_catalog_pull_job,
 )
 from services.images import (
+    _clear_image_cache,
     _delete_image_record,
     _find_image_record,
     _read_image_history,
     _upsert_image_record,
 )
 from services.storage import IMAGE_CACHE_DIR, _ensure_image_cache_dir
+from services.sd_prepare import JOBS, JOBS_LOCK
 
 
 def catalog_entries_for_ui() -> List[Dict[str, Any]]:
@@ -33,6 +35,28 @@ def catalog_entries_for_ui() -> List[Dict[str, Any]]:
 
 
 def register_image_routes(app: Any) -> None:
+    @app.post("/api/sd/image-cache/clear")
+    def sd_image_cache_clear() -> Any:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or payload.get("confirm") is not True:
+            return jsonify(ok=False, error="Explicit confirmation is required."), 400
+        mode = payload.get("mode", "all")
+        if mode not in ("all", "partials"):
+            return jsonify(ok=False, error="mode must be all or partials."), 400
+        with JOBS_LOCK, CATALOG_PULL_JOBS_LOCK:
+            if any(job.get("status") in {"queued", "running"} for job in [*JOBS.values(), *CATALOG_PULL_JOBS.values()]):
+                return jsonify(ok=False, error="Image preparation or downloads are active. Wait for them to finish."), 409
+            try:
+                result = _clear_image_cache(partials_only=mode == "partials")
+            except ValueError as exc:
+                app.logger.warning("Image cache cleanup refused: %s", exc)
+                return jsonify(ok=False, error=str(exc)), 409
+            except OSError:
+                app.logger.exception("Image cache cleanup failed")
+                return jsonify(ok=False, error="Image cache cleanup failed; some files may already have been deleted. Check logs and retry."), 500
+        app.logger.info("Cleared image cache mode=%s files=%s bytes=%s", mode, result["deleted_files"], result["freed_bytes"])
+        return jsonify(ok=True, **result)
+
     @app.get("/api/sd/image-catalog")
     def sd_image_catalog() -> Any:
         return jsonify({"ok": True, "entries": catalog_entries_for_ui()})

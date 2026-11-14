@@ -6,6 +6,11 @@ cat >> "$USER_DATA_OUT" <<ADMIN_RUNCMD
   - [ bash, -c, 'set -euo pipefail; rule="${CLOUD_INIT_USERNAME} ALL=(ALL) NOPASSWD: ALL"; printf "%s\n" "\$rule" | visudo -cf -; printf "%s\n" "\$rule" | install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; visudo -cf /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; runuser -u ${CLOUD_INIT_USERNAME} -- sudo -n true' ]
 ADMIN_RUNCMD
 
+# Queue delivery before optional installers; systemd retries independently of cloud-init.
+cat >> "$USER_DATA_OUT" <<'CALLBACK_RUNCMD'
+  - [ sh, -c, 'systemctl daemon-reload && systemctl start --no-block rack-power-restored-callback.service' ]
+CALLBACK_RUNCMD
+
 cat >> "$USER_DATA_OUT" <<'SSH_RUNCMD'
   - [ systemctl, enable, ssh ]
   - [ systemctl, restart, ssh ]
@@ -149,6 +154,13 @@ TOOLKIT_RUNCMD
   fi
 fi
 
+# Deploy before the final callback, so a self-callback finds the dashboard already running.
+if [[ "$PROFILE" == "playbook-server" ]]; then
+  cat >> "$USER_DATA_OUT" <<'SERVER_RUNCMD'
+  - [ /usr/local/bin/playbook-server-activate ]
+SERVER_RUNCMD
+fi
+
 cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
   - [ bash, -c, '. /etc/rack-node.env; SOURCE_IP="$(/usr/local/bin/rack-local-ip 2>/dev/null || true)"; NODE_REPORT_B64="$(/usr/local/bin/rack-node-report 2>/dev/null | base64 -w0 || true)"; PAYLOAD_JSON="$(INSTANCE_ID="$INSTANCE_ID" HOSTNAME="$HOSTNAME" PROFILE="$PROFILE" SOURCE_IP="$SOURCE_IP" NODE_REPORT_B64="$NODE_REPORT_B64" /usr/local/bin/rack-callback-payload)"; if ! curl --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 5 --max-time 20 -fsS -X POST -H "Content-Type: application/json" -d "$PAYLOAD_JSON" "$CALLBACK_URL"; then echo "rack callback POST failed after retries to $CALLBACK_URL" >&2; fi' ]
   - [ sh, -c, '/usr/local/bin/rack-boot-log runcmd || true' ]
@@ -157,7 +169,7 @@ RUNCMD_EOF
 
 if [[ "$CLOUD_INIT_ENABLE_POWER_RESTORE_CALLBACK" == "true" ]]; then
   cat >> "$USER_DATA_OUT" <<'RUNCMD_EOF'
-  - [ sh, -c, 'systemctl daemon-reload && systemctl enable --now rack-power-restored-callback.service' ]
+  - [ sh, -c, 'systemctl daemon-reload && systemctl enable --now --no-block rack-power-restored-callback.service' ]
 RUNCMD_EOF
 fi
 

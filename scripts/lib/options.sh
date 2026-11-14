@@ -37,6 +37,10 @@ for pkg in "${extra_package_names[@]}"; do
     echo "Invalid extra package: ${pkg}. Use Debian package names, not versions, URLs or command options." >&2
     exit 1
   fi
+  if [[ "$pkg" == "nvim" ]]; then
+    echo "Invalid extra package: nvim. Use neovim, the Debian/Ubuntu package name." >&2
+    exit 1
+  fi
 done
 CLOUD_INIT_INSTALL_TELEGRAF="${CLOUD_INIT_INSTALL_TELEGRAF:-false}"
 CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP="${CLOUD_INIT_REBOOT_AFTER_BOOTSTRAP:-false}"
@@ -72,7 +76,9 @@ fi
 if [[ "$CLOUD_INIT_TAILSCALE_ENABLE" == "true" ]]; then
   if [[ -z "$CLOUD_INIT_TAILSCALE_TAGS" ]]; then
     # Same defaults the Ansible roles use, so first-boot and Node Ops agree.
-    if [[ "$PROFILE" == "pi3bplus" ]]; then
+    if [[ "$PROFILE" == "playbook-server" ]]; then
+      CLOUD_INIT_TAILSCALE_TAGS="tag:homelab"
+    elif [[ "$PROFILE" == "pi3bplus" ]]; then
       CLOUD_INIT_TAILSCALE_TAGS="tag:rpi-3bplus,tag:homelab"
     elif [[ "$PROFILE" == "pi4" ]]; then
       CLOUD_INIT_TAILSCALE_TAGS="tag:rpi4,tag:homelab"
@@ -188,6 +194,10 @@ elif [[ "$PROFILE" == "network-toolkit" ]]; then
   PROFILE_ROLE="network-toolkit"
   PROFILE_STORAGE="sdcard"
   PROFILE_PACKAGES="$(toolkit_render packages)"
+elif [[ "$PROFILE" == "playbook-server" ]]; then
+  PROFILE_ROLE="playbook-server"
+  PROFILE_STORAGE="disk"
+  PROFILE_PACKAGES="qemu-guest-agent htop lshw python3-apt $(server_render packages)"
 fi
 
 PROFILE_PACKAGES="$PROFILE_PACKAGES $CLOUD_INIT_EXTRA_PACKAGES"

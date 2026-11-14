@@ -1,0 +1,32 @@
+---
+# A plain Ubuntu Server node that runs this repository's dashboard under Docker.
+server_repo_url: https://github.com/MeVsTheVoices/Playbook.git
+server_ref: main
+server_port: 8088
+server_install_flasher: true
+server_dir: /opt/playbook
+# Pinned Ubuntu 24.04 LTS generic cloud images (qcow2; the imaging script converts them to raw).
+server_images:
+  amd64:
+    url: https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-amd64.img
+    sha256: 04e8f2461a16a44e78a370284471f29616cdd9baf1893df25807b71f985b6c94
+  arm64:
+    url: https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img
+    sha256: 50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e
+server_packages:
+  - ca-certificates
+  - curl
+  - git
+  - docker.io
+  - docker-buildx
+  - docker-compose-v2
+  # The host SD/USB flasher runs scripts/prepare_sd_cloud_init.sh natively.
+  - python3
+  - python3-yaml
+  - python3-jinja2
+  - cloud-init
+  - openssl
+  - parted
+  - util-linux
+  - xz-utils
+  - qemu-utils

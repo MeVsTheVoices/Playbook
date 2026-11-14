@@ -83,6 +83,11 @@ if ! partprobe "$DEVICE"; then
 fi
 udevadm settle
 
+# The server image already carries its seed inside the root filesystem; there is no Pi boot partition to patch.
+if [[ "$PROFILE" == "playbook-server" ]]; then
+  return 0
+fi
+
 if [[ "$DEVICE" =~ (mmcblk|nvme) ]]; then
   BOOT_PART="${DEVICE}p1"
 else

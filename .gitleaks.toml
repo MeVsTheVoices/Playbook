@@ -1,0 +1,41 @@
+title = "Playbook secret detection"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public Python image signing-key fingerprint, not a private credential"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)tower-2-compose/(?:discord_bot|dockerbot)/docker-compose\.yml$''']
+regexes = ['''^A035C8C19219BA821ECEA86B64E628F8D684696D$''']
+
+[[rules]]
+id = "tailscale-key"
+description = "Tailscale authentication or API key (including legacy keys)"
+regex = '''\btskey-(?:auth-|api-)?[A-Za-z0-9_-]{20,}\b'''
+keywords = ["tskey-"]
+
+[[rules.allowlists]]
+description = "Verified synthetic cloud-init test fixture, not a usable Tailscale key"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)callback_site/tests/test_sd_cloud_init_render\.py$''']
+regexes = ['''^tskey-auth-kTEST123CNTRL-abcdef$''']
+
+[[rules]]
+id = "discord-bot-token"
+description = "Discord bot token"
+regex = '''\b[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,110}\b'''
+
+[[rules]]
+id = "compose-literal-credential"
+description = "Compose credential fields must use private environment references, not literals"
+path = '''(?:^|/)(?:docker-)?compose(?:\.[^/]*)?\.ya?ml$'''
+regex = '''(?im)^[ \t]*(?:#[ \t]*)?(?:-[ \t]*)?["']?[A-Za-z0-9_.-]*(?:TOKEN|PASSWORD|PASSWD|AUTHKEY|AUTH_KEY|APIKEY|API_KEY|SECRET|SECRET_KEY|PRIVATE_KEY)[ \t]*(?:=|:[ \t]*)["']?([^\s$"'{}][^\s"'{}]*)'''
+secretGroup = 1
+
+[[rules.allowlists]]
+description = "Explicit historical redaction marker"
+regexTarget = "secret"
+regexes = ['''^REDACTED$''']

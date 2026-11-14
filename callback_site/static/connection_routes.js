@@ -48,12 +48,27 @@ window.NodeRoutes = (() => {
         badge.className = "route-tag";
         badge.textContent = target === candidate.address ? "Terminal target" : candidate.id === data.selected ? "Preferred by Node Ops" : "Alternative";
         const type = document.createElement("p");
-        type.textContent = `${candidate.tailnet ? "Tailnet" : "LAN / hostname"} · ${candidate.kind.replaceAll("_", " ")} · SSH port ${candidate.port} · ${candidate.usable ? "candidate" : "unverified / transit"}`;
+        const isFqdn = candidate.kind === "tailnet_fqdn" || (candidate.sources || []).includes("tailscale_fqdn");
+        const label = isFqdn ? "Tailnet FQDN (MagicDNS)" : candidate.tailnet ? "Tailnet" : "LAN / hostname";
+        const sources = (candidate.sources || [candidate.source]).map((source) => source.replaceAll("_", " ")).join(", ");
+        type.textContent = `${label} · ${sources} · SSH port ${candidate.port} · ${candidate.usable ? "candidate" : "unverified / transit"}`;
         const route = document.createElement("p");
         route.className = "route-context";
         route.textContent = summary(candidate.route);
         card.append(title, badge, type, route);
+        if (isFqdn) {
+          const certificate = document.createElement("p");
+          certificate.className = "route-context";
+          certificate.textContent = `Certificate hostname: ${candidate.fqdn}. HTTPS certificates are not configured by this view.`;
+          card.append(certificate);
+        }
         content.append(card);
+      }
+      if (data.candidates.some((candidate) => candidate.tailnet) && !data.candidates.some((candidate) => candidate.kind === "tailnet_fqdn" || (candidate.sources || []).includes("tailscale_fqdn"))) {
+        const notice = document.createElement("p");
+        notice.className = "route-context";
+        notice.textContent = "Tailscale FQDN not discovered. The dashboard needs Tailscale peer status or DNS that resolves the node's Tailscale IP to its MagicDNS name.";
+        content.append(notice);
       }
       if (!data.candidates.length) content.append("No connection paths recorded for this node yet.");
     } catch (error) {

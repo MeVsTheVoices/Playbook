@@ -12,6 +12,76 @@ import services.node_state
 
 
 class MonitorTests(BaseCallbackSiteTest):
+    MONITOR_SCRIPTS = [
+        "monitor/state.js",
+        "monitor/node_selectors.js",
+        "monitor/ping.js",
+        "monitor/hardware.js",
+        "monitor/fleet.js",
+        "monitor/summary.js",
+        "monitor/closer_checks.js",
+        "monitor/node_actions.js",
+        "monitor/init.js",
+    ]
+
+    def test_monitor_loads_saved_check_outcomes_on_page_load(self) -> None:
+        self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+const requests = [];
+window.fetch = async (url, options) => {
+  if (options.cache !== "no-store") throw new Error("Saved outcomes must be fetched fresh");
+  requests.push(url);
+  return {ok: true, json: async () => ({ok: true, state: {
+    nodes: [{
+      name: "saved-check-node",
+      in_monitor_view: true,
+      latest_check: {checked_at: "2026-11-10T12:00:00Z", ok: true},
+      latest_check_steps: [{profile_id: "baseline", status: "ok", output: "Saved check output"}],
+    }],
+  }})};
+};
+""", """
+await tick();
+check(requests.length === 1 && requests[0] === "/api/state/source-of-truth", "loads saved state without starting checks");
+check(document.getElementById("latest-checks-body").textContent.includes("Saved check output"), "saved check output appears on page load");
+check(document.getElementById("latest-check-kpis").textContent.includes("1/1"), "saved check KPIs appear on page load");
+""")
+
+    def test_monitor_shows_loading_then_empty_saved_outcomes(self) -> None:
+        self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+let finishRequest;
+window.fetch = () => new Promise(resolve => { finishRequest = resolve; });
+""", """
+check(document.getElementById("latest-checks-body").textContent.includes("Loading saved"), "shows initial loading state");
+finishRequest({ok: true, json: async () => ({ok: true, state: {nodes: []}})});
+await tick();
+check(document.getElementById("latest-checks-body").textContent.includes("No provision check outcomes yet."), "shows empty state only after loading");
+""")
+
+    def test_monitor_reports_saved_outcome_load_failures_and_allows_retry(self) -> None:
+        failures = {
+            "network": 'throw new TypeError("Network unavailable");',
+            "http": 'return {ok: false, json: async () => ({ok: false, error: "Service unavailable"})};',
+            "json": 'return {ok: true, json: async () => { throw new SyntaxError("Invalid JSON"); }};',
+            "state": 'return {ok: true, json: async () => ({ok: true})};',
+            "timeout": 'throw new DOMException("Aborted", "AbortError");',
+        }
+        for label, failure in failures.items():
+            with self.subTest(failure=label):
+                self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+window.fetch = async () => {
+""" + failure + """
+};
+""", """
+await tick();
+check(document.getElementById("latest-checks-body").textContent.includes("Use Refresh to retry"), "shows outcome load failure in the section");
+check(!document.getElementById("latest-checks-body").textContent.includes("No provision check outcomes yet."), "does not disguise failure as empty state");
+check(document.getElementById("monitor-status").textContent.includes("Use Refresh to retry"), "shows summary error");
+window.fetch = async () => ({ok: true, json: async () => ({ok: true, state: {nodes: []}})});
+document.getElementById("refresh-summary").click();
+await tick();
+check(document.getElementById("latest-checks-body").textContent.includes("No provision check outcomes yet."), "refresh retries successfully");
+""")
+
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
         self.assertEqual(response.status_code, 200)

@@ -2,6 +2,56 @@
 
 const modulePresetsEl = document.getElementById("module-presets");
 let modulePresetRenderToken = 0;
+const moduleNameToggle = document.getElementById("module-name-toggle");
+const moduleNameForm = document.getElementById("module-name-form");
+const moduleNameInput = document.getElementById("module-preset-name");
+const moduleNameCancel = document.getElementById("module-name-cancel");
+let moduleNameContext = "";
+let moduleNameSaving = false;
+
+function closeModuleNameForm(restoreFocus = false) {
+  moduleNameForm.hidden = true;
+  moduleNameToggle.hidden = false;
+  moduleNameToggle.setAttribute("aria-expanded", "false");
+  moduleNameInput.value = "";
+  if (restoreFocus) moduleNameToggle.focus();
+}
+
+moduleNameToggle.addEventListener("click", () => {
+  if (moduleNameSaving) return;
+  moduleNameToggle.hidden = true;
+  moduleNameForm.hidden = false;
+  moduleNameToggle.setAttribute("aria-expanded", "true");
+  moduleNameInput.focus();
+});
+moduleNameCancel.addEventListener("click", () => closeModuleNameForm(true));
+moduleNameForm.addEventListener("keydown", event => {
+  if (event.key === "Escape" && !moduleNameSaving) {
+    event.preventDefault();
+    closeModuleNameForm(true);
+  }
+});
+moduleNameForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (moduleNameSaving) return;
+  moduleNameSaving = true;
+  moduleNameToggle.disabled = true;
+  const context = moduleNameContext;
+  let saved = false;
+  for (const control of moduleNameForm.elements) control.disabled = true;
+  moduleNameForm.setAttribute("aria-busy", "true");
+  try {
+    saved = await saveNamedConfiguration(moduleNameInput.value.trim());
+  } catch (error) {
+    moduleStatusEl.textContent = `Could not save named configuration: ${error.message}`;
+  } finally {
+    moduleNameSaving = false;
+    moduleNameToggle.disabled = !provisionNode.value || !selectedModuleId;
+    for (const control of moduleNameForm.elements) control.disabled = false;
+    moduleNameForm.removeAttribute("aria-busy");
+  }
+  if (saved && context === moduleNameContext) closeModuleNameForm(true);
+});
 
 const PRESET_ORIGIN_LABELS = {
   "node-ops": "Node Ops",
@@ -55,11 +105,14 @@ async function deletePreset(entry) {
 }
 
 async function saveNamedConfiguration(name) {
+  const node = provisionNode.value;
+  const module = selectedModuleId;
   const saved = await saveModuleInputs();
-  if (!saved) return;
-  const { ok, data } = await postJson("/api/nodes/module-presets", { node: provisionNode.value, module: selectedModuleId, name });
+  if (!saved) return false;
+  const { ok, data } = await postJson("/api/nodes/module-presets", { node, module, name });
   moduleStatusEl.textContent = ok ? `Saved the current inputs as '${data.name}'.` : (data.error || "Could not name the configuration.");
   await renderModulePresets();
+  return ok;
 }
 
 function presetButton(label, handler, secondary = true) {
@@ -124,11 +177,17 @@ async function renderModulePresets() {
   if (!modulePresetsEl) return;
   const nodeName = provisionNode.value;
   const moduleId = selectedModuleId;
+  const context = `${nodeName}:${moduleId}`;
+  if (context !== moduleNameContext) {
+    closeModuleNameForm();
+    moduleNameContext = context;
+  }
+  moduleNameToggle.disabled = moduleNameSaving || !nodeName || !moduleId;
+  const token = ++modulePresetRenderToken;
   if (!nodeName || !moduleId) {
     modulePresetsEl.innerHTML = "";
     return;
   }
-  const token = ++modulePresetRenderToken;
   let data;
   try {
     const res = await fetch(`/api/nodes/module-presets?module=${encodeURIComponent(moduleId)}&node=${encodeURIComponent(nodeName)}`);
@@ -142,26 +201,9 @@ async function renderModulePresets() {
 
   modulePresetsEl.innerHTML = "";
   modulePresetsEl.style.marginTop = "1rem";
-  modulePresetsEl.appendChild(presetHeading("Saved configurations", "Every save of this module's inputs is remembered under a suggested name. Give one your own name to keep it; Load fills this node's form, Apply also pushes it to the node."));
-
-  const nameRow = document.createElement("div");
-  nameRow.className = "inline-actions";
-  const nameInput = document.createElement("input");
-  nameInput.type = "text";
-  nameInput.id = "module-preset-name";
-  nameInput.placeholder = "Name (blank = suggested name)";
-  nameInput.maxLength = 60;
-  nameInput.style.maxWidth = "18rem";
-  nameRow.append(nameInput, presetButton("Save as named configuration", () => saveNamedConfiguration(nameInput.value.trim()), false));
-  modulePresetsEl.appendChild(nameRow);
-
   if (data.presets.length) {
+    modulePresetsEl.appendChild(presetHeading("Saved configurations", "Load fills this node's form; Apply also pushes it to the node."));
     modulePresetsEl.appendChild(presetTable(data.presets, { editable: true }));
-  } else {
-    const empty = document.createElement("p");
-    empty.className = "note";
-    empty.textContent = "Nothing saved for this module yet. Use Save Module Inputs and it will appear here.";
-    modulePresetsEl.appendChild(empty);
   }
 
   modulePresetsEl.appendChild(presetHeading("Draw from existing settings", "Values already enabled elsewhere: other nodes in Node Ops, and SD-card profiles from the provisioning dashboard. Only fields this module uses are listed; secrets are copied but never shown."));

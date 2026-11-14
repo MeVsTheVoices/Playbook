@@ -134,7 +134,12 @@ def gather_profiles(node_name: str, inventory_address: str = "", callback_source
         usable = tailnet or not _is_transit_hop_ip(inventory_address)
         profiles.append(ConnectionProfile("inventory", "inventory", inventory_address, "inventory" if usable else "inventory_transit", tailnet, usable, **extra))
     peer = _tailscale_peer_ip(node_name)
-    fqdn = _tailscale_peer_fqdn(node_name)
+    tailnet_address = next((p.address for p in profiles if p.tailnet), peer)
+    fqdn_name = inventory_address if inventory_address.lower().rstrip(".").endswith(".ts.net") else node_name
+    fqdn = _tailscale_peer_fqdn(fqdn_name, tailnet_address)
+    for profile in profiles:
+        if profile.tailnet:
+            profile.fqdn = fqdn
     if peer:
         profiles.append(ConnectionProfile("tailnet", "tailnet", peer, "tailscale", True, True, fqdn=fqdn, **extra))
     if fqdn:

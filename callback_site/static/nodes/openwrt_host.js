@@ -1,49 +1,25 @@
-function openwrtHostNodes() {
-  return nodes.filter((node) => String(node?.group || "").toLowerCase() === "openwrt");
+// Router tools live in Module Configuration and only show while an openwrt-group node is selected.
+function selectedOpenwrtHost() {
+  const node = nodes.find((item) => item.name === provisionNode.value);
+  return node && String(node.group || "").toLowerCase() === "openwrt" ? node : null;
 }
 
-function selectedOpenwrtHost() {
-  const name = document.getElementById("openwrt-host-select").value;
-  return openwrtHostNodes().find((node) => node.name === name) || null;
-}
+let openwrtShownFor = "";
 
 function renderOpenwrtHosts() {
-  const select = document.getElementById("openwrt-host-select");
-  const summary = document.getElementById("openwrt-host-summary");
-  if (!select || !summary) return;
-  const current = select.value;
-  const hosts = openwrtHostNodes().sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  select.innerHTML = "";
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = hosts.length ? "Select a router..." : "No OpenWrt hosts yet";
-  select.appendChild(placeholder);
-  for (const host of hosts) {
-    const opt = document.createElement("option");
-    opt.value = host.name;
-    opt.textContent = host.address ? `${host.name} (${host.address})` : host.name;
-    select.appendChild(opt);
+  const section = document.getElementById("openwrt-host");
+  if (!section) return;
+  const host = selectedOpenwrtHost();
+  section.hidden = !host;
+  const name = host ? host.name : "";
+  if (name !== openwrtShownFor) {
+    openwrtShownFor = name;
+    document.getElementById("openwrt-status").textContent = "";
+    document.getElementById("openwrt-password").value = "";
+    const facts = document.getElementById("openwrt-uci-facts");
+    facts.hidden = true;
+    facts.innerHTML = "";
   }
-  if (current && hosts.some((host) => host.name === current)) {
-    select.value = current;
-  }
-  summary.textContent = hosts.length
-    ? `${hosts.length} router host${hosts.length === 1 ? "" : "s"}: ${hosts.map((host) => host.name).join(", ")}`
-    : "No router hosts yet";
-}
-
-function addOpenwrtHost() {
-  const card = document.getElementById("access-manual-node");
-  if (card) card.open = true;
-  manualNodeSelectorEl.value = "";
-  resetManualNodeForm();
-  manualNodeNameEl.value = "openwrt-router";
-  setManualNodeGroup("openwrt");
-  manualNodeUsernameEl.value = "root";
-  manualNodeShellEl.value = "/bin/ash";
-  manualNodeStatus.textContent = "OpenWrt host template loaded: set the router IP and certificate, then use Add / Update Manual Node.";
-  manualNodeAddressEl.scrollIntoView({ behavior: "smooth", block: "center" });
-  manualNodeAddressEl.focus();
 }
 
 async function callOpenwrt(url, payload) {
@@ -52,19 +28,21 @@ async function callOpenwrt(url, payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  let data = null;
   try {
-    data = await res.json();
+    return await res.json();
   } catch (err) {
-    data = { ok: false, error: `Server did not return JSON (${res.status}).` };
+    return { ok: false, error: `Server did not return JSON (${res.status}).` };
   }
-  return data;
+}
+
+function openwrtPort() {
+  return Number(document.getElementById("openwrt-port").value || 22);
 }
 
 function openwrtConnection(host) {
   return {
     host: String(host.address || "").trim(),
-    port: Number(document.getElementById("openwrt-port").value || 22),
+    port: openwrtPort(),
     username: String(host.node_username || "root").trim() || "root",
     password: document.getElementById("openwrt-password").value,
   };
@@ -72,14 +50,9 @@ function openwrtConnection(host) {
 
 async function probeOpenwrtHost() {
   const statusEl = document.getElementById("openwrt-status");
-  const resultEl = document.getElementById("openwrt-result");
   const host = selectedOpenwrtHost();
-  if (!host) {
-    statusEl.textContent = "Select an OpenWrt host first.";
-    return;
-  }
+  if (!host) return;
   statusEl.textContent = `Probing ${host.name}...`;
-  resultEl.hidden = true;
   const data = await callOpenwrt("/api/openwrt/inspect", {
     ...openwrtConnection(host),
     connection: "ssh",
@@ -92,26 +65,45 @@ async function probeOpenwrtHost() {
     return;
   }
   const probe = data.probe || {};
-  const stats = data.stats || {};
-  statusEl.textContent = `${host.name}: ${probe.ok ? "connected" : "connection failed"} | module ${data.module || "?"} | ${stats.summary || ""}`;
-  resultEl.textContent = [probe.error, probe.details, "", data.inventory_preview].filter((part) => part !== undefined && part !== null).join("\n").trim();
-  resultEl.hidden = false;
+  statusEl.textContent = probe.ok
+    ? `SSH login OK as ${data.request?.username || "root"}@${data.request?.host || host.address}:${data.request?.port || openwrtPort()}${host.certificate ? ` with key ${host.certificate}` : ""}.`
+    : `SSH login failed: ${probe.error || "unknown error"}${probe.details ? ` (${probe.details.split("\n").pop()})` : ""}`;
 }
 
 async function pushOpenwrtKey() {
   const statusEl = document.getElementById("openwrt-status");
   const host = selectedOpenwrtHost();
-  if (!host) {
-    statusEl.textContent = "Select an OpenWrt host first.";
-    return;
-  }
+  if (!host) return;
   if (!host.certificate) {
-    statusEl.textContent = `${host.name} has no certificate / SSH key saved; edit the host and pick one.`;
+    statusEl.textContent = `${host.name} has no certificate / SSH key saved; edit the node and pick one.`;
     return;
   }
   statusEl.textContent = `Pushing ${host.certificate} to ${host.name}...`;
   const data = await callOpenwrt("/api/openwrt/push-key", { ...openwrtConnection(host), key_name: host.certificate });
-  statusEl.textContent = data.ok
-    ? `Key ${data.key_name} pushed to ${host.name}. ${data.details || ""}`.trim()
+  statusEl.textContent = data.ok && data.pushed
+    ? `Key ${data.key_name} is authorized on ${host.name}.`
     : (data.error || "Key push failed.");
+}
+
+async function readOpenwrtUci() {
+  const statusEl = document.getElementById("openwrt-status");
+  const factsEl = document.getElementById("openwrt-uci-facts");
+  const host = selectedOpenwrtHost();
+  if (!host) return;
+  statusEl.textContent = `Reading UCI from ${host.name}...`;
+  const data = await callOpenwrt("/api/openwrt/uci", { node: host.name, port: openwrtPort() });
+  if (host.name !== openwrtShownFor) return;
+  const facts = Array.isArray(data.facts) ? data.facts : [];
+  factsEl.innerHTML = "";
+  for (const fact of facts) {
+    const dt = document.createElement("dt");
+    dt.textContent = fact.key;
+    const dd = document.createElement("dd");
+    dd.textContent = fact.value;
+    factsEl.append(dt, dd);
+  }
+  factsEl.hidden = !facts.length;
+  statusEl.textContent = data.ok
+    ? `UCI read from ${data.target} (${facts.length} values; wireless keys are never read).`
+    : (data.error || "UCI read failed.");
 }

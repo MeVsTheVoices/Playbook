@@ -5,6 +5,7 @@ toggleBtn.addEventListener("click", () => {
 
 provisionNode.addEventListener("change", () => {
   renderModuleSection();
+  renderOpenwrtHosts();
   loadLiveConfig();
 });
 
@@ -22,11 +23,11 @@ document.getElementById("refresh-profile-segments").addEventListener("click", re
 
 document.getElementById("add-manual-node").addEventListener("click", addManualNode);
 
-document.getElementById("openwrt-add").addEventListener("click", addOpenwrtHost);
-
 document.getElementById("openwrt-probe").addEventListener("click", probeOpenwrtHost);
 
 document.getElementById("openwrt-push-key").addEventListener("click", pushOpenwrtKey);
+
+document.getElementById("openwrt-uci").addEventListener("click", readOpenwrtUci);
 
 manualNodeSelectorEl.addEventListener("change", () => {
   const selectedNode = manualNodeSelectorEl.value.trim();

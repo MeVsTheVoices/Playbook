@@ -64,7 +64,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
 
     @pages.get("/openwrt")
     def openwrt_page() -> Any:
-        return redirect("/nodes#openwrt-host")
+        return redirect("/nodes#module-configuration")
 
     @pages.get("/fragments/tailscale-acl/overview")
     def tailscale_acl_overview_fragment() -> str:

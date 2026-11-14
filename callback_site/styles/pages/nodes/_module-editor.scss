@@ -183,3 +183,72 @@ tr.module-row-selected td:first-child {
 .module-toggle .module-hint {
   margin-left: 1.6rem;
 }
+
+.openwrt-tools {
+  margin: 0 0 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.openwrt-tools[hidden] {
+  display: none;
+}
+
+.openwrt-tools-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.7rem;
+
+  h3 {
+    margin: 0;
+    font-size: 0.98rem;
+  }
+
+  .module-hint {
+    margin: 0;
+  }
+}
+
+.openwrt-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem 0.7rem;
+  margin-top: 0.55rem;
+
+  label {
+    display: grid;
+    gap: 0.2rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  input[type="number"] {
+    width: 6rem;
+  }
+
+  input[type="password"] {
+    width: min(18rem, 100%);
+  }
+}
+
+.openwrt-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.2rem 0.9rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+
+  dt {
+    color: var(--muted);
+    font-family: var(--mono, ui-monospace, monospace);
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}

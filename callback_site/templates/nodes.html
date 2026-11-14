@@ -104,7 +104,7 @@
                     <option value="manual">manual</option>
                     <option value="openwrt">openwrt</option>
                   </select>
-                  <p class="module-hint">Decides which modules apply. Choose openwrt for a router so it shows in the OpenWrt panel.</p>
+                  <p class="module-hint">Decides which modules apply. Choose openwrt for a router so its router tools show in Module Configuration.</p>
                 </div>
                 <div class="module-field">
                   <label for="manual-node-address">IP / Hostname</label>
@@ -177,6 +177,21 @@
             </div>
             <div style="margin-top: 0.8rem;">
               <p id="module-connection-context" class="module-callout"></p>
+              <section id="openwrt-host" class="openwrt-tools" hidden aria-labelledby="openwrt-tools-title">
+                <div class="openwrt-tools-head">
+                  <h3 id="openwrt-tools-title">OpenWrt router 📡</h3>
+                  <p class="module-hint">SSH login, key push and a read-only UCI summary for this router.</p>
+                </div>
+                <div class="openwrt-tools-row">
+                  <label>SSH port <input id="openwrt-port" type="number" min="1" max="65535" value="22"></label>
+                  <label>Password <input id="openwrt-password" type="password" placeholder="probe / key push only, not saved" autocomplete="off"></label>
+                  <button id="openwrt-probe" type="button" class="secondary">Probe</button>
+                  <button id="openwrt-push-key" type="button" class="secondary">Push SSH key</button>
+                  <button id="openwrt-uci" type="button">Read UCI</button>
+                </div>
+                <p id="openwrt-status" class="module-hint" role="status"></p>
+                <dl id="openwrt-uci-facts" class="openwrt-facts" hidden></dl>
+              </section>
               <div id="module-detail" class="module-detail collapsed"></div>
               <div class="module-actions">
                 <button id="module-save-inputs" type="button" class="ghost" title="Store these inputs for the node without touching it">Save Module Inputs</button>
@@ -241,42 +256,6 @@
             </div>
             <p id="profile-segment-status" class="note">No saved profile segments yet.</p>
             <div id="profile-segment-list"></div>
-          </div>
-        </details>
-
-        <details class="panel collapsible-panel" id="openwrt-host">
-          <summary>
-            <div class="collapsible-summary">
-              <h2>OpenWrt routers 📡</h2>
-              <p class="collapsible-subtitle">A router is a host in group "openwrt". Probe its SSH login and push a saved key. More router actions will land here.</p>
-              <p class="collapsible-count" id="openwrt-host-summary">No router hosts yet</p>
-            </div>
-            <span class="collapsible-indicator" aria-hidden="true">›</span>
-          </summary>
-          <div class="collapsible-body">
-            <div class="grid">
-              <div>
-                <label for="openwrt-host-select">Router host</label>
-                <select id="openwrt-host-select">
-                  <option value="">No OpenWrt hosts yet</option>
-                </select>
-              </div>
-              <div>
-                <label for="openwrt-port">SSH port</label>
-                <input id="openwrt-port" type="number" min="1" max="65535" value="22">
-              </div>
-              <div>
-                <label for="openwrt-password">Password (probe / key push only, not saved)</label>
-                <input id="openwrt-password" type="password" placeholder="optional" autocomplete="off">
-              </div>
-            </div>
-            <div class="inline-actions" style="margin-top: 0.7rem;">
-              <button id="openwrt-add" type="button" class="secondary">Add router host</button>
-              <button id="openwrt-probe" type="button">Probe</button>
-              <button id="openwrt-push-key" type="button" class="secondary">Push SSH key</button>
-            </div>
-            <p id="openwrt-status" class="note"></p>
-            <pre id="openwrt-result" class="log" hidden></pre>
           </div>
         </details>
 

@@ -79,6 +79,10 @@ not configure the router or provision nodes.
 
 For host setup, Kubernetes connectivity, credentials, and device-access limits,
 follow the [operator deployment guide](callback_site/README.md#deployment-notes).
+For a Pi deployment preflight and callback troubleshooting, see the
+[callback checklist](callback_site/README.md#pi-deployment-and-callback-checklist).
+For the Linux K3s cluster connection, see
+[Linux K3s and the Kubernetes dashboard](callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard).
 
 Before committing deployment changes, install the
 [secret checks and follow the credential-handling guide](SECURITY.md).
@@ -89,7 +93,7 @@ Before committing deployment changes, install the
 | --- | --- |
 | **Understand the purpose and intended architecture** | [SOHO rack vision](docs/soho-rack-vision.md) |
 | **Run the portal with Docker Desktop** | [Docker Compose setup](callback_site/README.md#docker-compose) |
-| **Connect the local Kubernetes cluster** | [Docker Desktop Kubernetes and Helm](callback_site/README.md#docker-desktop-kubernetes-and-helm) |
+| **Connect the local Kubernetes cluster** | [Linux K3s](callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard) · [Docker Desktop Kubernetes and Helm](callback_site/README.md#docker-desktop-kubernetes-and-helm) |
 | **Bring up and maintain rack nodes** | [Rack cluster runbook](docs/rack-cluster-runbook.md) |
 | **Plan private management access** | [Tailscale policy workflow](docs/rack-cluster-runbook.md#tailscale-policy-page) |
 | **Use a dedicated network toolkit device** | [Network Toolkit setup](callback_site/README.md#network-toolkit-pi-3b) |

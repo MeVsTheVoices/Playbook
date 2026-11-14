@@ -73,7 +73,7 @@ if [[ "$flasher" == "true" ]]; then
   flasher_url="http://host.docker.internal:8089"
   log "host SD/USB flasher listening on ${gateway}:8089"
 elif [[ -f /etc/systemd/system/playbook-sd-flasher.service ]]; then
-  "$dir/scripts/run_sd_flasher.sh" uninstall
+  "$dir/scripts/run_sd_flasher.sh" uninstall >/dev/null || true
 fi
 (umask 022 && printf 'CALLBACK_PORT=%s\nSD_FLASHER_URL=%s\n' "$port" "$flasher_url" > "$dir/.env")
 

@@ -2,7 +2,6 @@
 **/.git
 .venv
 **/.venv
-**/node_modules
 **/.venv-security
 **/__pycache__
 **/*.py[cod]

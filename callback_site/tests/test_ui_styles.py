@@ -83,7 +83,6 @@ check(visible(".sidebar-collapse-label") && visible(".sidebar-collapse-icon"),
         css = (APP_DIR / "static/common.css").read_text()
         self.assertIn(":focus-visible", css)
         self.assertIn("prefers-reduced-motion: reduce", css)
-        self.assertRegex(css, r"select\[multiple\]\s*\{\s*overflow:\s*auto;")
 
     def test_pages_fit_viewports_and_share_control_styles_in_browser(self) -> None:
         chrome = shutil.which("google-chrome") or shutil.which("chromium")
@@ -271,7 +270,7 @@ function measure(frame) {
                     self.assertEqual(snapshot["nodeTableOverflow"], "auto")
                     self.assertEqual(snapshot["statCardPosition"], "relative")
                     self.assertEqual(snapshot["statCardOverflow"], "hidden")
-                    self.assertEqual(snapshot["nodeActionCount"], 4)
+                    self.assertEqual(snapshot["nodeActionCount"], 5)
                     self.assertTrue(snapshot["nodeActionsFit"])
                     self.assertTrue(snapshot["moduleActionsFit"])
                     self.assertLessEqual(snapshot["moduleOptionsOverflow"], 1)

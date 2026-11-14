@@ -253,7 +253,8 @@ class LightweightSdPayloadTests(BaseCallbackSiteTest):
     def _prepare(self, profile: str, options: dict) -> tuple:
         body = {
             "profile": profile, "distribution": "k3s", "hostname": "t1", "device": "/dev/sdz",
-            "ssh_public_key": "ssh-ed25519 AAAA test", "callback_url": "http://127.0.0.1:9/cb",
+            "ssh_public_key": "ssh-ed25519 AAAA test",
+            "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
             "cloud_init_options": {"k3s_config": BASE_CONFIG, **options},
         }
         with patch_in("_ensure_prereqs", return_value=[]), patch("threading.Thread") as thread:

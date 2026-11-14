@@ -14,6 +14,7 @@ from services.k3s_config import LONGFORM_CHECKS, _check_longform, _longform_inpu
 from services.module_presets import _record_save
 from services.connection_profiles import gather_profiles, remember_profiles, select_profile
 from services.live_config import read_live_config
+from services.node_tailscale import read_node_tailscale
 from services.node_inventory import _node_group_options, _node_ops_inventory_view, _ping_status
 from services.node_runs import _apply_node_provisioning, _send_webhook, _telegraf_influx_dummy_check
 from services.node_state import (
@@ -130,7 +131,8 @@ def register_node_routes(app: Any) -> None:
             chosen = select_profile(profiles)
             connect_target = chosen.address if chosen else ""
             connect_source = chosen.source if chosen else "none"
-            status = _ping_status(connect_target or node["address"], port=chosen.port if chosen else 22)
+            connect_port = chosen.port if chosen else 22
+            status = _ping_status(connect_target or node["address"], connect_port)
             remember_profiles(node["name"], profiles, chosen.id if chosen else "", status["reachable"])
             statuses.append(
                 {
@@ -298,6 +300,17 @@ def register_node_routes(app: Any) -> None:
         for module_id in sanitized:
             _record_save(node_name, module_id, node_inputs[node_name].get(module_id, {}))
         return jsonify({"ok": True, "node": node_name, "ignored_unselected_modules": ignored})
+
+    @app.get("/api/nodes/tailscale")
+    def nodes_tailscale() -> Any:
+        node_name = str(request.args.get("node", "")).strip()
+        if not node_name:
+            return jsonify({"ok": False, "error": "node is required"}), 400
+        if not any(n.get("name") == node_name for n in _node_ops_inventory_view()):
+            return jsonify({"ok": False, "error": "node not found in active node set"}), 404
+        response = jsonify(read_node_tailscale(node_name))
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/api/nodes/live-config")
     def nodes_live_config() -> Any:

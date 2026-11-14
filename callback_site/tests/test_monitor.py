@@ -2,61 +2,103 @@
 
 from __future__ import annotations
 
+import subprocess
+from unittest.mock import MagicMock, patch
+
 try:
     from .test_support import BaseCallbackSiteTest, TEST_DATA_DIR, patch_in
 except ImportError:
     from test_support import BaseCallbackSiteTest, TEST_DATA_DIR, patch_in
 
 import services.images
+import services.node_inventory
 import services.node_state
-from subprocess import CompletedProcess
-from unittest.mock import patch
-
-from services.node_inventory import _ping_status
-
-
-class ReachabilityTests(BaseCallbackSiteTest):
-    def test_icmp_success_does_not_open_tcp_connection(self) -> None:
-        with patch("services.node_inventory.subprocess.run", return_value=CompletedProcess(
-            [], 0, stdout="time=0.714 ms", stderr=""
-        )), patch("services.node_inventory.socket.create_connection") as connect:
-            result = _ping_status("192.0.2.1")
-        self.assertTrue(result["reachable"])
-        self.assertEqual(result["latency_ms"], 0.714)
-        self.assertEqual(result["probe"], "icmp")
-        connect.assert_not_called()
-
-    def test_tcp_success_when_icmp_is_blocked(self) -> None:
-        with patch("services.node_inventory.subprocess.run", return_value=CompletedProcess(
-            [], 1, stdout="100% packet loss", stderr=""
-        )), patch("services.node_inventory.socket.create_connection") as connect:
-            result = _ping_status("192.0.2.1", port=2222)
-        connect.assert_called_once_with(("192.0.2.1", 2222), timeout=1)
-        self.assertTrue(result["reachable"])
-        self.assertGreaterEqual(result["latency_ms"], 0)
-        self.assertEqual(result["probe"], "tcp")
-        self.assertEqual(result["error"], "")
-
-    def test_missing_ping_still_checks_tcp(self) -> None:
-        with patch("services.node_inventory.subprocess.run", side_effect=FileNotFoundError), patch(
-            "services.node_inventory.socket.create_connection"
-        ):
-            result = _ping_status("192.0.2.1")
-        self.assertTrue(result["reachable"])
-        self.assertEqual(result["probe"], "tcp")
-
-    def test_both_failures_are_reported(self) -> None:
-        with patch("services.node_inventory.subprocess.run", return_value=CompletedProcess(
-            [], 1, stdout="", stderr="ICMP blocked"
-        )), patch("services.node_inventory.socket.create_connection", side_effect=TimeoutError("timed out")):
-            result = _ping_status("192.0.2.1")
-        self.assertFalse(result["reachable"])
-        self.assertIsNone(result["latency_ms"])
-        self.assertIn("ICMP blocked", result["error"])
-        self.assertIn("TCP port 22: timed out", result["error"])
 
 
 class MonitorTests(BaseCallbackSiteTest):
+    MONITOR_SCRIPTS = [
+        "monitor/state.js",
+        "monitor/node_selectors.js",
+        "monitor/ping.js",
+        "monitor/hardware.js",
+        "monitor/fleet.js",
+        "monitor/summary.js",
+        "monitor/closer_checks.js",
+        "monitor/node_actions.js",
+        "monitor/init.js",
+    ]
+
+    def test_ping_falls_back_to_selected_ssh_port_when_icmp_is_blocked(self) -> None:
+        ping = subprocess.CompletedProcess(["ping"], 1, stdout="", stderr="network unreachable")
+        with (
+            patch("services.node_inventory.subprocess.run", return_value=ping),
+            patch("services.node_inventory.socket.create_connection", return_value=MagicMock()) as connect,
+        ):
+            status = services.node_inventory._ping_status("192.0.2.9", 2222)
+
+        self.assertTrue(status["reachable"])
+        self.assertEqual(status["probe"], "tcp")
+        self.assertGreaterEqual(status["latency_ms"], 0)
+        connect.assert_called_once_with(("192.0.2.9", 2222), timeout=1)
+
+    def test_monitor_loads_saved_check_outcomes_on_page_load(self) -> None:
+        self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+const requests = [];
+window.fetch = async (url, options) => {
+  if (options.cache !== "no-store") throw new Error("Saved outcomes must be fetched fresh");
+  requests.push(url);
+  return {ok: true, json: async () => ({ok: true, state: {
+    nodes: [{
+      name: "saved-check-node",
+      in_monitor_view: true,
+      latest_check: {checked_at: "2026-11-10T12:00:00Z", ok: true},
+      latest_check_steps: [{profile_id: "baseline", status: "ok", output: "Saved check output"}],
+    }],
+  }})};
+};
+""", """
+await tick();
+check(requests.length === 1 && requests[0] === "/api/state/source-of-truth", "loads saved state without starting checks");
+check(document.getElementById("latest-checks-body").textContent.includes("Saved check output"), "saved check output appears on page load");
+check(document.getElementById("latest-check-kpis").textContent.includes("1/1"), "saved check KPIs appear on page load");
+""")
+
+    def test_monitor_shows_loading_then_empty_saved_outcomes(self) -> None:
+        self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+let finishRequest;
+window.fetch = () => new Promise(resolve => { finishRequest = resolve; });
+""", """
+check(document.getElementById("latest-checks-body").textContent.includes("Loading saved"), "shows initial loading state");
+finishRequest({ok: true, json: async () => ({ok: true, state: {nodes: []}})});
+await tick();
+check(document.getElementById("latest-checks-body").textContent.includes("No provision check outcomes yet."), "shows empty state only after loading");
+""")
+
+    def test_monitor_reports_saved_outcome_load_failures_and_allows_retry(self) -> None:
+        failures = {
+            "network": 'throw new TypeError("Network unavailable");',
+            "http": 'return {ok: false, json: async () => ({ok: false, error: "Service unavailable"})};',
+            "json": 'return {ok: true, json: async () => { throw new SyntaxError("Invalid JSON"); }};',
+            "state": 'return {ok: true, json: async () => ({ok: true})};',
+            "timeout": 'throw new DOMException("Aborted", "AbortError");',
+        }
+        for label, failure in failures.items():
+            with self.subTest(failure=label):
+                self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+window.fetch = async () => {
+""" + failure + """
+};
+""", """
+await tick();
+check(document.getElementById("latest-checks-body").textContent.includes("Use Refresh to retry"), "shows outcome load failure in the section");
+check(!document.getElementById("latest-checks-body").textContent.includes("No provision check outcomes yet."), "does not disguise failure as empty state");
+check(document.getElementById("monitor-status").textContent.includes("Use Refresh to retry"), "shows summary error");
+window.fetch = async () => ({ok: true, json: async () => ({ok: true, state: {nodes: []}})});
+document.getElementById("refresh-summary").click();
+await tick();
+check(document.getElementById("latest-checks-body").textContent.includes("No provision check outcomes yet."), "refresh retries successfully");
+""")
+
     def test_monitor_page_excludes_cloud_init_template_builder(self) -> None:
         response = self.client.get("/monitor")
         self.assertEqual(response.status_code, 200)

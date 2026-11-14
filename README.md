@@ -1,202 +1,113 @@
-<div align="center">
-
-# 🎛️ Playbook
+# Playbook
 
 ### A small control desk for a small rack.
 
-🥧 Raspberry Pi &nbsp;·&nbsp; 🖥️ Mini PCs &nbsp;·&nbsp; 🐳 Docker Desktop &nbsp;·&nbsp; ☸️ Kubernetes &nbsp;·&nbsp; 🛰️ Tailscale
+**SOHO racks · Mini PCs · Docker Desktop · Kubernetes · Tailscale**
 
-![Status: evolving toolkit](https://img.shields.io/badge/status-evolving%20toolkit-orange)
-![Runs in Docker Compose](https://img.shields.io/badge/runs%20in-Docker%20Compose-2496ED)
-![Provisioning: cloud-init + Ansible](https://img.shields.io/badge/provisioning-cloud--init%20%2B%20Ansible-6f42c1)
+Playbook brings rack bootstrap and day-to-day operations into a browser-based
+operator portal, backed by cloud-init, Ansible, and Docker. The intended home is
+a NUC or similar small computer with a graphical desktop: a local workstation
+that can also serve as the remotely accessible management hub for a
+small-office/home-office (SOHO) rack.
 
-**Browser-based rack bootstrap and day-to-day operations for SOHO racks.**<br/>
-Start small · bring devices online deliberately · keep a private path back in.
+Start small, bring devices online deliberately, and keep a private path back in.
 
-</div>
-
-> [!TIP]
-> 🧭 **New here?** Read the [project vision](docs/soho-rack-vision.md) first: the
-> mini-PC control desk, remote access, router setup, and why local Kubernetes and
-> the physical rack are kept apart.
+> **Start here:** [Read the project vision and intended setup](docs/soho-rack-vision.md).
+> It explains the mini-PC control desk, remote access, router setup, and the
+> distinction between local Kubernetes experiments and the physical rack.
 
 ---
 
-<a id="the-idea-at-a-glance"></a>
-## 🧭 The idea at a glance
+## The idea at a glance
 
 ```mermaid
 flowchart LR
-    Operator["👤 Remote operator"] -->|"🛰️ Private Tailscale access"| Desk["🖥️ NUC / mini-PC<br/>desktop + browser"]
-    Desk --> Desktop["🐳 Docker Desktop<br/>portal + local Kubernetes"]
-    Desk -->|"🔌 Authorized management path"| Network["📶 Router + switch"]
-    Desktop -->|"📡 Provision and monitor"| Rack["🥧 Rack nodes<br/>K3s workers or utility hosts"]
+    Operator["Remote operator"] -->|Private Tailscale access| Desk["NUC / mini-PC<br/>Graphical desktop + browser"]
+    Desk --> Desktop["Docker Desktop<br/>Portal + local Kubernetes"]
+    Desk -->|Authorized management path| Network["Router + switch"]
+    Desktop -->|Provision and monitor| Rack["Rack nodes<br/>K3s workers or utility hosts"]
     Network --- Rack
 ```
 
-> [!NOTE]
-> This is the **intended topology**, not automatic network configuration. Desktop
-> sharing, tailnet permissions, container reachability, and router access are all
-> configured explicitly by you.
+This is the intended topology, not automatic network configuration. Desktop
+sharing, tailnet permissions, container reachability, and router access must be
+configured explicitly.
 
-<a id="whats-in-the-box"></a>
-## 🧩 What's in the box
-
-```mermaid
-mindmap
-  root(("🎛️ Playbook"))
-    🥧 Bootstrap
-      SD images for Pi 5 / Pi 4 / Pi 3B+
-      cloud-init templates
-      📦 image catalog + cache
-    📡 Operate
-      callback history
-      📊 Hardware Monitor
-      🎛️ Node Ops
-      🖥️ SSH diagnostics
-      📜 boot logs
-    🛠️ Configure
-      reusable node modules
-      Ansible roles
-      OpenWrt SSH onboarding
-      🛰️ Tailscale policy planner
-    ☸️ Kubernetes
-      Docker Desktop + Helm
-      rack K3s path
-    💾 Flash, opt-in
-      Linux flash helper
-      unattended UEFI installer USB
-```
-
-<a id="life-of-a-node"></a>
-## 🔁 Life of a node
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Op as 👤 Operator
-    participant P as 🎛️ Portal
-    participant SD as 💾 SD card
-    participant N as 🥧 Node
-    Op->>P: Pick profile, image, cloud-init options
-    P->>SD: Flash image, inject + verify cloud-init
-    Op->>N: 🔌 Insert card and power on
-    N->>N: ☁️ cloud-init first boot
-    N-->>P: 📡 Callback, then 📜 boot logs
-    P->>N: 🎛️ Automatic first check, Node Ops job
-    Op->>P: 🎛️ Node Ops: check, then apply modules
-    P->>N: 🅰️ Ansible over the preferred route
-    loop Every power restore
-        N-->>P: 📜 Boot logs
-    end
-```
-
-<a id="boundaries"></a>
-## 🚫 Boundaries
-
-| ✅ It is | 🚫 It is not |
+| Piece | Purpose |
 | --- | --- |
-| An evolving operator toolkit | A turnkey router installer |
-| A way to bring nodes up one at a time | A production high-availability platform |
-| A Docker Desktop Kubernetes workbench | A cluster that absorbs your Pis automatically |
-| A container with persistent state | A container that sees the host's Tailscale or USB/SD devices by default |
+| **Mini-PC control desk** | A graphical workstation for the portal, Docker Desktop, and administrative tools. |
+| **Operator portal** | Prepare images, track callbacks, inspect nodes, apply configuration, and review logs. |
+| **Private remote access** | Use Tailscale to reach the desk and authorized management endpoints without public admin ports. |
+| **SOHO network** | Configure the router, addressing, firewall, and switch before depending on remote operation. |
+| **Rack nodes** | Run useful services with Docker, K3s, or no Kubernetes at all, according to each device's capacity. |
 
-<a id="start-the-portal"></a>
-## 🚀 Start the portal
+## What is here today?
 
-With Docker and Compose available, from the repository root:
+- **Bootstrap:** SD-image and cloud-init workflows for Raspberry Pi 5, Pi 4,
+  and Pi 3B+ profiles.
+- **Operate:** callback history, Hardware Monitor, Node Ops, SSH diagnostics,
+  and boot-log collection.
+- **Configure:** reusable node modules, Ansible roles, OpenWrt SSH onboarding,
+  and Tailscale policy planning.
+- **Explore Kubernetes:** Docker Desktop cluster connectivity and Helm workflows,
+  alongside a separate K3s rack provisioning path.
+
+**Boundaries matter:** this is an evolving operator toolkit, not a turnkey router
+installer or a production high-availability platform. Docker Desktop's local
+cluster does not automatically absorb physical rack nodes. The default container
+also does not receive the host's Tailscale service or USB/SD devices.
+
+## Start the portal
+
+With Docker and Compose available, run from the repository root:
 
 ```bash
 docker compose up --build -d
 docker compose ps
 ```
 
-Then open **<http://127.0.0.1:8091/>** on the host and create the dashboard account. 🎉
-Nodes call back on port **8088**, which answers only node endpoints.
+Open **[http://127.0.0.1:8091/](http://127.0.0.1:8091/)** on the host for
+first-time account setup and the dashboard. Port `8088` is reserved for node
+callbacks and other node-only endpoints. This starts the portal only; it does
+not configure the router or provision nodes.
 
-This starts the portal only — it does not configure the router or provision nodes.
+> **Keep management private.** Base Compose binds the dashboard to localhost by
+> default. Setting `CALLBACK_ADMIN_BIND=0.0.0.0` exposes it on host interfaces;
+> only do so on a trusted network, and never port-forward it to the internet.
+> Persistent data lives in the `callback-site-data` volume; it survives rebuilds
+> but is not a backup.
 
-> [!WARNING]
-> 🔐 **Keep management private.** The dashboard binds to `127.0.0.1` and needs a sign-in;
-> open it to the LAN or tailnet [deliberately](callback_site/README.md#dashboard-access).
-> Port 8088 is on every host interface for nodes. **Never port-forward either port to the
-> internet.**
+For host setup, Kubernetes connectivity, credentials, and device-access limits,
+follow the [operator deployment guide](callback_site/README.md#deployment-notes).
 
-> [!IMPORTANT]
-> 💾 State lives in the `callback-site-data` volume. It survives rebuilds, but it is
-> **not a backup**.
-
-For host setup, Kubernetes connectivity, credentials, and device-access limits, see
-the [operator deployment guide](callback_site/README.md#deployment-notes).
 Before committing deployment changes, install the
-[secret checks and read the credential-handling guide](SECURITY.md). 🔐
+[secret checks and follow the credential-handling guide](SECURITY.md).
 
-<a id="choose-your-next-step"></a>
-## 🗺️ Choose your next step
-
-```mermaid
-flowchart TD
-    Start(["🤔 What do you want to do?"]) --> Why{"Understand<br/>or build?"}
-    Why -->|"Understand"| Vision["🧭 SOHO rack vision"]
-    Why -->|"Build"| Where{"Where?"}
-    Where -->|"On the desk"| Portal["🐳 Run the portal"]
-    Portal --> K8s["☸️ Docker Desktop<br/>Kubernetes + Helm"]
-    Where -->|"In the rack"| Runbook["🥧 Rack cluster runbook"]
-    Runbook --> Tailnet["🛰️ Tailscale policy"]
-    Runbook --> Toolkit["🧰 Network Toolkit Pi"]
-    Where -->|"On the code"| Dev["🛠️ Operator guide +<br/>functional contracts"]
-```
+## Choose your next step
 
 | I want to... | Read |
 | --- | --- |
-| 🧭 **Understand the purpose and architecture** | [SOHO rack vision](docs/soho-rack-vision.md) |
-| 🐳 **Run the portal with Docker Desktop** | [Docker Compose setup](callback_site/README.md#docker-compose) |
-| ☸️ **Connect the local Kubernetes cluster** | [Docker Desktop Kubernetes and Helm](callback_site/README.md#docker-desktop-kubernetes-and-helm) |
-| 🥧 **Bring up and maintain rack nodes** | [Rack cluster runbook](docs/rack-cluster-runbook.md) |
-| 🛰️ **Plan private management access** | [Tailscale policy workflow](docs/rack-cluster-runbook.md#tailscale-policy-page) |
-| 🧰 **Use a dedicated network toolkit device** | [Network Toolkit setup](callback_site/README.md#network-toolkit-pi-3b) |
-| 💾 **Flash cards or build installer USBs from Linux** | [Isolated flash helper](flash_helper/README.md) |
-| 🛠️ **Understand or develop the portal** | [Operator guide](callback_site/README.md) · [Functional contracts](docs/callback_site-functional-prototypes.md) |
-| 🔐 **Handle credentials safely** | [Secrets and repository safety](SECURITY.md) |
+| **Understand the purpose and intended architecture** | [SOHO rack vision](docs/soho-rack-vision.md) |
+| **Run the portal with Docker Desktop** | [Docker Compose setup](callback_site/README.md#docker-compose) |
+| **Connect the local Kubernetes cluster** | [Docker Desktop Kubernetes and Helm](callback_site/README.md#docker-desktop-kubernetes-and-helm) |
+| **Bring up and maintain rack nodes** | [Rack cluster runbook](docs/rack-cluster-runbook.md) |
+| **Plan private management access** | [Tailscale policy workflow](docs/rack-cluster-runbook.md#tailscale-policy-page) |
+| **Use a dedicated network toolkit device** | [Network Toolkit setup](callback_site/README.md#network-toolkit-pi-3b) |
+| **Understand or develop the portal** | [Operator guide](callback_site/README.md) · [Functional contracts](docs/callback_site-functional-prototypes.md) |
 
-<a id="repository-map"></a>
-## 🗂️ Repository map
-
-```mermaid
-flowchart LR
-    subgraph runtime["🐳 Runtime"]
-        compose["compose*.yaml"]
-        portal["🎛️ callback_site/"]
-        helper["💾 flash_helper/<br/>+ charts/"]
-    end
-    subgraph automation["🛠️ Automation"]
-        scripts["📜 scripts/<br/>SD + cloud-init prep"]
-        ansible["🅰️ roles/ · library/<br/>site.yml · inventory.yml<br/>group_vars/ · host_vars/"]
-    end
-    cloudinit["☁️ cloud-init/<br/>reference examples"]
-    compose --> portal
-    compose -.->|"opt-in"| helper
-    portal --> scripts
-    portal -->|"Node Ops"| ansible
-    portal -.->|"opt-in"| helper
-```
+## Repository map
 
 | Location | What belongs here |
 | --- | --- |
-| 🎛️ [callback_site/](callback_site/) | Web portal, services, templates, and tests. |
-| 📚 [docs/](docs/) | Project vision, rack operations, and functional reference. |
-| 📜 [scripts/](scripts/) | Bootstrap, SD preparation, validation, and local Kubernetes helpers. |
-| ☁️ [cloud-init/](cloud-init/) | Reference cloud-init examples (the portal generates per-node user-data). |
-| 🅰️ [roles/](roles/) · [library/](library/) | Ansible provisioning for rack devices and the network toolkit. |
-| 📋 [inventory.yml](inventory.yml) · [site.yml](site.yml) | Device inventory and the main provisioning playbook. |
-| 💾 [flash_helper/](flash_helper/) · [charts/](charts/) | Opt-in isolated Linux flashing helper and its Helm chart. |
-| 🐳 [compose.yaml](compose.yaml) · [compose.kubernetes.yaml](compose.kubernetes.yaml) · [compose.flash-helper.yaml](compose.flash-helper.yaml) | Portal runtime, optional kubeconfig mount, optional flash-helper wiring. |
+| [callback_site/](callback_site/) | Web portal, services, templates, and tests. |
+| [docs/](docs/) | Project vision, rack operations, and functional reference. |
+| [scripts/](scripts/) | Bootstrap, SD preparation, validation, and local Kubernetes connection helpers. |
+| [roles/](roles/) | Ansible provisioning for rack devices and the network toolkit. |
+| [inventory.yml](inventory.yml) · [site.yml](site.yml) | Device inventory and the main provisioning playbook. |
+| [compose.yaml](compose.yaml) · [compose.kubernetes.yaml](compose.kubernetes.yaml) | Portal runtime and optional kubeconfig mount. |
+| [tower-2-compose/](tower-2-compose/README.md) | Recovered, credential-free legacy Compose projects; separate from the portal. |
 
 ---
 
-<div align="center">
-
-**🧭 Working principle:** establish local control → verify private remote access →
-automate one device at a time.
-
-</div>
+**Working principle:** establish local control, verify private remote access,
+then automate one device at a time.

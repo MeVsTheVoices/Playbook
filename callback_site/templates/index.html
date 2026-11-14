@@ -11,7 +11,6 @@
     <script src="{{ url_for('static', filename='config_check.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='home.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
-    {% include "fragments/structured_output_assets.html" %}
   </head>
   <body>
     {% include "_sidebar.html" %}
@@ -52,7 +51,7 @@
             <h1>SD Card Imager 🧰</h1>
             <span class="pill">Operator Mode 🧪</span>
           </div>
-          <p>Prepares cloud-init and callback metadata, then flashes through the local Linux host or the optional isolated Flash Helper. Helper mode only uses explicitly discovered removable devices and requires a fresh erase confirmation. 😎</p>
+          <p>Runs locally on this machine. It flashes the selected SD card and injects cloud-init plus callback metadata. Zero drama, maximum bytes 😎</p>
         </div>
         <div class="stats-grid">
           <div class="stat-card">
@@ -86,11 +85,8 @@
                   <option value="pi4">pi4</option>
                   <option value="pi3bplus">pi3bplus</option>
                   <option value="network-toolkit">Network Toolkit (Pi 3B+)</option>
-                  <option value="uefi-x86_64">UEFI installer USB (x86_64)</option>
-                  <option value="uefi-arm64">UEFI installer USB (ARM64)</option>
                   <option value="playbook-server">Playbook Server (Ubuntu amd64/arm64)</option>
                 </select>
-                <div class="hint" id="installer-workflow-status" role="status" hidden></div>
               </div>
               <div>
                 <label for="distribution">Distribution</label>
@@ -176,7 +172,7 @@
                 <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
                 <button type="button" id="generate-ssh-key">Generate Key</button>
                 <button type="button" id="kload-ssh-key">Load Key</button>
-              </div>
+              </details>
               <div class="key-preset-row">
                 <div>
                   <label for="ssh_key_select" style="margin-top: 0.55rem;">Saved Generated Keys</label>
@@ -186,18 +182,6 @@
                 </div>
                 <button type="button" id="load-selected-ssh-key">Use Selected</button>
                 <button type="button" id="refresh-ssh-key-list" class="secondary">Refresh List</button>
-              </div>
-              <button type="button" id="regenerate-ssh-key" class="secondary" aria-expanded="false" aria-controls="ssh-key-regeneration" disabled>Regenerate Selected</button>
-              <div id="ssh-key-regeneration" hidden>
-                <p class="hint">Create a fresh key under a different name. The original key is kept; existing nodes are not changed. Download the new private key before using it.</p>
-                <div class="key-picker-row">
-                  <div>
-                    <label for="ssh_key_new_name">New key name</label>
-                    <input id="ssh_key_new_name" autocomplete="off" placeholder="rack-bootstrap-ed25519-2">
-                  </div>
-                  <button type="button" id="confirm-regenerate-ssh-key">Create New Key</button>
-                  <button type="button" id="cancel-regenerate-ssh-key" class="secondary">Cancel</button>
-                </div>
               </div>
               <div class="key-upload-row">
                 <div>
@@ -214,7 +198,7 @@
               <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
               <p class="hint">Generated or loaded website keys are also fetched and verified during first boot from the callback host's public-key endpoint. Keep the matching private key for future SSH access. Uploaded or edited keys are embedded only. The callback address must be reachable from the node, not localhost.</p>
             </div>
-          </details>
+          </div>
 
           <details class="fieldset" id="cloud-init-optional-settings">
             <summary>
@@ -731,7 +715,7 @@ server: https://local-machine-ip:6443
           <button type="button" id="payload-inspect-clear" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;">Clear Selection</button>
         </div>
         <p class="note" id="payload-inspect-meta">Select a callback row to inspect its full payload here. This pane stays put during auto-refresh.</p>
-        <pre id="payload-inspect-json" class="payload-view" data-format="json">No payload selected yet.</pre>
+        <pre id="payload-inspect-json" class="payload-view">No payload selected yet.</pre>
       </details>
       </div>
     </div>

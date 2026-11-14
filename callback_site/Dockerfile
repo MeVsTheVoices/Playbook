@@ -63,7 +63,6 @@ RUN mkdir -p /app/collections /data \
 
 USER app
 
-# 8088 answers only node endpoints (callbacks, boot logs, public keys, health); 8089 is the signed-in dashboard.
 EXPOSE 8088 8089
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

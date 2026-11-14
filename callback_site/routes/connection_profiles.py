@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import asdict
 from typing import Any
 
@@ -38,14 +39,35 @@ def register_connection_profile_routes(app: Any) -> None:
         chosen = select_profile(candidates)
         include_routes = request.args.get("routes") == "1"
         route_cache = {}
-        rendered = []
+        grouped = {}
         for profile in candidates:
+            try:
+                address = str(ipaddress.ip_address(profile.address))
+            except ValueError:
+                address = profile.address.lower().rstrip(".")
+            endpoint = (address, profile.port, profile.user, profile.key)
             record = asdict(profile)
+            existing = grouped.get(endpoint)
+            sources = list(existing["sources"]) if existing else []
+            if profile.source not in sources:
+                sources.append(profile.source)
+            if existing:
+                record["fqdn"] = record["fqdn"] or existing["fqdn"]
+                record["tailnet"] = record["tailnet"] or existing["tailnet"]
+            if existing and profile is not chosen:
+                existing["sources"] = sources
+                existing["fqdn"] = record["fqdn"]
+                existing["tailnet"] = record["tailnet"]
+                continue
+            record["sources"] = sources
+            grouped[endpoint] = record
+        rendered = list(grouped.values())
+        for record in rendered:
             if include_routes:
-                if profile.address not in route_cache:
-                    route_cache[profile.address] = describe_route(profile.address)
-                record["route"] = route_cache[profile.address]
-            rendered.append(record)
+                address = record["address"]
+                if address not in route_cache:
+                    route_cache[address] = describe_route(address)
+                record["route"] = route_cache[address]
         return jsonify(
             {
                 "ok": True,

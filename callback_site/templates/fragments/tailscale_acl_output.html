@@ -5,7 +5,6 @@
 	</div>
 	<div class="button-row compact">
 		<button id="download_policy" type="button" class="secondary-btn">Download</button>
-		<button id="copy_policy" type="button" class="secondary-btn">Copy JSON</button>
 	</div>
 </div>
 <p id="policy_status" class="muted-copy">Waiting for inputs...</p>
@@ -19,4 +18,7 @@
 		<tbody></tbody>
 	</table>
 </div>
-<pre id="policy_output">Waiting for inputs...</pre>
+<div class="policy-code-wrap">
+	<button id="copy_policy" type="button" class="secondary-btn policy-copy-btn">Copy JSON</button>
+	<pre id="policy_output" data-format="json" data-compact="false">Waiting for inputs...</pre>
+</div>

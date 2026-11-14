@@ -10,6 +10,7 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='tailscale_acl.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='common.css') }}">
+    {% include "fragments/structured_output_assets.html" %}
   </head>
   <body>
     {% include "_sidebar.html" %}

@@ -180,6 +180,27 @@ class TailscalePolicyBuilderTests(BaseCallbackSiteTest):
         self.assertEqual(parsed, json.loads(json.dumps(result["policy"])))
         self.assertEqual(list(parsed)[:3], ["tagOwners", "grants", "ssh"])
 
+    def test_policy_text_keeps_comma_separated_values_on_one_line(self) -> None:
+        result = build(subnets="10.0.0.0/24", admin_members="a@example.com,b@example.com")
+        text = result["policy_text"]
+        policy = json.loads(text)
+        for values in (
+            policy["groups"]["group:admins"],
+            policy["grants"][1]["src"],
+            policy["grants"][1]["ip"],
+            policy["ssh"][0]["users"],
+        ):
+            self.assertIn(json.dumps(values), text)
+        self.assertIn('"grants": [\n    {', text)
+        self.assertLess(len(text.splitlines()), len(json.dumps(policy, indent=2).splitlines()))
+        self.assertEqual(policy, result["policy"])
+
+    def test_auto_approver_route_tags_share_a_line(self) -> None:
+        result = build(subnets="192.168.174.0/24, 192.168.175.0/24")
+        for cidr, tags in result["policy"]["autoApprovers"]["routes"].items():
+            expected = f'      {json.dumps(cidr)}: [\n        {", ".join(json.dumps(tag) for tag in tags)}\n      ]'
+            self.assertIn(expected, result["policy_text"])
+
     def test_the_nucbox_homelab_tag_is_a_source_and_destination_of_the_rack_rule(self) -> None:
         rack = build()["policy"]["grants"][1]
         self.assertIn("tag:homelab", rack["src"])
@@ -260,6 +281,7 @@ class TailscalePolicyApiAndPageTests(BaseCallbackSiteTest):
         output = self.client.get("/fragments/tailscale-acl/output").get_data(as_text=True)
         for element in ("policy_output", "policy_status", "policy_warnings", "policy_rules", "copy_policy", "download_policy"):
             self.assertIn(f'id="{element}"', output, element)
+        self.assertRegex(output, r'<div class="policy-code-wrap">\s*<button id="copy_policy"')
         overview = self.client.get("/fragments/tailscale-acl/overview").get_data(as_text=True)
         for element in ("ov-rack", "ov-tailnet", "ov-tags", "ov-grants", "ov-route-count", "ov-tests"):
             self.assertIn(f'id="{element}"', overview, element)

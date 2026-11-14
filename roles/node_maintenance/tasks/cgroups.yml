@@ -1,0 +1,45 @@
+---
+- name: Require a Pi inventory group for cgroup boot configuration
+  ansible.builtin.assert:
+    that: (group_names | intersect(['rpi5_active', 'rpi4_active', 'rpi_3bplus_active', 'network_toolkit_active']) | length) > 0
+    fail_msg: Pi cgroup boot configuration requires a supported Pi inventory group.
+
+- name: Locate existing Pi kernel command line
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ node_maintenance_cmdline_paths | default(['/boot/firmware/cmdline.txt', '/boot/cmdline.txt']) }}"
+  register: node_maintenance_cmdlines
+
+- name: Require an existing regular command line file
+  ansible.builtin.assert:
+    that: (node_maintenance_cmdlines.results | selectattr('stat.isreg', 'defined') | selectattr('stat.isreg') | list | length) > 0
+    fail_msg: No existing Pi cmdline.txt found; refusing to create a guessed boot configuration.
+
+- name: Select preferred command line file
+  ansible.builtin.set_fact:
+    node_maintenance_cmdline: "{{ (node_maintenance_cmdlines.results | selectattr('stat.isreg', 'defined') | selectattr('stat.isreg') | first).item }}"
+
+- name: Read current Pi kernel command line
+  ansible.builtin.slurp:
+    src: "{{ node_maintenance_cmdline }}"
+  register: node_maintenance_boot
+
+- name: Require a nonempty single-line kernel command line
+  ansible.builtin.assert:
+    that:
+      - (node_maintenance_boot.content | b64decode | trim | length) > 0
+      - (node_maintenance_boot.content | b64decode | trim).splitlines() | length == 1
+    fail_msg: Expected a nonempty single-line cmdline.txt; no boot configuration was changed.
+
+- name: Ensure cpuset and memory flags without changing other boot arguments
+  ansible.builtin.lineinfile:
+    path: "{{ node_maintenance_cmdline }}"
+    regexp: '^.*$'
+    line: "{{ ((node_maintenance_boot.content | b64decode).split() | reject('match', '^(cgroup_enable=(cpuset|memory)$|cgroup_memory=)') | list + ['cgroup_enable=cpuset', 'cgroup_enable=memory', 'cgroup_memory=1']) | join(' ') }}"
+    backup: true
+  register: node_maintenance_boot_update
+
+- name: Report manual reboot requirement
+  ansible.builtin.debug:
+    msg: Boot flags updated; reboot this node manually to activate them. No reboot was initiated.
+  when: node_maintenance_boot_update.changed

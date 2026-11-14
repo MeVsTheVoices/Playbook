@@ -66,13 +66,16 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Open **[http://127.0.0.1:8088/](http://127.0.0.1:8088/)** on the host.
-This starts the portal only; it does not configure the router or provision nodes.
+Open **[http://127.0.0.1:8091/](http://127.0.0.1:8091/)** on the host for
+first-time account setup and the dashboard. Port `8088` is reserved for node
+callbacks and other node-only endpoints. This starts the portal only; it does
+not configure the router or provision nodes.
 
-> **Keep management private.** Base Compose publishes the portal port on host
-> interfaces. Restrict it with host firewall rules to trusted LAN/tailnet paths;
-> do not port-forward the dashboard to the internet. Persistent data lives in
-> the `callback-site-data` volume; it survives rebuilds but is not a backup.
+> **Keep management private.** Base Compose binds the dashboard to localhost by
+> default. Setting `CALLBACK_ADMIN_BIND=0.0.0.0` exposes it on host interfaces;
+> only do so on a trusted network, and never port-forward it to the internet.
+> Persistent data lives in the `callback-site-data` volume; it survives rebuilds
+> but is not a backup.
 
 For host setup, Kubernetes connectivity, credentials, and device-access limits,
 follow the [operator deployment guide](callback_site/README.md#deployment-notes).

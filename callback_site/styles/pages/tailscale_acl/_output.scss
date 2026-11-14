@@ -58,6 +58,23 @@
   font-size: 0.78rem;
 }
 
+.policy-code-wrap {
+  position: relative;
+}
+
+.policy-code-wrap .policy-copy-btn {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  z-index: 1;
+  min-height: 32px;
+  padding: 0.35rem 0.6rem;
+}
+
+.policy-code-wrap pre {
+  padding-top: 2.85rem;
+}
+
 pre {
   margin: 0.62rem 0 0;
   @include mixins.state-colors(#0f172f, #e5efff);

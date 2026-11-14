@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -178,6 +179,34 @@ class SdProfileSessionTests(BaseCallbackSiteTest):
         state = json.loads(next(sd_profile_sessions.SESSION_DIR.glob("*.json")).read_text())
         self.assertEqual(state["selected_profile"], "")
         self.assertNotIn("session-proof", state["credentials"])
+
+    def test_idle_sessions_expire_and_are_deleted(self):
+        self.save()
+        path = next(sd_profile_sessions.SESSION_DIR.glob("*.json"))
+        stale = time.time() - sd_profile_sessions.SESSION_IDLE_TTL_SECONDS - 60
+        other = sd_profile_sessions.SESSION_DIR / f"{'b' * 64}.json"
+        leftover = sd_profile_sessions.SESSION_DIR / f"{'c' * 64}.json.x1y2.tmp"
+        unrelated = sd_profile_sessions.SESSION_DIR / "notes.json"
+        for extra in (other, leftover, unrelated):
+            extra.write_text("{}")
+            os.utime(extra, (stale, stale))
+        os.utime(path, (stale, stale))
+        state = self.client.get("/api/sd/options-profiles").get_json()
+        self.assertEqual(state["selected_profile"], "")
+        self.assertNotIn("tailscale_auth_key", state["profiles"][0]["options"])
+        self.assertFalse(path.exists())
+        self.assertFalse(other.exists())
+        self.assertFalse(leftover.exists())
+        self.assertTrue(unrelated.exists())
+
+    def test_using_a_session_keeps_it_alive(self):
+        self.save()
+        path = next(sd_profile_sessions.SESSION_DIR.glob("*.json"))
+        nearly = time.time() - sd_profile_sessions.SESSION_IDLE_TTL_SECONDS + 60
+        os.utime(path, (nearly, nearly))
+        state = self.client.get("/api/sd/options-profiles").get_json()
+        self.assertEqual(state["selected_profile"], "session-proof")
+        self.assertGreater(path.stat().st_mtime, nearly + 30)
 
     def test_corrupt_or_unwritable_session_never_returns_success(self):
         self.save()

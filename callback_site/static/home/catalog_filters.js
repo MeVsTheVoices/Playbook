@@ -1,9 +1,33 @@
 function profileArch(profile) {
-  return "arm64";
+  return profile === "uefi-x86_64" ? "amd64" : "arm64";
 }
 
 function profileCatalog(profile) {
-  return imageCatalog.filter((item) => item.cloud_init_supported !== false && Array.isArray(item.profiles) && item.profiles.includes(profile));
+  return imageCatalog.filter((item) => (item.cloud_init_supported !== false || item.workflow === "uefi-installer") && Array.isArray(item.profiles) && item.profiles.includes(profile));
+}
+
+function isUefiInstaller() {
+  return ["uefi-x86_64", "uefi-arm64"].includes(form.profile.value);
+}
+
+function updateInstallerWorkflow() {
+  const installer = isUefiInstaller();
+  const note = document.getElementById("installer-workflow-status");
+  note.hidden = !installer;
+  note.textContent = deviceBackend === "helper"
+    ? "Unattended installer USB: booting it erases the sole eligible internal disk without another prompt, then powers off. Remove USB before restarting. ARM64 requires UEFI firmware."
+    : "Unavailable: UEFI installer creation requires a configured Linux flashing helper. The portal cannot write installer USBs natively.";
+  form.querySelector("button[type='submit']").disabled = installer && deviceBackend !== "helper";
+  form.querySelector("button[type='submit']").textContent = installer
+    ? "Create Unattended Installer USB" : "Format + Write SD Card";
+  sdOptionsProfilePiOnlyEl.disabled = installer;
+  for (const name of ["image_url", "image_sha256", "image_file", "workspace"]) {
+    form[name].disabled = installer;
+  }
+  if (installer) {
+    form.image_file.value = "";
+    form.workspace.value = "";
+  }
 }
 
 function rebuildCatalogFilters() {
@@ -145,7 +169,7 @@ function applyOsPreset() {
   form.image_url.value = "";
   form.image_sha256.value = imageSha;
   updatePresetSelectState(localAvailable);
-  if (localAvailable && cachePath) {
+  if (localAvailable && cachePath && !isUefiInstaller()) {
     form.image_file.value = cachePath;
     form.image_url.value = "";
     osPresetNoteEl.textContent = `${distro} ${release} selected for ${profile} (${arch}). Verified cached image found locally 🎉`; 
@@ -168,6 +192,7 @@ function applyOsPreset() {
     catalogMetaEl.innerHTML = `<div class="catalog-pills">${statusPill}</div><div>${escapeHtml(fallback)}</div>`;
   }
   updateOsScopedOptionsVisibility();
+  updateInstallerWorkflow();
 }
 
 function currentDistroFamilyForOptionScopes() {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from typing import Any, Dict
@@ -300,3 +301,94 @@ def _render_openwrt_inventory_preview(
 
     lines.append(f"          ansible_module: {module_name}")
     return "\n".join(lines)
+
+
+# Read-only and fixed: nothing from the request reaches the router's shell. Runs under BusyBox ash.
+UCI_SUMMARY_SCRIPT = r"""
+. /etc/openwrt_release 2>/dev/null
+echo "release=${DISTRIB_DESCRIPTION:-}"
+echo "board=$(cat /tmp/sysinfo/model 2>/dev/null)"
+for k in system.@system[0].hostname system.@system[0].zonename \
+  network.lan.proto network.lan.ipaddr network.lan.netmask \
+  network.wan.proto network.wan.ipaddr dhcp.lan.ignore dhcp.lan.start dhcp.lan.limit dhcp.lan.leasetime; do
+  echo "$k=$(uci -q get "$k")"
+done
+uci -q show wireless | grep -E '^wireless\.[][A-Za-z0-9_@-]+\.(ssid|mode|network|disabled|band|channel)='
+exit 0
+"""
+
+# Only these keys are returned; anything else the router prints (keys, passwords) is dropped.
+_UCI_FIXED_KEYS = (
+    "release", "board",
+    "system.@system[0].hostname", "system.@system[0].zonename",
+    "network.lan.proto", "network.lan.ipaddr", "network.lan.netmask",
+    "network.wan.proto", "network.wan.ipaddr",
+    "dhcp.lan.ignore", "dhcp.lan.start", "dhcp.lan.limit", "dhcp.lan.leasetime",
+)
+_UCI_WIRELESS_KEY = re.compile(r"wireless\.[A-Za-z0-9_@\[\]-]{1,64}\.(ssid|mode|network|disabled|band|channel)")
+UCI_SSH_TIMEOUT_SECONDS = 20
+
+
+def parse_uci_summary(text: str) -> list[Dict[str, str]]:
+    found: list[Dict[str, str]] = []
+    for line in str(text or "").splitlines():
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if not sep or not (key in _UCI_FIXED_KEYS or _UCI_WIRELESS_KEY.fullmatch(key)):
+            continue
+        value = value.strip().strip("'")[:200]
+        if value:
+            found.append({"key": key, "value": value})
+    return found
+
+
+def read_openwrt_uci(node_name: str, port: int = 22) -> Dict[str, Any]:
+    """Basic UCI facts from an OpenWrt node over key-based SSH; never uses or stores a password."""
+    from services.network import _preferred_node_connect_target
+    from services.node_inventory import _node_ops_inventory_view
+
+    if port < 1 or port > 65535:
+        raise ValueError("port must be between 1 and 65535")
+    entry = next(
+        (item for item in _node_ops_inventory_view() if isinstance(item, dict) and str(item.get("name", "")).strip() == node_name),
+        None,
+    )
+    if not entry:
+        raise ValueError("unknown node")
+    if str(entry.get("group", "")).strip().lower() != "openwrt":
+        raise ValueError("UCI info is only read from nodes in group openwrt")
+    callback_ip = str(entry.get("callback_connect_ip", "") or entry.get("callback_source_ip", "") or "").strip()
+    host, _source = _preferred_node_connect_target(node_name, str(entry.get("address", "") or "").strip(), callback_ip)
+    if not host:
+        raise ValueError("no address known for this router yet")
+    user = str(entry.get("node_username", "") or "").strip() or "root"
+    destination = _ssh_destination(user, host)
+    key = _resolve_openwrt_ssh_key(str(entry.get("certificate", "") or "").strip() or "rack-bootstrap-ed25519")
+    preflight = _ssh_private_key_preflight(key["private_key_path"])
+    result: Dict[str, Any] = {"node": node_name, "target": f"{destination}:{port}", "facts": [], "error": ""}
+    if preflight:
+        result["error"] = preflight
+        return result
+
+    _seed_known_host(host, port)
+    cmd = [
+        "ssh", "-i", key["private_key_path"],
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
+        "-o", "ConnectTimeout=6",
+        "-p", str(port),
+        "--", destination, UCI_SUMMARY_SCRIPT,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=UCI_SSH_TIMEOUT_SECONDS, check=False)
+    except FileNotFoundError:
+        result["error"] = "ssh is not installed or available on this host"
+        return result
+    except subprocess.TimeoutExpired:
+        result["error"] = f"Timed out after {UCI_SSH_TIMEOUT_SECONDS}s reading the router."
+        return result
+    result["facts"] = parse_uci_summary(proc.stdout)
+    if proc.returncode != 0 and not result["facts"]:
+        result["error"] = (proc.stderr or "").strip()[-400:] or f"ssh exited with code {proc.returncode}"
+    return result

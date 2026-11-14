@@ -41,7 +41,6 @@ async function loadSummary() {
   applyNodeState(state);
   renderProfileSegmentOptions();
   renderManualNodeSelector();
-  renderOpenwrtHosts();
 
   const config = (state.provisioning && state.provisioning.config) || {};
   document.getElementById("username").value = config.username || "";
@@ -57,6 +56,7 @@ async function loadSummary() {
     provisionNode.value = oldNode;
   }
   renderModuleSection();
+  renderOpenwrtHosts();
   renderRows();
   await loadBootLogHosts();
 }
@@ -69,12 +69,12 @@ async function syncNodes() {
     applyNodeState(state);
     await loadBootLogHosts();
     renderManualNodeSelector();
-    renderOpenwrtHosts();
     const oldNode = provisionNode.value;
     renderNodeSelector();
     if (oldNode && nodes.some((n) => n.name === oldNode)) {
       provisionNode.value = oldNode;
     }
+    renderOpenwrtHosts();
   } catch (err) {
     // Keep the table as it is; the monitor poll below still reports reachability.
   }

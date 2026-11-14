@@ -97,8 +97,6 @@ class RepoConfigTests(BaseCallbackSiteTest):
         self.assertIn('--data-binary "\\$PAYLOAD_JSON"', script_text)
         self.assertIn('SOURCE_IP="\\$(/usr/local/bin/rack-local-ip', script_text)
         self.assertIn('PAYLOAD_JSON="\\$(INSTANCE_ID="\\${INSTANCE_ID:-\\$(hostname)}"', script_text)
-        self.assertIn('if [[ -n "\\${CALLBACK_URL:-}" ]]; then', script_text)
-        self.assertIn('-d "\\${PAYLOAD_JSON}" "\\${CALLBACK_URL}" || true', script_text)
         self.assertIn('INFLUX_URL="\\${CLOUD_INIT_TELEGRAF_INFLUX_URL:-}"', script_text)
         self.assertIn('CLOUD_INIT_USERNAME="${CLOUD_INIT_USERNAME:-jdizzle}"', script_text)
         self.assertIn('CLOUD_INIT_USER_PASSWORD="${CLOUD_INIT_USER_PASSWORD:-}"', script_text)

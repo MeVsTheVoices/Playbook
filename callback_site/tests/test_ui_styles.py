@@ -270,7 +270,7 @@ function measure(frame) {
                     self.assertEqual(snapshot["nodeTableOverflow"], "auto")
                     self.assertEqual(snapshot["statCardPosition"], "relative")
                     self.assertEqual(snapshot["statCardOverflow"], "hidden")
-                    self.assertEqual(snapshot["nodeActionCount"], 4)
+                    self.assertEqual(snapshot["nodeActionCount"], 5)
                     self.assertTrue(snapshot["nodeActionsFit"])
                     self.assertTrue(snapshot["moduleActionsFit"])
                     self.assertLessEqual(snapshot["moduleOptionsOverflow"], 1)

@@ -1,0 +1,14 @@
+---
+- name: Validate explicit systemd service settings
+  ansible.builtin.assert:
+    that:
+      - (provision_inputs.service_name | default('')) is match('^[A-Za-z0-9][A-Za-z0-9_.@:-]*[.]service$')
+      - (provision_inputs.service_state | default('')) in ['started', 'stopped']
+      - (provision_inputs.service_enabled | default('')) in ['true', 'false']
+    fail_msg: Specify an existing .service unit, started/stopped state and true/false boot enablement.
+
+- name: Apply selected service runtime and boot state
+  ansible.builtin.systemd:
+    name: "{{ provision_inputs.service_name }}"
+    state: "{{ provision_inputs.service_state }}"
+    enabled: "{{ provision_inputs.service_enabled | bool }}"

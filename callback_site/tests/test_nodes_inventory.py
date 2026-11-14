@@ -292,9 +292,18 @@ class NodeInventoryTests(BaseCallbackSiteTest):
                     "last_callback": "2026-06-29T00:00:00+00:00",
                 }
             ],
-        ), patch_in("_ping_status",
-            return_value={"reachable": True, "latency_ms": 1.25, "error": ""},
-        ):
+        ), patch_in("gather_profiles", return_value=[]), patch_in(
+            "select_profile",
+            return_value=SimpleNamespace(
+                id="custom-route",
+                address="203.0.113.21",
+                source="callback",
+                port=2222,
+            ),
+        ), patch_in(
+            "_ping_status",
+            return_value={"reachable": True, "latency_ms": 1.25, "probe": "tcp", "error": ""},
+        ) as ping_status:
             monitor = self.client.post("/api/nodes/monitor", json={"send_webhook": False})
 
         self.assertEqual(monitor.status_code, 200)
@@ -305,6 +314,8 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         self.assertEqual(statuses[0].get("address"), "203.0.113.21")
         self.assertEqual(statuses[0].get("address_source"), "callback")
         self.assertEqual(statuses[0].get("last_callback"), "2026-06-29T00:00:00+00:00")
+        self.assertEqual(statuses[0].get("probe"), "tcp")
+        ping_status.assert_called_once_with("203.0.113.21", 2222)
 
     def test_nodes_summary_matches_callback_aliases(self) -> None:
         self.client.post(

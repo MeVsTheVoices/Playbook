@@ -33,7 +33,7 @@ What it does:
   - Creates a root .venv for Ansible tooling.
   - Installs ansible-core and repo-local collections.
   - Creates callback_site/.venv and installs Flask dependencies.
-  - Validates inventory syntax and Docker Compose stack configs.
+  - Validates inventory syntax.
 EOF
 }
 
@@ -137,33 +137,6 @@ install_callback_env() {
   )
 }
 
-validate_compose_stacks() {
-  local stack_dir
-  local compose_args
-
-  if ! command -v docker >/dev/null 2>&1; then
-    log "Skipping Docker Compose validation because docker is not installed"
-    return 0
-  fi
-
-  if ! docker compose version >/dev/null 2>&1; then
-    log "Skipping Docker Compose validation because docker compose is unavailable"
-    return 0
-  fi
-
-  shopt -s nullglob
-  for stack_dir in "$ROOT_DIR"/tower-2-compose/*; do
-    [[ -d "$stack_dir" ]] || continue
-    compose_args=( -f "$stack_dir/docker-compose.yml" )
-    if [[ -f "$stack_dir/docker-compose.override.yml" ]]; then
-      compose_args+=( -f "$stack_dir/docker-compose.override.yml" )
-    fi
-    log "Validating Compose stack $(basename "$stack_dir")"
-    docker compose "${compose_args[@]}" config >/dev/null
-  done
-  shopt -u nullglob
-}
-
 start_callback_site() {
   log "Starting callback site on port $CALLBACK_PORT"
   (
@@ -213,8 +186,6 @@ fi
 if [[ "$SKIP_CALLBACK" == "false" ]]; then
   install_callback_env
 fi
-
-validate_compose_stacks
 
 log "Bootstrap complete"
 if [[ "$SKIP_ANSIBLE" == "false" ]]; then

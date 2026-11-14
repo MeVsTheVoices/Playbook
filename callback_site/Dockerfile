@@ -8,7 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ANSIBLE_CONFIG=/app/ansible.cfg \
     PYTHONPATH=/app/callback_site \
     HOST=0.0.0.0 \
-    PORT=8088
+    PORT=8088 \
+    CALLBACK_NODE_ONLY_PORT=8088 \
+    CALLBACK_ADMIN_PORT=8091
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -61,9 +63,9 @@ RUN mkdir -p /app/collections /data \
 
 USER app
 
-EXPOSE 8088
+EXPOSE 8088 8089
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:8088/health', timeout=3)"
 
-CMD ["gunicorn", "--workers", "1", "--threads", "8", "--bind", "0.0.0.0:8088", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+CMD ["gunicorn", "--workers", "1", "--threads", "8", "--bind", "0.0.0.0:8088", "--bind", "0.0.0.0:8089", "--access-logfile", "-", "--error-logfile", "-", "app:app"]

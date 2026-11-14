@@ -1,0 +1,14 @@
+services:
+  callback-site:
+    environment:
+      CALLBACK_FLASH_HELPER_URL: "${CALLBACK_FLASH_HELPER_URL:?Set the reachable Linux helper URL}"
+      CALLBACK_FLASH_HELPER_TOKEN_FILE: /run/secrets/flash-helper-token
+      CALLBACK_FLASH_HELPER_NAMESPACE: "${CALLBACK_FLASH_HELPER_NAMESPACE:-flash-helper}"
+      CALLBACK_FLASH_HELPER_TEMPLATE: "${CALLBACK_FLASH_HELPER_TEMPLATE:-}"
+    volumes:
+      - type: bind
+        source: "${FLASH_HELPER_TOKEN_FILE:?Set the absolute host path to the dedicated helper token}"
+        target: /run/secrets/flash-helper-token
+        read_only: true
+        bind:
+          create_host_path: false

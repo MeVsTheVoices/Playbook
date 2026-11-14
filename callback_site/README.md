@@ -152,7 +152,7 @@ Open:
   Older callbacks per host use single-line compact rows, including certificate
   text and badges; expand a row or use Expand older to see full details.
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
-- `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
+- `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Reachability checks try ICMP and fall back to TCP on the selected SSH port when ICMP is blocked. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
   Beside **Save Module Inputs**, **Save as named configuration** opens an inline
   name field. Save with a name (blank keeps the suggested name), or close it with
@@ -535,7 +535,11 @@ docker compose ps
 
 The container uses Gunicorn with one worker because background job status is
 process-local; threads handle concurrent requests within that worker.
-Open http://127.0.0.1:8088/. View the app log with
+Open http://127.0.0.1:8091/ for first-time account setup and the dashboard.
+The host binds this dashboard port to localhost by default; set
+`CALLBACK_ADMIN_BIND=0.0.0.0` in `.env` to expose it to a trusted LAN.
+Port `8088` remains available to nodes for callbacks and other node-only
+endpoints. View the app log with
 `docker compose logs -f callback-site`; stop it with `docker compose down`.
 To use a different host port, set `CALLBACK_PORT` before starting Compose
 (for example, `$env:CALLBACK_PORT=9821` in PowerShell).

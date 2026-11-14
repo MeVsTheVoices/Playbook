@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
+from unittest.mock import MagicMock, patch
+
 try:
     from .test_support import BaseCallbackSiteTest, TEST_DATA_DIR, patch_in
 except ImportError:
     from test_support import BaseCallbackSiteTest, TEST_DATA_DIR, patch_in
 
 import services.images
+import services.node_inventory
 import services.node_state
 
 
@@ -23,6 +27,19 @@ class MonitorTests(BaseCallbackSiteTest):
         "monitor/node_actions.js",
         "monitor/init.js",
     ]
+
+    def test_ping_falls_back_to_selected_ssh_port_when_icmp_is_blocked(self) -> None:
+        ping = subprocess.CompletedProcess(["ping"], 1, stdout="", stderr="network unreachable")
+        with (
+            patch("services.node_inventory.subprocess.run", return_value=ping),
+            patch("services.node_inventory.socket.create_connection", return_value=MagicMock()) as connect,
+        ):
+            status = services.node_inventory._ping_status("192.0.2.9", 2222)
+
+        self.assertTrue(status["reachable"])
+        self.assertEqual(status["probe"], "tcp")
+        self.assertGreaterEqual(status["latency_ms"], 0)
+        connect.assert_called_once_with(("192.0.2.9", 2222), timeout=1)
 
     def test_monitor_loads_saved_check_outcomes_on_page_load(self) -> None:
         self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """

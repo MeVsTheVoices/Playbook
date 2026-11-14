@@ -160,6 +160,9 @@ Open:
   The fleet table keeps its action controls inside their column and scrolls
   horizontally within the panel at narrow widths. The sidebar uses a compact
   icon toggle; collapsed navigation retains labeled icons and hover titles.
+- `/kubernetes` — cluster status and Helm configurations, also available from
+  the shared sidebar. A connected Kubernetes context is required for live
+  cluster data.
 - `/settings` — restore archived nodes without deleting callbacks, saved inputs,
   or historical boot logs. Age-based pruning is retired; archive active nodes
   explicitly from the callback dashboard.
@@ -217,6 +220,46 @@ installers. Failed delivery is visible in the service journal and retried every
 The power-restore option controls whether that service also starts on later
 boots; first-boot delivery is always attempted. Hardware and final callbacks
 still report the subsequent bootstrap state.
+
+#### Pi deployment and callback checklist
+
+1. On the portal host, set `CALLBACK_PUBLIC_URL` in the ignored `.env` to a
+   host address reachable from the Pi's first-boot network and the published
+   callback port. Restart or recreate the Compose service after changing it.
+   The callback port defaults to `8088`; the localhost dashboard at `8091` and
+   the container's Docker bridge address are not callback destinations.
+2. Verify the portal and listener from the host, then test reachability from the
+   Pi's network (including firewall and router rules):
+
+   ```bash
+   docker compose ps
+   curl -fsS http://127.0.0.1:8088/health
+   # From the Pi, replace the address and port with the configured host endpoint:
+   curl -fsS http://<portal-host>:8088/health
+   ```
+
+   A healthy listener confirms network access, not successful delivery of a
+   node callback. Do not send a fabricated callback to test a live inventory.
+3. Check `scripts/run_sd_flasher.sh status` if using the host flasher. In the
+   dashboard, confirm the callback URL and select the intended device, SSH key,
+   network, and K3s role before writing the card. A Pi 5 defaults to a K3s
+   worker; choose control-plane explicitly only when that is intended.
+4. After boot, check the callback feed and the node's boot logs. If a callback
+   is missing, use a terminal on the Pi:
+
+   ```bash
+   cloud-init status --long
+   sudo systemctl status rack-power-restored-callback.service --no-pager
+   sudo journalctl -u rack-power-restored-callback.service -b --no-pager
+   sudo tail -n 100 /var/log/cloud-init-output.log
+   ```
+
+   Check for DNS, routing, firewall or timeout errors and verify the configured
+   callback URL on the node. Changing the portal's `.env` does not rewrite
+   user-data already written to a card or an existing node's configuration.
+   Avoid sharing unredacted cloud-init logs or configuration: they may contain
+   credentials. A callback can succeed even if a later package install or K3s
+   join fails, so inspect cloud-init and node health separately.
 
 A successful explicit SD preparation restores that hostname from the archive
 without deleting its previous callback history. Failed flashes leave archived
@@ -539,7 +582,8 @@ Open http://127.0.0.1:8091/ for first-time account setup and the dashboard.
 The host binds this dashboard port to localhost by default; set
 `CALLBACK_ADMIN_BIND=0.0.0.0` in `.env` to expose it to a trusted LAN.
 Port `8088` remains available to nodes for callbacks and other node-only
-endpoints. View the app log with
+endpoints. Container port `8089` is published as the dashboard's host port
+`8091`; it is separate from the host flasher's own port `8089`. View the app log with
 `docker compose logs -f callback-site`; stop it with `docker compose down`.
 To use a different host port, set `CALLBACK_PORT` before starting Compose
 (for example, `$env:CALLBACK_PORT=9821` in PowerShell).
@@ -673,6 +717,40 @@ operations and access to partition devices. The default non-root image is
 host flasher above rather than making the web app
 privileged. Unmount the intended card on the host, verify size/model/serial,
 and never expose a system disk or mount the host's entire `/dev` into the app.
+
+### Linux K3s and the Kubernetes dashboard
+
+The sidebar's **Kubernetes** page uses the kubeconfig mounted into the portal;
+it does not automatically connect to the host's K3s or make physical Pis part
+of Docker Desktop's cluster. On a Linux host running the K3s server, the
+following helper exports its kubeconfig, rewrites the API endpoint to a
+container-reachable host address, records the Compose overlay in `.env`,
+recreates the portal, and checks the connection:
+
+```bash
+scripts/connect_k3s_kubeconfig.sh
+```
+
+The helper uses `sudo` to read `/etc/rancher/k3s/k3s.yaml`; set `K3S_API_HOST`
+if the detected host address is not suitable. The chosen address must be in the
+K3s API certificate's SANs and reachable from the container. The generated
+`.local/kubeconfig` grants cluster access: it is ignored by Git and mounted
+read-only, but still needs to be readable by the container's non-root user.
+The helper uses a private `.local` directory with a readable kubeconfig file;
+protect the file and any copies as credentials.
+
+For manual starts or rebuilds, keep the overlay and check from inside the
+container:
+
+```bash
+docker compose -f compose.yaml -f compose.kubernetes.yaml up --build -d
+docker compose -f compose.yaml -f compose.kubernetes.yaml exec -T callback-site \
+  kubectl --request-timeout=10s get nodes -o wide
+```
+
+`Ready` workers do not become control-plane or etcd nodes merely by appearing
+in the cluster. See the [rack K3s topology](../docs/rack-cluster-runbook.md#k3s-topology-and-join-preflight)
+before changing a node's role.
 
 ### Docker Desktop Kubernetes and Helm
 

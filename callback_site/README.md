@@ -1484,6 +1484,5 @@ contexts; otherwise run normally as the unprivileged user.
 ---
 
 ➡️ **Next:** [🏠 Project home](../README.md) · [🧭 SOHO rack vision](../docs/soho-rack-vision.md) ·
-[🔁 Rack cluster runbook](../docs/rack-cluster-runbook.md) ·
 [🧪 Functional contracts](../docs/callback_site-functional-prototypes.md) ·
 [💾 Flash helper](../flash_helper/README.md)

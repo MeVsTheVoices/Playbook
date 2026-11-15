@@ -54,3 +54,4 @@ callback_site/data/admin_secret_key
 callback_site/data/.admin_*
 callback_site/data/sd_profile_sessions/
 /dist/
+docs/rack-cluster-runbook.md

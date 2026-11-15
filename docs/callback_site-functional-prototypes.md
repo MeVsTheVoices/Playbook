@@ -473,5 +473,4 @@ Completed in this pass:
 > read/merge/atomic-write pattern.
 
 ➡️ **Next:** [📡 Operator guide](../callback_site/README.md) ·
-[☸️ Rack cluster runbook](rack-cluster-runbook.md) ·
 [🧭 SOHO rack vision](soho-rack-vision.md) · [🏠 Repository README](../README.md)

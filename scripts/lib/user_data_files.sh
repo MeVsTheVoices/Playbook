@@ -129,9 +129,11 @@ TS_KEY_FILE
       fi
 
       if [[ -f "$K3S_CONFIG" ]]; then
-        sed -i -E '/^(node-ip|advertise-address)[[:space:]]*:/d' "$K3S_CONFIG"
+        sed -i -E '/^(node-ip|advertise-address|flannel-iface)[[:space:]]*:/d' "$K3S_CONFIG"
         if [[ -n "$(tail -c1 "$K3S_CONFIG")" ]]; then echo >> "$K3S_CONFIG"; fi
         printf 'node-ip: %s\n' "$ts_ip" >> "$K3S_CONFIG"
+        # Flannel VXLAN must ride tailscale0 too; LAN IPs behind NAT break cross-node pod traffic.
+        printf 'flannel-iface: tailscale0\n' >> "$K3S_CONFIG"
         if [[ "${RACK_K3S_MODE:-}" == "server" ]]; then printf 'advertise-address: %s\n' "$ts_ip" >> "$K3S_CONFIG"; fi
         log "set K3s node-ip to ${ts_ip}"
       fi

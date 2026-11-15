@@ -566,6 +566,7 @@ class LightweightAnsibleRoleTests(BaseCallbackSiteTest):
             self.assertEqual(data.get(key), expected.get(key), f"{profile}/{role} {inputs}: {key}")
         self.assertEqual(data["node-ip"], "100.70.57.110")
         self.assertEqual(("advertise-address" in data), role == "control-plane")
+        self.assertEqual(data["flannel-iface"], "tailscale0")
 
     def test_roles_match_python_rules_on_every_board(self) -> None:
         common = ({}, {"k3s_taint": "false"}, {"k3s_taint": "true"}, {"k3s_max_pods": "35"}, {"k3s_max_pods": ""}, {"k3s_max_pods": "110"})

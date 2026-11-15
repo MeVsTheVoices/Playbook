@@ -63,6 +63,37 @@
           </div>
         </section>
 
+        <section class="panel kube-section" id="tailnet-api">
+          <h2>Kubernetes API over Tailscale</h2>
+          <p class="kube-subtle">Installs the Tailscale Kubernetes operator with its in-process API server proxy. kubectl then reaches the cluster at <code>https://&lt;hostname&gt;.&lt;tailnet&gt;</code> from any tailnet device, without exposing port 6443. In auth mode the proxy acts as your Tailscale identity, so Kubernetes RBAC decides what you can do.</p>
+          <dl class="tailnet-api-status" id="tailnet-api-status"><dt>Status</dt><dd>Checking...</dd></dl>
+          <details class="tailnet-api-prereqs">
+            <summary>Before the first install</summary>
+            <ol>
+              <li>On the <a href="/tailscale-acl">Tailscale policy page</a>, tick <strong>Tailscale Kubernetes operator</strong>, pick the admin's access, and save the policy in the Tailscale admin console. This defines <code>tag:k8s-operator</code> and <code>tag:k8s</code> and grants tcp 443.</li>
+              <li>Enable <a href="https://tailscale.com/docs/how-to/set-up-https-certificates" target="_blank" rel="noopener noreferrer">HTTPS certificates</a> for the tailnet.</li>
+              <li>Create an <a href="https://login.tailscale.com/admin/settings/trust-credentials" target="_blank" rel="noopener noreferrer">OAuth client</a> with <em>Devices Core</em>, <em>Auth Keys</em> and <em>Services</em> write scopes, tagged <code>tag:k8s-operator</code>.</li>
+            </ol>
+          </details>
+          <form id="tailnet-api-form" class="helm-fields tailnet-api-form" autocomplete="off">
+            <label>Proxy hostname <input id="tailnet-api-hostname" value="tailscale-operator" maxlength="63" required></label>
+            <label>Proxy mode
+              <select id="tailnet-api-mode">
+                <option value="auth" selected>auth: Tailscale identity + RBAC</option>
+                <option value="noauth">noauth: connectivity only</option>
+              </select>
+            </label>
+            <label>OAuth client ID <input id="tailnet-api-client-id" placeholder="blank keeps the installed one" spellcheck="false"></label>
+            <label>OAuth client secret <input id="tailnet-api-client-secret" type="password" placeholder="tskey-client-… (not saved)" autocomplete="new-password"></label>
+            <label class="tailnet-api-check"><input id="tailnet-api-readers" type="checkbox"> Bind <code>tailnet-readers</code> to the read-only <code>view</code> role</label>
+          </form>
+          <div class="kube-actions">
+            <button type="button" class="kube-btn" id="tailnet-api-install">Install / upgrade operator</button>
+            <button type="button" class="kube-btn" id="tailnet-api-refresh">Refresh</button>
+          </div>
+          <div class="status" id="tailnet-api-message" role="status" aria-live="polite"></div>
+        </section>
+
         <section class="panel kube-section" id="helm-workspace">
           <h2>Helm configurations</h2>
           <p class="kube-subtle">Import a public GitHub chart with its defaults. Save, preview, and explicitly deploy it to the configured cluster. Only import charts you trust.</p>
@@ -247,5 +278,6 @@
 
     <script src="{{ url_for('static', filename='kubernetes.js') }}" defer></script>
     <script src="{{ url_for('static', filename='helm.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='tailnet_api.js') }}" defer></script>
   </body>
 </html>

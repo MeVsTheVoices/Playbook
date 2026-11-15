@@ -10,11 +10,14 @@ never stored by the dashboard; the chart keeps them in its own Kubernetes Secret
 
 from __future__ import annotations
 
+import base64
+import ipaddress
 import json
 import os
 import re
 import shutil
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -112,7 +115,117 @@ def operator_status() -> Dict[str, Any]:
                 status["proxy_url"] = f"https://{status['hostname']}.{tailnet}"
     binding = _json_or_none([*_kubectl(), *connection, "get", "clusterrolebinding", READERS_BINDING, "-o", "json"])
     status["readers_binding"] = bool(binding)
+    if entry:
+        status["live"] = live_checks(connection)
     return status
+
+
+def _text_or_empty(args: list[str]) -> str:
+    try:
+        return helm._command(args, timeout=30)
+    except RuntimeError:
+        return ""
+
+
+def _pod_check(connection: list[str]) -> Dict[str, Any]:
+    pods = _json_or_none([*_kubectl(), *connection, "get", "pods", "-n", NAMESPACE, "-l", "app=operator", "-o", "json"]) or {}
+    items = [item for item in pods.get("items") or [] if isinstance(item, dict)]
+    if not items:
+        return {"found": False}
+    pod = max(items, key=lambda item: str((item.get("metadata") or {}).get("creationTimestamp", "")))
+    state = pod.get("status") or {}
+    containers = [c for c in state.get("containerStatuses") or [] if isinstance(c, dict)]
+    return {
+        "found": True,
+        "name": str((pod.get("metadata") or {}).get("name", "")),
+        "node": str((pod.get("spec") or {}).get("nodeName", "")),
+        "phase": str(state.get("phase", "")),
+        "ready": bool(containers) and all(c.get("ready") for c in containers),
+        "restarts": sum(int(c.get("restartCount", 0) or 0) for c in containers),
+        "started_at": str(state.get("startTime", "")),
+    }
+
+
+def _tailnet_check(connection: list[str]) -> Dict[str, Any]:
+    """Read only the login name and node ID from the operator's tsnet state; keys stay in the cluster."""
+    secret = _json_or_none([*_kubectl(), *connection, "get", "secret", "operator", "-n", NAMESPACE, "-o", "json"]) or {}
+    data = secret.get("data") if isinstance(secret.get("data"), dict) else {}
+    result: Dict[str, Any] = {"logged_in": False, "name": "", "node_id": "", "certificate": False}
+    try:
+        current = base64.b64decode(data.get("_current-profile", "")).decode().strip()
+        profiles = json.loads(base64.b64decode(data.get("_profiles", "")) or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        return result
+    # _current-profile names the state key ("profile-8215"); _profiles is keyed by the bare ID.
+    profile = (profiles.get(current) or profiles.get(current.removeprefix("profile-"))) if isinstance(profiles, dict) else None
+    if isinstance(profile, dict) and profile.get("NodeID"):
+        result.update(logged_in=True, name=str(profile.get("Name", "")), node_id=str(profile.get("NodeID", "")))
+    result["certificate"] = any(key.endswith(".crt") for key in data)
+    return result
+
+
+def _log_check(connection: list[str]) -> Dict[str, Any]:
+    base = [*_kubectl(), *connection, "logs", "deployment/operator", "-n", NAMESPACE]
+    early = _text_or_empty([*base, "--limit-bytes=1048576"])
+    recent = _text_or_empty([*base, "--tail=300"])
+    errors: list[str] = []
+    for line in recent.splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict) and entry.get("level") == "error":
+            errors.append(str(entry.get("msg") or entry.get("error") or "")[:240])
+    return {
+        "startup_complete": "Startup complete" in early,
+        "proxy_listening": "API server proxy" in early and "listening" in early,
+        "dns_timeouts": recent.count("i/o timeout"),
+        "recent_errors": len(errors),
+        "last_error": errors[-1] if errors else "",
+    }
+
+
+def _network_check(connection: list[str]) -> Dict[str, Any]:
+    nodes = _json_or_none([*_kubectl(), *connection, "get", "nodes", "-o", "json"]) or {}
+    rows = []
+    for node in nodes.get("items") or []:
+        meta = (node.get("metadata") if isinstance(node, dict) else None) or {}
+        address = str((meta.get("annotations") or {}).get("flannel.alpha.coreos.com/public-ip", ""))
+        rows.append({"node": str(meta.get("name", "")), "address": address, "tailscale": _is_tailscale(address)})
+    return {"nodes": rows, "ok": bool(rows) and all(row["tailscale"] for row in rows)}
+
+
+def _is_tailscale(address: str) -> bool:
+    try:
+        return ipaddress.ip_address(address) in ipaddress.ip_network("100.64.0.0/10")
+    except ValueError:
+        return False
+
+
+def live_checks(connection: list[str]) -> Dict[str, Any]:
+    """Runtime health: pod, tailnet login, logs and pod network, plus a one-line verdict."""
+    pod = _pod_check(connection)
+    tailnet = _tailnet_check(connection)
+    logs = _log_check(connection)
+    network = _network_check(connection)
+    if not pod.get("found"):
+        verdict, healthy = "No operator pod found.", False
+    elif not pod.get("ready"):
+        verdict, healthy = f"Operator pod is {pod.get('phase') or 'not ready'}.", False
+    elif not network["ok"]:
+        verdict, healthy = "Flannel is not using Tailscale on every node; pods on other nodes can't reach the API or DNS.", False
+    elif not tailnet["logged_in"]:
+        verdict, healthy = "The operator has not joined the tailnet. Check the OAuth client and the tag:k8s-operator policy.", False
+    elif not logs["startup_complete"]:
+        verdict, healthy = "The operator is still starting.", False
+    elif logs["dns_timeouts"]:
+        verdict, healthy = "The operator is logging DNS/API timeouts.", False
+    else:
+        verdict, healthy = "Working: the operator is on the tailnet and the API proxy is listening.", True
+    return {
+        "healthy": healthy, "verdict": verdict, "pod": pod, "tailnet": tailnet, "logs": logs, "network": network,
+        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
 
 
 def _validated(payload: Dict[str, Any]) -> Dict[str, Any]:

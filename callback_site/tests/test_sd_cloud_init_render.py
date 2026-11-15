@@ -692,6 +692,7 @@ class TailscaleBootstrapBehaviorTests(unittest.TestCase):
         data = yaml.safe_load(config)
         self.assertEqual(data["node-ip"], "100.70.57.110")
         self.assertEqual(data["advertise-address"], "100.70.57.110")
+        self.assertEqual(data["flannel-iface"], "tailscale0")
         self.assertFalse(key_left, "the auth key file must not stay on disk")
 
     def test_agent_gets_node_ip_only(self) -> None:
@@ -700,11 +701,13 @@ class TailscaleBootstrapBehaviorTests(unittest.TestCase):
         data = yaml.safe_load(config)
         self.assertEqual(data["node-ip"], "100.70.57.110")
         self.assertNotIn("advertise-address", data)
+        self.assertEqual(data["flannel-iface"], "tailscale0")
 
     def test_stale_addresses_are_replaced_not_duplicated(self) -> None:
-        rc, config, _ = self.run_bootstrap(mode_config=K3S_SERVER_CONFIG, mode="server", up_rc=0, existing="node-ip: 192.168.1.9\nadvertise-address: 192.168.1.9\n")
+        rc, config, _ = self.run_bootstrap(mode_config=K3S_SERVER_CONFIG, mode="server", up_rc=0, existing="node-ip: 192.168.1.9\nadvertise-address: 192.168.1.9\nflannel-iface: eth0\n")
         self.assertEqual(rc, 0)
         self.assertEqual(config.count("node-ip:"), 1)
+        self.assertEqual(config.count("flannel-iface:"), 1)
         self.assertEqual(yaml.safe_load(config)["node-ip"], "100.70.57.110")
 
     def test_install_is_retried_until_the_network_is_ready(self) -> None:

@@ -1,5 +1,10 @@
 # Callback Site Operator Portal
 
+### The cockpit: flash it, boot it, hear from it, shape it.
+
+[Project home](../README.md) · [SOHO rack vision](../docs/soho-rack-vision.md) ·
+[Rack runbook](../docs/rack-cluster-runbook.md)
+
 Callback Site is the control plane for the rack workflow: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, post-boot node provisioning, and the shared monitoring views that tie those steps together.
 
 ### Shared interface styles
@@ -758,53 +763,69 @@ before changing a node's role.
 
 ### Kubernetes API over Tailscale
 
+> **kubectl from your laptop, anywhere, with no port 6443 open to the world.**
+
 The **Kubernetes API over Tailscale** card on `/kubernetes` installs the
 [Tailscale Kubernetes operator](https://tailscale.com/docs/kubernetes-operator/api-server-access)
 (`tailscale-operator` from `https://pkgs.tailscale.com/helmcharts`, namespace
-`tailscale`) with its in-process API server proxy. Any tailnet device can then
-run kubectl against `https://<hostname>.<tailnet>` without exposing port 6443.
+`tailscale`) with its in-process API server proxy. It joins your tailnet as one
+more device, and kubectl talks to `https://<hostname>.<tailnet>`.
 
-1. On `/tailscale-acl`, tick **Tailscale Kubernetes operator** and choose the
-   admin's access, then save the policy. It adds `tag:k8s-operator` (owned by
-   the admin), `tag:k8s` (owned by the operator), and a tcp 443 grant with the
-   `tailscale.com/cap/kubernetes` capability. That capability impersonates the
-   admin as `system:masters` (cluster-admin) or `tailnet-readers` (read-only).
-2. Enable HTTPS certificates for the tailnet.
-3. Create an OAuth client with Devices Core, Auth Keys and Services write
-   scopes, tagged `tag:k8s-operator`.
-4. On `/kubernetes`, enter the client ID and secret and choose **Install
-   operator**. For read-only access, also tick the `tailnet-readers` binding.
-   The secret goes only into a 0600 values file for that Helm run and is never
-   saved by the dashboard; the chart keeps it in a Kubernetes Secret. Upgrades
-   can leave both fields blank.
-5. On your workstation, run the **Connect** command shown, for example
-   `tailscale configure kubeconfig tailscale-operator`, then `kubectl get nodes`.
-   The first request can be slow while the proxy gets its certificate.
+#### 🛠️ One-time setup
 
-The card's **Live checks** refresh every 30 seconds and lead with a one-line
-verdict. They show:
+| Step | Where | What |
+| --- | --- | --- |
+| 1 | `/tailscale-acl` | Tick **Tailscale Kubernetes operator**, pick the admin's access, and save the policy. This adds `tag:k8s-operator`, `tag:k8s`, and a tcp 443 grant whose `tailscale.com/cap/kubernetes` capability makes you `system:masters` (full access) or `tailnet-readers` (read-only). |
+| 2 | Tailscale admin → DNS | Turn on **HTTPS certificates**. |
+| 3 | Tailscale admin → Trust credentials | Create an **OAuth client** with *Devices Core*, *Auth Keys* and *Services* write scopes, tagged `tag:k8s-operator`. |
+| 4 | `/kubernetes` | Paste the client ID and secret and choose **Install operator**. Upgrades can leave both blank. |
+| 5 | Your laptop | `tailscale configure kubeconfig <hostname>`, then `kubectl get nodes`. The first call is slow while the proxy fetches its certificate. |
 
-- the operator pod's node, uptime and restarts
-- whether it has joined the tailnet (login name and node ID, read from its
-  state Secret; keys never leave the cluster)
-- whether its TLS certificate has been issued (only after the first kubectl
-  request)
-- startup and recent errors from its logs
-- whether flannel uses a Tailscale address on every node
+> 🔐 **The secret never sticks around.** It goes into a 0600 values file for
+> that one Helm run and is never saved by the dashboard. The chart keeps its
+> own copy in a Kubernetes Secret.
 
-The dashboard host can't resolve MagicDNS names, so the final test is still
-kubectl from an admin device.
+#### 📊 Is it working?
 
-In auth mode, access is decided by Kubernetes RBAC for your Tailscale identity.
-`noauth` forwards requests without impersonation, for clusters that
-authenticate another way. The in-process proxy is a single replica that shares
-the operator's lifecycle; a high-availability `ProxyGroup` is not managed here.
+The card has two panels, and only one is open at a time:
 
-Run kubectl from an untagged device that belongs to the admin. Tagged machines
-(such as the NucBox) don't match the `group:admins` grant. If the operator is
-Running but never appears on the tailnet, check that flannel uses Tailscale on
-every node (`flannel-iface: tailscale0`; see the runbook). A pod on a Pi that
-can't reach CoreDNS on the NucBox can't log in.
+- **Live checks** opens when there's a running operator to report on.
+- **Install operator** opens when there isn't. Once the operator is installed,
+  this panel is titled **Reconfigure / upgrade operator**.
+
+Open the other panel whenever you like. The 30-second refresh won't snap it
+back unless the operator's state actually changes.
+
+Live checks lead with a one-line verdict, then:
+
+| Check | Tells you |
+| --- | --- |
+| **Pod** | which node it's on, uptime, restarts |
+| **Tailnet** | joined or not, plus its tailnet name and node ID (read from its state Secret; keys never leave the cluster) |
+| **TLS certificate** | issued yet? It stays at *Wait* until the first kubectl request. |
+| **Operator logs** | startup complete, proxy listening on :443, recent errors, DNS timeouts |
+| **Pod network** | whether flannel uses a Tailscale (100.x) address on every node |
+
+The dashboard host can't resolve MagicDNS names, so the final proof is always
+kubectl from one of your own devices.
+
+#### 🧯 When it isn't working
+
+- **"Forbidden" or no route from the NUC.** Tagged machines (like the NucBox)
+  don't match the `group:admins` grant. Run kubectl from an untagged device
+  that belongs to the admin.
+- **Pod is Running but the operator never shows up on the tailnet.** Check
+  **Pod network**. If any node isn't on a 100.x address, set
+  `flannel-iface: tailscale0` everywhere (see the
+  [runbook](../docs/rack-cluster-runbook.md#k3s-topology-and-join-preflight)).
+  Without it, a pod on a Pi can't reach CoreDNS on the NucBox, so it can't
+  log in.
+
+**Modes:** `auth` (the default) impersonates your Tailscale identity, so
+Kubernetes RBAC decides what you can do. `noauth` forwards requests as-is, for
+clusters that authenticate another way. The in-process proxy is a single
+replica tied to the operator; a high-availability `ProxyGroup` isn't managed
+here.
 
 ### Docker Desktop Kubernetes and Helm
 

@@ -355,3 +355,40 @@
   background: #ffffff;
   color: var(--ink);
 }
+
+.tailnet-api-status {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 1rem;
+  margin: 0.75rem 0;
+}
+.tailnet-api-status dt {
+  color: var(--muted);
+}
+.tailnet-api-status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.tailnet-api-prereqs {
+  margin-bottom: 0.75rem;
+}
+.tailnet-api-prereqs ol {
+  margin: 0.5rem 0 0;
+  padding-left: 1.3rem;
+}
+.tailnet-api-prereqs li + li {
+  margin-top: 0.3rem;
+}
+
+.tailnet-api-form label {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.tailnet-api-form .tailnet-api-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

@@ -161,9 +161,9 @@ Open:
   The fleet table keeps its action controls inside their column and scrolls
   horizontally within the panel at narrow widths. The sidebar uses a compact
   icon toggle; collapsed navigation retains labeled icons and hover titles.
-- `/kubernetes` — cluster status and Helm configurations, also available from
-  the shared sidebar. A connected Kubernetes context is required for live
-  cluster data.
+- `/kubernetes` — cluster status, Kubernetes API over Tailscale, and Helm
+  configurations, also available from the shared sidebar. A connected
+  Kubernetes context is required for live cluster data.
 - `/settings` — restore archived nodes without deleting callbacks, saved inputs,
   or historical boot logs. Age-based pruning is retired; archive active nodes
   explicitly from the callback dashboard.
@@ -527,6 +527,8 @@ is not replaced with an unauthenticated fallback.
 - `POST /api/ssh/generate`
 - `GET /api/ssh/keys`
 - `GET /api/ssh/public/<key_name>` — plain-text public key for verified first-boot SSH setup
+- `GET /api/kubernetes/tailscale-operator` — Tailscale operator release, readiness, API proxy mode/URL and the `tailscale configure kubeconfig` command (never OAuth values)
+- `POST /api/kubernetes/tailscale-operator` — `{"confirm": true, "hostname", "proxy_mode": "auth"|"noauth", "client_id", "client_secret", "readers_binding"}` installs or upgrades the operator; credentials are optional on upgrade
 - `GET /api/helm/configurations` — saved Helm configurations and the included example
 - `POST /api/helm/configurations/import` — import a public GitHub chart and its default values
 - `PUT /api/helm/configurations/<id>` — save edited values, release, namespace and configuration name
@@ -753,6 +755,36 @@ docker compose -f compose.yaml -f compose.kubernetes.yaml exec -T callback-site 
 `Ready` workers do not become control-plane or etcd nodes merely by appearing
 in the cluster. See the [rack K3s topology](../docs/rack-cluster-runbook.md#k3s-topology-and-join-preflight)
 before changing a node's role.
+
+### Kubernetes API over Tailscale
+
+The **Kubernetes API over Tailscale** card on `/kubernetes` installs the
+[Tailscale Kubernetes operator](https://tailscale.com/docs/kubernetes-operator/api-server-access)
+(`tailscale-operator` from `https://pkgs.tailscale.com/helmcharts`, namespace
+`tailscale`) with its in-process API server proxy. Any tailnet device can then
+run kubectl against `https://<hostname>.<tailnet>` without exposing port 6443.
+
+1. On `/tailscale-acl`, tick **Tailscale Kubernetes operator** and choose the
+   admin's access, then save the policy. It adds `tag:k8s-operator` (owned by
+   the admin), `tag:k8s` (owned by the operator), and a tcp 443 grant with the
+   `tailscale.com/cap/kubernetes` capability. That capability impersonates the
+   admin as `system:masters` (cluster-admin) or `tailnet-readers` (read-only).
+2. Enable HTTPS certificates for the tailnet.
+3. Create an OAuth client with Devices Core, Auth Keys and Services write
+   scopes, tagged `tag:k8s-operator`.
+4. On `/kubernetes`, enter the client ID and secret and choose **Install
+   operator**. For read-only access, also tick the `tailnet-readers` binding.
+   The secret goes only into a 0600 values file for that Helm run and is never
+   saved by the dashboard; the chart keeps it in a Kubernetes Secret. Upgrades
+   can leave both fields blank.
+5. On your workstation, run the **Connect** command shown, for example
+   `tailscale configure kubeconfig tailscale-operator`, then `kubectl get nodes`.
+   The first request can be slow while the proxy gets its certificate.
+
+In auth mode, access is decided by Kubernetes RBAC for your Tailscale identity.
+`noauth` forwards requests without impersonation, for clusters that
+authenticate another way. The in-process proxy is a single replica that shares
+the operator's lifecycle; a high-availability `ProxyGroup` is not managed here.
 
 ### Docker Desktop Kubernetes and Helm
 

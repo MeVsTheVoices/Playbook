@@ -5,7 +5,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from services import helm
+from services import helm, tailscale_operator
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,26 @@ def register_helm_routes(app: Any) -> None:
             return jsonify(ok=False, error=str(exc)), 404
         except (RuntimeError, OSError) as exc:
             logger.error("Helm operation failed: %s", exc)
+            return jsonify(ok=False, error=str(exc)), 502
+
+    @api.get("/api/kubernetes/tailscale-operator")
+    def operator_status() -> Any:
+        return jsonify(ok=True, status=tailscale_operator.operator_status())
+
+    @api.post("/api/kubernetes/tailscale-operator")
+    def operator_install() -> Any:
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError("A JSON object is required.")
+            if payload.get("confirm") is not True:
+                raise ValueError("Changing the cluster requires explicit confirmation.")
+            return jsonify(ok=True, **tailscale_operator.install_operator(payload))
+        except ValueError as exc:
+            return jsonify(ok=False, error=str(exc)), 400
+        except (RuntimeError, OSError) as exc:
+            # Helm errors never contain the values file contents; the OAuth secret is not logged.
+            logger.error("Tailscale operator operation failed: %s", exc)
             return jsonify(ok=False, error=str(exc)), 502
 
     app.register_blueprint(api)

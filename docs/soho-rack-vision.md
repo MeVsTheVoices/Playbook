@@ -12,7 +12,7 @@ sometimes we press a button. Sometimes we do a thing. Playbook helps make those
 connections easier to build, see, and trust.
 
 [Project home](../README.md) · [Operator guide](../callback_site/README.md) ·
-[Rack runbook](rack-cluster-runbook.md)
+[Operator guide](../callback_site/README.md)
 
 > **Document status: intended architecture.** This describes what Playbook is
 > meant to become and how its existing pieces fit together. It is not a claim
@@ -103,7 +103,7 @@ the rack's control plane or rely on a desktop login session for critical
 infrastructure availability.
 
 See [local Kubernetes connection instructions](../callback_site/README.md#docker-desktop-kubernetes-and-helm)
-and [rack K3s preflight](rack-cluster-runbook.md#k3s-topology-and-join-preflight).
+and [Linux K3s setup](../callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard).
 
 ## Private access and the SOHO network
 
@@ -199,5 +199,5 @@ card reader appears inside Docker.
 ---
 
 **Next:** [Run the portal](../callback_site/README.md#docker-compose),
-[bring up rack nodes](rack-cluster-runbook.md), or
+[Linux K3s setup](../callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard), or
 [return to the project overview](../README.md).

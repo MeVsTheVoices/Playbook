@@ -4,6 +4,21 @@
   if (!statusList) return;
   let busy = false;
   let installed = false;
+  let openedFor = null;
+  const panels = [element("live"), element("setup")];
+
+  // Only one panel open at a time; native via the shared details name, this covers older browsers.
+  panels.forEach((panel) => panel.addEventListener("toggle", () => {
+    if (panel.open) panels.forEach((other) => { if (other !== panel) other.open = false; });
+  }));
+
+  // Live checks when they come back, otherwise setup; re-chosen only when that answer changes,
+  // so the 30-second refresh never undoes a panel the user opened.
+  function choosePanel(hasLive) {
+    if (openedFor === hasLive) return;
+    openedFor = hasLive;
+    (hasLive ? element("live") : element("setup")).open = true;
+  }
 
   function row(label, value) {
     const dt = document.createElement("dt");
@@ -42,10 +57,15 @@
     return item;
   }
 
-  function renderLive(live, hostname) {
-    const panel = element("live");
-    panel.hidden = !live;
-    if (!live) return;
+  function renderLive(live, hostname, reason) {
+    choosePanel(!!live);
+    if (!live) {
+      element("verdict").textContent = reason;
+      element("verdict").className = "tailnet-api-verdict";
+      element("checked").textContent = "";
+      element("checks").replaceChildren();
+      return;
+    }
     const verdict = element("verdict");
     verdict.textContent = live.verdict;
     verdict.className = `tailnet-api-verdict chip ${live.healthy ? "completed" : "failed"}`;
@@ -91,7 +111,9 @@
     }
     rows.push(row("Read-only binding", status.readers_binding ? "tailnet-readers → view" : "not created"));
     statusList.replaceChildren(...rows.flat());
-    renderLive(status.installed && !status.error ? status.live : null, status.hostname);
+    const reason = status.error ? "Cluster unavailable, so there is nothing to check." : "Operator not installed. Install it below.";
+    renderLive(status.installed && !status.error ? status.live : null, status.hostname, reason);
+    element("setup-title").textContent = installed ? "Reconfigure / upgrade operator" : "Install operator";
     element("readers").checked = element("readers").checked || !!status.readers_binding;
     element("install").textContent = installed ? "Upgrade operator" : "Install operator";
     buttons();
@@ -116,6 +138,7 @@
     try {
       render((await request("GET")).status);
     } catch (error) {
+      choosePanel(false);
       element("message").textContent = error.message;
     }
   }

@@ -1,5 +1,10 @@
 # Rack Cluster Runbook
 
+### The field manual: what's in the rack, how it joins, and what to check when it doesn't.
+
+[Project home](../README.md) · [Operator guide](../callback_site/README.md) ·
+[SOHO rack vision](soho-rack-vision.md)
+
 ## Current Hardware Snapshot
 - Top of rack: GL.iNet router running OpenWrt.
 - Network layer: PoE switch under router.
@@ -27,7 +32,23 @@
 ## K3s Topology And Join Preflight
 - The NucBox is the K3s server. Pi 5 nodes default to workers and can be made control-plane nodes: NVMe storage and more RAM make them far better etcd voters than a Pi 3B+, and the NucBox plus two control-plane Pi 5 makes three servers, which is the odd count etcd wants. A Pi 3B+ is a light worker by default: it has about 900 MB of RAM and an SD card, below the 2 GB K3s documents for a server, and two of them as etcd voters took the cluster down twice. Control-plane remains selectable on a Pi 3B+ but is not recommended. A Pi 4 behaves like a Pi 5 here (worker by default, control-plane selectable, same option defaults), but K3s documents that SD cards and eMMC cannot handle etcd's IO, so only make a Pi 4 a control-plane node when it boots from an SSD, and consider the lightweight server options on a 1 to 2 GB model.
 - Use the NucBox Tailscale address for the API endpoint and each node's own Tailscale IPv4 as `node-ip`/`advertise-address`. The LAN route may be NATed through `192.168.174.1`; etcd peer TLS identity is IP-sensitive, so do not advertise that NAT address.
-- Run flannel over Tailscale too: `flannel-iface: tailscale0` on every node (the NucBox has `--flannel-iface=tailscale0` in `/etc/systemd/system/k3s.service.d/10-tailscale-advertise.conf`). Without it, flannel's VXLAN uses each node's LAN address; Pis behind the GL.iNet NAT or with stale DHCP leases then can't reach pods on other nodes, so anything scheduled on a Pi loses CoreDNS and the API (this is what kept the Tailscale operator off the tailnet). Check with `kubectl get nodes -o custom-columns=N:.metadata.name,IP:.metadata.annotations.flannel\.alpha\.coreos\.com/public-ip`; every row should be a 100.x address. After changing it, restart k3s/k3s-agent and roll workloads so pods pick up the smaller MTU.
+- Run flannel over Tailscale too: `flannel-iface: tailscale0` on every node. The Pi roles and first-boot cloud-init set it automatically. The NucBox has `--flannel-iface=tailscale0` in `/etc/systemd/system/k3s.service.d/10-tailscale-advertise.conf`.
+
+> ⚠️ **Why this matters.** Without it, flannel's VXLAN uses each node's LAN
+> address. A Pi behind the GL.iNet NAT, or with a stale DHCP lease, then can't
+> reach pods on other nodes, and anything scheduled on it loses CoreDNS and the
+> API. That's exactly what kept the Tailscale operator off the tailnet.
+>
+> **Check it:**
+>
+> ```bash
+> kubectl get nodes -o custom-columns=N:.metadata.name,IP:.metadata.annotations.flannel\.alpha\.coreos\.com/public-ip
+> ```
+>
+> Every row should be a 100.x address. The operator card's **Pod network** check
+> shows the same thing. After changing it, restart k3s/k3s-agent and roll the
+> workloads so pods pick up the smaller MTU.
+
 - Permit TCP 6443 to the API server and TCP 2379/2380 between control-plane peers over the selected path. Confirm `nc -z <peer-ip> 2380` in both directions before joining another server.
 - All control-plane servers must have matching critical settings, especially `secrets-encryption`. This cluster reports encryption disabled; remove an inherited `--secrets-encryption` systemd flag from joiners rather than enabling a different cluster mode.
 - Pi 3B+ control-plane units using `protect-kernel-defaults=true` require `vm.overcommit_memory=1`, `kernel.panic=10`, and `kernel.panic_on_oops=1`. Do not pass `node-role.kubernetes.io/control-plane` through `node-label`; K3s rejects that reserved label. The role uses `role=control-plane` and the standard control-plane taint.

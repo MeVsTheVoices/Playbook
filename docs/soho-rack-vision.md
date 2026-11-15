@@ -1,6 +1,15 @@
 # The SOHO Rack Vision
 
-### One small computer. A clear interface. A private way back in.
+### Small computers, finding their way to one another.
+
+I dreamed of a day when the interconnectivity of my computers felt less like a
+burden and more like a benefit.
+
+Let me help you put computers in your computers, so they can compute together.
+These little computers get to know one another through other little computers
+that remember their names—and how to reach them again. When one needs a friend,
+sometimes we press a button. Sometimes we do a thing. Playbook helps make those
+connections easier to build, see, and trust.
 
 [Project home](../README.md) · [Operator guide](../callback_site/README.md) ·
 [Rack runbook](rack-cluster-runbook.md)

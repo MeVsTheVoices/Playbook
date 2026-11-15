@@ -148,7 +148,7 @@
             <span class="collapsible-indicator" aria-hidden="true">›</span>
           </summary>
           <div class="collapsible-body">
-            <p class="note">Modules are the provisioning profiles defined for this rack. The table shows which modules are active on the selected node; pick one to edit its parameters and push changes individually.</p>
+            <p class="note">Modules are the provisioning profiles defined for this rack. The table lists modules shared across profiles and which are active on the selected node; options specific to the node's profile are listed below it. Pick one to edit its parameters and push changes individually.</p>
             <div class="module-picker">
               <div class="module-picker-side">
                 <label for="provision-node">Node</label>
@@ -177,20 +177,37 @@
             </div>
             <div style="margin-top: 0.8rem;">
               <p id="module-connection-context" class="module-callout"></p>
-              <section id="openwrt-host" class="openwrt-tools" hidden aria-labelledby="openwrt-tools-title">
+              <section id="profile-specific" class="profile-specific" aria-labelledby="profile-specific-title">
                 <div class="openwrt-tools-head">
-                  <h3 id="openwrt-tools-title">OpenWrt router 📡</h3>
-                  <p class="module-hint">SSH login, key push and a read-only UCI summary for this router.</p>
+                  <h3 id="profile-specific-title">Profile-specific</h3>
+                  <p id="profile-specific-note" class="module-hint"></p>
                 </div>
-                <div class="openwrt-tools-row">
-                  <label>SSH port <input id="openwrt-port" type="number" min="1" max="65535" value="22"></label>
-                  <label>Password <input id="openwrt-password" type="password" placeholder="probe / key push only, not saved" autocomplete="off"></label>
-                  <button id="openwrt-probe" type="button" class="secondary">Probe</button>
-                  <button id="openwrt-push-key" type="button" class="secondary">Push SSH key</button>
-                  <button id="openwrt-uci" type="button">Read UCI</button>
-                </div>
-                <p id="openwrt-status" class="module-hint" role="status"></p>
-                <dl id="openwrt-uci-facts" class="openwrt-facts" hidden></dl>
+                <table id="profile-module-table" class="profile-module-table" hidden>
+                  <thead>
+                    <tr>
+                      <th>Module</th>
+                      <th>Tags</th>
+                      <th>Active On Node</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="profile-module-body"></tbody>
+                </table>
+                <section id="openwrt-host" class="openwrt-tools" hidden aria-labelledby="openwrt-tools-title">
+                  <div class="openwrt-tools-head">
+                    <h4 id="openwrt-tools-title">OpenWrt router 📡</h4>
+                    <p class="module-hint">SSH login, key push and a read-only UCI summary for this router.</p>
+                  </div>
+                  <div class="openwrt-tools-row">
+                    <label>SSH port <input id="openwrt-port" type="number" min="1" max="65535" value="22"></label>
+                    <label>Password <input id="openwrt-password" type="password" placeholder="probe / key push only, not saved" autocomplete="off"></label>
+                    <button id="openwrt-probe" type="button" class="secondary">Probe</button>
+                    <button id="openwrt-push-key" type="button" class="secondary">Push SSH key</button>
+                    <button id="openwrt-uci" type="button">Read UCI</button>
+                  </div>
+                  <p id="openwrt-status" class="module-hint" role="status"></p>
+                  <div id="openwrt-uci-facts" class="openwrt-uci-sections" hidden></div>
+                </section>
               </section>
               <div id="module-detail" class="module-detail collapsed"></div>
               <div class="module-actions">

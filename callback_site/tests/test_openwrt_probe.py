@@ -22,6 +22,13 @@ class OpenWrtProbeTests(BaseCallbackSiteTest):
         self.assertIn('id="openwrt-host"', text)
         module_config = text[text.index('id="module-configuration"'):text.index('id="user-profile-segments"')]
         self.assertIn('id="openwrt-host" class="openwrt-tools" hidden', module_config, "router tools sit in Module Configuration, hidden until a router is selected")
+        specific = module_config[module_config.index('id="profile-specific"'):module_config.index('id="module-detail"')]
+        self.assertNotIn('id="profile-specific" class="profile-specific" hidden', module_config, "the profile-specific block stays visible")
+        self.assertIn('id="profile-module-body"', specific)
+        self.assertIn('id="openwrt-host"', specific, "router tools are profile-specific options")
+        self.assertLess(module_config.index('id="module-status-body"'), module_config.index('id="profile-specific"'))
+        script = self.client.get("/static/nodes/module_config.js").get_data(as_text=True)
+        self.assertIn("profile.groups.length === 1", script, "single-group modules leave the shared table")
         self.assertNotIn("openwrt-host-select", text)
         self.assertIn("openwrt-probe", text)
         self.assertIn("openwrt-uci", text)
@@ -145,6 +152,7 @@ class OpenWrtUciTests(BaseCallbackSiteTest):
         self.assertNotIn("dhcp.lan.ignore", facts, "empty values are omitted")
         self.assertNotIn("do-not-return", response.get_data(as_text=True))
         self.assertNotIn("wireless.default_radio0.encryption", facts)
+        self.assertIn("System", [section["title"] for section in payload["sections"]])
 
         command = run_mock.call_args.args[0]
         self.assertIn("BatchMode=yes", command)
@@ -169,6 +177,38 @@ class OpenWrtUciTests(BaseCallbackSiteTest):
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["facts"], [])
         self.assertIn("denied", payload["error"])
+
+
+class OpenWrtUciSectionTests(BaseCallbackSiteTest):
+    def test_facts_are_grouped_into_labelled_sections(self) -> None:
+        facts = services.openwrt.parse_uci_summary("\n".join([
+            "release=OpenWrt 21.02.2",
+            "system.@system[0].hostname=GL-A1300",
+            "network.lan.proto=static",
+            "network.lan.ipaddr=192.168.8.1",
+            "network.lan.netmask=255.255.255.0",
+            "dhcp.lan.start=100",
+            "dhcp.lan.limit=150",
+            "dhcp.lan.leasetime=12h",
+            "wireless.radio1.band='5g'",
+            "wireless.radio1.channel='36'",
+            "wireless.guest.device='radio1'",
+            "wireless.guest.ssid='guest'",
+            "wireless.guest.mode='ap'",
+            "wireless.guest.disabled='1'",
+        ]))
+        sections = {item["title"]: {row["label"]: row["value"] for row in item["rows"]} for item in services.openwrt.organize_uci_facts(facts)}
+        self.assertEqual(sections["System"]["Firmware"], "OpenWrt 21.02.2")
+        self.assertEqual(sections["LAN"]["Address"], "192.168.8.1/24")
+        self.assertEqual(sections["DHCP (LAN)"]["Pool"], "192.168.8.100 – 192.168.8.249")
+        self.assertEqual(sections["Wi-Fi 5 GHz (radio1)"]["Channel"], "36")
+        self.assertEqual(sections["Wi-Fi 5 GHz (radio1)"]["SSID"], "guest · ap (disabled)")
+        self.assertNotIn("WAN", sections, "sections without values are dropped")
+
+    def test_disabled_dhcp_hides_pool(self) -> None:
+        facts = [{"key": "dhcp.lan.ignore", "value": "1"}, {"key": "dhcp.lan.start", "value": "100"}, {"key": "network.lan.ipaddr", "value": "10.0.0.1"}]
+        sections = {item["title"]: {row["label"]: row["value"] for row in item["rows"]} for item in services.openwrt.organize_uci_facts(facts)}
+        self.assertEqual(sections["DHCP (LAN)"], {"Server": "off"})
 
 
 class OpenWrtUciScriptTests(BaseCallbackSiteTest):

@@ -375,11 +375,11 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
             },
             {
                 "id": "storage_disk",
-                "label": "Storage Disk (auto = the one blank disk, a device like /dev/nvme0n1, or none for a plain directory)",
-                "placeholder": "auto",
+                "label": "Storage Disk (none = existing filesystem; auto or a device formats a blank disk)",
+                "placeholder": "none",
                 "input_type": "text",
-                "default": "auto",
-                "warning": "A blank disk is partitioned, formatted and mounted at the storage path. Disks that already hold data are never touched.",
+                "default": "none",
+                "warning": "Using auto or a device can partition and format a blank disk. none keeps data at the storage path on the existing filesystem.",
                 "required": False,
             },
             {

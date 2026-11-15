@@ -196,9 +196,10 @@ Open:
 
 - Longhorn is intentionally wired as an optional Pi 5 profile for now.
 - The first pass assumes the nodes still boot from SD card.
-- The storage path is configurable so you can later move Longhorn data to an NVMe-backed mount without changing the operator flow.
-- The Storage Disk input (default `auto`) runs the `rack_storage_disk` Ansible module (`library/`): it partitions, formats and mounts the one blank disk at the storage path by UUID, never touches a disk that holds data, and reports the path, UUID and by-id name in the run output. `none` keeps a plain directory.
+- The default storage path is `/var/lib/longhorn` on the existing filesystem. The Storage Disk input defaults to `none`, which does not format or mount a disk; this keeps Longhorn data on the OS filesystem and shares its capacity and IO.
+- The storage path is configurable so you can later move Longhorn data to an NVMe-backed mount without changing the operator flow. Only select `auto` or a device after confirming the disk is intended for Longhorn: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts a blank disk by UUID. Disks that already hold data are never touched.
 - The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
+- Before applying the Longhorn profile, confirm the K3s API server and every kubelet are on compatible versions; a kubelet must not be newer than the API server. Then select the Longhorn profile for the Pi 5 nodes in Node Ops and apply it. Longhorn is not installed by `site.yml` unless the profile is explicitly selected.
 - The K3s dashboard reports whether the `longhorn-system` namespace and pods are present and healthy.
 
 ## Architecture

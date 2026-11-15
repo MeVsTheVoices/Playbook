@@ -278,6 +278,7 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         longhorn_specs = {s["id"]: s for s in profiles["longhorn"]["input_specs"]}
         self.assertEqual(longhorn_specs["install_chart"].get("input_type"), "checkbox")
         self.assertTrue(longhorn_specs["install_chart"].get("default"))
+        self.assertEqual(longhorn_specs["storage_disk"].get("default"), "none")
 
         kubernetes_specs = {s["id"]: s for s in profiles["kubernetes"]["input_specs"]}
         self.assertTrue(kubernetes_specs["server_token"].get("sensitive"))

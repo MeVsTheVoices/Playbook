@@ -10,3 +10,7 @@ raspberry_pi5_tailscale_advertise_routes: []
 raspberry_pi5_tailscale_tags:
   - tag:rpi5
   - tag:homelab
+
+# Keep Longhorn on the existing filesystem until a dedicated data disk is confirmed.
+raspberry_pi5_longhorn_storage_path: /var/lib/longhorn
+raspberry_pi5_longhorn_storage_disk: none

@@ -91,6 +91,22 @@
   </div>
 </div>
 
+<h3 class="group-title">Kubernetes API over Tailscale</h3>
+<div class="grid input-grid">
+  <div class="field-card check-card">
+    <label class="check-row"><input id="k8s_operator" type="checkbox"> Tailscale Kubernetes operator</label>
+    <p class="field-hint">Defines <code>tag:k8s-operator</code> (owned by the admin) and <code>tag:k8s</code> (owned by the operator), and lets the admin reach the operator's API server proxy on tcp 443. Install the operator from the Kubernetes page.</p>
+  </div>
+  <div class="field-card">
+    <label for="k8s_api_role">Admin's Kubernetes access</label>
+    <select id="k8s_api_role">
+      <option value="admin" selected>Cluster admin (system:masters)</option>
+      <option value="view">Read-only (tailnet-readers → view)</option>
+    </select>
+    <p class="field-hint">The proxy impersonates the admin as this Kubernetes group. Read-only needs a ClusterRoleBinding, which the Kubernetes page can create.</p>
+  </div>
+</div>
+
 <h3 class="group-title">SSH and tests</h3>
 <div class="grid input-grid">
   <div class="field-card check-card">

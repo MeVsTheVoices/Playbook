@@ -17,6 +17,10 @@ Facts this encodes (Tailscale policy syntax and K3s requirements docs):
 - ``tests`` and ``sshTests`` reject the whole policy when an assertion fails.
   Their sources must be a user, group, tag or host (no autogroups, no CIDR, no
   wildcards), so deny assertions are opt-in: a leftover allow-all grant would fail them.
+- The Tailscale Kubernetes operator authenticates with ``tag:k8s-operator`` and tags its
+  proxies ``tag:k8s`` (owned by the operator tag). Its API server proxy listens on tcp 443
+  and, in auth mode, impersonates the caller; the ``tailscale.com/cap/kubernetes`` app
+  capability maps the caller to Kubernetes groups (``system:masters`` is cluster-admin).
 - K3s inbound: tcp 6443 (nodes to a server), tcp 10250 (kubelet), udp 8472
   (flannel VXLAN), and tcp 2379-2380 only between servers (embedded etcd).
 """
@@ -45,6 +49,12 @@ K3S_PORTS: Tuple[Tuple[str, str], ...] = (
     ("udp:8472", "flannel VXLAN overlay"),
 )
 K3S_ETCD_PORTS = ("tcp:2379-2380", "etcd between servers")
+
+OPERATOR_TAG = "tag:k8s-operator"
+OPERATOR_PROXY_TAG = "tag:k8s"
+K8S_CAPABILITY = "tailscale.com/cap/kubernetes"
+# Kubernetes groups the API server proxy impersonates for the admin, by access level.
+K8S_API_GROUPS = {"admin": "system:masters", "view": "tailnet-readers"}
 
 _TAG_RE = re.compile(r"^tag:[A-Za-z][A-Za-z0-9-]*$")
 _GROUP_RE = re.compile(r"^group:[A-Za-z0-9._@-]+$")
@@ -230,6 +240,13 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
     if toolkit_funnel and "tag:network-toolkit" in (*used_board_tags.values(), homelab):
         errors.append("tag:network-toolkit must remain separate from the board and homelab tags.")
 
+    k8s_operator = _bool(options.get("k8s_operator"), False)
+    k8s_api_role = str(options.get("k8s_api_role") or "admin").strip().lower()
+    if k8s_operator and k8s_api_role not in K8S_API_GROUPS:
+        errors.append("Kubernetes API access must be 'admin' (cluster-admin) or 'view' (read-only).")
+    if k8s_operator and {OPERATOR_TAG, OPERATOR_PROXY_TAG} & {*used_board_tags.values(), homelab}:
+        errors.append(f"{OPERATOR_TAG} and {OPERATOR_PROXY_TAG} belong to the Kubernetes operator; keep them separate from the board and homelab tags.")
+
     if errors:
         return {"ok": False, "policy": None, "rules": [], "warnings": [], "errors": errors, "summary": {}}
 
@@ -302,6 +319,26 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
     elif subnet_access and not subnets:
         warn("'Rack nodes may reach subnets' has no effect: no subnets are listed.", "info")
 
+    if k8s_operator:
+        policy["tagOwners"][OPERATOR_TAG] = [admin]
+        policy["tagOwners"][OPERATOR_PROXY_TAG] = [OPERATOR_TAG]
+        k8s_group = K8S_API_GROUPS[k8s_api_role]
+        grants.append({
+            "src": [admin], "dst": [OPERATOR_TAG], "ip": ["tcp:443"],
+            "app": {K8S_CAPABILITY: [{"impersonate": {"groups": [k8s_group]}}]},
+        })
+        rules.append({
+            "name": "Kubernetes API over Tailscale",
+            "src": [admin], "dst": [OPERATOR_TAG], "ports": ["tcp:443"],
+            "why": f"kubectl through the operator's API server proxy, impersonated as Kubernetes group {k8s_group}"
+            + (" (cluster-admin)." if k8s_api_role == "admin" else " (bind it to the 'view' ClusterRole; the Kubernetes page does this)."),
+        })
+        warn(
+            f"The operator needs an OAuth client with Devices Core, Auth Keys and Services write scopes, tagged {OPERATOR_TAG}, "
+            "and HTTPS certificates enabled for the tailnet. Save this policy before installing the operator.",
+            "info",
+        )
+
     if exit_node:
         grants.append({"src": [admin], "dst": ["autogroup:internet"], "ip": ["*"]})
         rules.append({
@@ -346,6 +383,8 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
             tests.append({"src": admin, "proto": "tcp", "accept": [f"{tag}:22" for tag in rack_tags]})
         else:
             warn(f"Tests with {admin} as the source were skipped: Tailscale tests need a user, group or tag source.", "info")
+        if k8s_operator and admin_testable:
+            tests.append({"src": admin, "proto": "tcp", "accept": [f"{OPERATOR_TAG}:443"]})
         tests.append({"src": homelab, "proto": "tcp", "accept": [f"{homelab}:6443", f"{homelab}:10250"]})
         tests.append({"src": homelab, "proto": "udp", "accept": [f"{homelab}:8472"]})
         for tag in _dedupe(list(used_board_tags.values())):

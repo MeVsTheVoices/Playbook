@@ -5,7 +5,7 @@
 ### One small computer. A clear interface. A private way back in.
 
 🏠 [Project home](../README.md) · 🎛️ [Operator guide](../callback_site/README.md) ·
-🥧 [Rack runbook](rack-cluster-runbook.md)
+🥧 [Operator guide](../callback_site/README.md)
 
 </div>
 
@@ -138,7 +138,7 @@ flowchart LR
 > rack's control plane, or rely on a desktop login session for critical infrastructure.
 
 📚 See [local Kubernetes connection instructions](../callback_site/README.md#docker-desktop-kubernetes-and-helm)
-and [rack K3s preflight](rack-cluster-runbook.md#k3s-topology-and-join-preflight).
+and [Linux K3s setup](../callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard).
 
 <a id="private-access-and-the-soho-network"></a>
 ## 🛰️ Private access and the SOHO network
@@ -269,5 +269,5 @@ timeline
 ---
 
 ➡️ **Next:** 🐳 [Run the portal](../callback_site/README.md#docker-compose) ·
-🥧 [Bring up rack nodes](rack-cluster-runbook.md) ·
+🥧 [Linux K3s setup](../callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard) ·
 🏠 [Back to the project overview](../README.md)

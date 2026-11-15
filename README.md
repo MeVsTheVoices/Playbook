@@ -1,65 +1,83 @@
 # Playbook
 
-### A small control desk for a small rack.
+### Distributed compute, without the syntax headache.
 
-**SOHO racks · Mini PCs · Docker Desktop · Kubernetes · Tailscale**
+**Raspberry Pis · Mini PCs · Routers · K3s · Tailscale · one browser tab**
 
-Playbook brings rack bootstrap and day-to-day operations into a browser-based
-operator portal, backed by cloud-init, Ansible, and Docker. The intended home is
-a NUC or similar small computer with a graphical desktop: a local workstation
-that can also serve as the remotely accessible management hub for a
-small-office/home-office (SOHO) rack.
+Playbook is a one-stop shop for one thing: **getting compute onto your
+hardware and talking to each other**, without spending your evening reading
+YAML indentation errors.
 
-Start small, bring devices online deliberately, and keep a private path back in.
+The big version is a **distributed mesh of distributed compute clusters**:
+racks of small machines in different places, each its own K3s cluster, all
+stitched together over Tailscale and reachable from wherever you are. You can
+reference them as one fabric, or keep them as separate islands.
 
-> **Start here:** [Read the project vision and intended setup](docs/soho-rack-vision.md).
-> It explains the mini-PC control desk, remote access, router setup, and the
-> distinction between local Kubernetes experiments and the physical rack.
+But it doesn't have to be big. The same approach works for:
+
+- 🧱 **One of a type**: a single Pi that calls home and runs your stuff.
+- 📦 **Many of a type**: flash five identical cards and get five identical
+  nodes.
+- 🗄️ **A rack of minis**: a 10-inch rack of Pi 5s, plus a NUC as the brain and
+  a travel router as the front door.
+- 🍿 **A home media server**: one box, a few containers, done.
+
+You pick the shape. Playbook handles the boring parts: imaging, first boot,
+joining the tailnet, joining the cluster, and telling you when something
+didn't.
 
 ---
 
-## The idea at a glance
+## How it fits together
 
 ```mermaid
 flowchart LR
-    Operator["Remote operator"] -->|Private Tailscale access| Desk["NUC / mini-PC<br/>Graphical desktop + browser"]
-    Desk --> Desktop["Docker Desktop<br/>Portal + local Kubernetes"]
-    Desk -->|Authorized management path| Network["Router + switch"]
-    Desktop -->|Provision and monitor| Rack["Rack nodes<br/>K3s workers or utility hosts"]
-    Network --- Rack
+    You["You, anywhere"] -->|Tailscale| Desk["Control desk<br/>(NUC / mini-PC)<br/>Playbook portal"]
+    Desk -->|flash + cloud-init| Node["New node<br/>Pi 5 · Pi 4 · Pi 3B+"]
+    Node -->|"callback: I'm alive"| Desk
+    Desk -->|Ansible modules| Node
+    Desk -->|K3s over Tailscale| Cluster["Cluster<br/>(one node or many)"]
+    Cluster -.->|same pattern, another site| Cluster2["Another cluster"]
+    Router["OpenWrt router"] --- Node
+    Desk -->|SSH + UCI| Router
 ```
 
-This is the intended topology, not automatic network configuration. Desktop
-sharing, tailnet permissions, container reachability, and router access must be
-configured explicitly.
+**The loop is simple:**
 
-| Piece | Purpose |
+1. **Flash** a card from the portal. Pick a profile (Pi 5, Pi 4, 3B+, router,
+   toolkit) and the modules you want: baseline, Tailscale, Telegraf, Docker,
+   K3s, and so on.
+2. **Boot** it. Cloud-init joins your tailnet, and the node **calls back** so
+   you know it's alive, where it is, and what hardware it has.
+3. **Shape** it. Apply modules with Ansible from the Nodes page. K3s nodes join
+   over Tailscale, including pod networking, so a Pi behind someone's NAT still
+   works.
+4. **Use** it. Deploy Helm charts, and reach the Kubernetes API from any of
+   your tailnet devices through the Tailscale operator. Watch the dashboards.
+
+Doing it once teaches you the pattern. After that, every new node is just
+another card.
+
+## What's in the box
+
+| Area | What you get |
 | --- | --- |
-| **Mini-PC control desk** | A graphical workstation for the portal, Docker Desktop, and administrative tools. |
-| **Operator portal** | Prepare images, track callbacks, inspect nodes, apply configuration, and review logs. |
-| **Private remote access** | Use Tailscale to reach the desk and authorized management endpoints without public admin ports. |
-| **SOHO network** | Configure the router, addressing, firewall, and switch before depending on remote operation. |
-| **Rack nodes** | Run useful services with Docker, K3s, or no Kubernetes at all, according to each device's capacity. |
+| 🚀 **Bootstrap** | SD images and cloud-init for Pi 5, Pi 4 and Pi 3B+. First-boot Tailscale join. Callbacks with hardware profiles. |
+| 🩺 **Operate** | Callback history, Hardware Monitor, Node Ops, SSH diagnostics, boot logs. |
+| 🧩 **Configure** | Reusable node modules backed by Ansible roles. Profile-specific options show up only where they apply. |
+| 📡 **Routers** | OpenWrt SSH onboarding, key push, and an organized UCI readout: LAN, WAN, DHCP, Wi-Fi. |
+| ☸️ **Kubernetes** | K3s over Tailscale, Helm workflows, and the Tailscale operator's API proxy, with live health checks. |
+| 🔐 **Access** | A Tailscale policy builder for tags, grants and operator access, so the ACL file isn't hand-written. |
 
-## What is here today?
-
-- **Bootstrap:** SD-image and cloud-init workflows for Raspberry Pi 5, Pi 4,
-  and Pi 3B+ profiles.
-- **Operate:** callback history, Hardware Monitor, Node Ops, SSH diagnostics,
-  and boot-log collection.
-- **Configure:** reusable node modules, Ansible roles, OpenWrt SSH onboarding,
-  and Tailscale policy planning.
-- **Explore Kubernetes:** Docker Desktop cluster connectivity and Helm workflows,
-  alongside a separate K3s rack provisioning path.
-
-**Boundaries matter:** this is an evolving operator toolkit, not a turnkey router
-installer or a production high-availability platform. Docker Desktop's local
-cluster does not automatically absorb physical rack nodes. The default container
-also does not receive the host's Tailscale service or USB/SD devices.
+**Honest limits:** this is a growing homelab toolkit, not a turnkey router
+installer or a production HA platform. It automates what it knows about and
+shows you the rest.
 
 ## Start the portal
 
-With Docker and Compose available, run from the repository root:
+You need Docker and Compose. That's it.
+
+From the repository root:
 
 ```bash
 docker compose up --build -d
@@ -87,7 +105,7 @@ For the Linux K3s cluster connection, see
 Before committing deployment changes, install the
 [secret checks and follow the credential-handling guide](SECURITY.md).
 
-## Choose your next step
+## Where to next
 
 | I want to... | Read |
 | --- | --- |
@@ -113,5 +131,7 @@ Before committing deployment changes, install the
 
 ---
 
-**Working principle:** establish local control, verify private remote access,
-then automate one device at a time.
+**Working principle:** get one box right, then make more of them. Local
+control first, private remote access second, then automate one device at a
+time, until "a device" turns into "a rack" and "a rack" turns into "a few
+racks".

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import base64
+import html as html_lib
 import json
+import re
+import shutil
 import stat
+import subprocess
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -155,7 +160,69 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
         self.assertIn('id="tailnet-api"', text)
         self.assertIn("tailnet_api.js", text)
         self.assertIn('id="tailnet-api-client-secret" type="password"', text)
-        self.assertIn('id="tailnet-api-live"', text)
+        self.assertIn('id="tailnet-api-live" name="tailnet-api-panels"', text)
+        self.assertIn('id="tailnet-api-setup" name="tailnet-api-panels"', text)
+
+    def _accordion_in_browser(self, installed: bool) -> dict:
+        chrome = shutil.which("google-chrome") or shutil.which("chromium")
+        if not chrome:
+            self.skipTest("Chrome is required for the accordion browser test")
+        root = Path(__file__).resolve().parents[1]
+        page = self.client.get("/kubernetes").get_data(as_text=True)
+        page = re.sub(r'<script\b[^>]*\bsrc=[^>]*>.*?</script>', "", page, flags=re.DOTALL)
+        page = re.sub(r"<link\b[^>]*>", "", page)
+        live = {"healthy": True, "verdict": "Working", "pod": {"found": True, "ready": True, "name": "op", "restarts": 0},
+                "tailnet": {"logged_in": True, "name": "op.ts.net", "node_id": "n1"}, "logs": {"startup_complete": True},
+                "network": {"ok": True, "nodes": []}, "checked_at": "2026-11-15T00:00:00+00:00"}
+        status = {"installed": installed, "hostname": "op", "replicas": 1, "ready_replicas": 1, "readers_binding": False,
+                  **({"live": live} if installed else {})}
+        probe = """
+const stub = %s;
+window.fetch = async () => ({ok: true, json: async () => ({ok: true, status: stub})});
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+const state = () => ({live: document.getElementById("tailnet-api-live").open, setup: document.getElementById("tailnet-api-setup").open,
+  title: document.getElementById("tailnet-api-setup-title").textContent});
+""" % json.dumps(status) + (root / "static/tailnet_api.js").read_text() + """
+(async () => {
+  const out = {};
+  await settle();
+  out.initial = state();
+  const other = out.initial.live ? "tailnet-api-setup" : "tailnet-api-live";
+  document.getElementById(other).open = true;
+  await settle();
+  out.afterUser = state();
+  document.getElementById("tailnet-api-refresh").click();
+  await settle();
+  out.afterRefresh = state();
+  document.body.innerHTML = '<pre id="accordion-result"></pre>';
+  document.getElementById("accordion-result").textContent = JSON.stringify(out);
+})();
+"""
+        page = page.replace("</body>", f"<script>{probe}</script></body>")
+        with tempfile.TemporaryDirectory(prefix="tailnet-accordion-") as tmp:
+            target = Path(tmp) / "page.html"
+            target.write_text(page)
+            result = subprocess.run(
+                [chrome, "--headless", "--no-sandbox", "--disable-gpu", "--disable-background-networking",
+                 f"--user-data-dir={tmp}/chrome", "--virtual-time-budget=3000", "--dump-dom", target.as_uri()],
+                text=True, capture_output=True, timeout=30,
+            )
+        match = re.search(r'<pre id="accordion-result">(.*?)</pre>', result.stdout, re.DOTALL)
+        self.assertIsNotNone(match, result.stdout[-2000:] + result.stderr[-2000:])
+        return json.loads(html_lib.unescape(match.group(1)))
+
+    def test_live_checks_open_when_they_come_back(self) -> None:
+        result = self._accordion_in_browser(installed=True)
+        self.assertEqual((result["initial"]["live"], result["initial"]["setup"]), (True, False))
+        self.assertEqual(result["initial"]["title"], "Reconfigure / upgrade operator")
+        self.assertEqual((result["afterUser"]["live"], result["afterUser"]["setup"]), (False, True), "one panel at a time")
+        self.assertEqual((result["afterRefresh"]["live"], result["afterRefresh"]["setup"]), (False, True), "refresh keeps the user's choice")
+
+    def test_install_opens_when_there_is_nothing_live(self) -> None:
+        result = self._accordion_in_browser(installed=False)
+        self.assertEqual((result["initial"]["live"], result["initial"]["setup"]), (False, True))
+        self.assertEqual(result["initial"]["title"], "Install operator")
+        self.assertEqual((result["afterUser"]["live"], result["afterUser"]["setup"]), (True, False))
 
 
 class TailscaleOperatorPolicyTests(BaseCallbackSiteTest):

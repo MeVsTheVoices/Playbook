@@ -781,8 +781,12 @@ run kubectl against `https://<hostname>.<tailnet>` without exposing port 6443.
    `tailscale configure kubeconfig tailscale-operator`, then `kubectl get nodes`.
    The first request can be slow while the proxy gets its certificate.
 
-The card's **Live checks** refresh every 30 seconds and lead with a one-line
-verdict. They show:
+The card has two panels, and only one is open at a time. **Live checks** opens
+when there is a running operator to report on. Otherwise **Install operator**
+opens. Open the other panel whenever you want to reconfigure; the 30-second
+refresh won't switch it back unless the operator's state actually changes.
+
+The **Live checks** refresh every 30 seconds and lead with a one-line verdict. They show:
 
 - the operator pod's node, uptime and restarts
 - whether it has joined the tailnet (login name and node ID, read from its

@@ -392,3 +392,38 @@
   align-items: center;
   gap: 0.5rem;
 }
+
+.tailnet-api-live {
+  border-top: 1px solid var(--line);
+  margin: 0.75rem 0;
+  padding-top: 0.75rem;
+}
+.tailnet-api-live h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+.tailnet-api-live .tailnet-api-verdict {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.tailnet-api-checks {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+.tailnet-api-checks li {
+  display: grid;
+  grid-template-columns: 4.5rem max-content minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+.tailnet-api-checks .chip {
+  text-align: center;
+}
+.tailnet-api-checks strong {
+  font-weight: 600;
+}

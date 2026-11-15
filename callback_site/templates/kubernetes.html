@@ -67,6 +67,12 @@
           <h2>Kubernetes API over Tailscale</h2>
           <p class="kube-subtle">Installs the Tailscale Kubernetes operator with its in-process API server proxy. kubectl then reaches the cluster at <code>https://&lt;hostname&gt;.&lt;tailnet&gt;</code> from any tailnet device, without exposing port 6443. In auth mode the proxy acts as your Tailscale identity, so Kubernetes RBAC decides what you can do.</p>
           <dl class="tailnet-api-status" id="tailnet-api-status"><dt>Status</dt><dd>Checking...</dd></dl>
+          <div class="tailnet-api-live" id="tailnet-api-live" hidden>
+            <h3>Live checks <small class="kube-subtle" id="tailnet-api-checked"></small></h3>
+            <p class="tailnet-api-verdict" id="tailnet-api-verdict"></p>
+            <ul class="tailnet-api-checks" id="tailnet-api-checks"></ul>
+            <p class="kube-subtle">Refreshes every 30 seconds. Confirm from an untagged admin device: <code id="tailnet-api-try">tailscale configure kubeconfig &lt;hostname&gt;</code>, then <code>kubectl get nodes</code>.</p>
+          </div>
           <details class="tailnet-api-prereqs">
             <summary>Before the first install</summary>
             <ol>

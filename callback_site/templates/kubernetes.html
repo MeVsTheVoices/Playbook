@@ -113,6 +113,10 @@
               <label>Configuration
                 <select id="helm-selection"><option value="">New configuration</option></select>
               </label>
+            </div>
+            <details id="helm-panel" class="tailnet-api-panel">
+              <summary>Configure Helm chart</summary>
+              <div class="helm-fields">
               <label>GitHub repository
                 <input id="helm-repository" type="url" placeholder="https://github.com/owner/repository">
               </label>
@@ -134,6 +138,27 @@
               <label>Values YAML (imported chart defaults)
                 <textarea id="helm-values" rows="14" spellcheck="false"></textarea>
               </label>
+              <details class="tailnet-api-panel">
+                <summary>Tailscale workload exposure</summary>
+                <p class="kube-subtle" id="helm-tailscale-status">Checking operator...</p>
+                <p class="kube-subtle">Optional. Select a Service rendered by this chart. HTTPS requires tailnet certificates; access is controlled by tailnet policy, not Kubernetes API RBAC. Alloy still needs its own collection and destination configuration; n8n may need its public URL and webhook settings.</p>
+                <div class="helm-fields">
+                  <label>Exposure
+                    <select id="helm-ts-mode">
+                      <option value="off">Off</option>
+                      <option value="https">HTTPS ingress</option>
+                      <option value="service">Service (TCP/UDP)</option>
+                    </select>
+                  </label>
+                  <label>Rendered Service name <input id="helm-ts-service" placeholder="release-service"></label>
+                  <label>Tailscale hostname <input id="helm-ts-hostname" placeholder="my-app"></label>
+                  <label>Service TCP port (HTTPS) <input id="helm-ts-port" type="number" min="1" max="65535" placeholder="80"></label>
+                  <label>Existing ProxyClass (standalone) <input id="helm-ts-proxy-class"></label>
+                  <label>Existing ingress ProxyGroup <input id="helm-ts-proxy-group"></label>
+                  <label>Standalone tags (comma-separated) <input id="helm-ts-tags" placeholder="tag:k8s"></label>
+                </div>
+                <p class="kube-subtle">ProxyGroups must already exist and have ingress permissions; configure their tags and ProxyClass on the group. Service exposure with a ProxyGroup changes the Service to a Tailscale LoadBalancer. Custom standalone tags must be owned by the operator tag.</p>
+              </details>
               <div class="kube-actions">
                 <button type="button" class="kube-btn" id="helm-save">Save configuration</button>
                 <button type="button" class="kube-btn" id="helm-preview">Preview manifests</button>
@@ -142,6 +167,7 @@
               <p class="kube-subtle" id="helm-submission"></p>
               <details><summary>Rendered manifests</summary><pre class="kube-raw" id="helm-manifest" data-format="yaml">Preview before deploying.</pre></details>
             </div>
+            </details>
             <div class="status" id="helm-status" role="status" aria-live="polite"></div>
           </form>
         </section>

@@ -23,7 +23,11 @@ from services.storage import APPDATA_DIR, _atomic_write_text
 logger = logging.getLogger(__name__)
 CONFIG_FILE = APPDATA_DIR / "helm_configurations.json"
 LOCK = threading.Lock()
-EXAMPLES = [{"name": "Hello World (NGINX)", "repository": "https://github.com/helm/examples", "chart_path": "charts/hello-world"}]
+EXAMPLES = [
+    {"name": "Hello World (NGINX)", "repository": "https://github.com/helm/examples", "chart_path": "charts/hello-world"},
+    {"name": "Grafana Alloy (collector)", "repository": "https://github.com/grafana/alloy", "chart_path": "operations/helm/charts/alloy"},
+    {"name": "n8n (community chart)", "repository": "https://github.com/8gears/n8n-helm-chart", "chart_path": "charts/n8n"},
+]
 
 
 def _now() -> str:
@@ -102,6 +106,78 @@ def _values(raw: Any) -> str:
     return raw
 
 
+def _tailscale(raw: Any) -> dict[str, str]:
+    if raw is None:
+        return {"mode": "off"}
+    if not isinstance(raw, dict):
+        raise ValueError("Tailscale configuration must be an object.")
+    mode = raw.get("mode", "off")
+    if mode == "off":
+        return {"mode": "off"}
+    if not isinstance(mode, str) or mode not in {"https", "service"}:
+        raise ValueError("Choose HTTPS ingress, service exposure, or off.")
+    result = {"mode": mode}
+    for key in ("service", "hostname", "proxy_class", "proxy_group"):
+        value = raw.get(key, "")
+        if not isinstance(value, str):
+            raise ValueError(f"Tailscale {key} must be text.")
+        value = value.strip()
+        if value and (len(value) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", value)):
+            raise ValueError(f"Tailscale {key} must be a lowercase DNS label (maximum 63 characters).")
+        result[key] = value
+    if not result["service"] or not result["hostname"]:
+        raise ValueError("Tailscale exposure requires a Service name and hostname.")
+    port = str(raw.get("port", "")).strip()
+    if mode == "https" and (not port.isdigit() or not 1 <= int(port) <= 65535):
+        raise ValueError("HTTPS exposure requires a Service port from 1 to 65535.")
+    result["port"] = port if mode == "https" else ""
+    tags = raw.get("tags", "")
+    if not isinstance(tags, str):
+        raise ValueError("Tailscale tags must be text.")
+    tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    if any(not re.fullmatch(r"tag:[a-zA-Z][a-zA-Z0-9-]*", tag) for tag in tag_list):
+        raise ValueError("Tailscale tags must be comma-separated tag:name values.")
+    if result["proxy_group"] and (tag_list or result["proxy_class"]):
+        raise ValueError("Configure tags and proxy class on the ProxyGroup, not the exposed resource.")
+    result["tags"] = ",".join(tag_list)
+    return result
+
+
+def _prepare_dependencies(chart: Path) -> None:
+    metadata = yaml.safe_load((chart / "Chart.yaml").read_text(encoding="utf-8"))
+    if isinstance(metadata, dict) and metadata.get("dependencies"):
+        dependencies = metadata["dependencies"]
+        if all(
+            isinstance(dep, dict) and isinstance(dep.get("name"), str)
+            and ((chart / "charts" / dep["name"] / "Chart.yaml").is_file()
+                 or (chart / "charts" / f"{dep['name']}-{dep.get('version')}.tgz").is_file())
+            for dep in dependencies
+        ):
+            return
+        if not (chart / "Chart.lock").is_file():
+            raise ValueError("Chart dependencies require a committed Chart.lock to pin dependency versions.")
+        lock = yaml.safe_load((chart / "Chart.lock").read_text(encoding="utf-8"))
+        if not isinstance(lock, dict) or not isinstance(lock.get("dependencies"), list):
+            raise ValueError("Chart.lock has an invalid dependency list.")
+        with tempfile.TemporaryDirectory(prefix="helm-repositories-") as directory:
+            flags = ["--repository-config", str(Path(directory) / "repositories.yaml"),
+                     "--repository-cache", str(Path(directory) / "cache")]
+            repositories = set()
+            for dependency in lock["dependencies"]:
+                if not isinstance(dependency, dict) or not isinstance(dependency.get("repository"), str):
+                    raise ValueError("Chart.lock has an invalid dependency repository.")
+                repository = dependency["repository"]
+                if repository.startswith("oci://") or not repository:
+                    continue
+                url = urlparse(repository)
+                if url.scheme != "https" or not url.netloc or url.username or url.password:
+                    raise ValueError("Chart dependency repositories must use HTTPS or OCI.")
+                if repository not in repositories:
+                    _command(["helm", "repo", "add", f"dependency-{len(repositories)}", repository, *flags], timeout=120)
+                    repositories.add(repository)
+            _command(["helm", "dependency", "build", str(chart), *flags], timeout=120)
+
+
 def _find(records: list[dict[str, Any]], record_id: str) -> dict[str, Any]:
     record = next((item for item in records if item.get("id") == record_id), None)
     if record is None:
@@ -141,6 +217,7 @@ def import_chart(payload: dict[str, Any]) -> dict[str, Any]:
         "chart_name": metadata.get("name"), "chart_version": metadata.get("version"),
         "release": f"{release}-{record_id[:6]}", "namespace": "playbook-helm",
         "defaults": defaults, "values": defaults, "revision": 1,
+        "tailscale": {"mode": "off"},
         "saved_at": _now(), "last_submission": None,
     }
     with LOCK:
@@ -163,11 +240,12 @@ def save_configuration(record_id: str, payload: dict[str, Any]) -> dict[str, Any
     with LOCK:
         records = _load()
         record = _find(records, record_id)
+        tailscale = _tailscale(payload.get("tailscale", record.get("tailscale")))
         if payload.get("revision") != record["revision"]:
             raise ValueError("This configuration changed. Reopen it before saving.")
         if any(item["id"] != record_id and item["release"] == release and item["namespace"] == namespace for item in records):
             raise ValueError("Another configuration already uses that release and namespace.")
-        record.update(name=name, release=release, namespace=namespace, values=values, revision=record["revision"] + 1, saved_at=_now())
+        record.update(name=name, release=release, namespace=namespace, values=values, tailscale=tailscale, revision=record["revision"] + 1, saved_at=_now())
         _write(records)
         return record
 
@@ -191,12 +269,25 @@ def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) ->
             root = Path(directory) / "repository"
             _checkout(record["repository"], root, record["commit"])
             chart = _chart(root, record["chart_path"])
+            _prepare_dependencies(chart)
             values_file = Path(directory) / "values.yaml"
             values_file.write_text(record["values"], encoding="utf-8")
             args = [record["release"], str(chart), "--namespace", record["namespace"], "--values", str(values_file)]
+            tailscale = _tailscale(record.get("tailscale"))
+            if tailscale["mode"] != "off":
+                renderer_config = Path(directory) / "tailscale.json"
+                renderer_config.write_text(json.dumps({**tailscale, "namespace": record["namespace"], "release": record["release"]}), encoding="utf-8")
+                args += ["--post-renderer", str(Path(__file__).with_name("helm_postrender.py")), "--post-renderer-args", str(renderer_config)]
             manifest = _command(["helm", "template", *args])
             if not deploy:
                 return {"manifest": manifest}
+            if tailscale["mode"] != "off":
+                from services import tailscale_operator
+                status = tailscale_operator.operator_status()
+                if status.get("error"):
+                    raise RuntimeError(f"Cannot check Tailscale operator: {status['error']}")
+                if not status.get("installed") or not status.get("ready_replicas"):
+                    raise RuntimeError("The Tailscale operator must be installed and ready before deploying exposure.")
             connection = _helm_connection()
             # Capture the cluster and submitted inputs separately from later edits.
             kubectl = ["kubectl"] if shutil.which("kubectl") else ["k3s", "kubectl"]
@@ -210,7 +301,7 @@ def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) ->
                 "context": context, "server": clusters[0]["cluster"]["server"],
                 "release": record["release"], "namespace": record["namespace"],
                 "repository": record["repository"], "commit": record["commit"],
-                "chart_path": record["chart_path"], "values": record["values"], "status": "pending",
+                "chart_path": record["chart_path"], "values": record["values"], "tailscale": tailscale, "status": "pending",
             }
             record["last_submission"] = submission
             _write(records)

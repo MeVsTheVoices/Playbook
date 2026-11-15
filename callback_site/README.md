@@ -772,6 +772,32 @@ docker compose -f compose.yaml -f compose.kubernetes.yaml exec -T callback-site 
 in the cluster. See the [rack K3s topology](../docs/rack-cluster-runbook.md#k3s-topology-and-join-preflight)
 before changing a node's role.
 
+### Helm configurations and Tailscale workloads
+
+The Helm selector stays visible while the editor is collapsed. Selecting a
+saved configuration or an included example opens the editor. Examples include
+the Grafana Alloy collector and the community n8n chart; import, edit, save and
+preview before explicitly deploying. Alloy is not an LGTM backend: configure
+its pipelines and destinations in the chart values. Configure n8n's external
+URL and webhook settings for its chosen HTTPS address. Charts with external
+dependencies need a committed `Chart.lock`; vendored dependencies are supported.
+
+An optional **Tailscale workload exposure** section uses an installed, ready
+operator. Enter a Service name from the preview and a Tailscale hostname. HTTPS
+creates a Helm-managed Tailscale Ingress using the Service's TCP port; service
+mode exposes its TCP/UDP ports. Preview shows the resulting resources, and
+deployment is still explicitly confirmed. The operator and tailnet policy
+control actual reachability; API server RBAC does not protect application
+traffic. Enable tailnet HTTPS certificates for HTTPS ingress.
+
+Existing ProxyClasses, standalone proxy tags, and existing ingress ProxyGroups
+can be selected. ProxyGroup tags and ProxyClass belong on the group itself;
+ensure it has the required Tailscale permissions and auto-approval. ProxyGroup
+service exposure changes the Service to a Tailscale LoadBalancer, which may
+require recreating an existing Service. The operator tag must own custom tags.
+The dashboard does not create ProxyClasses or ProxyGroups. Tailnet policy must
+grant the intended users access to the application proxy.
+
 ### Kubernetes API over Tailscale
 
 > **kubectl from your laptop, anywhere, with no port 6443 open to the world.**

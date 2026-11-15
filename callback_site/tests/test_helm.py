@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import json
+import html
+import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+
+import yaml
 
 try:
     from .test_support import BaseCallbackSiteTest
 except ImportError:
     from test_support import BaseCallbackSiteTest
 
-from services import helm, kubernetes
+from services import helm, helm_postrender, kubernetes, tailscale_operator
 
 
 class HelmConfigurationTests(BaseCallbackSiteTest):
@@ -164,8 +169,143 @@ class HelmConfigurationTests(BaseCallbackSiteTest):
 
     def test_dashboard_has_configuration_controls(self):
         html = self.client.get("/kubernetes").get_data(as_text=True)
-        for control in ("helm-selection", "helm-values", "helm-save", "helm-preview", "helm-deploy", "helm-submission"):
+        for control in ("helm-selection", "helm-panel", "helm-values", "helm-save", "helm-preview", "helm-deploy", "helm-submission", "helm-ts-mode"):
             self.assertIn(control, html)
+        self.assertIn('<details id="helm-panel" class="tailnet-api-panel">', html)
+        self.assertLess(html.index('id="helm-selection"'), html.index('id="helm-panel"'))
+
+    def test_helm_editor_expands_when_selection_changes_in_browser(self):
+        chrome = shutil.which("google-chrome") or shutil.which("chromium")
+        if not chrome:
+            self.skipTest("Chrome is required for the Helm accordion browser test")
+        root = Path(__file__).resolve().parents[1]
+        page = self.client.get("/kubernetes").get_data(as_text=True)
+        page = re.sub(r'<script\b[^>]*\bsrc=[^>]*>.*?</script>', "", page, flags=re.DOTALL)
+        page = re.sub(r"<link\b[^>]*>", "", page)
+        record = {"id": "saved", "name": "Saved", "release": "app", "namespace": "apps", "values": "{}",
+                  "repository": "https://github.com/example/chart", "chart_path": "chart", "chart_name": "app",
+                  "chart_version": "1", "commit": "abc", "last_submission": None}
+        script = """
+window.fetch = async (url) => ({ok: true, json: async () => url.includes("tailscale-operator")
+  ? {ok: true, status: {installed: true, ready_replicas: 1}}
+  : {ok: true, configurations: [%s], examples: [%s]}});
+""" % (json.dumps(record), json.dumps(helm.EXAMPLES[0])) + (root / "static/helm.js").read_text() + """
+setTimeout(() => {
+  const panel = document.getElementById("helm-panel");
+  const select = document.getElementById("helm-selection");
+  const result = {initial: panel.open};
+  select.value = "example:0"; select.dispatchEvent(new Event("change"));
+  result.example = panel.open;
+  panel.open = false;
+  select.value = "saved"; select.dispatchEvent(new Event("change"));
+  result.saved = panel.open;
+  result.editor = !document.getElementById("helm-editor").hidden;
+  document.body.innerHTML = '<pre id="helm-result"></pre>';
+  document.getElementById("helm-result").textContent = JSON.stringify(result);
+}, 100);
+"""
+        page = page.replace("</body>", f"<script>{script}</script></body>")
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "page.html"
+            target.write_text(page)
+            result = subprocess.run(
+                [chrome, "--headless", "--no-sandbox", "--disable-gpu", "--disable-background-networking",
+                 f"--user-data-dir={directory}/chrome", "--virtual-time-budget=3000", "--dump-dom", target.as_uri()],
+                text=True, capture_output=True, timeout=30,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        match = re.search(r'<pre id="helm-result">(.*?)</pre>', result.stdout, re.DOTALL)
+        self.assertIsNotNone(match, result.stderr)
+        self.assertEqual(json.loads(html.unescape(match.group(1))), {"initial": False, "example": True, "saved": True, "editor": True})
+
+    def test_tailscale_settings_are_saved_and_checked_before_deployment(self):
+        record = self.imported()
+        exposure = {"mode": "https", "service": "web", "hostname": "n8n", "port": "5678", "tags": "tag:k8s"}
+        response = self.client.put(f"/api/helm/configurations/{record['id']}", json={
+            "name": record["name"], "release": record["release"], "namespace": record["namespace"],
+            "values": record["values"], "revision": 1, "tailscale": exposure,
+        })
+        self.assertEqual(response.status_code, 200, response.json)
+        saved = response.json["configuration"]
+        self.assertEqual(saved["tailscale"]["hostname"], "n8n")
+        with patch.object(tailscale_operator, "operator_status", return_value={"installed": False, "error": ""}):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/deploy", json={"revision": 2, "confirm": True})
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("installed and ready", response.json["error"])
+        self.assertFalse(any(args[:3] == ["helm", "upgrade", "--install"] for args in self.commands))
+        with patch.object(tailscale_operator, "operator_status", return_value={"installed": True, "ready_replicas": 1, "error": ""}), \
+             patch.object(helm, "_helm_connection", return_value=[]):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/deploy", json={"revision": 2, "confirm": True})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(response.json["configuration"]["last_submission"]["tailscale"], saved["tailscale"])
+        self.assertTrue(any("--post-renderer" in args for args in self.commands if args[:2] == ["helm", "template"]))
+
+    def test_rejects_bad_tailscale_configurations(self):
+        for exposure in (
+            {"mode": "https", "service": "web", "hostname": "web", "port": "0"},
+            {"mode": "service", "service": "../web", "hostname": "web"},
+            {"mode": "service", "service": "web", "hostname": "web", "tags": "bad"},
+            {"mode": "https", "service": "web", "hostname": "web", "port": "80", "proxy_group": "ha", "tags": "tag:k8s"},
+        ):
+            with self.subTest(exposure=exposure), self.assertRaises(ValueError):
+                helm._tailscale(exposure)
+
+    def test_locked_chart_dependencies_use_isolated_repository_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            chart = Path(directory)
+            (chart / "Chart.yaml").write_text("dependencies:\n- name: valkey\n  version: 1.0.0\n")
+            (chart / "Chart.lock").write_text("dependencies:\n- name: valkey\n  version: 1.0.0\n  repository: https://example.org/charts\n")
+            with patch.object(helm, "_command", return_value="") as command:
+                helm._prepare_dependencies(chart)
+            self.assertEqual(command.call_count, 2)
+            self.assertEqual(command.call_args_list[0].args[0][:3], ["helm", "repo", "add"])
+            self.assertIn("--repository-config", command.call_args_list[1].args[0])
+
+    def test_unlocked_unvendored_dependency_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            chart = Path(directory)
+            (chart / "Chart.yaml").write_text("dependencies:\n- name: missing\n  version: 1.0.0\n")
+            with self.assertRaisesRegex(ValueError, "Chart.lock"):
+                helm._prepare_dependencies(chart)
+
+
+class HelmTailscaleRendererTests(BaseCallbackSiteTest):
+    SERVICE = """apiVersion: v1
+kind: Service
+metadata:
+  name: app
+spec:
+  ports:
+  - port: 5678
+"""
+
+    def config(self, **overrides):
+        return {**helm._tailscale({"mode": "https", "service": "app", "hostname": "n8n", "port": "5678"}),
+                "namespace": "apps", "release": "demo", **overrides}
+
+    def test_https_ingress_has_valid_backend_and_operator_annotations(self):
+        result = list(yaml.safe_load_all(helm_postrender.render(self.SERVICE, self.config(proxy_class="custom", tags="tag:k8s"))))
+        ingress = result[1]
+        self.assertEqual(ingress["metadata"]["annotations"], {"tailscale.com/proxy-class": "custom", "tailscale.com/tags": "tag:k8s"})
+        self.assertEqual(ingress["spec"]["tls"], [{"hosts": ["n8n"]}])
+        self.assertEqual(ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"], {"name": "app", "port": {"number": 5678}})
+
+    def test_service_exposure_and_proxy_group(self):
+        standalone = list(yaml.safe_load_all(helm_postrender.render(self.SERVICE, self.config(mode="service"))))[0]
+        self.assertEqual(standalone["metadata"]["annotations"]["tailscale.com/expose"], "true")
+        grouped = list(yaml.safe_load_all(helm_postrender.render(self.SERVICE, self.config(mode="service", proxy_group="ha"))))[0]
+        self.assertEqual(grouped["spec"]["loadBalancerClass"], "tailscale")
+        self.assertEqual(grouped["metadata"]["annotations"]["tailscale.com/proxy-group"], "ha")
+        self.assertNotIn("tailscale.com/expose", grouped["metadata"]["annotations"])
+
+    def test_missing_service_wrong_port_and_conflicting_annotations_fail(self):
+        for text, config in (
+            (self.SERVICE, self.config(service="missing")),
+            (self.SERVICE, self.config(port="80")),
+            (self.SERVICE.replace("  name: app", "  name: app\n  annotations:\n    tailscale.com/hostname: other"), self.config(mode="service")),
+        ):
+            with self.subTest(config=config), self.assertRaises(ValueError):
+                helm_postrender.render(text, config)
 
 
 class KubernetesClientRuntimeTests(BaseCallbackSiteTest):

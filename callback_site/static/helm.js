@@ -6,6 +6,7 @@
   let current = null;
   let dirty = false;
   let busy = false;
+  const tailscaleFields = ["mode", "service", "hostname", "port", "proxy-class", "proxy-group", "tags"];
 
   function buttons() {
     element("save").disabled = busy || !current;
@@ -25,6 +26,8 @@
     element("manifest").textContent = "Preview before deploying.";
     if (record) {
       for (const name of ["name", "release", "namespace", "values"]) element(name).value = record[name];
+      const tailscale = record.tailscale || { mode: "off" };
+      for (const name of tailscaleFields) element(`ts-${name}`).value = tailscale[name.replaceAll("-", "_")] || "";
       element("source").textContent = `${record.chart_name} ${record.chart_version} · ${record.chart_path} · pinned commit ${record.commit}`;
       const submission = record.last_submission;
       element("submission").textContent = submission
@@ -78,6 +81,7 @@
   }
 
   element("selection").addEventListener("change", () => {
+    if (element("selection").value) element("panel").open = true;
     show(records.find((record) => record.id === element("selection").value) || null);
     if (element("selection").value.startsWith("example:")) {
       const sample = examples[Number(element("selection").value.split(":")[1])];
@@ -87,11 +91,12 @@
     element("status").textContent = "";
   });
   element("new").addEventListener("click", () => {
+    element("panel").open = true;
     element("selection").value = "";
     show(null);
     element("status").textContent = "";
   });
-  for (const name of ["name", "release", "namespace", "values"]) {
+  for (const name of ["name", "release", "namespace", "values", ...tailscaleFields.map((field) => `ts-${field}`)]) {
     element(name).addEventListener("input", () => {
       dirty = true;
       element("status").textContent = "Unsaved changes. Save before previewing or deploying.";
@@ -109,6 +114,7 @@
   element("save").addEventListener("click", () => operation("Saving configuration...", async () => {
     const payload = { revision: current.revision };
     for (const name of ["name", "release", "namespace", "values"]) payload[name] = element(name).value;
+    payload.tailscale = Object.fromEntries(tailscaleFields.map((name) => [name.replaceAll("-", "_"), element(`ts-${name}`).value]));
     const data = await request(`/${current.id}`, "PUT", payload);
     await refresh(data.configuration.id);
     element("status").textContent = "Configuration saved. No cluster changes made.";
@@ -136,4 +142,15 @@
     await refresh();
     element("status").textContent = "Select an example or enter a GitHub repository to start.";
   });
+  fetch("/api/kubernetes/tailscale-operator")
+    .then(async (response) => {
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "Operator check failed.");
+      const status = data.status;
+      if (status.error) throw new Error(status.error);
+      element("tailscale-status").textContent = status.installed && status.ready_replicas
+        ? "Tailscale operator is ready. Exposure is applied only on deployment."
+        : "Tailscale operator is not ready. Install it before deploying exposure.";
+    })
+    .catch((error) => { element("tailscale-status").textContent = `Operator check failed: ${error.message}`; });
 })();

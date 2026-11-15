@@ -786,6 +786,12 @@ In auth mode, access is decided by Kubernetes RBAC for your Tailscale identity.
 authenticate another way. The in-process proxy is a single replica that shares
 the operator's lifecycle; a high-availability `ProxyGroup` is not managed here.
 
+Run kubectl from an untagged device that belongs to the admin. Tagged machines
+(such as the NucBox) don't match the `group:admins` grant. If the operator is
+Running but never appears on the tailnet, check that flannel uses Tailscale on
+every node (`flannel-iface: tailscale0`; see the runbook). A pod on a Pi that
+can't reach CoreDNS on the NucBox can't log in.
+
 ### Docker Desktop Kubernetes and Helm
 
 Enable Kubernetes in Docker Desktop and wait for its node to be Ready. From

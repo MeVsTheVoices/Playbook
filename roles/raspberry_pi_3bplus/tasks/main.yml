@@ -525,6 +525,7 @@
           'node-label': ['role=light-worker'],
           'kubelet-arg': ['max-pods=' ~ (raspberry_pi_3bplus_max_pods | int)]
         }
+        | combine({'flannel-iface': 'tailscale0'} if (raspberry_pi_3bplus_k3s_node_ip | string).startswith('100.') else {})
         | combine({'node-taint': ['rack/light=true:NoSchedule']} if raspberry_pi_3bplus_taint | bool else {})
         | to_nice_yaml(sort_keys=false))
       }}
@@ -621,6 +622,7 @@
           'secrets-encryption': (raspberry_pi_3bplus_k3s_security_enabled | bool),
           'node-label': ['role=control-plane']
         }
+        | combine({'flannel-iface': 'tailscale0'} if (raspberry_pi_3bplus_k3s_node_ip | string).startswith('100.') else {})
         | combine({'node-taint': ['node-role.kubernetes.io/control-plane:NoSchedule']} if raspberry_pi_3bplus_taint | bool else {})
         | combine({'kubelet-arg': ['max-pods=' ~ (raspberry_pi_3bplus_max_pods | int)]})
         | combine({'disable': raspberry_pi_3bplus_k3s_disable} if raspberry_pi_3bplus_k3s_disable | length > 0 else {})

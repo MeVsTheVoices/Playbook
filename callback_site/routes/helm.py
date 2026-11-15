@@ -20,7 +20,7 @@ def register_helm_routes(app: Any) -> None:
     def configurations(record_id: str = "", action: str = "") -> Any:
         try:
             if request.method == "GET":
-                return jsonify(ok=True, configurations=helm.configurations(), examples=helm.EXAMPLES)
+                return jsonify(ok=True, configurations=helm.configurations(), examples=helm.EXAMPLES, bundled=helm.BUNDLED)
             payload = request.get_json(silent=True)
             if not isinstance(payload, dict):
                 raise ValueError("A JSON object is required.")
@@ -32,6 +32,9 @@ def register_helm_routes(app: Any) -> None:
                 if action == "deploy" and payload.get("confirm") is not True:
                     raise ValueError("Deployment requires explicit confirmation.")
                 result = helm.run_configuration(record_id, payload.get("revision"), deploy=action == "deploy")
+            elif action == "dockerbot-token":
+                helm.set_dockerbot_token(record_id, payload)
+                result = {}
             else:
                 return jsonify(ok=False, error="Unknown Helm operation."), 404
             return jsonify(ok=True, **result)

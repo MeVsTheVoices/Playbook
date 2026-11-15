@@ -782,6 +782,21 @@ its pipelines and destinations in the chart values. Configure n8n's external
 URL and webhook settings for its chosen HTTPS address. Charts with external
 dependencies need a committed `Chart.lock`; vendored dependencies are supported.
 
+The bundled Dockerbot chart is distributed with Playbook and imported as a
+content-verified snapshot, so saved configurations remain reproducible across
+Playbook upgrades. Its short setup guide covers Discord application, token,
+intent and invite setup. Imported charts show `PLAYBOOK_GUIDE.md` or, if absent,
+their `README.md` as untrusted plain text; charts without either show a notice.
+Reimport an older configuration to pick up a guide.
+
+For Dockerbot, save the target namespace and values, create that namespace,
+then use **Create / update Secret** to submit the token directly to the cluster.
+The dashboard does not store it in its configuration or Helm values; Kubernetes
+Secret access and encryption are governed by the cluster. Use HTTPS on a
+trusted connection, and restart an existing bot pod after rotation. Kubernetes
+server-side apply may reject the update if another field manager owns the token
+key; resolve ownership deliberately rather than forcing it.
+
 An optional **Tailscale workload exposure** section uses an installed, ready
 operator. Enter a Service name from the preview and a Tailscale hostname. HTTPS
 creates a Helm-managed Tailscale Ingress using the Service's TCP port; service

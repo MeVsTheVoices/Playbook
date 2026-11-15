@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import html
 import re
 import shutil
@@ -59,6 +60,86 @@ class HelmConfigurationTests(BaseCallbackSiteTest):
         response = self.client.post("/api/helm/configurations/import", json={"repository": helm.EXAMPLES[0]["repository"]})
         self.assertEqual(response.status_code, 200, response.json)
         return response.json["configuration"]
+
+    def bundled(self):
+        def commands(args, **kwargs):
+            if args[:3] == ["helm", "show", "chart"]:
+                return (helm.BUNDLED_CHARTS["dockerbot"] / "Chart.yaml").read_text()
+            if args[:3] == ["helm", "show", "values"]:
+                return (helm.BUNDLED_CHARTS["dockerbot"] / "values.yaml").read_text()
+            return self.command(args, **kwargs)
+        with patch.object(helm, "_command", side_effect=commands):
+            response = self.client.post("/api/helm/configurations/import", json={"bundled": "dockerbot"})
+        self.assertEqual(response.status_code, 200, response.json)
+        return response.json["configuration"]
+
+    def test_bundled_chart_snapshots_guide_and_detects_changes(self):
+        record = self.bundled()
+        self.assertEqual(record["bundled"], "dockerbot")
+        self.assertIn("Reset Token", record["guide"])
+        self.assertIn("dockerbot", [item["id"] for item in self.client.get("/api/helm/configurations").json["bundled"]])
+        snapshot = helm._snapshot_path(record["id"])
+        self.assertEqual(helm._chart_digest(snapshot), record["commit"])
+        with patch.object(helm, "_checkout", side_effect=AssertionError("bundled chart must not fetch Git")):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/preview", json={"revision": 1})
+        self.assertEqual(response.status_code, 200, response.json)
+        (snapshot / "values.yaml").write_text("changed: true\n")
+        response = self.client.post(f"/api/helm/configurations/{record['id']}/preview", json={"revision": 1})
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("snapshot changed", response.json["error"])
+
+    def test_imported_chart_guide_and_missing_guide(self):
+        record = self.imported()
+        self.assertEqual(record["guide"], "")
+        def with_guide(repository, root, commit=""):
+            result = self.checkout(repository, root, commit)
+            chart = root / "charts" / "hello-world"
+            (chart / "README.md").write_text("README")
+            (chart / "PLAYBOOK_GUIDE.md").write_text("<script>not executable</script>")
+            return result
+        with patch.object(helm, "_checkout", side_effect=with_guide):
+            record = self.imported()
+        self.assertEqual(record["guide"], "<script>not executable</script>")
+
+    def test_dockerbot_token_uses_stdin_and_is_not_persisted(self):
+        record = self.bundled()
+        token = "test-token-value"
+        path = f"/api/helm/configurations/{record['id']}/dockerbot-token"
+        response = self.client.post(path, json={"revision": 1, "token": token})
+        self.assertEqual(response.status_code, 400)
+        with patch.object(helm, "_helm_connection", return_value=[]), \
+             patch.object(helm.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "secret/dockerbot-token", "")) as run:
+            response = self.client.post(path, json={"revision": 1, "token": token, "confirm": True})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertNotIn(token, response.get_data(as_text=True))
+        self.assertNotIn(token, helm.CONFIG_FILE.read_text())
+        args, kwargs = run.call_args
+        self.assertNotIn(token, str(args))
+        manifest = json.loads(kwargs["input"])
+        self.assertEqual(manifest["metadata"], {"name": "dockerbot-token", "namespace": "playbook-helm"})
+        self.assertEqual(base64.b64decode(manifest["data"]["token"]).decode(), token)
+        self.assertIn("--server-side", args[0])
+
+    def test_token_rejects_stale_untrusted_and_hides_subprocess_errors(self):
+        record = self.bundled()
+        path = f"/api/helm/configurations/{record['id']}/dockerbot-token"
+        for payload in (
+            {"revision": 0, "token": "token", "confirm": True},
+            {"revision": 1, "token": "bad token", "confirm": True},
+        ):
+            self.assertEqual(self.client.post(path, json=payload).status_code, 400)
+        with patch.object(helm, "_helm_connection", return_value=[]), \
+             patch.object(helm.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "sensitive-token")):
+            response = self.client.post(path, json={"revision": 1, "token": "sensitive-token", "confirm": True})
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn("sensitive-token", response.get_data(as_text=True))
+        other = self.imported()
+        response = self.client.post(f"/api/helm/configurations/{other['id']}/dockerbot-token",
+                                    json={"revision": 1, "token": "token", "confirm": True})
+        self.assertEqual(response.status_code, 400)
+        anonymous = self.client.application.test_client(authenticated=False)
+        response = anonymous.post(path, json={"revision": 1, "token": "token", "confirm": True})
+        self.assertEqual(response.status_code, 401)
 
     def test_import_defaults_pins_source_and_does_not_deploy(self):
         record = self.imported()
@@ -169,7 +250,7 @@ class HelmConfigurationTests(BaseCallbackSiteTest):
 
     def test_dashboard_has_configuration_controls(self):
         html = self.client.get("/kubernetes").get_data(as_text=True)
-        for control in ("helm-selection", "helm-panel", "helm-values", "helm-save", "helm-preview", "helm-deploy", "helm-submission", "helm-ts-mode"):
+        for control in ("helm-selection", "helm-panel", "helm-values", "helm-save", "helm-preview", "helm-deploy", "helm-submission", "helm-ts-mode", "helm-guide", "helm-dockerbot-token"):
             self.assertIn(control, html)
         self.assertIn('<details id="helm-panel" class="tailnet-api-panel">', html)
         self.assertLess(html.index('id="helm-selection"'), html.index('id="helm-panel"'))
@@ -217,6 +298,45 @@ setTimeout(() => {
         match = re.search(r'<pre id="helm-result">(.*?)</pre>', result.stdout, re.DOTALL)
         self.assertIsNotNone(match, result.stderr)
         self.assertEqual(json.loads(html.unescape(match.group(1))), {"initial": False, "example": True, "saved": True, "editor": True})
+
+    def test_browser_bundled_guide_and_token_submission(self):
+        record = {"id": "saved", "name": "Dockerbot", "release": "bot", "namespace": "apps",
+                  "values": "bot: {}", "repository": "", "chart_path": "charts/dockerbot",
+                  "chart_name": "dockerbot", "chart_version": "1", "commit": "abc", "revision": 1,
+                  "bundled": "dockerbot", "guide": "<img src=x onerror=alert(1)>", "last_submission": None}
+        bootstrap = """
+let submitted;
+window.confirm = () => true;
+window.fetch = async (url, options) => {
+  if (url.includes("tailscale-operator")) return {ok: true, json: async () => ({ok: true, status: {}})};
+  if (url.endsWith("/dockerbot-token")) {
+    submitted = JSON.parse(options.body);
+    return {ok: false, json: async () => ({ok: false, error: "Secret rejected"})};
+  }
+  return {ok: true, json: async () => ({ok: true, configurations: [%s], examples: [], bundled: [{id: "dockerbot", name: "Dockerbot"}]})};
+};
+""" % json.dumps(record)
+        probe = """
+await tick();
+const select = document.getElementById("helm-selection");
+check([...select.options].some(option => option.value === "bundled:dockerbot"), "bundled chart listed");
+select.value = "bundled:dockerbot"; select.dispatchEvent(new Event("change"));
+check(document.getElementById("helm-repository-fields").hidden, "bundled chart hides repository inputs");
+check(document.getElementById("helm-status").textContent.includes("Import defaults"), "bundled import instruction shown");
+select.value = "saved"; select.dispatchEvent(new Event("change"));
+check(document.getElementById("helm-guide").value === "<img src=x onerror=alert(1)>", "guide displayed as text");
+check(!document.getElementById("helm-dockerbot-token-panel").hidden, "token panel displayed");
+const token = document.getElementById("helm-dockerbot-token");
+token.value = "test-token";
+document.getElementById("helm-dockerbot-token-save").click();
+await tick();
+check(submitted.token === "test-token" && submitted.confirm, "token submitted with confirmation");
+check(token.value === "", "token cleared after failure");
+check(document.getElementById("helm-status").textContent === "Secret rejected", "failure displayed");
+document.getElementById("helm-values").dispatchEvent(new Event("input"));
+check(document.getElementById("helm-dockerbot-token-save").disabled, "unsaved values block token submission");
+"""
+        self.browser_probe("/kubernetes", ["helm.js"], bootstrap, probe)
 
     def test_tailscale_settings_are_saved_and_checked_before_deployment(self):
         record = self.imported()

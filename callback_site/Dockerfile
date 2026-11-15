@@ -48,6 +48,7 @@ RUN python -m pip install \
 COPY ansible.cfg inventory.yml site.yml /app/
 COPY collections/requirements.yml /tmp/collections-requirements.yml
 COPY callback_site/ /app/callback_site/
+COPY charts/ /app/charts/
 COPY scripts/ /app/scripts/
 COPY roles/ /app/roles/
 COPY library/ /app/library/

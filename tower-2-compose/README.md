@@ -9,6 +9,10 @@ privileges, and Docker-socket mounts. Review those requirements before running
 them on another host. The Dockerbot project is an exported alternative to the
 Discord Bot project, not an additional instance to run alongside it.
 
+For Kubernetes, the [Dockerbot Helm chart](../charts/dockerbot/) replaces
+either Compose bot and supports persistent storage, including Longhorn. Keep
+the recovered Compose files for rollback; do not run both bots at once.
+
 Literal credential fields are now required environment references. Store values
 in an owner-only file outside the repository, or supply them from a secret
 manager. Do not paste credentials into commands or commit resolved Compose

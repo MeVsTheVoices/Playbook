@@ -1,203 +1,104 @@
 # The SOHO Rack Vision
 
-### Small computers, finding their way to one another.
+### Small computers. Big plans. Surprisingly little YAML.
 
-I dreamed of a day when the interconnectivity of my computers felt less like a
-burden and more like a benefit.
+I dreamed of a day when my computers could talk to each other without making
+me feel like their unpaid network therapist.
 
-Let me help you put computers in your computers, so they can compute together.
-These little computers get to know one another through other little computers
-that remember their names—and how to reach them again. When one needs a friend,
-sometimes we press a button. Sometimes we do a thing. Playbook helps make those
-connections easier to build, see, and trust.
+Playbook is a graphical management desk for booting machines, checking in on
+them, changing what they do, and running Kubernetes when one computer just
+isn't enough. Cloud-init and Ansible do the repetitive bits. The browser gives
+the repetition a button.
 
-[Project home](../README.md) · [Operator guide](../callback_site/README.md) ·
-[Operator guide](../callback_site/README.md)
+The small version is one Pi. The big version is a rack of little computers,
+each doing a job and finding its friends over Tailscale. Kubernetes is invited;
+it is not mandatory.
 
-> **Document status: intended architecture.** This describes what Playbook is
-> meant to become and how its existing pieces fit together. It is not a claim
-> that remote desktop setup, router configuration, or every hardware workflow
-> is already automated or validated.
+[Project home](../README.md) · [Operator guide](../callback_site/README.md)
 
-## On this page
-
-- [Purpose](#purpose)
-- [The control desk](#the-control-desk)
-- [Two Kubernetes environments, two jobs](#two-kubernetes-environments-two-jobs)
-- [Private access and the SOHO network](#private-access-and-the-soho-network)
-- [Bring-up journey](#bring-up-journey)
-- [Current capabilities and remaining work](#current-capabilities-and-remaining-work)
-- [What a successful setup looks like](#what-a-successful-setup-looks-like)
-
----
-
-## Purpose
-
-Playbook is intended to make a small rack practical to build, understand, and
-operate without requiring a dedicated enterprise management stack.
-
-The target is a home lab, small office, or compact equipment rack: a router,
-a switch, a handful of Raspberry Pis or small computers, and useful containerized
-services. A 10-inch rack is a natural starting point; the idea also applies to a
-modest 19-inch installation.
-
-The core experience is **a graphical management desk**, not a pile of unrelated
-shell sessions. The operator uses a browser to prepare node boot media, follow
-first-boot callbacks, inspect hardware, apply configuration, and troubleshoot.
-Cloud-init and Ansible provide the repeatable work underneath that interface.
-
-This is about lowering operational friction, not hiding the network or pretending
-that every device is interchangeable. Small devices should have appropriately
-small roles, and Kubernetes should remain optional.
+> **Reality check:** This is the direction, not a magic wand. Playbook helps
+> manage the machines; it does not configure every router, flash every card,
+> or make a broken network feel bad about itself.
 
 ## The control desk
 
-The intended anchor is a **NUC or comparable mini PC with a graphical operating
-system**. It stays near the rack and can be used directly with a screen, keyboard,
-and mouse, or indirectly through an operator-configured remote desktop session.
+A mini PC runs the portal. Open a browser to prepare boot media, watch new
+nodes call home, inspect hardware, apply configuration, and troubleshoot.
+Cloud-init gets a node started; Ansible helps it settle into a job.
 
-| Layer | Intended responsibility |
-| --- | --- |
-| **Desktop OS** | Local administration, remote desktop, browser, host firewall, and Tailscale client. |
-| **Docker Desktop** | A graphical container-management environment and an optional local Kubernetes cluster. |
-| **Playbook portal** | The browser interface for bootstrap, callbacks, node operations, and monitoring. |
-| **Automation tools** | Cloud-init for first boot; Ansible and SSH for subsequent configuration and checks. |
-| **Rack infrastructure** | Router, switch, node power, storage, and the physical service hosts. |
+Docker Compose is plenty for a simple service. Docker Desktop Kubernetes is a
+local workbench. K3s is for workloads spread across the rack. Pick the amount
+of orchestration that matches the amount of machine you have.
 
-Windows with Docker Desktop is one documented path, including a PowerShell
-helper for local Kubernetes connectivity. Linux can also host the desk; the
-operator guide covers Docker Desktop and native Docker Engine considerations.
-The desktop is the host experience, while the portal itself runs in a container.
+## Kubernetes, with a way back in
 
-For indirect access, there are two complementary options:
-
-- **Remote desktop to the mini PC:** use its graphical tools as if sitting at the
-  rack. Select and configure the desktop-sharing service for that OS, restrict
-  it to authorized tailnet access, and retain its own authentication.
-- **Browser access to the portal:** reach the published host endpoint over an
-  explicitly permitted private path without opening a full desktop session.
-
-Neither mode is provisioned automatically by this repository. A working host
-Tailscale connection also does not prove the portal container can discover
-tailnet peers or reach every node; test those paths separately.
-
-## Two Kubernetes environments, two jobs
-
-**Docker Desktop Kubernetes is the local workbench.** Enable it in Docker
-Desktop, connect the portal with the documented helper, and use it to explore
-Kubernetes and Helm before touching rack workloads.
-
-**K3s is the physical-rack path.** It has its own server endpoint, credentials,
-node roles, and network requirements. The current runbook describes a NucBox
-server with capacity-appropriate Pi workers and optional additional servers.
-
-| Environment | Use it for | Do not assume |
-| --- | --- | --- |
-| **Docker Desktop Kubernetes** | Local chart trials and learning on the control desk. | That it is a supported multi-machine cluster for the Pis. |
-| **Rack K3s** | Workloads scheduled onto physical rack nodes. | That joining a node is safe without role, storage, and network preflight. |
-| **Docker Compose** | Straightforward services that do not need multi-node scheduling. | That every SOHO service needs Kubernetes. |
-
-The workstation's management role and a K3s server role are separate decisions.
-They may share suitable hardware, but do not equate Docker Desktop's cluster with
-the rack's control plane or rely on a desktop login session for critical
-infrastructure availability.
-
-See [local Kubernetes connection instructions](../callback_site/README.md#docker-desktop-kubernetes-and-helm)
-and [Linux K3s setup](../callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard).
-
-## Private access and the SOHO network
-
-The intended remote entry is **Tailscale, not public router port-forwards**.
-An authorized operator joins the tailnet and reaches the control desk, portal,
-or permitted rack endpoints through explicitly configured access rules.
+The desk can manage the rack, and the rack can run Kubernetes. For private
+access to the Kubernetes API, the Tailscale Kubernetes operator can provide a
+tailnet-connected proxy. No public API port, no forwarding a router port to the
+internet, and no pretending the cluster is a single very confident Pi.
 
 ```mermaid
 flowchart TD
-    Operator["Authorized operator device"] --> Tailnet["Tailscale<br/>Identity + access policy"]
-    Tailnet --> Desk["Mini-PC control desk"]
-    Desk --> GUI["Remote desktop / local browser"]
-    Desk --> Portal["Playbook portal in Docker"]
-    Portal -->|SSH / automation over a verified path| Nodes["Rack nodes"]
-    Desk -->|Private admin path| Router["SOHO router"]
-    Tailnet -. Optional approved subnet route .-> Router
+    You["You and your browser"] -->|Tailscale| Tailnet["Private tailnet"]
+    Tailnet --> Desk["Mini-PC control desk<br/>Playbook portal"]
+    Desk -->|bootstrap and Ansible| Nodes["Rack nodes"]
+    Nodes --> Cluster["Rack K3s cluster"]
+    Cluster --> Operator["Tailscale operator"]
+    Tailnet -->|private API access| Operator
+    Operator --> K8sAPI["Kubernetes API"]
+    Desk -->|private admin path| Router["SOHO router"]
     Router --> Switch["Switch / PoE"]
     Switch --> Nodes
 ```
 
-The diagram shows desired access relationships, not routes created by Playbook.
-Nodes can join Tailscale directly. Devices that cannot join need a reachable LAN
-path from the desk or an explicitly configured and approved subnet router.
-Advertising a route alone does not approve it or grant access.
+The operator is a workload in the cluster; it is not installed by drawing an
+arrow on this diagram. Configure Tailscale access deliberately. Nodes that
+cannot join the tailnet need a reachable LAN path or an explicitly approved
+subnet route. A route advertisement is not a permission slip.
 
-### Router and switch setup
+## The network, briefly
 
-Treat network configuration as a deliberate, recoverable step:
+Use Tailscale for private remote access. Keep the router's admin page and the
+portal off the public internet. Back up the router before changing it, and
+keep a local way back in—especially before experimenting remotely. The network
+is infrastructure, not a piñata.
 
-1. **Record the existing setup.** Back up the router configuration and preserve
-   a local admin path before changing addressing, firewall rules, or routes.
-2. **Choose the rack network.** Plan a non-overlapping LAN subnet, gateway, DHCP
-   range, stable management addresses or reservations, and DNS.
-3. **Establish basic connectivity.** Verify internet access, DNS, time sync,
-   switch links, and sufficient PoE power where applicable.
-4. **Restrict management.** Keep router administration and portal access on
-   trusted management paths; permit only the necessary traffic.
-5. **Add private remote access.** Configure Tailscale on the desk and supported
-   nodes; add narrowly scoped subnet routing only if it is needed.
-6. **Test from outside the LAN.** Verify permitted access from an authorized
-   tailnet device and confirm unauthorized paths remain blocked.
-7. **Change incrementally.** Verify reconnect and recovery after each network
-   change before proceeding remotely.
-
-OpenWrt is represented in the current portal through router Node Ops, SSH probing,
-and key onboarding. A complete router configuration wizard, switch provisioning,
-and automatic network rollback are **not** implied by those features.
-
-Keep public Funnel access out of the default management design. The portal is
-not intended for direct public-internet exposure; Tailscale does not replace
-service authentication, host firewall rules, or careful handling of credentials.
+Playbook has OpenWrt SSH onboarding, but it does not automatically configure
+your router, switch, firewall, or remote desktop. Tailscale also does not
+replace authentication, access rules, or backups. Security remains a group
+project.
 
 ## Bring-up journey
 
-| Stage | Operator action | Exit check |
-| --- | --- | --- |
-| **1. Prepare the desk** | Install the desktop tools, Docker Desktop, and Tailscale; start the portal. | The portal opens locally and its state persists across container recreation. |
-| **2. Establish the network** | Configure the router, switch, addressing, and management boundaries. | The desk can reach the intended device endpoints without relying on public admin ports. |
-| **3. Verify remote entry** | Configure remote desktop and/or private portal access. | An authorized off-LAN device connects, and a local recovery path still works. |
-| **4. Bootstrap one node** | Choose the correct image and role, prepare cloud-init, and boot the device. | A callback arrives at a node-reachable host URL, not the desk's loopback address. |
-| **5. Check before applying** | Confirm identity, SSH access, saved module inputs, and intended changes. | Node Ops checks produce usable results and errors are resolved before applying. |
-| **6. Add useful workloads** | Use Compose, local Kubernetes trials, or rack K3s as appropriate. | The workload is healthy in the intended environment. |
-| **7. Repeat and maintain** | Add nodes gradually; review monitoring, logs, backups, and recovery. | Each device has a known role, access path, and recovery procedure. |
+1. **Start the desk.** Run the portal. Confirm it opens and keeps its data.
+2. **Make the network boring.** Give the desk and nodes a path to each other.
+   Boring is the highest compliment a network can get.
+3. **Boot one node.** Prepare its image, power it on, and wait for its callback.
+4. **Give it a job.** Check the hardware and access, then apply the configuration.
+5. **Add Kubernetes if useful.** Try a local cluster, or build the rack K3s
+   cluster. Not every container needs a committee.
+6. **Back it up.** Save the router config and important data somewhere besides
+   the machine that is currently having a day.
 
-Physical SD-card access is a special case: the default non-root Docker container
-is not a validated hardware flasher. Use the documented native Linux workflow
-or a separately verified device-access setup, rather than assuming a Windows
-card reader appears inside Docker.
+SD-card access depends on the host setup. Docker cannot read a card reader it
+was never given.
 
-## Current capabilities and remaining work
+## What exists today
 
-| Area | Available in the repository | Intended direction / operator-owned work |
-| --- | --- | --- |
-| **Portal runtime** | Docker Compose deployment with persistent application storage. | Prepare the desktop host, firewall, startup behavior, and backups. |
-| **Node lifecycle** | Pi image workflows, cloud-init, callbacks, Node Ops, monitoring, and logs. | Validate each hardware profile and bring devices online incrementally. |
-| **Local Kubernetes** | Docker Desktop kubeconfig helper and Helm workflows. | Enable the cluster and verify the connection on the chosen host. |
-| **Rack Kubernetes** | K3s roles and operational preflight in the runbook. | Choose appropriately sized servers, storage, and reachable peer paths. |
-| **Remote access** | Tailscale-related node configuration and policy planning. | Enroll the desk, configure desktop sharing, approve rules/routes, and test access. |
-| **Router and switch** | OpenWrt SSH onboarding and infrastructure inventory placeholders. | Configure and back up the actual network; broader network automation remains future work. |
+- **Portal:** Docker Compose, persistent data, node callbacks, monitoring, and
+  Node Ops.
+- **Nodes:** Pi imaging and cloud-init workflows, configuration through
+  Ansible, and boot logs.
+- **Kubernetes:** local Docker Desktop helpers, rack K3s roles, Helm, and a
+  Tailscale operator workflow.
+- **Network:** Tailscale-related node setup and OpenWrt SSH onboarding.
 
-## What a successful setup looks like
-
-- The mini PC is usable locally and remotely as the rack's management desk.
-- Docker Desktop runs the portal and provides an optional local Kubernetes workbench.
-- The router and switch provide a documented, recoverable SOHO network.
-- Authorized tailnet devices can reach only the management services they need.
-- Nodes can report back, be inspected, and receive deliberate configuration.
-- Local experiments are clearly separated from physical-rack workloads.
-- A reboot, lease change, or remote-access failure has a tested recovery path.
-- Persistent state, router configuration, and important workload data have
-  independent backups; a Docker volume alone is not the recovery plan.
+The operator still has to prepare the host, network, access rules, and backups.
+Playbook can make the computers cooperate; it has not yet negotiated with the
+laws of physics.
 
 ---
 
 **Next:** [Run the portal](../callback_site/README.md#docker-compose),
-[Linux K3s setup](../callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard), or
-[return to the project overview](../README.md).
+[set up Kubernetes](../callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard),
+or [return to the project overview](../README.md).

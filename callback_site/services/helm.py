@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import os
@@ -22,6 +24,8 @@ from services.storage import APPDATA_DIR, _atomic_write_text
 
 logger = logging.getLogger(__name__)
 CONFIG_FILE = APPDATA_DIR / "helm_configurations.json"
+BUNDLED_CHARTS = {"dockerbot": Path(__file__).resolve().parents[2] / "charts" / "dockerbot"}
+BUNDLED = [{"id": "dockerbot", "name": "Dockerbot (Red Discord Bot)"}]
 LOCK = threading.Lock()
 EXAMPLES = [
     {"name": "Hello World (NGINX)", "repository": "https://github.com/helm/examples", "chart_path": "charts/hello-world"},
@@ -104,6 +108,35 @@ def _values(raw: Any) -> str:
     if values is not None and not isinstance(values, dict):
         raise ValueError("Values YAML must be a mapping.")
     return raw
+
+
+def _guide(chart: Path) -> str:
+    for name in ("PLAYBOOK_GUIDE.md", "README.md"):
+        path = chart / name
+        if path.is_file():
+            if path.stat().st_size > 65536:
+                raise ValueError(f"{name} exceeds the 64 KiB guide limit.")
+            return path.read_text(encoding="utf-8")
+    return ""
+
+
+def _chart_digest(chart: Path) -> str:
+    digest = hashlib.sha256()
+    for item in sorted(chart.rglob("*")):
+        if item.is_symlink():
+            raise ValueError("Chart files cannot use symbolic links.")
+        if item.is_file():
+            name = item.relative_to(chart).as_posix().encode()
+            content = item.read_bytes()
+            digest.update(len(name).to_bytes(8, "big") + name)
+            digest.update(len(content).to_bytes(8, "big") + content)
+    return digest.hexdigest()
+
+
+def _snapshot_path(record_id: str) -> Path:
+    if not re.fullmatch(r"[a-f0-9]{12}", record_id):
+        raise ValueError("Invalid bundled chart identifier.")
+    return CONFIG_FILE.parent / "helm-chart-snapshots" / record_id
 
 
 def _tailscale(raw: Any) -> dict[str, str]:
@@ -191,25 +224,48 @@ def configurations() -> list[dict[str, Any]]:
 
 
 def import_chart(payload: dict[str, Any]) -> dict[str, Any]:
-    repository = _repository(payload.get("repository"))
+    bundled = payload.get("bundled")
+    if bundled is not None and not isinstance(bundled, str):
+        raise ValueError("Bundled chart must be a name.")
+    if bundled and bundled not in BUNDLED_CHARTS:
+        raise ValueError("Unknown bundled chart.")
+    repository = "" if bundled else _repository(payload.get("repository"))
+    record_id = uuid.uuid4().hex[:12]
     with tempfile.TemporaryDirectory(prefix="helm-import-") as directory:
         root = Path(directory) / "repository"
-        commit = _checkout(repository, root)
-        paths = sorted(
-            str(item.parent.relative_to(root)).replace("\\", "/")
-            for item in root.rglob("Chart.yaml") if ".git" not in item.parts
-        )
-        relative = str(payload.get("chart_path") or "").strip()
-        if not relative:
-            if len(paths) != 1:
-                raise ValueError(f"Select a chart path. Found: {', '.join(paths) or 'no Helm charts'}.")
-            relative = paths[0]
-        chart = _chart(root, relative)
+        if bundled:
+            chart = _chart(BUNDLED_CHARTS[bundled].parent, bundled)
+            relative = f"charts/{bundled}"
+            commit = _chart_digest(chart)
+        else:
+            commit = _checkout(repository, root)
+            paths = sorted(
+                str(item.parent.relative_to(root)).replace("\\", "/")
+                for item in root.rglob("Chart.yaml") if ".git" not in item.parts
+            )
+            relative = str(payload.get("chart_path") or "").strip()
+            if not relative:
+                if len(paths) != 1:
+                    raise ValueError(f"Select a chart path. Found: {', '.join(paths) or 'no Helm charts'}.")
+                relative = paths[0]
+            chart = _chart(root, relative)
         metadata = yaml.safe_load(_command(["helm", "show", "chart", str(chart)]))
         if not isinstance(metadata, dict) or metadata.get("type", "application") != "application":
             raise ValueError("Select an application chart, not a library chart.")
         defaults = _values(_command(["helm", "show", "values", str(chart)]))
-    record_id = uuid.uuid4().hex[:12]
+        guide = _guide(chart)
+        if bundled:
+            snapshot = _snapshot_path(record_id)
+            snapshot.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                shutil.copytree(chart, snapshot)
+            except OSError:
+                if snapshot.exists():
+                    shutil.rmtree(snapshot)
+                raise
+            if _chart_digest(snapshot) != commit:
+                shutil.rmtree(snapshot)
+                raise RuntimeError("Bundled chart changed during import; try again.")
     release = re.sub(r"[^a-z0-9-]", "-", str(metadata.get("name") or "chart").lower()).strip("-")[:35] or "chart"
     record = {
         "id": record_id, "name": str(metadata.get("name") or "chart"),
@@ -218,12 +274,18 @@ def import_chart(payload: dict[str, Any]) -> dict[str, Any]:
         "release": f"{release}-{record_id[:6]}", "namespace": "playbook-helm",
         "defaults": defaults, "values": defaults, "revision": 1,
         "tailscale": {"mode": "off"},
+        "guide": guide, "bundled": bundled or "",
         "saved_at": _now(), "last_submission": None,
     }
-    with LOCK:
-        records = _load()
-        records.append(record)
-        _write(records)
+    try:
+        with LOCK:
+            records = _load()
+            records.append(record)
+            _write(records)
+    except (OSError, RuntimeError):
+        if bundled:
+            shutil.rmtree(snapshot)
+        raise
     return record
 
 
@@ -259,6 +321,47 @@ def _helm_connection() -> list[str]:
     raise RuntimeError("No Kubernetes credentials configured. Connect a cluster before deploying.")
 
 
+def set_dockerbot_token(record_id: str, payload: dict[str, Any]) -> None:
+    token = payload.get("token")
+    if not isinstance(token, str) or not 1 <= len(token) <= 512 or not re.fullmatch(r"[!-~]+", token):
+        raise ValueError("Enter a non-empty bot token without whitespace.")
+    if payload.get("confirm") is not True:
+        raise ValueError("Writing a Kubernetes Secret requires explicit confirmation.")
+    with LOCK:
+        record = _find(_load(), record_id)
+        if payload.get("revision") != record["revision"]:
+            raise ValueError("This configuration changed. Reopen it before continuing.")
+        is_dockerbot = record.get("bundled") == "dockerbot" or (
+            str(record.get("repository") or "").lower() == "https://github.com/mevsthevoices/playbook"
+            and record.get("chart_path") == "charts/dockerbot"
+        )
+        if not is_dockerbot:
+            raise ValueError("Token setup is only available for the Playbook Dockerbot chart.")
+        values = yaml.safe_load(_values(record["values"])) or {}
+        bot = values.get("bot")
+        if not isinstance(bot, dict):
+            raise ValueError("Set bot.existingSecret and bot.tokenKey in the saved values.")
+        name, key = bot.get("existingSecret"), bot.get("tokenKey")
+        if not isinstance(name, str) or len(name) > 253 or not re.fullmatch(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?", name) or ".." in name:
+            raise ValueError("bot.existingSecret must be a valid Kubernetes Secret name.")
+        if not isinstance(key, str) or len(key) > 253 or not re.fullmatch(r"[-._a-zA-Z0-9]+", key):
+            raise ValueError("bot.tokenKey must be a valid Kubernetes Secret key.")
+        manifest = {
+            "apiVersion": "v1", "kind": "Secret",
+            "metadata": {"name": name, "namespace": record["namespace"]},
+            "type": "Opaque", "data": {key: base64.b64encode(token.encode()).decode()},
+        }
+        manager = "playbook-dockerbot-" + hashlib.sha256(key.encode()).hexdigest()[:12]
+        kubectl = ["kubectl"] if shutil.which("kubectl") else ["k3s", "kubectl"]
+        args = [*kubectl, *_helm_connection(), "apply", "--server-side", f"--field-manager={manager}", "-f", "-", "-o", "name"]
+        try:
+            result = subprocess.run(args, input=json.dumps(manifest), capture_output=True, text=True, timeout=30, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("Could not submit the Secret to Kubernetes. Check the cluster connection.") from exc
+        if result.returncode:
+            raise RuntimeError("Kubernetes rejected the Secret. Check namespace, permissions, and field ownership; no token was saved by Playbook.")
+
+
 def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) -> dict[str, Any]:
     with LOCK:
         records = _load()
@@ -267,8 +370,16 @@ def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) ->
             raise ValueError("This configuration changed. Reopen it before continuing.")
         with tempfile.TemporaryDirectory(prefix="helm-run-") as directory:
             root = Path(directory) / "repository"
-            _checkout(record["repository"], root, record["commit"])
-            chart = _chart(root, record["chart_path"])
+            if record.get("bundled"):
+                snapshot = _snapshot_path(record_id)
+                chart = _chart(snapshot.parent, record_id)
+                if _chart_digest(chart) != record["commit"]:
+                    raise RuntimeError("Bundled chart snapshot changed; import a new configuration.")
+                shutil.copytree(chart, root)
+                chart = root
+            else:
+                _checkout(record["repository"], root, record["commit"])
+                chart = _chart(root, record["chart_path"])
             _prepare_dependencies(chart)
             values_file = Path(directory) / "values.yaml"
             values_file.write_text(record["values"], encoding="utf-8")

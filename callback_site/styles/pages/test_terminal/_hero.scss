@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .terminal-hero {
   position: relative;
@@ -15,12 +17,10 @@
 }
 
 .hero-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  border-radius: 999px;
-  border: 1px solid #bfdbfe;
-  @include mixins.state-colors(#eff6ff, #1d4ed8);
+  @include mixins.inline-center(0.2rem);
+  border-radius: tokens.$radius-pill;
+  border: 1px solid palette.$blue-200;
+  @include mixins.state-colors(palette.$blue-50, palette.$blue-700);
   font-size: 0.74rem;
   font-weight: 700;
   padding: 0.16rem 0.52rem;
@@ -32,7 +32,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #0b7560;
+  color: palette.$accent-deep;
   margin: 0 0 0.5rem;
 }
 
@@ -41,7 +41,7 @@
   place-items: center;
   width: 1.65rem;
   height: 1.65rem;
-  border-radius: 50%;
+  border-radius: tokens.$radius-round;
   background: #dcf5ec;
   color: #096e56;
   font-size: 0.85rem;

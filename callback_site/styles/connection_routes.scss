@@ -1,4 +1,6 @@
+@use "abstracts/tokens";
 @use "abstracts/mixins";
+@use "abstracts/palette";
 
 .node-routes-dialog {
   box-sizing: border-box;
@@ -8,8 +10,8 @@
   padding: 1.25rem;
   border: 1px solid #b9ddd3;
   border-radius: 18px;
-  color: #16202d;
-  background: #ffffff;
+  color: palette.$ink;
+  background: palette.$white;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
   box-shadow: 0 24px 80px #0e1a2e40;
 }
@@ -29,11 +31,11 @@
 }
 
 .route-dialog-head button {
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border: 1px solid palette.$slate-300;
+  border-radius: tokens.$radius-chip;
   padding: 0.4rem 0.7rem;
-  background: #f8fafc;
-  color: #334155;
+  background: palette.$slate-50;
+  color: palette.$slate-700;
   cursor: pointer;
 }
 
@@ -41,13 +43,13 @@
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #0b8b6e;
+  color: palette.$accent;
   font-size: 0.7rem;
   font-weight: 700;
 }
 
 .route-context {
-  color: #4f6070;
+  color: palette.$muted;
   font-size: 0.82rem;
   line-height: 1.55;
 }
@@ -60,8 +62,8 @@
   margin-top: 0.65rem;
   padding: 0.8rem;
   border: 1px solid #d5e8e2;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #f0fdfa, #f8fafc);
+  border-radius: tokens.$radius-card;
+  background: linear-gradient(135deg, palette.$teal-50, palette.$slate-50);
 }
 
 .route-path strong {
@@ -80,11 +82,11 @@
   color: #166554;
   background: #d5f4e9;
   padding: 0.2rem 0.4rem;
-  border-radius: 6px;
+  border-radius: tokens.$radius-tag;
   font-size: 0.68rem;
 }
 
 .node-routes-dialog button:focus-visible {
-  outline: 2px solid #0b8b6e;
+  outline: 2px solid palette.$accent;
   outline-offset: 3px;
 }

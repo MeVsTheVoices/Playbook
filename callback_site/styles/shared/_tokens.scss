@@ -1,30 +1,31 @@
 @use "sass:map";
 @use "../abstracts/tokens";
+@use "../abstracts/palette";
 
 :root {
   color-scheme: light;
-  --bg: #f6f7f9;
-  --bg-accent: #deefe7;
-  --card: #ffffff;
+  --bg: #{palette.$bg};
+  --bg-accent: #{palette.$bg-accent};
+  --card: #{palette.$white};
   --panel: var(--card);
-  --panel-soft: #f4f7fb;
-  --ink: #16202d;
-  --muted: #4f6070;
-  --line: #d3dbe5;
-  --accent: #0b8b6e;
-  --accent-2: #0284c7;
-  --accent-3: #f59e0b;
+  --panel-soft: #{palette.$panel-soft};
+  --ink: #{palette.$ink};
+  --muted: #{palette.$muted};
+  --line: #{palette.$line};
+  --accent: #{palette.$accent};
+  --accent-2: #{palette.$sky-600};
+  --accent-3: #{palette.$amber-500};
   --primary: var(--accent);
-  --primary-strong: #0f5f4e;
-  --danger: #b91c1c;
-  --warning: #92400e;
+  --primary-strong: #{palette.$primary-strong};
+  --danger: #{palette.$red-700};
+  --warning: #{palette.$amber-800};
   --ok-bg: #{map.get(tokens.$states, success, background)};
   --bad-bg: #{map.get(tokens.$states, error, background)};
   --checking-bg: #{map.get(tokens.$states, warning, background)};
-  --side: #0e1a2e;
-  --side-ink: #cbd5e1;
+  --side: #{palette.$side};
+  --side-ink: #{palette.$slate-300};
   --shadow: 0 12px 32px rgba(14, 42, 71, 0.07);
-  --radius: 16px;
-  --radius-sm: 10px;
+  --radius: #{tokens.$radius-panel};
+  --radius-sm: #{tokens.$radius-control};
   --font-mono: "IBM Plex Mono", monospace;
 }

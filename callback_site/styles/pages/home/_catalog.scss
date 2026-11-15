@@ -1,11 +1,13 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .catalog-meta {
   margin-top: 0.7rem;
   padding: 0.7rem;
   border: 1px dashed var(--line);
-  border-radius: 10px;
-  @include mixins.state-colors(#f8fafc, var(--muted));
+  border-radius: tokens.$radius-control;
+  @include mixins.state-colors(palette.$slate-50, var(--muted));
   font-size: 0.84rem;
 }
 
@@ -20,10 +22,8 @@
 }
 
 .catalog-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-  border-radius: 999px;
+  @include mixins.inline-center(0.32rem);
+  border-radius: tokens.$radius-pill;
   padding: 0.2rem 0.55rem;
   font-size: 0.74rem;
   font-weight: 700;
@@ -31,21 +31,21 @@
 }
 
 .catalog-pill.available {
-  @include mixins.state-colors(#dcfce7, #14532d);
-  border-color: #86efac;
+  @include mixins.state-colors(palette.$green-100, palette.$green-900);
+  border-color: palette.$green-300;
 }
 
 .catalog-pill.missing {
-  @include mixins.state-colors(#ffedd5, #9a3412);
-  border-color: #fdba74;
+  @include mixins.state-colors(palette.$orange-100, palette.$orange-800);
+  border-color: palette.$orange-300;
 }
 
 #os_preset.cached-selected {
-  border-color: #22c55e;
-  background: #f0fdf4;
+  border-color: palette.$green-500;
+  background: palette.$green-50;
 }
 
 #os_preset.download-needed {
   border-color: #fb923c;
-  background: #fff7ed;
+  background: palette.$orange-50;
 }

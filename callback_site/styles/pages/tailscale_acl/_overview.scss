@@ -1,4 +1,5 @@
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .overview-head,
 .section-head {
@@ -11,12 +12,12 @@
 }
 
 .pill.info {
-  @include mixins.state-colors(#dbeafe, #0f4a84);
-  border: 1px solid #bfdbfe;
+  @include mixins.state-colors(palette.$blue-100, palette.$navy);
+  border: 1px solid palette.$blue-200;
 }
 
 .pill.subtle {
-  @include mixins.state-colors(#dcfce7, #0f5f4e);
+  @include mixins.state-colors(palette.$green-100, palette.$primary-strong);
   border: 1px solid #bbf7d0;
 }
 
@@ -39,14 +40,14 @@
 
 .charm-line {
   margin: 0.82rem 0 0;
-  color: #14532d;
+  color: palette.$green-900;
   font-size: 0.86rem;
   font-weight: 500;
 }
 
 .warn {
-  @include mixins.state-colors(#fff7ed, #7f2f0a);
-  border: 1px solid #fed7aa;
+  @include mixins.state-colors(palette.$orange-50, #7f2f0a);
+  border: 1px solid palette.$orange-200;
   border-radius: 11px;
   padding: 0.62rem 0.7rem;
 }

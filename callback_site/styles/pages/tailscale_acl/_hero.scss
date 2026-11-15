@@ -1,11 +1,13 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .panel.acl-hero {
   position: relative;
   display: grid;
   gap: 0.72rem;
   padding: 1.25rem 1.2rem;
-  background: linear-gradient(130deg, rgba(11, 139, 110, 0.92), rgba(16, 91, 120, 0.92)),
+  background: linear-gradient(130deg, rgba(palette.$accent, 0.92), rgba(16, 91, 120, 0.92)),
   var(--panel);
   color: #e6fef7;
   border-color: rgba(9, 115, 90, 0.45);
@@ -18,7 +20,7 @@
 
 .hero-subtext {
   margin: 0.45rem 0 0;
-  color: rgba(236, 253, 245, 0.88);
+  color: rgba(palette.$emerald-50, 0.88);
   max-width: 690px;
 }
 
@@ -27,7 +29,7 @@
 }
 
 .hero-note {
-  color: rgba(236, 253, 245, 0.92);
+  color: rgba(palette.$emerald-50, 0.92);
   font-size: 0.82rem;
 }
 
@@ -35,14 +37,13 @@
   position: absolute;
   width: 36px;
   height: 36px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
+  border-radius: tokens.$radius-card;
+  @include mixins.inline-center;
   justify-content: center;
   font-weight: 700;
   font-size: 0.85rem;
-  @include mixins.state-colors(rgba(15, 23, 42, 0.22), rgba(236, 253, 245, 0.95));
-  border: 1px solid rgba(236, 253, 245, 0.3);
+  @include mixins.state-colors(rgba(palette.$slate-900, 0.22), rgba(palette.$emerald-50, 0.95));
+  border: 1px solid rgba(palette.$emerald-50, 0.3);
   transform: rotate(-10deg);
 }
 
@@ -58,29 +59,29 @@
 }
 
 .ghost-link {
-  @include mixins.state-colors(rgba(2, 132, 199, 0.15), #f0fdfa);
+  @include mixins.state-colors(rgba(palette.$sky-600, 0.15), palette.$teal-50);
   text-decoration: none;
   font-weight: 600;
-  border: 1px solid rgba(226, 232, 240, 0.45);
-  border-radius: 999px;
+  border: 1px solid rgba(palette.$slate-200, 0.45);
+  border-radius: tokens.$radius-pill;
   padding: 0.42rem 0.85rem;
 }
 
 .ghost-link:hover {
-  background: rgba(2, 132, 199, 0.24);
+  background: rgba(palette.$sky-600, 0.24);
 }
 
 .hero-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: #86efac;
-  box-shadow: 0 0 0 0 rgba(134, 239, 172, 0.7);
+  border-radius: tokens.$radius-round;
+  background: palette.$green-300;
+  box-shadow: 0 0 0 0 rgba(palette.$green-300, 0.7);
   animation: pulse 1.8s infinite;
 }
 
 .hero-meta {
-  color: rgba(240, 253, 250, 0.95);
+  color: rgba(palette.$teal-50, 0.95);
   font-size: 0.86rem;
 }
 
@@ -108,7 +109,7 @@
 }
 
 .acl-hero .eyebrow {
-  color: rgba(204, 251, 241, 0.92);
+  color: rgba(palette.$teal-100, 0.92);
 }
 
 .muted-copy {

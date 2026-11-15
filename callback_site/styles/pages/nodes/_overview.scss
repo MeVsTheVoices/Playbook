@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .split {
   display: grid;
@@ -11,25 +13,23 @@
 }
 
 .ok {
-  color: #166534;
+  color: palette.$green-800;
   font-weight: 700;
 }
 
 .bad {
-  color: #991b1b;
+  color: palette.$red-800;
   font-weight: 700;
 }
 
 .checking {
-  color: #92400e;
+  color: palette.$amber-800;
   font-weight: 700;
 }
 
 .status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border-radius: 999px;
+  @include mixins.inline-center(0.35rem);
+  border-radius: tokens.$radius-pill;
   padding: 0.2rem 0.58rem;
   font-size: 0.78rem;
   font-weight: 800;
@@ -37,18 +37,18 @@
 }
 
 .status-chip.ok {
-  @include mixins.state-colors(var(--ok-bg), #166534);
-  border: 1px solid #86efac;
+  @include mixins.state-colors(var(--ok-bg), palette.$green-800);
+  border: 1px solid palette.$green-300;
 }
 
 .status-chip.bad {
-  @include mixins.state-colors(var(--bad-bg), #991b1b);
-  border: 1px solid #fca5a5;
+  @include mixins.state-colors(var(--bad-bg), palette.$red-800);
+  border: 1px solid palette.$red-300;
 }
 
 .status-chip.checking {
-  @include mixins.state-colors(var(--checking-bg), #92400e);
-  border: 1px solid #fcd34d;
+  @include mixins.state-colors(var(--checking-bg), palette.$amber-800);
+  border: 1px solid palette.$amber-300;
   animation: pulse-chip 1.8s ease-in-out infinite;
 }
 

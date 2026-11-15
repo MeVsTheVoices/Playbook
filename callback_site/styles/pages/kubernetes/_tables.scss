@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .kube-layout {
   display: grid;
@@ -18,7 +20,7 @@
   inset: 0 auto auto 0;
   width: 100%;
   height: 4px;
-  background: linear-gradient(90deg, rgba(11, 139, 110, 0.85), rgba(14, 165, 233, 0.85));
+  background: linear-gradient(90deg, rgba(palette.$accent, 0.85), rgba(14, 165, 233, 0.85));
 }
 
 .kube-table {
@@ -31,40 +33,37 @@
 .kube-table td {
   text-align: left;
   padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  border-bottom: 1px solid rgba(palette.$slate-400, 0.22);
   vertical-align: top;
 }
 
 .kube-table th {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  @include mixins.state-colors(rgba(248, 250, 252, 0.92), var(--muted));
+  @include mixins.eyebrow(0.7rem, 0.03em);
+  @include mixins.state-colors(rgba(palette.$slate-50, 0.92), var(--muted));
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
 .kube-table tr:hover td {
-  background: rgba(241, 245, 249, 0.7);
+  background: rgba(palette.$slate-100, 0.7);
 }
 
 .kube-table .kube-pill {
-  display: inline-flex;
-  align-items: center;
+  @include mixins.inline-center;
   padding: 0.16rem 0.5rem;
-  border-radius: 999px;
+  border-radius: tokens.$radius-pill;
   font-size: 0.72rem;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(palette.$slate-400, 0.4);
+  background: rgba(palette.$white, 0.88);
 }
 
 .kube-table .ok {
-  color: #166534;
-  border-color: rgba(34, 197, 94, 0.35);
+  color: palette.$green-800;
+  border-color: rgba(palette.$green-500, 0.35);
 }
 
 .kube-table .warn {
-  color: #92400e;
-  border-color: rgba(245, 158, 11, 0.35);
+  color: palette.$amber-800;
+  border-color: rgba(palette.$amber-500, 0.35);
 }

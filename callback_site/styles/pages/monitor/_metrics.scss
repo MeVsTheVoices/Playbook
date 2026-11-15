@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .actions-row button {
   width: auto;
@@ -34,9 +36,8 @@
 }
 
 .kpi {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #f8fafc;
+  @include mixins.outlined;
+  background: palette.$slate-50;
   padding: 0.62rem;
 }
 
@@ -66,14 +67,12 @@
 }
 
 .status-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  border-radius: 999px;
+  @include mixins.inline-center(0.28rem);
+  border-radius: tokens.$radius-pill;
   padding: 0.14rem 0.5rem;
   font-size: 0.74rem;
   font-weight: 700;
-  @include mixins.state-colors(#e2e8f0, #334155);
+  @include mixins.state-colors(palette.$slate-200, palette.$slate-700);
 }
 
 .status-tag.ok {

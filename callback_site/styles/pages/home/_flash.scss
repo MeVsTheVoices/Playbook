@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .job-log {
   max-height: 280px;
@@ -15,27 +17,27 @@
 }
 
 .job-log .term-warn {
-  color: #fca5a5;
+  color: palette.$red-300;
   font-weight: 700;
 }
 
 .job-log .term-ok {
-  color: #86efac;
+  color: palette.$green-300;
   font-weight: 700;
 }
 
 .job-log .term-info {
-  color: #a5f3fc;
+  color: palette.$cyan-200;
   font-weight: 600;
 }
 
 .job-log .term-highlight {
-  color: #fbbf24;
+  color: palette.$amber-400;
   font-weight: 700;
 }
 
 .job-log .term-path {
-  color: #bfdbfe;
+  color: palette.$blue-200;
   font-weight: 500;
 }
 
@@ -44,9 +46,9 @@
   align-items: center;
   gap: 0.8rem;
   padding: 0.45rem 0.55rem;
-  border: 1px solid #dbe4ee;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
+  border: 1px solid palette.$line-soft;
+  border-radius: tokens.$radius-control;
+  background: linear-gradient(180deg, palette.$surface-cool 0%, #f4f8fc 100%);
   margin-bottom: 0.6rem;
 }
 
@@ -67,12 +69,12 @@
 .flash-mascot-icon {
   width: 26px;
   height: 26px;
-  border-radius: 999px;
-  background: linear-gradient(145deg, #fde68a, #fbbf24);
-  border: 1px solid #f59e0b;
+  border-radius: tokens.$radius-pill;
+  background: linear-gradient(145deg, palette.$amber-200, palette.$amber-400);
+  border: 1px solid palette.$amber-500;
   position: relative;
   animation: mascot-bounce 0.8s ease-in-out infinite;
-  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+  box-shadow: 0 2px 8px rgba(palette.$amber-500, 0.35);
 }
 
 .flash-mascot-icon::before,
@@ -81,8 +83,8 @@
   position: absolute;
   width: 3px;
   height: 3px;
-  background: #1f2937;
-  border-radius: 50%;
+  background: palette.$gray-800;
+  border-radius: tokens.$radius-round;
   top: 9px;
 }
 
@@ -100,7 +102,7 @@
   top: 13px;
   width: 10px;
   height: 5px;
-  border-bottom: 2px solid #1f2937;
+  border-bottom: 2px solid palette.$gray-800;
   border-radius: 0 0 10px 10px;
 }
 
@@ -116,24 +118,23 @@
 .job-status-badge {
   display: inline-block;
   padding: 0.32rem 0.6rem;
-  border-radius: 6px;
+  border-radius: tokens.$radius-tag;
   font-size: 0.78rem;
   font-weight: 600;
 }
 
 .job-status-badge.running {
-  @include mixins.state-colors(#dbeafe, #1d4ed8);
-  border: 1px solid #93c5fd;
+  @include mixins.state-colors(palette.$blue-100, palette.$blue-700);
+  border: 1px solid palette.$blue-300;
 }
 
 .job-status-badge.completed {
-  @include mixins.state(success);
-  border: 1px solid #86efac;
+  @include mixins.state(success, $border: true);
 }
 
 .job-status-badge.failed {
   @include mixins.state(error);
-  border: 1px solid #fca5a5;
+  border: 1px solid palette.$red-300;
 }
 
 .job-status-badge.running::after {
@@ -142,15 +143,14 @@
   width: 6px;
   height: 6px;
   margin-left: 0.45rem;
-  border-radius: 999px;
-  background: #1d4ed8;
-  box-shadow: 0 0 0 0 rgba(29, 78, 216, 0.55);
+  border-radius: tokens.$radius-pill;
+  background: palette.$blue-700;
+  box-shadow: 0 0 0 0 rgba(palette.$blue-700, 0.55);
   animation: status-pulse 1.3s infinite;
 }
 
 .job-timing {
-  display: inline-flex;
-  align-items: center;
+  @include mixins.inline-center;
   font-size: 0.82rem;
   color: #8b9ab2;
   line-height: 1;
@@ -158,12 +158,12 @@
 
 .job-substatus {
   margin-top: 0.2rem;
-  color: #334155;
+  color: palette.$slate-700;
   font-size: 0.8rem;
 }
 
 .job-timing strong {
-  color: #a5f3fc;
+  color: palette.$cyan-200;
 }
 
 .job-actions {

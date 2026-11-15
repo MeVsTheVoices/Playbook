@@ -1,7 +1,9 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .activity-dock {
-  background: linear-gradient(135deg, #fffdf2 0%, #f0fdfa 46%, #eef2ff 100%);
+  background: linear-gradient(135deg, #fffdf2 0%, palette.$teal-50 46%, #eef2ff 100%);
   border: 1px solid #d9f99d;
 }
 
@@ -11,9 +13,9 @@
 }
 
 .activity-card {
-  border: 1px solid #dbe4ee;
-  border-radius: 12px;
-  background: #ffffff;
+  border: 1px solid palette.$line-soft;
+  border-radius: tokens.$radius-card;
+  background: palette.$white;
   padding: 0.7rem;
   box-shadow: 0 8px 24px rgba(9, 30, 66, 0.07);
   transition: transform 0.22s ease, box-shadow 0.22s ease;
@@ -26,10 +28,8 @@
 
 .activity-card .k {
   margin: 0;
-  color: #4f6070;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: palette.$muted;
+  @include mixins.eyebrow;
 }
 
 .activity-card .v {
@@ -41,39 +41,39 @@
 
 .activity-card .d {
   margin: 0.35rem 0 0;
-  color: #4f6070;
+  color: palette.$muted;
   font-size: 0.8rem;
 }
 
 .activity-card.waiting {
-  border-color: #93c5fd;
-  background: linear-gradient(90deg, #eff6ff 0%, #ffffff 45%, #eff6ff 100%);
+  border-color: palette.$blue-300;
+  background: linear-gradient(90deg, palette.$blue-50 0%, palette.$white 45%, palette.$blue-50 100%);
   background-size: 220% 100%;
   animation: activity-shimmer 2.2s linear infinite;
 }
 
 .activity-card.ok {
-  border-color: #86efac;
-  background: #f0fdf4;
+  border-color: palette.$green-300;
+  background: palette.$green-50;
 }
 
 .activity-card.warn {
-  border-color: #fde68a;
-  background: #fffbeb;
+  border-color: palette.$amber-200;
+  background: palette.$amber-50;
 }
 
 .activity-card.bad {
-  border-color: #fecaca;
-  background: #fff1f2;
+  border-color: palette.$red-200;
+  background: palette.$rose-50;
 }
 
 .activity-banner {
   display: block;
   margin-top: 0.8rem;
   border: 1px dashed #c7d2fe;
-  border-radius: 12px;
+  border-radius: tokens.$radius-card;
   padding: 0.6rem 0.7rem;
-  @include mixins.state-colors(rgba(255, 255, 255, 0.75), #374151);
+  @include mixins.state-colors(rgba(palette.$white, 0.75), #374151);
   font-size: 0.86rem;
   font-weight: 600;
 }
@@ -93,13 +93,13 @@
 }
 
 .activity-banner.waiting {
-  border-color: #93c5fd;
+  border-color: palette.$blue-300;
   color: #1e40af;
 }
 
 .activity-banner.ok {
-  border-color: #86efac;
-  color: #166534;
+  border-color: palette.$green-300;
+  color: palette.$green-800;
 }
 
 .activity-banner.warn {
@@ -108,8 +108,8 @@
 }
 
 .activity-banner.bad {
-  border-color: #fca5a5;
-  color: #991b1b;
+  border-color: palette.$red-300;
+  color: palette.$red-800;
 }
 
 @keyframes activity-shimmer {

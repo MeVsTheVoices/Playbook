@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .ops-grid {
   display: grid;
@@ -10,9 +12,9 @@
   width: auto;
   min-width: 0;
   padding: 0.2rem 0.32rem;
-  border-radius: 8px;
+  border-radius: tokens.$radius-chip;
   border: 1px solid #c8d3df;
-  @include mixins.state-colors(#f8fafc, #0f172a);
+  @include mixins.state-colors(palette.$slate-50, palette.$slate-900);
   font-weight: 700;
   font-size: 0.82rem;
   cursor: pointer;
@@ -24,7 +26,7 @@
 
 .hw-detail-row > td,
 .sot-detail-row > td {
-  background: #f8fafc;
+  background: palette.$slate-50;
   border-bottom: 1px dashed #c8d3df;
 }
 
@@ -37,9 +39,9 @@
 
 .hw-detail-card,
 .sot-detail-card {
-  border: 1px solid #d3dbe5;
-  border-radius: 10px;
-  background: #ffffff;
+  border: 1px solid palette.$line;
+  border-radius: tokens.$radius-control;
+  background: palette.$white;
   padding: 0.55rem;
 }
 
@@ -47,7 +49,7 @@
 .sot-detail-card h4 {
   margin: 0 0 0.4rem;
   font-size: 0.84rem;
-  color: #334155;
+  color: palette.$slate-700;
 }
 
 .detail-list {
@@ -65,9 +67,7 @@
 
 .detail-item dt {
   color: var(--muted);
-  font-size: 0.76rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  @include mixins.eyebrow(0.76rem, 0.05em);
 }
 
 .detail-item dd {

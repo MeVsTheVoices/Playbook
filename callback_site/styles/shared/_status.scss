@@ -1,11 +1,13 @@
+@use "../abstracts/tokens";
 @use "../abstracts/mixins";
+@use "../abstracts/palette";
 
 .status {
   margin-top: 0.8rem;
   padding: 0.75rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  @include mixins.state-colors(#f8fafc, var(--ink));
+  @include mixins.state-colors(palette.$slate-50, var(--ink));
   font-family: var(--font-mono);
   font-size: 0.82rem;
   line-height: 1.5;
@@ -14,32 +16,31 @@
 }
 
 .pill, .tag, .tag-muted, .chip {
-  display: inline-flex;
-  align-items: center;
+  @include mixins.inline-center;
   padding: 0.2rem 0.55rem;
   border: 1px solid #b9e6da;
-  border-radius: 999px;
+  border-radius: tokens.$radius-pill;
   font-size: 0.75rem;
   font-weight: 600;
-  @include mixins.state-colors(#e6f6f0, #115e59);
+  @include mixins.state-colors(#e6f6f0, palette.$teal-800);
 }
 
 .tag-muted, .chip {
-  @include mixins.state-colors(#f1f5f9, #334155);
+  @include mixins.state-colors(palette.$slate-100, palette.$slate-700);
   border-color: var(--line);
 }
 
 .chip.completed {
-  @include mixins.state-colors(var(--ok-bg), #166534);
-  border-color: #86efac;
+  @include mixins.state-colors(var(--ok-bg), palette.$green-800);
+  border-color: mixins.state-border(success);
 }
 
 .chip.running {
   @include mixins.state-colors(var(--checking-bg), var(--warning));
-  border-color: #fde68a;
+  border-color: mixins.state-border(warning);
 }
 
 .chip.failed {
-  @include mixins.state-colors(var(--bad-bg), #991b1b);
-  border-color: #fecaca;
+  @include mixins.state-colors(var(--bad-bg), palette.$red-800);
+  border-color: mixins.state-border(error);
 }

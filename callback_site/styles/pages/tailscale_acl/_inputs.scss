@@ -1,12 +1,14 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .grid {
   @include mixins.auto-grid(230px, 0.82rem);
 }
 
 .field-card {
-  border: 1px solid #d7e2ee;
-  border-radius: 12px;
+  border: 1px solid palette.$line-cool;
+  border-radius: tokens.$radius-card;
   background: var(--panel-soft);
   padding: 0.65rem;
 }
@@ -31,9 +33,9 @@ textarea:focus {
 
 .subnet-block {
   margin-top: 0.9rem;
-  border: 1px solid #d7e2ee;
-  background: #f8fbff;
-  border-radius: 12px;
+  border: 1px solid palette.$line-cool;
+  background: palette.$surface-cool;
+  border-radius: tokens.$radius-card;
   padding: 0.72rem;
 }
 
@@ -55,7 +57,7 @@ textarea:focus {
   width: auto;
   box-shadow: none;
   @include mixins.state-colors(#eaf2fb, #1d3a59);
-  border: 1px solid #c9d8ea;
+  border: 1px solid palette.$line-blue;
 }
 
 .secondary-btn:hover {

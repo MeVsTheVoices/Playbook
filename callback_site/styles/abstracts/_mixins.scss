@@ -20,10 +20,40 @@
   color: $ink;
 }
 
-@mixin state($name) {
+// A state's fill and text; $border adds the state's own 1px border.
+@mixin state($name, $border: false) {
   @if not map.has-key(tokens.$states, $name) {
     @error "Unknown UI state: #{$name}";
   }
   $palette: map.get(tokens.$states, $name);
   @include state-colors(map.get($palette, background), map.get($palette, ink));
+  @if $border {
+    border: 1px solid map.get($palette, border);
+  }
+}
+
+@function state-border($name) {
+  @return map.get(tokens.$states, $name, border);
+}
+
+// The standard hairline box: a 1px --line border with one of the radius tokens.
+@mixin outlined($radius: tokens.$radius-card) {
+  border: 1px solid var(--line);
+  border-radius: $radius;
+}
+
+// Inline row of icon + text (badges, pills, links with glyphs).
+@mixin inline-center($gap: null) {
+  display: inline-flex;
+  align-items: center;
+  @if $gap {
+    gap: $gap;
+  }
+}
+
+// Small uppercase label above a value or section.
+@mixin eyebrow($size: 0.75rem, $tracking: 0.04em) {
+  font-size: $size;
+  text-transform: uppercase;
+  letter-spacing: $tracking;
 }

@@ -1,11 +1,12 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .access-card {
   margin-top: 1rem;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #ffffff;
+  @include mixins.outlined;
+  background: palette.$white;
 }
 
 .access-card > summary {
@@ -62,9 +63,8 @@
   gap: 1rem 1.2rem;
   align-items: start;
   padding: 1rem 1.1rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #ffffff;
+  @include mixins.outlined;
+  background: palette.$white;
 }
 
 .module-picker-side {
@@ -80,7 +80,7 @@
 
 .module-picker-side > label {
   margin: 0;
-  color: #334155;
+  color: palette.$slate-700;
   font-weight: 600;
 }
 
@@ -100,8 +100,7 @@
   /* Fits today's six modules as they were; a longer list scrolls under the sticky header. */
   max-height: 24rem;
   overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  @include mixins.outlined(tokens.$radius-control);
 }
 
 .module-detail h4 {
@@ -118,12 +117,12 @@
 .module-tag {
   display: inline-flex;
   padding: 0.12rem 0.5rem;
-  border-radius: 999px;
+  border-radius: tokens.$radius-pill;
   border: 1px solid var(--line);
-  @include mixins.state-colors(#f8fafc, var(--muted));
+  @include mixins.state-colors(palette.$slate-50, var(--muted));
   font-size: 0.72rem;
 }
 
 .required {
-  color: #991b1b;
+  color: palette.$red-800;
 }

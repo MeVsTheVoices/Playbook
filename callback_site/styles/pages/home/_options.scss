@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .form-grid > *,
 .key-picker-row > *,
@@ -8,8 +10,7 @@
 }
 
 .fieldset {
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  @include mixins.outlined;
   padding: 0.9rem;
   margin-top: 0.9rem;
 }
@@ -23,11 +24,11 @@
   gap: 0.8rem;
   margin: 0;
   font-weight: 800;
-  color: #0f172a;
+  color: palette.$slate-900;
 }
 
 .fieldset > summary::marker {
-  color: #0f766e;
+  color: palette.$teal-700;
 }
 
 .fieldset-title {
@@ -45,7 +46,7 @@
   display: inline-block;
   margin-left: 0.25rem;
   font-size: 0.95rem;
-  color: #0f766e;
+  color: palette.$teal-700;
   transition: transform 0.18s ease;
 }
 
@@ -59,21 +60,20 @@
 }
 
 .segment {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f8fafc;
+  @include mixins.outlined(tokens.$radius-control);
+  background: palette.$slate-50;
   padding: 0.25rem 0.6rem 0.65rem;
 }
 
 .segment summary {
   cursor: pointer;
   font-weight: 700;
-  color: #0f172a;
+  color: palette.$slate-900;
   margin: 0.35rem 0 0.45rem;
 }
 
 .segment summary::marker {
-  color: #0f766e;
+  color: palette.$teal-700;
 }
 
 .segment-hint {
@@ -101,9 +101,9 @@
   display: inline-block;
   margin-left: 0.45rem;
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid #bae6fd;
-  @include mixins.state-colors(#ecfeff, #0c4a6e);
+  border-radius: tokens.$radius-pill;
+  border: 1px solid palette.$sky-200;
+  @include mixins.state-colors(palette.$cyan-50, palette.$sky-900);
   font-weight: 700;
   font-size: 0.74rem;
 }
@@ -115,9 +115,9 @@
 }
 
 .danger {
-  @include mixins.state-colors(#fee2e2, #7f1d1d);
-  border: 1px solid #fecaca;
-  border-radius: 10px;
+  @include mixins.state-colors(palette.$red-100, palette.$red-900);
+  border: 1px solid palette.$red-200;
+  border-radius: tokens.$radius-control;
   padding: 0.6rem;
   margin: 0.6rem 0;
 }

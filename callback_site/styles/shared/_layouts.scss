@@ -1,4 +1,5 @@
 @use "../abstracts/mixins";
+@use "../abstracts/palette";
 
 .actions-row, .button-row, .crud-actions, .row-actions, .actions, .inline-actions, .option-actions, .kube-actions {
   @include mixins.action-row(0.6rem, center);
@@ -13,20 +14,17 @@
 }
 
 .stat-card, .module-card, .meta-card, .kube-card, .card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  @include mixins.outlined;
   padding: 0.8rem;
 }
 
 .stat-card {
-  background: linear-gradient(180deg, #fff, #f8fafc);
+  background: linear-gradient(180deg, palette.$white, palette.$slate-50);
 }
 
 .stat-card .k, .stat-label, .module-k {
   color: var(--muted);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  @include mixins.eyebrow;
 }
 
 .stat-card .v, .stat-value, .module-v {

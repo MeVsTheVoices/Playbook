@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .notice-list {
   list-style: none;
@@ -9,25 +11,25 @@
 }
 
 .notice {
-  border-radius: 10px;
+  border-radius: tokens.$radius-control;
   padding: 0.5rem 0.7rem;
   font-size: 0.86rem;
   border: 1px solid;
 }
 
 .notice-info {
-  @include mixins.state-colors(#eff6ff, #0f4a84);
-  border-color: #bfdbfe;
+  @include mixins.state-colors(palette.$blue-50, palette.$navy);
+  border-color: palette.$blue-200;
 }
 
 .notice-warn {
-  @include mixins.state-colors(#fff7ed, #7f2f0a);
-  border-color: #fed7aa;
+  @include mixins.state-colors(palette.$orange-50, #7f2f0a);
+  border-color: palette.$orange-200;
 }
 
 .notice-error {
-  @include mixins.state-colors(#fef2f2, #7f1d1d);
-  border-color: #fecaca;
+  @include mixins.state-colors(palette.$red-50, palette.$red-900);
+  border-color: palette.$red-200;
 }
 
 .rules-table {
@@ -78,7 +80,7 @@
 pre {
   margin: 0.62rem 0 0;
   @include mixins.state-colors(#0f172f, #e5efff);
-  border-radius: 12px;
+  border-radius: tokens.$radius-card;
   border: 1px solid #243357;
   padding: 0.86rem;
   overflow: auto;

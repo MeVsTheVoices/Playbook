@@ -1,4 +1,5 @@
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .auth-wrap {
   display: grid;
@@ -53,7 +54,7 @@
   padding: 0.6rem 0.75rem;
   overflow-x: auto;
   border-radius: var(--radius-sm);
-  @include mixins.state-colors(#0b1020, #d6deeb);
+  @include mixins.state-colors(palette.$terminal-bg, palette.$terminal-ink);
   font-family: var(--font-mono);
   font-size: 0.78rem;
 }

@@ -1,6 +1,8 @@
+@use "../abstracts/palette";
+
 pre.structured-output {
-  background: #0b1020;
-  color: #d6deeb;
+  background: palette.$terminal-bg;
+  color: palette.$terminal-ink;
   font-family: var(--font-mono);
   line-height: 1.5;
   tab-size: 2;

@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .catalog-availability-wrap {
   max-height: none;
@@ -28,9 +30,8 @@
 }
 
 .catalog-group-card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #f8fafc;
+  @include mixins.outlined;
+  background: palette.$slate-50;
   overflow: hidden;
 }
 
@@ -70,9 +71,9 @@
   gap: 0.8rem;
   align-items: center;
   padding: 0.6rem 0.7rem;
-  border-radius: 10px;
+  border-radius: tokens.$radius-control;
   background: white;
-  border: 1px solid #e2e8f0;
+  border: 1px solid palette.$slate-200;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
@@ -102,30 +103,28 @@
 }
 
 .catalog-group-item.pulling {
-  border-color: #f59e0b;
-  background: linear-gradient(90deg, #fffbeb 0%, #fff7ed 50%, #fffbeb 100%);
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.12), 0 10px 20px rgba(245, 158, 11, 0.08);
+  border-color: palette.$amber-500;
+  background: linear-gradient(90deg, palette.$amber-50 0%, palette.$orange-50 50%, palette.$amber-50 100%);
+  box-shadow: 0 0 0 1px rgba(palette.$amber-500, 0.12), 0 10px 20px rgba(palette.$amber-500, 0.08);
   animation: tile-pulse 1.5s ease-in-out infinite;
 }
 
 .catalog-group-item.pulled {
-  border-color: #86efac;
-  background: linear-gradient(90deg, #f0fdf4 0%, #ecfdf5 100%);
+  border-color: palette.$green-300;
+  background: linear-gradient(90deg, palette.$green-50 0%, palette.$emerald-50 100%);
 }
 
 .catalog-group-item.failed {
-  border-color: #fca5a5;
-  background: linear-gradient(90deg, #fff1f2 0%, #fff7f7 100%);
+  border-color: palette.$red-300;
+  background: linear-gradient(90deg, palette.$rose-50 0%, #fff7f7 100%);
 }
 
 .catalog-group-item-status {
   margin-top: 0.35rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+  @include mixins.inline-center(0.35rem);
   padding: 0.16rem 0.55rem;
-  border-radius: 999px;
-  @include mixins.state-colors(#f8fafc, #334155);
+  border-radius: tokens.$radius-pill;
+  @include mixins.state-colors(palette.$slate-50, palette.$slate-700);
   font-size: 0.74rem;
   font-weight: 700;
 }
@@ -148,8 +147,8 @@
 }
 
 @keyframes tile-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.12), 0 10px 20px rgba(245, 158, 11, 0.08); }
-  50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0), 0 10px 20px rgba(245, 158, 11, 0.12); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(palette.$amber-500, 0.12), 0 10px 20px rgba(palette.$amber-500, 0.08); }
+  50% { box-shadow: 0 0 0 8px rgba(palette.$amber-500, 0), 0 10px 20px rgba(palette.$amber-500, 0.12); }
 }
 
 .catalog-group-item-main {

@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .events-table {
   width: 100%;
@@ -7,23 +9,23 @@
 }
 
 .events-table thead th {
-  @include mixins.state-colors(#f1f5f9, #334155);
-  border-top: 1px solid #dbe4ee;
-  border-bottom: 1px solid #dbe4ee;
+  @include mixins.state-colors(palette.$slate-100, palette.$slate-700);
+  border-top: 1px solid palette.$line-soft;
+  border-bottom: 1px solid palette.$line-soft;
 }
 
 .events-table thead th:first-child {
-  border-left: 1px solid #dbe4ee;
+  border-left: 1px solid palette.$line-soft;
   border-top-left-radius: 10px;
 }
 
 .events-table thead th:last-child {
-  border-right: 1px solid #dbe4ee;
+  border-right: 1px solid palette.$line-soft;
   border-top-right-radius: 10px;
 }
 
 .events-table tbody td {
-  background: #ffffff;
+  background: palette.$white;
 }
 
 .events-table tbody tr:nth-child(odd) td {
@@ -33,18 +35,16 @@
 .cert-pill {
   display: inline-block;
   padding: 0.15rem 0.48rem;
-  border-radius: 999px;
+  border-radius: tokens.$radius-pill;
   font-size: 0.7rem;
   font-weight: 700;
   margin-bottom: 0.25rem;
 }
 
 .cert-pill.ok {
-  @include mixins.state(success);
-  border: 1px solid #86efac;
+  @include mixins.state(success, $border: true);
 }
 
 .cert-pill.none {
-  @include mixins.state(error);
-  border: 1px solid #fecaca;
+  @include mixins.state(error, $border: true);
 }

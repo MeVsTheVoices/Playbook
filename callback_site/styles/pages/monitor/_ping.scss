@@ -1,6 +1,9 @@
+@use "../../abstracts/mixins";
+@use "../../abstracts/tokens";
+@use "../../abstracts/palette";
+
 button.ping-action {
-  display: inline-flex;
-  align-items: center;
+  @include mixins.inline-center;
   justify-content: center;
   gap: 0.45rem;
   min-width: 138px;
@@ -11,40 +14,40 @@ button.ping-action::after {
   content: "";
   width: 0.68rem;
   height: 0.68rem;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: tokens.$radius-round;
+  border: 2px solid rgba(palette.$white, 0.55);
   background: transparent;
   transition: border-color 220ms ease, background-color 220ms ease, box-shadow 260ms ease, transform 220ms ease;
 }
 
 button.ping-action.ping-pending::after {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(palette.$white, 0.4);
   border-top-color: #fef08a;
   animation: ping-spin 0.72s linear infinite;
 }
 
 button.ping-action.ping-good::after {
-  border-color: #22c55e;
-  background: #22c55e;
-  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.2);
+  border-color: palette.$green-500;
+  background: palette.$green-500;
+  box-shadow: 0 0 0 6px rgba(palette.$green-500, 0.2);
 }
 
 button.ping-action.ping-warn::after {
-  border-color: #f59e0b;
-  background: #f59e0b;
-  box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.2);
+  border-color: palette.$amber-500;
+  background: palette.$amber-500;
+  box-shadow: 0 0 0 6px rgba(palette.$amber-500, 0.2);
 }
 
 button.ping-action.ping-bad::after {
-  border-color: #ef4444;
-  background: #ef4444;
-  box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.2);
+  border-color: palette.$red-500;
+  background: palette.$red-500;
+  box-shadow: 0 0 0 6px rgba(palette.$red-500, 0.2);
 }
 
 button.ping-action.ping-good,
 button.ping-action.ping-warn,
 button.ping-action.ping-bad {
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 8px 18px rgba(palette.$slate-900, 0.18);
 }
 
 button.ping-action.ping-bad {

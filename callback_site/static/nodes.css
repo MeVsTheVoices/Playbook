@@ -870,7 +870,7 @@ tr.module-row-selected td:first-child {
 }
 
 .segment-block {
-  background: #fff;
+  background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0.6rem;

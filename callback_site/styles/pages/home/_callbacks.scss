@@ -1,12 +1,12 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  border: 1px solid #bae6fd;
-  @include mixins.state-colors(#ecfeff, #0c4a6e);
-  border-radius: 999px;
+  @include mixins.inline-center(0.45rem);
+  border: 1px solid palette.$sky-200;
+  @include mixins.state-colors(palette.$cyan-50, palette.$sky-900);
+  border-radius: tokens.$radius-pill;
   font-size: 0.78rem;
   font-weight: 700;
   padding: 0.25rem 0.6rem;
@@ -15,16 +15,16 @@
 .status-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
-  background: #14b8a6;
-  box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.7);
+  border-radius: tokens.$radius-pill;
+  background: palette.$teal-500;
+  box-shadow: 0 0 0 0 rgba(palette.$teal-500, 0.7);
   animation: status-pulse 2s infinite;
 }
 
 @keyframes status-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.7); }
-  70% { box-shadow: 0 0 0 7px rgba(20, 184, 166, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(palette.$teal-500, 0.7); }
+  70% { box-shadow: 0 0 0 7px rgba(palette.$teal-500, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(palette.$teal-500, 0); }
 }
 
 .stats-grid {
@@ -55,12 +55,12 @@
 }
 
 .events-table tbody tr:hover td {
-  background: #f0fdfa;
+  background: palette.$teal-50;
   cursor: pointer;
 }
 
 .event-row-selected td {
-  background: #ccfbf1 !important;
+  background: palette.$teal-100 !important;
 }
 
 .events-table tbody tr.event-row-condensed td {
@@ -98,23 +98,23 @@
 
 .event-twisty {
   cursor: pointer;
-  color: #0f766e;
+  color: palette.$teal-700;
   font-weight: 700;
   user-select: none;
 }
 
 @keyframes event-row-fade {
-  from { background: #e0f2fe; }
+  from { background: palette.$sky-100; }
   to { background: transparent; }
 }
 
 .stage-pill {
   display: inline-block;
-  border-radius: 999px;
+  border-radius: tokens.$radius-pill;
   padding: 0.18rem 0.55rem;
   font-size: 0.74rem;
   font-weight: 700;
-  @include mixins.state-colors(#e2e8f0, #334155);
+  @include mixins.state-colors(palette.$slate-200, palette.$slate-700);
 }
 
 .stage-pill.stage-ready,
@@ -134,15 +134,14 @@
 
 .payload-summary {
   cursor: pointer;
-  color: #0f766e;
+  color: palette.$teal-700;
   font-weight: 600;
 }
 
 .payload-json {
   margin-top: 0.4rem;
-  background: #f8fafc;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: palette.$slate-50;
+  @include mixins.outlined(tokens.$radius-chip);
   padding: 0.55rem;
   max-height: 220px;
   overflow: auto;

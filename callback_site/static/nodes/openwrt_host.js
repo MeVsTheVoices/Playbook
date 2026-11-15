@@ -94,15 +94,26 @@ async function readOpenwrtUci() {
   const data = await callOpenwrt("/api/openwrt/uci", { node: host.name, port: openwrtPort() });
   if (host.name !== openwrtShownFor) return;
   const facts = Array.isArray(data.facts) ? data.facts : [];
+  const sections = Array.isArray(data.sections) ? data.sections : [];
   factsEl.innerHTML = "";
-  for (const fact of facts) {
-    const dt = document.createElement("dt");
-    dt.textContent = fact.key;
-    const dd = document.createElement("dd");
-    dd.textContent = fact.value;
-    factsEl.append(dt, dd);
+  for (const section of sections) {
+    const card = document.createElement("section");
+    card.className = "openwrt-uci-card";
+    const title = document.createElement("h5");
+    title.textContent = section.title;
+    const list = document.createElement("dl");
+    list.className = "openwrt-facts";
+    for (const row of Array.isArray(section.rows) ? section.rows : []) {
+      const dt = document.createElement("dt");
+      dt.textContent = row.label;
+      const dd = document.createElement("dd");
+      dd.textContent = row.value;
+      list.append(dt, dd);
+    }
+    card.append(title, list);
+    factsEl.appendChild(card);
   }
-  factsEl.hidden = !facts.length;
+  factsEl.hidden = !sections.length;
   statusEl.textContent = data.ok
     ? `UCI read from ${data.target} (${facts.length} values; wireless keys are never read).`
     : (data.error || "UCI read failed.");

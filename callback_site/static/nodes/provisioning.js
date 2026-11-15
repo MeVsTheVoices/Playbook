@@ -38,7 +38,8 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 20000) {
 }
 
 async function pollProvisionJob(jobId, mode) {
-  const deadline = Date.now() + 120000;
+  const deadline = Date.now() + (mode === "hardware" ? 180000 : 120000);
+  const label = mode === "hardware" ? "Hardware profile" : mode === "check" ? "Check" : "Apply";
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`/api/nodes/provision/jobs/${encodeURIComponent(jobId)}`);
@@ -52,27 +53,46 @@ async function pollProvisionJob(jobId, mode) {
         const results = Array.isArray(job.results) ? job.results : [];
         const hasFailures = results.some((nodeResult) => (nodeResult.results || []).some((item) => item.status === "failed" || item.status === "timeout" || item.status === "unavailable"));
         provisionStatus.textContent = hasFailures
-          ? `${mode === "check" ? "Check" : "Apply"} finished, but one or more profiles need attention.`
-          : `${mode === "check" ? "Check" : "Apply"} finished successfully.`;
+          ? `${label} finished, but one or more profiles need attention.`
+          : `${label} finished successfully.`;
         provisionLog.textContent = formatProvisionResult({ results });
         await loadSummary();
         if (mode === "apply") loadLiveConfig();
         return;
       }
       if (job.status === "failed") {
-        provisionStatus.textContent = job.error || `${mode === "check" ? "Check" : "Apply"} failed.`;
+        provisionStatus.textContent = job.error || `${label} failed.`;
         provisionLog.textContent = formatProvisionResult({ results: job.results || [] });
         await loadSummary();
         return;
       }
-      provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning in progress...`;
+      provisionStatus.textContent = mode === "hardware" ? "Getting hardware profile..." : `${mode === "check" ? "Checking" : "Applying"} provisioning in progress...`;
       await new Promise((resolve) => setTimeout(resolve, 1500));
     } catch (err) {
       provisionStatus.textContent = `Provisioning job polling failed: ${String(err && err.message ? err.message : err)}`;
       return;
     }
   }
-  provisionStatus.textContent = `${mode === "check" ? "Check" : "Apply"} is still running in the background; refresh the node summary to see the result.`;
+  provisionStatus.textContent = `${label} is still running in the background; refresh the node summary to see the result.`;
+}
+
+async function runHardwareProfile(node) {
+  provisionStatus.textContent = `Getting hardware profile for ${node}...`;
+  try {
+    const res = await fetchJsonWithTimeout("/api/nodes/hardware-check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok || !data.job_id) {
+      provisionStatus.textContent = data.error || "Hardware profile request failed.";
+      return;
+    }
+    await pollProvisionJob(data.job_id, "hardware");
+  } catch (err) {
+    provisionStatus.textContent = `Hardware profile request failed: ${String(err && err.message ? err.message : err)}`;
+  }
 }
 
 async function runProvision(node, mode, profileIds) {

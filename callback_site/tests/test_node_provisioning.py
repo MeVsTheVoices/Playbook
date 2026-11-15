@@ -770,6 +770,61 @@ class NodeProvisioningTests(BaseCallbackSiteTest):
         self.assertNotIn("ansible.builtin.shell", setup_cmd)
         self.assertNotIn("python3 - <<'PY'", setup_cmd)
 
+    def test_hardware_check_endpoint_queues_only_known_node(self) -> None:
+        with patch("routes.nodes._node_ops_inventory_view", return_value=[{"name": "node-01"}]), \
+             patch("routes.nodes._start_node_provision_job", return_value="job-01") as start:
+            response = self.client.post("/api/nodes/hardware-check", json={"node": "node-01"})
+            self.assertEqual(response.status_code, 202)
+            self.assertEqual(response.get_json()["job_id"], "job-01")
+            start.assert_called_once_with(["node-01"], "hardware", True)
+            self.assertEqual(self.client.post("/api/nodes/hardware-check", json={"node": "missing"}).status_code, 404)
+            self.assertEqual(self.client.post("/api/nodes/hardware-check", json={}).status_code, 400)
+
+    def test_node_row_hardware_action_uses_hardware_only_job(self) -> None:
+        self.browser_probe("/nodes", ["nodes/state.js", "nodes/node_table.js", "nodes/provisioning.js"], """
+let requests = [];
+function profileById() { return null; }
+function escapeHtml(value) { return String(value); }
+async function loadSummary() {}
+window.fetch = async (url, options = {}) => {
+  requests.push({url, options});
+  if (url === "/api/nodes/hardware-check") {
+    return {ok: true, json: async () => ({ok: true, job_id: "job"})};
+  }
+  return {ok: true, json: async () => ({ok: true, job: {status: "completed", results: []}})};
+};
+""", """
+nodes = [{name: "node-01", group: "rpi5_active"}];
+runAnsible.checked = false;
+renderRows();
+document.querySelector('[data-node="node-01"][data-action="check"]').click();
+await tick();
+const request = requests.find(item => item.url === "/api/nodes/hardware-check");
+check(request && JSON.parse(request.options.body).node === "node-01", "hardware row action requests the selected node");
+check(!requests.some(item => item.url === "/api/nodes/provision"), "hardware row action does not check modules");
+check(document.getElementById("provision-status").textContent.includes("finished successfully"), "reports hardware success");
+""")
+
+    def test_hardware_check_reports_callback_delivery_errors(self) -> None:
+        with patch_in("_node_ops_inventory_view", return_value=[{"name": "node-01", "group": "rpi5_active"}]), \
+             patch_in("_ssh_private_key_preflight", return_value=""), patch_in("_seed_known_host"), \
+             patch.object(subprocess, "run", return_value=SimpleNamespace(
+                 returncode=0, stdout='{"ansible_facts":{"ansible_product_name":"RPi 5"}}', stderr="",
+             )), patch("services.node_runs.urlrequest.urlopen", side_effect=OSError("connection refused")):
+            result = services.node_runs._run_hardware_check_callback("node-01", "rpi5_active", "192.0.2.10")
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("callback delivery failed", result["output"])
+        self.assertIn("connection refused", result["output"])
+
+    def test_hardware_check_rejects_empty_facts(self) -> None:
+        with patch_in("_node_ops_inventory_view", return_value=[{"name": "node-01"}]), \
+             patch_in("_ssh_private_key_preflight", return_value=""), patch_in("_seed_known_host"), \
+             patch.object(subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="not json", stderr="")), \
+             patch("services.node_runs.urlrequest.urlopen") as callback:
+            result = services.node_runs._run_hardware_check_callback("node-01", "rpi5_active", "192.0.2.10")
+        self.assertEqual(result["status"], "failed")
+        callback.assert_not_called()
+
     def test_run_hardware_check_callback_failed_output_includes_target_source_and_auth_hint(self) -> None:
         failure_output = "".join(
             [

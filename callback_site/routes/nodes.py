@@ -346,6 +346,17 @@ def register_node_routes(app: Any) -> None:
         status_code = 200 if check.get("ok") else 400
         return jsonify({"ok": bool(check.get("ok")), "node": node_name, "result": check}), status_code
 
+    @app.post("/api/nodes/hardware-check")
+    def nodes_hardware_check() -> Any:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not str(payload.get("node", "")).strip():
+            return jsonify({"ok": False, "error": "node is required"}), 400
+        node_name = str(payload["node"]).strip()
+        if not any(node.get("name") == node_name for node in _node_ops_inventory_view()):
+            return jsonify({"ok": False, "error": "node not found in active node set"}), 404
+        job_id = _start_node_provision_job([node_name], "hardware", True)
+        return jsonify({"ok": True, "job_id": job_id, "status": "queued"}), 202
+
     @app.post("/api/nodes/provision")
     def nodes_provision() -> Any:
         payload = request.get_json(silent=True) or {}

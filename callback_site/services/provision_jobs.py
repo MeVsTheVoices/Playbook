@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from services.node_inventory import _node_ops_inventory_view
-from services.node_runs import _apply_node_provisioning
+from services.node_runs import _apply_node_provisioning, _run_hardware_check_callback
 from services.node_state import _load_node_provisioning, _missing_required_inputs, _profiles_to_run
 
 
@@ -76,6 +76,17 @@ def _run_node_provision_job(
             node = node_lookup.get(node_name)
             if not node:
                 raise ValueError(f"Node {node_name} is no longer in inventory. Refresh before running again.")
+            if mode == "hardware":
+                hardware = _run_hardware_check_callback(
+                    node_name, node_group=node.get("group"), node_address=node.get("address"),
+                )
+                result = {"node": node_name, "mode": mode, "run_ansible": True, "results": [hardware]}
+                results.append(result)
+                with PROVISION_JOBS_LOCK:
+                    PROVISION_JOBS[job_id]["results"] = list(results)
+                if hardware["status"] in {"failed", "timeout", "unavailable"}:
+                    failures.append(f"Hardware profile failed for node {node_name}: {hardware.get('output', hardware['status'])}")
+                continue
             state = _load_node_provisioning()
             profile_ids = _profiles_to_run(node, state, profile_filter)
             if not profile_ids:

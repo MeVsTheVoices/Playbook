@@ -412,7 +412,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
             except (ValueError, IndexError):
                 fact_payload = {}
 
-        if proc.returncode != 0 or not isinstance(fact_payload, dict):
+        if proc.returncode != 0 or not fact_payload:
             extra_hint = ""
             lowered = raw_output.lower()
             if "permission denied" in lowered:
@@ -421,7 +421,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
                 extra_hint += "\nThe post-quantum warning is informational; it is not the root cause of this SSH failure."
             return {
                 "profile_id": "hardware_check_trigger",
-                "status": "failed" if proc.returncode != 0 else "failed",
+                "status": "failed",
                 "mode": "check",
                 "checked_at": checked_at,
                 "command": cmd,
@@ -490,10 +490,21 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
         try:
             with urlrequest.urlopen(req, timeout=12) as resp:
                 callback_response = resp.read().decode("utf-8", errors="replace").strip()
-        except Exception as exc:
-            callback_response = json.dumps({"ok": False, "error": str(exc)})
+            callback_result = json.loads(callback_response)
+            if not isinstance(callback_result, dict) or callback_result.get("ok") is not True:
+                raise ValueError("Callback did not acknowledge the hardware report.")
+        except (urlerror.URLError, OSError, TimeoutError, ValueError) as exc:
+            return {
+                "profile_id": "hardware_check_trigger",
+                "status": "failed",
+                "mode": "check",
+                "checked_at": checked_at,
+                "command": cmd,
+                "exit_code": 0,
+                "inputs": {},
+                "output": f"Hardware facts collected, but callback delivery failed: {exc}",
+            }
 
-        output = callback_response or json.dumps({"ok": True, "facts": {"model": model, "ram_mb": ram_mb}})
         return {
             "profile_id": "hardware_check_trigger",
             "status": "ok",
@@ -502,7 +513,7 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
             "command": cmd,
             "exit_code": 0,
             "inputs": {},
-            "output": output[-12000:],
+            "output": callback_response[-12000:],
         }
     except FileNotFoundError:
         return {

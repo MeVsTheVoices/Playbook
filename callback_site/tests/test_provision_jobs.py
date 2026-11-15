@@ -91,3 +91,20 @@ class ProvisionJobTests(BaseCallbackSiteTest):
         self.assertEqual(jobs.PROVISION_JOBS[self.job_id]["status"], "failed")
         self.assertIn("first", jobs.PROVISION_JOBS[self.job_id]["error"])
         self.assertEqual(jobs.PROVISION_JOBS[self.job_id]["results"], results)
+
+    def test_hardware_job_runs_only_hardware_and_reports_failure(self):
+        for status in ("ok", "failed", "timeout", "unavailable"):
+            with self.subTest(status=status):
+                result = {"profile_id": "hardware_check_trigger", "status": status, "output": "probe details"}
+                with patch.object(jobs, "_node_ops_inventory_view", return_value=[
+                    {"name": "node", "group": "rpi5_active", "address": "192.0.2.10"},
+                ]), patch.object(jobs, "_run_hardware_check_callback", return_value=result) as hardware, \
+                     patch.object(jobs, "_apply_node_provisioning") as provision:
+                    jobs._run_node_provision_job(self.job_id, ["node"], "hardware", True)
+                hardware.assert_called_once_with("node", node_group="rpi5_active", node_address="192.0.2.10")
+                provision.assert_not_called()
+                job = jobs.PROVISION_JOBS[self.job_id]
+                self.assertEqual(job["status"], "completed" if status == "ok" else "failed")
+                self.assertEqual(job["results"][0]["results"], [result])
+                if status != "ok":
+                    self.assertIn("probe details", job["error"])

@@ -131,7 +131,11 @@ function renderRows() {
         deleteManualNode(node);
         return;
       }
-      runProvision(node, action);
+      if (action === "check") {
+        runHardwareProfile(node);
+      } else {
+        runProvision(node, action);
+      }
     });
   });
 }

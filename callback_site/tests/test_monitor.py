@@ -136,6 +136,33 @@ check(document.getElementById("latest-checks-body").textContent.includes("No pro
         self.assertIn("GB NVMe", text)
         self.assertIn("nvme_capacity_gb", text)
 
+    def test_monitor_hardware_action_uses_hardware_only_job(self) -> None:
+        self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+let requests = [];
+let refreshed = false;
+window.fetch = async (url, options = {}) => {
+  requests.push({url, options});
+  if (url === "/api/nodes/hardware-check") {
+    refreshed = true;
+    return {ok: true, json: async () => ({ok: true, job_id: "job"})};
+  }
+  if (url === "/api/nodes/provision/jobs/job") {
+    return {ok: true, json: async () => ({ok: true, job: {status: "completed", results: []}})};
+  }
+  return {ok: true, json: async () => ({ok: true, state: {nodes: [{
+    name: "node-01", source: "callback", in_monitor_view: true,
+    hardware: {received_at: refreshed ? "new" : "old"}
+  }]}})};
+};
+""", """
+await tick();
+await runMonitorCloserCheck();
+const request = requests.find(item => item.url === "/api/nodes/hardware-check");
+check(request && JSON.parse(request.options.body).node === "node-01", "requests the selected hardware probe");
+check(!requests.some(item => item.url === "/api/nodes/provision"), "does not run provisioning profiles");
+check(document.getElementById("monitor-check-status").textContent.includes("Hardware callback refreshed"), "reports refreshed hardware");
+""")
+
     def test_monitor_page_shows_hardware_first_callback_copy(self) -> None:
         response = self.client.get("/monitor")
         self.assertEqual(response.status_code, 200)

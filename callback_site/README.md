@@ -168,7 +168,7 @@ Open:
   Older callbacks per host use single-line compact rows, including certificate
   text and badges; expand a row or use Expand older to see full details.
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
-- `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Reachability checks try ICMP and fall back to TCP on the selected SSH port when ICMP is blocked. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports.
+- `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Reachability checks try ICMP and fall back to TCP on the selected SSH port when ICMP is blocked. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports. This action gathers hardware facts only; it does not check or apply provisioning modules.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
   Beside **Save Module Inputs**, **Save as named configuration** opens an inline
   name field. Save with a name (blank keeps the suggested name), or close it with

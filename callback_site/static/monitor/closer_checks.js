@@ -1,5 +1,5 @@
 async function pollMonitorProvisionJob(jobId, nodeName, previouslySeenHardwareAt, triggerButton) {
-  const deadline = Date.now() + 120000;
+  const deadline = Date.now() + 180000;
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`/api/nodes/provision/jobs/${encodeURIComponent(jobId)}`);
@@ -74,10 +74,10 @@ async function runMonitorCloserCheck() {
   setPingVisualState(monitorRunCheckBtn, "ping-pending", "Checking");
   setMonitorCheckState("busy", `Triggering hardware profile run for ${nodeName}...`);
   try {
-    const res = await fetchJsonWithTimeout("/api/nodes/provision", {
+    const res = await fetchJsonWithTimeout("/api/nodes/hardware-check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ node: nodeName, mode: "check", run_ansible: true }),
+      body: JSON.stringify({ node: nodeName }),
     }, 20000);
     const data = await res.json();
 

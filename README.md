@@ -112,9 +112,6 @@ Before committing deployment changes, install the
 | **Understand the purpose and intended architecture** | [SOHO rack vision](docs/soho-rack-vision.md) |
 | **Run the portal with Docker Desktop** | [Docker Compose setup](callback_site/README.md#docker-compose) |
 | **Connect the local Kubernetes cluster** | [Linux K3s](callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard) · [Docker Desktop Kubernetes and Helm](callback_site/README.md#docker-desktop-kubernetes-and-helm) |
-| **Bring up and maintain rack nodes** | [Rack cluster runbook](docs/rack-cluster-runbook.md) |
-| **Try a Windows-hosted Linux worker** | [Experimental WSL worker](docs/rack-cluster-runbook.md#experimental-windows-hosted-wsl-worker) |
-| **Plan private management access** | [Tailscale policy workflow](docs/rack-cluster-runbook.md#tailscale-policy-page) |
 | **Use a dedicated network toolkit device** | [Network Toolkit setup](callback_site/README.md#network-toolkit-pi-3b) |
 | **Understand or develop the portal** | [Operator guide](callback_site/README.md) · [Functional contracts](docs/callback_site-functional-prototypes.md) |
 

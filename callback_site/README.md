@@ -3,7 +3,6 @@
 ### The cockpit: flash it, boot it, hear from it, shape it.
 
 [Project home](../README.md) · [SOHO rack vision](../docs/soho-rack-vision.md) ·
-[Rack runbook](../docs/rack-cluster-runbook.md)
 
 Callback Site is the control plane for the rack workflow: cloud-init bootstrap, SD-card flashing, callback tracking, image catalog management, post-boot node provisioning, and the shared monitoring views that tie those steps together.
 
@@ -769,7 +768,7 @@ docker compose -f compose.yaml -f compose.kubernetes.yaml exec -T callback-site 
 ```
 
 `Ready` workers do not become control-plane or etcd nodes merely by appearing
-in the cluster. See the [rack K3s topology](../docs/rack-cluster-runbook.md#k3s-topology-and-join-preflight)
+in the cluster. See the [Linux K3s setup](#linux-k3s-and-the-kubernetes-dashboard)
 before changing a node's role.
 
 ### Kubernetes API over Tailscale
@@ -828,7 +827,7 @@ kubectl from one of your own devices.
 - **Pod is Running but the operator never shows up on the tailnet.** Check
   **Pod network**. If any node isn't on a 100.x address, set
   `flannel-iface: tailscale0` everywhere (see the
-  [runbook](../docs/rack-cluster-runbook.md#k3s-topology-and-join-preflight)).
+  [Linux K3s setup](#linux-k3s-and-the-kubernetes-dashboard)).
   Without it, a pod on a Pi can't reach CoreDNS on the NucBox, so it can't
   log in.
 

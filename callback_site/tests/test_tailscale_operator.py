@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import stat
 from pathlib import Path
@@ -14,6 +15,12 @@ from services import helm, tailscale_operator
 from tailscale_policy import build_policy
 
 SECRET = "tskey-client-kExampleCNTRL-abcdefgh"  # gitleaks:allow (fake test value)
+MACHINE_KEY = "privkey:fake-machine-key-for-tests"  # gitleaks:allow (fake test value)
+
+
+def _b64(value) -> str:
+    text = value if isinstance(value, str) else json.dumps(value)
+    return base64.b64encode(text.encode()).decode()
 
 
 class TailscaleOperatorTests(BaseCallbackSiteTest):
@@ -22,6 +29,9 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
         self.commands: list[list[str]] = []
         self.values_seen: list[tuple[str, int]] = []
         self.installed = False
+        self.flannel = {"nuc": "100.65.24.76", "pi": "100.107.115.85"}
+        self.logged_in = True
+        self.logs = '{"level":"info","msg":"API server proxy in auth mode is listening on :443"}\n{"level":"info","msg":"Startup complete, operator running"}\n'
         for name, value in (("_command", self.command), ("_helm_connection", lambda: [])):
             patcher = patch.object(helm, name, side_effect=value)
             patcher.start()
@@ -36,6 +46,20 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
             return json.dumps({"apiServerProxyConfig": {"mode": "true"}, "operatorConfig": {"hostname": "rack-k8s"}, "oauth": {"clientSecret": SECRET}})
         if "deployment" in args:
             return json.dumps({"spec": {"replicas": 1}, "status": {"readyReplicas": 1}})
+        if "pods" in args:
+            pod = {"metadata": {"name": "operator-abc", "creationTimestamp": "2026-11-15T01:25:39Z"}, "spec": {"nodeName": "pi"},
+                   "status": {"phase": "Running", "startTime": "2026-11-15T01:25:39Z", "containerStatuses": [{"ready": True, "restartCount": 2}]}}
+            return json.dumps({"items": [pod]})
+        if "secret" in args:
+            data = {"_machinekey": _b64(MACHINE_KEY)}
+            if self.logged_in:
+                data.update({"_current-profile": _b64("profile-8215"), "rack-k8s.example.ts.net.crt": _b64("cert"),
+                             "_profiles": _b64({"8215": {"Name": "rack-k8s.example.ts.net", "NodeID": "nTEST", "PrivateNodeKey": MACHINE_KEY}})})
+            return json.dumps({"data": data})
+        if "logs" in args:
+            return self.logs
+        if "nodes" in args:
+            return json.dumps({"items": [{"metadata": {"name": name, "annotations": {"flannel.alpha.coreos.com/public-ip": ip}}} for name, ip in self.flannel.items()]})
         if "clusterrolebinding" in args:
             raise RuntimeError("kubectl failed: NotFound")
         if args[:3] == ["helm", "upgrade", "--install"]:
@@ -61,6 +85,33 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
         self.assertTrue(status["proxy_url"].startswith("https://rack-k8s."))
         self.assertFalse(status["readers_binding"])
         self.assertNotIn(SECRET, response.get_data(as_text=True))
+
+    def test_live_checks_report_a_working_operator_without_keys(self) -> None:
+        self.installed = True
+        response = self.client.get("/api/kubernetes/tailscale-operator")
+        live = response.get_json()["status"]["live"]
+        self.assertTrue(live["healthy"], live["verdict"])
+        self.assertEqual((live["pod"]["node"], live["pod"]["restarts"], live["pod"]["ready"]), ("pi", 2, True))
+        self.assertEqual((live["tailnet"]["name"], live["tailnet"]["node_id"], live["tailnet"]["certificate"]), ("rack-k8s.example.ts.net", "nTEST", True))
+        self.assertTrue(live["logs"]["startup_complete"] and live["logs"]["proxy_listening"])
+        self.assertTrue(live["network"]["ok"])
+        self.assertNotIn(MACHINE_KEY, response.get_data(as_text=True))
+
+    def test_live_checks_name_the_first_problem(self) -> None:
+        self.installed = True
+        self.flannel["pi"] = "192.168.8.249"
+        live = tailscale_operator.operator_status()["live"]
+        self.assertFalse(live["healthy"])
+        self.assertIn("Flannel", live["verdict"])
+        self.assertEqual([row["tailscale"] for row in live["network"]["nodes"]], [True, False])
+        self.flannel["pi"] = "100.107.115.85"
+        self.logged_in = False
+        self.assertIn("not joined the tailnet", tailscale_operator.operator_status()["live"]["verdict"])
+        self.logged_in = True
+        self.logs += '{"level":"error","msg":"lookup kubernetes.default.svc on 10.43.0.10:53: i/o timeout"}\n'
+        live = tailscale_operator.operator_status()["live"]
+        self.assertIn("timeouts", live["verdict"])
+        self.assertEqual(live["logs"]["recent_errors"], 1)
 
     def test_first_install_writes_private_values_and_enables_proxy(self) -> None:
         response = self.post({"confirm": True, "client_id": "kExampleCNTRL", "client_secret": SECRET, "readers_binding": True})
@@ -104,6 +155,7 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
         self.assertIn('id="tailnet-api"', text)
         self.assertIn("tailnet_api.js", text)
         self.assertIn('id="tailnet-api-client-secret" type="password"', text)
+        self.assertIn('id="tailnet-api-live"', text)
 
 
 class TailscaleOperatorPolicyTests(BaseCallbackSiteTest):

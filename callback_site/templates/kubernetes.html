@@ -107,7 +107,7 @@
 
         <section class="panel kube-section" id="helm-workspace">
           <h2>Helm configurations</h2>
-          <p class="kube-subtle">Import a public GitHub chart with its defaults. Save, preview, and explicitly deploy it to the configured cluster. Only import charts you trust.</p>
+          <p class="kube-subtle">Choose an included chart or import a public GitHub chart. Save, preview, and explicitly deploy it to the configured cluster. Only import charts you trust.</p>
           <form id="helm-form">
             <div class="helm-fields">
               <label>Configuration
@@ -116,20 +116,28 @@
             </div>
             <details id="helm-panel" class="tailnet-api-panel">
               <summary>Configure Helm chart</summary>
-              <div class="helm-fields">
-              <label>GitHub repository
-                <input id="helm-repository" type="url" placeholder="https://github.com/owner/repository">
-              </label>
-              <label>Chart path (only needed if there are several)
-                <input id="helm-chart-path" placeholder="charts/hello-world">
-              </label>
-            </div>
+              <p class="kube-subtle">Select a bundled chart above and choose Import defaults, or enter a GitHub repository below.</p>
+              <div id="helm-repository-fields">
+                <div class="helm-fields">
+                  <label>GitHub repository
+                    <input id="helm-repository" type="url" placeholder="https://github.com/owner/repository">
+                  </label>
+                  <label>Chart path (only needed if there are several)
+                    <input id="helm-chart-path" placeholder="charts/hello-world">
+                  </label>
+                </div>
+              </div>
             <div class="kube-actions">
               <button type="button" class="kube-btn" id="helm-import">Import defaults</button>
               <button type="button" class="kube-btn" id="helm-new">New configuration</button>
             </div>
             <div id="helm-editor" hidden>
               <p class="kube-subtle" id="helm-source"></p>
+              <details class="tailnet-api-panel" open>
+                <summary>Chart setup guide</summary>
+                <p class="kube-subtle">Guide text comes from the chart and is displayed as plain text; review third-party instructions before following them.</p>
+                <textarea id="helm-guide" rows="12" readonly aria-label="Chart setup guide"></textarea>
+              </details>
               <div class="helm-fields">
                 <label>Name <input id="helm-name" maxlength="60" required></label>
                 <label>Release <input id="helm-release" maxlength="53" required></label>
@@ -138,6 +146,12 @@
               <label>Values YAML (imported chart defaults)
                 <textarea id="helm-values" rows="14" spellcheck="false"></textarea>
               </label>
+              <div id="helm-dockerbot-token-panel" class="tailnet-api-panel" hidden>
+                <strong>Discord bot token</strong>
+                <p class="kube-subtle">Save the namespace and values first. The namespace must already exist. The token is sent to the configured cluster as a Kubernetes Secret, not saved in Playbook or Helm values. Use a trusted HTTPS connection. Restart the bot after rotating its token.</p>
+                <label>Bot token <input id="helm-dockerbot-token" type="password" autocomplete="off"></label>
+                <button type="button" class="kube-btn" id="helm-dockerbot-token-save">Create / update Secret</button>
+              </div>
               <details class="tailnet-api-panel">
                 <summary>Tailscale workload exposure</summary>
                 <p class="kube-subtle" id="helm-tailscale-status">Checking operator...</p>

@@ -1,0 +1,22 @@
+image:
+  repository: ghcr.io/rhomelab/red-discordbot
+  tag: latest-noaudio
+  pullPolicy: IfNotPresent
+
+bot:
+  instanceName: tower-2-redbot
+  prefix: "^"
+  pipRequirements: "matplotlib pandas psutil"
+  existingSecret: dockerbot-token
+  tokenKey: token
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  # Empty uses the cluster's default StorageClass; set to "longhorn" to use Longhorn.
+  storageClassName: ""
+  size: 10Gi
+
+resources:
+  limits:
+    memory: 1Gi

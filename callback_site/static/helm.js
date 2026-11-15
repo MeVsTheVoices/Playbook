@@ -3,6 +3,7 @@
   const element = (name) => document.getElementById(`helm-${name}`);
   let records = [];
   let examples = [];
+  let bundled = [];
   let current = null;
   let dirty = false;
   let busy = false;
@@ -12,23 +13,31 @@
     element("save").disabled = busy || !current;
     element("preview").disabled = busy || !current || dirty;
     element("deploy").disabled = busy || !current || dirty;
+    element("dockerbot-token-save").disabled = busy || !current || dirty;
     element("import").disabled = busy || !!current;
   }
 
   function show(record) {
     current = record;
     dirty = false;
+    element("dockerbot-token").value = "";
     element("editor").hidden = !record;
     element("repository").value = record ? record.repository : "";
     element("chart-path").value = record ? record.chart_path : "";
     element("repository").readOnly = !!record;
     element("chart-path").readOnly = !!record;
+    element("repository-fields").hidden = !!record?.bundled || element("selection").value.startsWith("bundled:");
     element("manifest").textContent = "Preview before deploying.";
     if (record) {
       for (const name of ["name", "release", "namespace", "values"]) element(name).value = record[name];
       const tailscale = record.tailscale || { mode: "off" };
       for (const name of tailscaleFields) element(`ts-${name}`).value = tailscale[name.replaceAll("-", "_")] || "";
-      element("source").textContent = `${record.chart_name} ${record.chart_version} · ${record.chart_path} · pinned commit ${record.commit}`;
+      element("source").textContent = record.bundled
+        ? `${record.chart_name} ${record.chart_version} · bundled snapshot ${record.commit}`
+        : `${record.chart_name} ${record.chart_version} · ${record.chart_path} · pinned commit ${record.commit}`;
+      element("guide").value = record.guide || "No setup guide was included with this chart. Consult the chart's upstream documentation.";
+      element("dockerbot-token-panel").hidden = !(record.bundled === "dockerbot" ||
+        ((record.repository || "").toLowerCase() === "https://github.com/mevsthevoices/playbook" && record.chart_path === "charts/dockerbot"));
       const submission = record.last_submission;
       element("submission").textContent = submission
         ? `Last submission: ${submission.status} · ${submission.context} (${submission.server}) · ${submission.namespace}/${submission.release} · saved revision ${submission.revision}${submission.error ? ` · ${submission.error}` : ""}`
@@ -51,8 +60,13 @@
     const data = await request("");
     records = data.configurations;
     examples = data.examples;
+    bundled = data.bundled || [];
     const select = element("selection");
     select.replaceChildren(new Option("New configuration", ""));
+    const bundledGroup = document.createElement("optgroup");
+    bundledGroup.label = "Bundled charts";
+    bundled.forEach((chart) => bundledGroup.append(new Option(chart.name, `bundled:${chart.id}`)));
+    select.append(bundledGroup);
     const sampleGroup = document.createElement("optgroup");
     sampleGroup.label = "Included examples";
     examples.forEach((sample, index) => sampleGroup.append(new Option(sample.name, `example:${index}`)));
@@ -88,7 +102,8 @@
       element("repository").value = sample.repository;
       element("chart-path").value = sample.chart_path;
     }
-    element("status").textContent = "";
+    element("status").textContent = element("selection").value.startsWith("bundled:")
+      ? "Select Import defaults to create a configuration from this bundled chart." : "";
   });
   element("new").addEventListener("click", () => {
     element("panel").open = true;
@@ -105,9 +120,11 @@
   }
   form.addEventListener("submit", (event) => event.preventDefault());
   element("import").addEventListener("click", () => operation("Importing chart and default values...", async () => {
-    const data = await request("/import", "POST", {
-      repository: element("repository").value, chart_path: element("chart-path").value,
-    });
+    const selection = element("selection").value;
+    const payload = selection.startsWith("bundled:")
+      ? { bundled: selection.slice("bundled:".length) }
+      : { repository: element("repository").value, chart_path: element("chart-path").value };
+    const data = await request("/import", "POST", payload);
     await refresh(data.configuration.id);
     element("status").textContent = "Defaults imported and configuration saved. No cluster changes made.";
   }));
@@ -125,6 +142,19 @@
     element("manifest").closest("details").open = true;
     element("status").textContent = "Manifests rendered. No cluster changes made.";
   }));
+  element("dockerbot-token-save").addEventListener("click", () => {
+    if (!window.confirm(`Create or update the Dockerbot Secret in ${current.namespace} on the configured cluster?`)) return;
+    operation("Writing the Secret to Kubernetes...", async () => {
+      try {
+        await request(`/${current.id}/dockerbot-token`, "POST", {
+          revision: current.revision, confirm: true, token: element("dockerbot-token").value,
+        });
+        element("status").textContent = "Secret updated. Restart an existing bot pod to use the new token.";
+      } finally {
+        element("dockerbot-token").value = "";
+      }
+    });
+  });
   element("deploy").addEventListener("click", () => {
     if (!window.confirm(`Deploy / upgrade ${current.release} in ${current.namespace} on the configured cluster? This may create or change resources and run chart hooks.`)) return;
     operation("Submitting saved configuration (may take up to two minutes)...", async () => {

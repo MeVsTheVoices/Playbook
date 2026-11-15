@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dockerbot.fullname" . }}
+  labels:
+    {{- include "dockerbot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name | quote }}
+      app.kubernetes.io/instance: {{ .Release.Name | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "dockerbot.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: dockerbot
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: INSTANCE_NAME
+              value: {{ .Values.bot.instanceName | quote }}
+            - name: PREFIX
+              value: {{ .Values.bot.prefix | quote }}
+            - name: PIP_REQUIREMENTS
+              value: {{ .Values.bot.pipRequirements | quote }}
+            - name: TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "bot.existingSecret must name an existing Secret" .Values.bot.existingSecret | quote }}
+                  key: {{ required "bot.tokenKey must name the token key" .Values.bot.tokenKey | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /redbot/data
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "dockerbot.fullname" .) .Values.persistence.existingClaim | quote }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

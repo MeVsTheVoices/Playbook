@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import shutil
@@ -313,7 +314,7 @@ for k in system.@system[0].hostname system.@system[0].zonename \
   network.wan.proto network.wan.ipaddr dhcp.lan.ignore dhcp.lan.start dhcp.lan.limit dhcp.lan.leasetime; do
   echo "$k=$(uci -q get "$k")"
 done
-uci -q show wireless | grep -E '^wireless\.[][A-Za-z0-9_@-]+\.(ssid|mode|network|disabled|band|channel)='
+uci -q show wireless | grep -E '^wireless\.[][A-Za-z0-9_@-]+\.(ssid|mode|network|disabled|band|channel|device)='
 exit 0
 """
 
@@ -325,7 +326,7 @@ _UCI_FIXED_KEYS = (
     "network.wan.proto", "network.wan.ipaddr",
     "dhcp.lan.ignore", "dhcp.lan.start", "dhcp.lan.limit", "dhcp.lan.leasetime",
 )
-_UCI_WIRELESS_KEY = re.compile(r"wireless\.[A-Za-z0-9_@\[\]-]{1,64}\.(ssid|mode|network|disabled|band|channel)")
+_UCI_WIRELESS_KEY = re.compile(r"wireless\.[A-Za-z0-9_@\[\]-]{1,64}\.(ssid|mode|network|disabled|band|channel|device)")
 UCI_SSH_TIMEOUT_SECONDS = 20
 
 
@@ -340,6 +341,88 @@ def parse_uci_summary(text: str) -> list[Dict[str, str]]:
         if value:
             found.append({"key": key, "value": value})
     return found
+
+
+_WIFI_BANDS = {"2g": "2.4 GHz", "5g": "5 GHz", "6g": "6 GHz", "60g": "60 GHz"}
+
+
+def _dhcp_pool(lan_ip: str, netmask: str, start: str, limit: str) -> str:
+    try:
+        network = ipaddress.IPv4Network(f"{lan_ip}/{netmask}", strict=False)
+        first = int(network.network_address) + int(start)
+        last = first + int(limit) - 1
+    except (ValueError, TypeError):
+        return ""
+    last = min(last, int(network.broadcast_address) - 1)
+    if first > last:
+        return ""
+    return f"{ipaddress.IPv4Address(first)} – {ipaddress.IPv4Address(last)}"
+
+
+def organize_uci_facts(facts: list[Dict[str, str]]) -> list[Dict[str, Any]]:
+    """Group raw allowlisted facts into titled sections of labelled rows for display."""
+    raw = {fact["key"]: fact["value"] for fact in facts}
+
+    def section(title: str, rows: list[tuple[str, str]]) -> Dict[str, Any] | None:
+        kept = [{"label": label, "value": value} for label, value in rows if value]
+        return {"title": title, "rows": kept} if kept else None
+
+    def address(prefix: str) -> str:
+        ip, mask = raw.get(f"{prefix}.ipaddr", ""), raw.get(f"{prefix}.netmask", "")
+        if ip and mask:
+            try:
+                return f"{ip}/{ipaddress.IPv4Network(f'0.0.0.0/{mask}').prefixlen}"
+            except ValueError:
+                pass
+        return ip
+
+    dhcp_off = raw.get("dhcp.lan.ignore") == "1"
+    pool = "" if dhcp_off else _dhcp_pool(
+        raw.get("network.lan.ipaddr", ""), raw.get("network.lan.netmask", "255.255.255.0"),
+        raw.get("dhcp.lan.start", ""), raw.get("dhcp.lan.limit", ""),
+    )
+    sections = [
+        section("System", [
+            ("Firmware", raw.get("release", "")),
+            ("Board", raw.get("board", "")),
+            ("Hostname", raw.get("system.@system[0].hostname", "")),
+            ("Timezone", raw.get("system.@system[0].zonename", "")),
+        ]),
+        section("LAN", [("Protocol", raw.get("network.lan.proto", "")), ("Address", address("network.lan"))]),
+        section("WAN", [("Protocol", raw.get("network.wan.proto", "")), ("Address", address("network.wan"))]),
+        section("DHCP (LAN)", [
+            ("Server", "off" if dhcp_off else ("on" if "dhcp.lan.start" in raw else "")),
+            ("Pool", pool),
+            ("Leases", "" if dhcp_off else raw.get("dhcp.lan.limit", "")),
+            ("Lease time", "" if dhcp_off else raw.get("dhcp.lan.leasetime", "")),
+        ]),
+    ]
+
+    wifi: Dict[str, Dict[str, str]] = {}
+    for key, value in raw.items():
+        if key.startswith("wireless."):
+            name, _, option = key[len("wireless."):].rpartition(".")
+            wifi.setdefault(name, {})[option] = value
+    radios = [name for name, opts in wifi.items() if "band" in opts or "channel" in opts]
+    interfaces = [name for name in wifi if name not in radios]
+    for radio in radios:
+        opts = wifi[radio]
+        band = _WIFI_BANDS.get(opts.get("band", ""), opts.get("band", ""))
+        rows = [
+            ("Channel", opts.get("channel", "")),
+            ("Radio", "disabled" if opts.get("disabled") == "1" else "enabled"),
+        ]
+        for iface in interfaces:
+            iopts = wifi[iface]
+            if iopts.get("device", radio) != radio and iopts.get("device"):
+                continue
+            if not iopts.get("device") and iface != f"default_{radio}":
+                continue
+            state = " (disabled)" if iopts.get("disabled") == "1" else ""
+            detail = ", ".join(v for v in (iopts.get("mode", ""), iopts.get("network", "")) if v)
+            rows.append(("SSID", f"{iopts.get('ssid', iface)}{f' · {detail}' if detail else ''}{state}"))
+        sections.append(section(f"Wi-Fi {band} ({radio})" if band else f"Wi-Fi {radio}", rows))
+    return [item for item in sections if item]
 
 
 def read_openwrt_uci(node_name: str, port: int = 22) -> Dict[str, Any]:
@@ -365,7 +448,7 @@ def read_openwrt_uci(node_name: str, port: int = 22) -> Dict[str, Any]:
     destination = _ssh_destination(user, host)
     key = _resolve_openwrt_ssh_key(str(entry.get("certificate", "") or "").strip() or "rack-bootstrap-ed25519")
     preflight = _ssh_private_key_preflight(key["private_key_path"])
-    result: Dict[str, Any] = {"node": node_name, "target": f"{destination}:{port}", "facts": [], "error": ""}
+    result: Dict[str, Any] = {"node": node_name, "target": f"{destination}:{port}", "facts": [], "sections": [], "error": ""}
     if preflight:
         result["error"] = preflight
         return result
@@ -389,6 +472,7 @@ def read_openwrt_uci(node_name: str, port: int = 22) -> Dict[str, Any]:
         result["error"] = f"Timed out after {UCI_SSH_TIMEOUT_SECONDS}s reading the router."
         return result
     result["facts"] = parse_uci_summary(proc.stdout)
+    result["sections"] = organize_uci_facts(result["facts"])
     if proc.returncode != 0 and not result["facts"]:
         result["error"] = (proc.stderr or "").strip()[-400:] or f"ssh exited with code {proc.returncode}"
     return result

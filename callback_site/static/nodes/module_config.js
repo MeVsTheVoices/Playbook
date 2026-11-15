@@ -253,6 +253,20 @@ function applyModuleRoleVisibility() {
   });
 }
 
+function renderProfileSpecificHead(group, moduleCount) {
+  const titleEl = document.getElementById("profile-specific-title");
+  const noteEl = document.getElementById("profile-specific-note");
+  const tableEl = document.getElementById("profile-module-table");
+  if (titleEl) titleEl.textContent = group ? `Profile-specific · ${group}` : "Profile-specific";
+  if (tableEl) tableEl.hidden = !moduleCount;
+  if (noteEl) {
+    const hasTools = group.toLowerCase() === "openwrt";
+    noteEl.textContent = moduleCount || hasTools
+      ? "Options that only apply to this node's profile."
+      : "This profile has no options of its own; use the shared modules above.";
+  }
+}
+
 function renderModuleSection() {
   if (!moduleStatusBodyEl || !moduleDetailEl) {
     return;
@@ -270,11 +284,21 @@ function renderModuleSection() {
     moduleConnectionContext.textContent = `Admin SSH target: ${adminAddress} (${adminPath}). K3s peer/API path: Tailscale (${clusterIp}); node role is derived from Pi family.`;
   }
   moduleStatusBodyEl.innerHTML = "";
+  const profileBodyEl = document.getElementById("profile-module-body");
+  if (profileBodyEl) profileBodyEl.innerHTML = "";
+  const nodeGroup = String(selectedNode.group || "");
+  // A module that targets a single group belongs to that profile: it is listed below, not in the shared table.
+  const isProfileSpecific = (profile) => Array.isArray(profile.groups) && profile.groups.length === 1;
+  const sharedProfiles = profiles.filter((profile) => !isProfileSpecific(profile));
+  const groupProfiles = profiles.filter((profile) => isProfileSpecific(profile) && profile.groups[0] === nodeGroup);
+  const current = profileById(selectedModuleId);
+  if (current && isProfileSpecific(current) && current.groups[0] !== nodeGroup) selectedModuleId = "";
+  renderProfileSpecificHead(nodeGroup, groupProfiles.length);
   let selectedRow = null;
-  if (!profiles.length) {
-    moduleStatusBodyEl.innerHTML = "<tr><td colspan='4' style='color:var(--muted)'>No modules available.</td></tr>";
+  if (!sharedProfiles.length) {
+    moduleStatusBodyEl.innerHTML = "<tr><td colspan='4' style='color:var(--muted)'>No shared modules available.</td></tr>";
   }
-  for (const profile of profiles) {
+  const buildRow = (profile) => {
     const isActive = selected.has(profile.id);
     const tags = Array.isArray(profile.tags) ? profile.tags.join(", ") : "-";
     const tr = document.createElement("tr");
@@ -301,8 +325,15 @@ function renderModuleSection() {
     tr.addEventListener("click", () => {
       if (profile.id !== selectedModuleId) selectModule();
     });
+    return tr;
+  };
+  for (const profile of sharedProfiles) {
+    const tr = buildRow(profile);
     moduleStatusBodyEl.appendChild(tr);
     if (profile.id === selectedModuleId) selectedRow = tr;
+  }
+  if (profileBodyEl) {
+    for (const profile of groupProfiles) profileBodyEl.appendChild(buildRow(profile));
   }
   keepRowVisible(selectedRow);
 

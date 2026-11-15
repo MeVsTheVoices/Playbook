@@ -267,8 +267,23 @@ tr.module-row-selected td:first-child {
   margin-left: 1.6rem;
 }
 
-.openwrt-tools {
+.profile-specific {
   margin: 0 0 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+.profile-specific .profile-module-table {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+.profile-specific .profile-module-table[hidden] {
+  display: none;
+}
+
+.openwrt-tools {
+  margin: 0.6rem 0 0;
   padding: 0.7rem 0.9rem;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -285,7 +300,8 @@ tr.module-row-selected td:first-child {
   align-items: baseline;
   gap: 0.2rem 0.7rem;
 }
-.openwrt-tools-head h3 {
+.openwrt-tools-head h3,
+.openwrt-tools-head h4 {
   margin: 0;
   font-size: 0.98rem;
 }
@@ -313,6 +329,26 @@ tr.module-row-selected td:first-child {
   width: min(18rem, 100%);
 }
 
+.openwrt-uci-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+.openwrt-uci-sections[hidden] {
+  display: none;
+}
+
+.openwrt-uci-card {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.openwrt-uci-card h5 {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .openwrt-facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -322,7 +358,6 @@ tr.module-row-selected td:first-child {
 }
 .openwrt-facts dt {
   color: var(--muted);
-  font-family: var(--mono, ui-monospace, monospace);
 }
 .openwrt-facts dd {
   margin: 0;

@@ -1,10 +1,11 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .module-detail {
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  @include mixins.outlined;
   padding: 1rem 1.1rem 1.1rem;
-  background: #ffffff;
+  background: palette.$white;
   min-height: 160px;
 }
 
@@ -16,7 +17,7 @@
   min-height: 0;
   padding: 0.5rem 0.9rem;
   border-style: dashed;
-  background: #f8fafc;
+  background: palette.$slate-50;
 }
 
 .module-detail.collapsed .note {
@@ -39,7 +40,7 @@ tr.module-row {
 }
 
 tr.module-row-selected td {
-  background: #ecfeff;
+  background: palette.$cyan-50;
 }
 
 tr.module-row-selected td:first-child {
@@ -68,7 +69,7 @@ tr.module-row-selected td:first-child {
   padding: 0.55rem 0.8rem;
   border-left: 3px solid var(--accent-2);
   border-radius: 0 8px 8px 0;
-  @include mixins.state-colors(#f0f9ff, #334155);
+  @include mixins.state-colors(palette.$sky-50, palette.$slate-700);
   font-size: 0.84rem;
   line-height: 1.45;
 }
@@ -88,7 +89,7 @@ tr.module-row-selected td:first-child {
 
 .module-field > label {
   margin-bottom: 0.3rem;
-  color: #334155;
+  color: palette.$slate-700;
   font-weight: 600;
 }
 
@@ -97,10 +98,9 @@ tr.module-row-selected td:first-child {
 .module-field textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  @include mixins.outlined(tokens.$radius-control);
   padding: 0.55rem 0.65rem;
-  background: #ffffff;
+  background: palette.$white;
   font-family: inherit;
   font-size: 0.92rem;
 }
@@ -115,7 +115,7 @@ tr.module-row-selected td:first-child {
 .module-field input:focus,
 .module-field select:focus,
 .module-field textarea:focus {
-  outline: 2px solid rgba(2, 132, 199, 0.25);
+  outline: 2px solid rgba(palette.$sky-600, 0.25);
   border-color: var(--accent-2);
 }
 
@@ -129,9 +129,9 @@ tr.module-row-selected td:first-child {
 .module-warning {
   margin: 0.4rem 0 0;
   padding: 0.35rem 0.6rem;
-  border: 1px solid #fcd34d;
-  border-radius: 8px;
-  @include mixins.state-colors(#fffbeb, #92400e);
+  border: 1px solid palette.$amber-300;
+  border-radius: tokens.$radius-chip;
+  @include mixins.state-colors(palette.$amber-50, palette.$amber-800);
   font-size: 0.78rem;
   line-height: 1.4;
 }
@@ -157,9 +157,8 @@ tr.module-row-selected td:first-child {
 
 .module-toggle {
   padding: 0.55rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f8fafc;
+  @include mixins.outlined(tokens.$radius-control);
+  background: palette.$slate-50;
 }
 
 .module-toggle-row {
@@ -167,7 +166,7 @@ tr.module-row-selected td:first-child {
   align-items: flex-start;
   gap: 0.55rem;
   margin: 0;
-  color: #1e293b;
+  color: palette.$slate-800;
   font-size: 0.88rem;
   font-weight: 600;
   line-height: 1.35;
@@ -187,9 +186,8 @@ tr.module-row-selected td:first-child {
 .profile-specific {
   margin: 0 0 0.9rem;
   padding: 0.7rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #ffffff;
+  @include mixins.outlined;
+  background: palette.$white;
 
   .profile-module-table {
     width: 100%;
@@ -204,9 +202,8 @@ tr.module-row-selected td:first-child {
 .openwrt-tools {
   margin: 0.6rem 0 0;
   padding: 0.7rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #ffffff;
+  @include mixins.outlined;
+  background: palette.$white;
 }
 
 .openwrt-tools[hidden] {
@@ -266,8 +263,7 @@ tr.module-row-selected td:first-child {
 
 .openwrt-uci-card {
   padding: 0.5rem 0.65rem;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  @include mixins.outlined(tokens.$radius-control);
 
   h5 {
     margin: 0;

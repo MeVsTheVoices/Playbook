@@ -317,7 +317,7 @@ input, select, textarea, button {
 input, select, textarea {
   width: 100%;
   min-width: 0;
-  background: #fff;
+  background: #ffffff;
   color: var(--ink);
 }
 
@@ -349,7 +349,7 @@ button {
   min-height: 40px;
   font-weight: 600;
   background: var(--accent);
-  color: #fff;
+  color: #ffffff;
   border-color: transparent;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
@@ -377,7 +377,7 @@ button.secondary:hover:not(:disabled), button.secondary-btn:hover:not(:disabled)
 
 button.danger, button.danger-alt, button.danger-btn {
   background: var(--danger);
-  color: #fff;
+  color: #ffffff;
   border-color: transparent;
 }
 
@@ -414,7 +414,7 @@ button.danger:hover:not(:disabled), button.danger-alt:hover:not(:disabled), butt
 }
 
 .stat-card {
-  background: linear-gradient(180deg, #fff, #f8fafc);
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
 }
 
 .stat-card .k, .stat-label, .module-k {

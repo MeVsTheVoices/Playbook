@@ -1,5 +1,7 @@
+@use "../../abstracts/palette";
+
 .card {
-  background: #f8fafc;
+  background: palette.$slate-50;
 }
 
 .mono {

@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .danger {
   @include mixins.state-colors(var(--danger), white);
@@ -17,9 +19,9 @@
 
 .quick-links a {
   text-decoration: none;
-  @include mixins.state-colors(#eaf2fb, #0f4a84);
-  border: 1px solid #c9d8ea;
-  border-radius: 999px;
+  @include mixins.state-colors(#eaf2fb, palette.$navy);
+  border: 1px solid palette.$line-blue;
+  border-radius: tokens.$radius-pill;
   padding: 0.24rem 0.62rem;
   font-size: 0.78rem;
   font-weight: 600;
@@ -35,7 +37,7 @@
 }
 
 .module-card {
-  background: #f8fbff;
+  background: palette.$surface-cool;
 }
 
 .module-card.ok {
@@ -44,13 +46,13 @@
 }
 
 .module-card.warn {
-  border-color: #fde68a;
-  background: #fffbeb;
+  border-color: palette.$amber-200;
+  background: palette.$amber-50;
 }
 
 .module-card.bad {
-  border-color: #fecaca;
-  background: #fff1f2;
+  border-color: palette.$red-200;
+  background: palette.$rose-50;
 }
 
 .module-k {
@@ -63,7 +65,7 @@
 
 .module-d {
   margin: 0.35rem 0 0;
-  color: #4f6070;
+  color: palette.$muted;
   font-size: 0.79rem;
 }
 

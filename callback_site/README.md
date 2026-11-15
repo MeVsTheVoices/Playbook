@@ -19,10 +19,21 @@ generated `static/*.css` files:
 - `styles/pages/<feature>/`: feature-owned modules (for example, dashboard
   options, SSH keys, flashing, callbacks and activity; Node Ops editor, live
   actions, access picker and operations).
-- `styles/abstracts/`: semantic success/error/warning palettes and declaration-only
-  mixins for action rows, automatic grids and state colors. These emit no CSS until
-  included and never alter selector specificity. Use `@use`, not legacy `@import`
-  or selector-expanding `@extend`.
+- `styles/abstracts/`: the design hierarchy. Nothing here emits CSS until it is
+  used, and none of it changes selector specificity. Use `@use`, not legacy
+  `@import` or selector-expanding `@extend`.
+  - `_palette.scss`: the single source of colors. Brand names (`$ink`, `$accent`,
+    `$navy`…), surfaces, terminal colors and Tailwind-style scales (`$slate-700`,
+    `$green-300`…). Pages write `palette.$name` (or `rgba(palette.$name, 0.12)`),
+    never a raw hex.
+  - `_tokens.scss`: the `$states` map (success/error/warning → background, ink,
+    border) built from the palette, plus radius tokens (`$radius-tag` 6px,
+    `-chip` 8px, `-control` 10px, `-card` 12px, `-panel` 16px, `-pill`, `-round`).
+  - `_mixins.scss`: declaration-only helpers: `action-row`, `auto-grid`,
+    `state($name, $border: false)`, `state-border($name)`, `outlined($radius)`
+    (1px `--line` border + radius), `inline-center($gap)` and `eyebrow()`.
+- `styles/shared/_tokens.scss` turns the palette and tokens into the `:root`
+  custom properties (`--ink`, `--line`, `--radius`…) used at runtime.
 
 Every page still loads `static/common.css` after its feature stylesheet. It owns the
 palette, typography, sidebar, content width, cards, controls, tables, disclosure

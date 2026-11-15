@@ -1,5 +1,17 @@
+@use "palette";
+
+// Each UI state's colors: fill, text and a matching border.
 $states: (
-  success: (background: #dcfce7, ink: #166534),
-  error: (background: #fee2e2, ink: #991b1b),
-  warning: (background: #fef3c7, ink: #92400e),
+  success: (background: palette.$green-100, ink: palette.$green-800, border: palette.$green-300),
+  error: (background: palette.$red-100, ink: palette.$red-800, border: palette.$red-200),
+  warning: (background: palette.$amber-100, ink: palette.$amber-800, border: palette.$amber-200),
 );
+
+// Corner radii, smallest to largest. --radius / --radius-sm in :root come from these.
+$radius-tag: 6px;
+$radius-chip: 8px;
+$radius-control: 10px;
+$radius-card: 12px;
+$radius-panel: 16px;
+$radius-pill: 999px;
+$radius-round: 50%;

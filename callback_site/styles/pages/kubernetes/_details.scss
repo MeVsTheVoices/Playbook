@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .kube-detail-columns {
   @include mixins.auto-grid(220px, 0.85rem);
@@ -6,15 +8,15 @@
 
 .kube-note-block {
   padding: 0.75rem;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(236, 253, 245, 0.9), rgba(248, 250, 252, 0.95));
+  border-radius: tokens.$radius-card;
+  background: linear-gradient(180deg, rgba(palette.$emerald-50, 0.9), rgba(palette.$slate-50, 0.95));
   border: 1px solid rgba(16, 185, 129, 0.18);
 }
 
 .kube-status {
   position: relative;
   border-left: 3px solid rgba(14, 165, 233, 0.7);
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95), rgba(248, 250, 252, 0.96));
+  background: linear-gradient(180deg, rgba(palette.$blue-50, 0.95), rgba(palette.$slate-50, 0.96));
   animation: kubePulse 2.8s ease-in-out infinite;
 }
 
@@ -31,7 +33,7 @@
 }
 
 .kube-list li {
-  color: #334155;
+  color: palette.$slate-700;
 }
 
 .kube-status {
@@ -58,16 +60,16 @@
 
 .kube-btn {
   padding: 0.3rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: #fff;
+  border-radius: tokens.$radius-chip;
+  border: 1px solid rgba(palette.$slate-400, 0.6);
+  background: palette.$white;
   cursor: pointer;
   font-size: 0.8rem;
 }
 
 .kube-btn:hover:not(:disabled) {
-  border-color: #b91c1c;
-  color: #b91c1c;
+  border-color: palette.$red-700;
+  color: palette.$red-700;
 }
 
 .kube-btn:disabled {

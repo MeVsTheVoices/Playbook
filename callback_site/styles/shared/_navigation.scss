@@ -1,4 +1,5 @@
 @use "../abstracts/mixins";
+@use "../abstracts/palette";
 
 .sidebar {
   position: fixed;
@@ -9,7 +10,7 @@
   scrollbar-width: thin;
   background: radial-gradient(circle at 20% 20%, rgba(45, 212, 191, 0.16), transparent 42%),
   var(--side);
-  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  border-right: 1px solid rgba(palette.$slate-400, 0.2);
   color: var(--side-ink);
   transition: width 0.2s ease;
 }
@@ -21,19 +22,19 @@
   gap: 0.5rem;
   padding: 0.25rem 0 0.8rem;
   margin-bottom: 0.7rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid rgba(palette.$slate-400, 0.2);
 }
 
 .sidebar-title {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #f8fafc;
+  color: palette.$slate-50;
   letter-spacing: 0.02em;
 }
 
 .sidebar-subtitle {
   margin-top: 0.25rem;
-  color: #94a3b8;
+  color: palette.$slate-400;
   font-size: 0.75rem;
 }
 
@@ -52,11 +53,11 @@
 }
 
 .sidebar a:hover {
-  background: rgba(148, 163, 184, 0.16);
+  background: rgba(palette.$slate-400, 0.16);
 }
 
 .sidebar a.active {
-  @include mixins.state-colors(rgba(20, 184, 166, 0.18), #ecfeff);
+  @include mixins.state-colors(rgba(palette.$teal-500, 0.18), palette.$cyan-50);
   border-color: rgba(45, 212, 191, 0.25);
 }
 
@@ -69,13 +70,13 @@ button.toggle-btn {
   height: 42px;
   padding: 0.55rem;
   margin: 0;
-  border: 1px solid #334155;
-  @include mixins.state-colors(#111827, var(--side-ink));
+  border: 1px solid palette.$slate-700;
+  @include mixins.state-colors(palette.$gray-900, var(--side-ink));
 }
 
 button.toggle-btn:hover:not(:disabled) {
-  background: #1e293b;
-  border-color: #64748b;
+  background: palette.$slate-800;
+  border-color: palette.$slate-500;
 }
 
 .sidebar-toggle-label {
@@ -127,7 +128,7 @@ body.sidebar-collapsed .sidebar-collapse-label {
 .sidebar-signout {
   margin-top: 0.7rem;
   padding-top: 0.7rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  border-top: 1px solid rgba(palette.$slate-400, 0.2);
 }
 
 .sidebar-signout button {
@@ -144,7 +145,7 @@ body.sidebar-collapsed .sidebar-collapse-label {
 }
 
 .sidebar-signout button:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.16);
+  background: rgba(palette.$slate-400, 0.16);
 }
 
 body.sidebar-collapsed .sidebar-signout button {

@@ -1,9 +1,10 @@
 @use "../abstracts/mixins";
+@use "../abstracts/palette";
 
 .job-log, .log, .log-output, .terminal, .kube-raw, .hw-pre, .cert-box, .payload-view {
-  border: 1px solid #25354b;
+  border: 1px solid palette.$terminal-line;
   border-radius: var(--radius-sm);
-  @include mixins.state-colors(#0b1020, #d6deeb);
+  @include mixins.state-colors(palette.$terminal-bg, palette.$terminal-ink);
   padding: 0.85rem;
   font-family: var(--font-mono);
   font-size: 0.8rem;

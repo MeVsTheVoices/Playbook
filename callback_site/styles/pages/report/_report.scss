@@ -1,4 +1,6 @@
+@use "../../abstracts/tokens";
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .meta {
   color: var(--muted);
@@ -11,15 +13,13 @@
 }
 
 .meta-card {
-  background: #f8fafc;
+  background: palette.$slate-50;
   min-width: 0;
 }
 
 .meta-card .k {
   color: var(--muted);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  @include mixins.eyebrow;
 }
 
 .meta-card .v {
@@ -37,9 +37,9 @@
 }
 
 .json-shell {
-  border: 1px solid #25354b;
-  border-radius: 12px;
-  background: #0b1020;
+  border: 1px solid palette.$terminal-line;
+  border-radius: tokens.$radius-card;
+  background: palette.$terminal-bg;
   overflow: hidden;
 }
 
@@ -49,16 +49,16 @@
   flex-wrap: wrap;
   gap: 0.6rem;
   padding: 0.6rem 0.85rem;
-  @include mixins.state-colors(#111827, #cbd5e1);
+  @include mixins.state-colors(palette.$gray-900, palette.$slate-300);
   font-size: 0.75rem;
-  border-bottom: 1px solid #25354b;
+  border-bottom: 1px solid palette.$terminal-line;
 }
 
 .json-shell pre {
   margin: 0;
   max-height: 68vh;
   overflow: auto;
-  color: #d6deeb;
+  color: palette.$terminal-ink;
   padding: 0.85rem;
   font-size: 0.8rem;
   line-height: 1.5;

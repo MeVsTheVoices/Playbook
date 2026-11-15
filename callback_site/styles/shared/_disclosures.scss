@@ -1,4 +1,5 @@
 @use "../abstracts/mixins";
+@use "../abstracts/palette";
 
 .collapsible-panel {
   padding: 0;
@@ -36,7 +37,7 @@
 
 .collapsible-indicator {
   margin-left: auto;
-  color: #0f766e;
+  color: palette.$teal-700;
   font-size: 1.1rem;
   transition: transform 0.2s ease;
 }

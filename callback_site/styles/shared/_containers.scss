@@ -1,4 +1,5 @@
 @use "../abstracts/mixins";
+@use "../abstracts/palette";
 
 .content {
   margin-left: 208px;
@@ -30,7 +31,7 @@ body.sidebar-collapsed .content {
 .hero,
 .panel.hero,
 .terminal-hero {
-  background: linear-gradient(135deg, #ecfdf5 0%, #f8fafc 60%, #eff6ff 100%);
+  background: linear-gradient(135deg, palette.$emerald-50 0%, palette.$slate-50 60%, palette.$blue-50 100%);
   border: 1px solid #c5e7de;
   border-radius: var(--radius);
 }

@@ -1,4 +1,5 @@
 @use "../../abstracts/mixins";
+@use "../../abstracts/palette";
 
 .kube-section {
   margin-top: 1rem;
@@ -15,7 +16,7 @@
   content: "";
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(11, 139, 110, 0.45), rgba(11, 139, 110, 0));
+  background: linear-gradient(90deg, rgba(palette.$accent, 0.45), rgba(palette.$accent, 0));
 }
 
 .kube-grid {
@@ -23,7 +24,7 @@
 }
 
 .kube-card {
-  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  background: linear-gradient(180deg, palette.$slate-50 0%, palette.$white 100%);
   min-height: 92px;
   position: relative;
   overflow: hidden;
@@ -34,19 +35,17 @@
   position: absolute;
   inset: auto 0 0 0;
   height: 3px;
-  background: linear-gradient(90deg, rgba(11, 139, 110, 0.0), rgba(11, 139, 110, 0.45), rgba(14, 165, 233, 0.4));
+  background: linear-gradient(90deg, rgba(palette.$accent, 0.0), rgba(palette.$accent, 0.45), rgba(14, 165, 233, 0.4));
 }
 
 .kube-card .k {
   color: var(--muted);
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  @include mixins.eyebrow(0.72rem, 0.03em);
 }
 
 .kube-card .v {
   margin-top: 0.28rem;
   font-size: 1.12rem;
   font-weight: 700;
-  color: #0f172a;
+  color: palette.$slate-900;
 }

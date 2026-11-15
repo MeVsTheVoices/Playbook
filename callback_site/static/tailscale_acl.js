@@ -16,8 +16,8 @@ if (toggleBtn) {
   });
 }
 
-const TEXT_FIELDS = ["rack_name", "tailnet", "admin_group", "admin_members", "homelab_tag", "traffic", "extra_ports", "subnets", "ssh_user"];
-const CHECK_FIELDS = ["pi_servers", "subnet_access", "exit_node", "ssh", "ssh_root", "tests", "deny_tests", "toolkit_funnel"];
+const TEXT_FIELDS = ["rack_name", "tailnet", "admin_group", "admin_members", "homelab_tag", "traffic", "extra_ports", "subnets", "ssh_user", "k8s_api_role"];
+const CHECK_FIELDS = ["pi_servers", "subnet_access", "exit_node", "ssh", "ssh_root", "tests", "deny_tests", "toolkit_funnel", "k8s_operator"];
 const POLICY_DEBOUNCE_MS = 250;
 
 let policyRequestSeq = 0;
@@ -188,6 +188,8 @@ async function generatePolicy() {
         tests: inputs.tests,
         deny_tests: inputs.deny_tests,
         toolkit_funnel: inputs.toolkit_funnel,
+        k8s_operator: inputs.k8s_operator,
+        k8s_api_role: inputs.k8s_api_role,
       }),
     });
     data = await res.json();

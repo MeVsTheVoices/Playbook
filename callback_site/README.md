@@ -781,6 +781,20 @@ run kubectl against `https://<hostname>.<tailnet>` without exposing port 6443.
    `tailscale configure kubeconfig tailscale-operator`, then `kubectl get nodes`.
    The first request can be slow while the proxy gets its certificate.
 
+The card's **Live checks** refresh every 30 seconds and lead with a one-line
+verdict. They show:
+
+- the operator pod's node, uptime and restarts
+- whether it has joined the tailnet (login name and node ID, read from its
+  state Secret; keys never leave the cluster)
+- whether its TLS certificate has been issued (only after the first kubectl
+  request)
+- startup and recent errors from its logs
+- whether flannel uses a Tailscale address on every node
+
+The dashboard host can't resolve MagicDNS names, so the final test is still
+kubectl from an admin device.
+
 In auth mode, access is decided by Kubernetes RBAC for your Tailscale identity.
 `noauth` forwards requests without impersonation, for clusters that
 authenticate another way. The in-process proxy is a single replica that shares

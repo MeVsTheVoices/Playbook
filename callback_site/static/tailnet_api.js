@@ -20,6 +20,58 @@
     return el;
   }
 
+  function since(iso) {
+    const seconds = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+    if (!Number.isFinite(seconds)) return "";
+    if (seconds < 120) return `${Math.round(seconds)}s`;
+    if (seconds < 7200) return `${Math.round(seconds / 60)}m`;
+    if (seconds < 172800) return `${Math.round(seconds / 3600)}h`;
+    return `${Math.round(seconds / 86400)}d`;
+  }
+
+  function check(state, label, detail) {
+    const item = document.createElement("li");
+    const chip = document.createElement("span");
+    chip.className = `chip ${{ ok: "completed", warn: "running", bad: "failed" }[state] || ""}`;
+    chip.textContent = { ok: "OK", warn: "Wait", bad: "Fail" }[state] || "Info";
+    const name = document.createElement("strong");
+    name.textContent = label;
+    const text = document.createElement("span");
+    text.textContent = detail;
+    item.append(chip, name, text);
+    return item;
+  }
+
+  function renderLive(live, hostname) {
+    const panel = element("live");
+    panel.hidden = !live;
+    if (!live) return;
+    const verdict = element("verdict");
+    verdict.textContent = live.verdict;
+    verdict.className = `tailnet-api-verdict chip ${live.healthy ? "completed" : "failed"}`;
+    element("checked").textContent = live.checked_at ? `· checked ${new Date(live.checked_at).toLocaleTimeString()}` : "";
+    element("try").textContent = `tailscale configure kubeconfig ${hostname || "<hostname>"}`;
+    const { pod = {}, tailnet = {}, logs = {}, network = {} } = live;
+    const items = [];
+    items.push(pod.found
+      ? check(pod.ready ? "ok" : "bad", "Pod", `${pod.name} on ${pod.node || "?"} · ${pod.phase}${pod.started_at ? ` · up ${since(pod.started_at)}` : ""} · ${pod.restarts} restart${pod.restarts === 1 ? "" : "s"}`)
+      : check("bad", "Pod", "no operator pod found"));
+    items.push(tailnet.logged_in
+      ? check("ok", "Tailnet", `joined as ${tailnet.name} (node ${tailnet.node_id})`)
+      : check("bad", "Tailnet", "not logged in; check the OAuth client and tag:k8s-operator"));
+    items.push(check(tailnet.certificate ? "ok" : "warn", "TLS certificate",
+      tailnet.certificate ? "issued" : "not issued yet; it is fetched on the first kubectl request"));
+    const logState = !logs.startup_complete ? "warn" : (logs.dns_timeouts || logs.recent_errors) ? "bad" : "ok";
+    const logParts = [logs.startup_complete ? "startup complete" : "still starting"];
+    if (logs.proxy_listening) logParts.push("API proxy listening on :443");
+    if (logs.dns_timeouts) logParts.push(`${logs.dns_timeouts} DNS/API timeouts`);
+    if (logs.recent_errors) logParts.push(`${logs.recent_errors} recent errors, last: ${logs.last_error}`);
+    items.push(check(logState, "Operator logs", logParts.join(" · ")));
+    const nodes = (network.nodes || []).map((row) => `${row.node} ${row.address || "no address"}${row.tailscale ? "" : " (not Tailscale)"}`);
+    items.push(check(network.ok ? "ok" : "bad", "Pod network", nodes.length ? `flannel over ${nodes.join(", ")}` : "no nodes reported"));
+    element("checks").replaceChildren(...items);
+  }
+
   function render(status) {
     installed = !!status.installed;
     const rows = [];
@@ -39,6 +91,7 @@
     }
     rows.push(row("Read-only binding", status.readers_binding ? "tailnet-readers → view" : "not created"));
     statusList.replaceChildren(...rows.flat());
+    renderLive(status.installed && !status.error ? status.live : null, status.hostname);
     element("readers").checked = element("readers").checked || !!status.readers_binding;
     element("install").textContent = installed ? "Upgrade operator" : "Install operator";
     buttons();
@@ -97,4 +150,7 @@
   element("install").addEventListener("click", install);
   element("refresh").addEventListener("click", refresh);
   refresh();
+  setInterval(() => {
+    if (!busy && !document.hidden) refresh();
+  }, 30000);
 })();

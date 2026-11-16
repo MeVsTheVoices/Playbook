@@ -8,6 +8,15 @@ EOF
 
 if [[ "$PROFILE" == "network-toolkit" ]]; then
   toolkit_render network > "$TMP_DIR/network-config"
+elif [[ -n "${CLOUD_INIT_WIFI_SSID:-}${CLOUD_INIT_WIFI_PSK:-}${CLOUD_INIT_WIFI_NETWORKS:-}" ]]; then
+  if [[ "$PROFILE" == "playbook-server" ]]; then
+    CLOUD_INIT_WIFI_WIRED_BOOTSTRAP=true wifi_render > "$TMP_DIR/network-config"
+  else
+    wifi_render > "$TMP_DIR/network-config"
+  fi
+  if [[ ! -s "$TMP_DIR/network-config" ]]; then
+    rm "$TMP_DIR/network-config"
+  fi
 fi
 
 if [[ "$VALIDATE_CLOUD_INIT_SCHEMA" == "true" ]]; then

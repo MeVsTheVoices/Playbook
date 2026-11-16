@@ -184,10 +184,11 @@ sdOptionsProfileSelectEl.addEventListener("change", () => {
   updateSdOptionActions();
 });
 
+initWifiWidgets();
 for (const el of sdOptionsInputEls) {
   const eventName = String(el.dataset.optionType || "") === "checkbox" ? "change" : "input";
   el.addEventListener(eventName, updateSdOptionsConfiguredCount);
-  if (SD_SECRET_KEYS.has(el.dataset.optionKey)) {
+  if (SD_SECRET_KEYS.has(el.dataset.optionKey) && el.id) {
     const hint = document.createElement("p");
     hint.id = `${el.id}-saved-hint`;
     hint.className = "small-note";

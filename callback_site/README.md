@@ -83,7 +83,7 @@ owners/mixins; avoid page-specific copies of the shell or controls.
   Active image jobs block cleanup; catalog definitions and image history remain.
 
 - SD-card imaging for `pi5`, `pi4` and `pi3bplus` profiles.
-- Cloud-init authoring with reusable optional-setting templates.
+- Cloud-init authoring with reusable optional-setting templates and multiple automatic Wi-Fi networks.
 - Distribution-aware imaging for `standard` and `k3s` flows.
 - Catalog management with cache checks and bulk pulls (select several presets, or pull everything missing).
 - Callback, hardware-monitor, and Node Ops views backed by one shared source-of-truth payload.
@@ -156,13 +156,50 @@ The target must be a whole disk large enough for the image; system filesystems
 and swap are refused. A device lock refuses overlapping preparations on the same
 device. After flushing the device buffers, the entire written image
 is compared byte-for-byte with the source. The injected user-data, meta-data and
-toolkit network-config are also compared after unmounting and reopening the boot
+any network-config are also compared after unmounting and reopening the boot
 partition read-only. Any mismatch fails the job rather than reporting the card ready.
 This adds a full-card-image read to each flash and detects write-path failures;
 it does not guarantee stable power or reliable storage on the Pi during first boot.
 Legacy Pi OS Bookworm/Bullseye catalog images remain downloadable but are excluded
 from SD provisioning because they lack cloud-init. Preset changes replace the
 previous image path, URL and checksum together, including clearing stale checksums.
+
+### Wi-Fi during imaging
+
+In **Cloud-Init Settings**, enter a primary WPA/WPA2 SSID and password, then use
+**Add Wi-Fi network** for other networks. Each SSID must be unique; the device
+chooses among available networks without an ordered priority. Network Toolkit
+requires its primary uplink and keeps its Ethernet port dedicated to local
+device configuration. General Pi and Playbook Server profiles retain DHCP on
+Ethernet. Enter the two-letter uppercase Wi-Fi country and, for general images,
+the target's actual interface name (`wlan0` by default; PCs often use `wlp...`).
+
+The dashboard supports Wi-Fi configuration for the Ubuntu 22.04/24.04 Pi,
+Raspberry Pi OS Trixie, and Playbook Server catalog images. It rejects custom
+or other images when Wi-Fi is requested rather than guessing their renderer.
+The stock Playbook Server cloud image lacks `wpasupplicant`: connect it to
+internet-enabled Ethernet on its first boot so cloud-init can install it and
+activate Wi-Fi. Ethernet is optional on subsequent boots. An unavailable wired
+connection or failed package install prevents that initial Wi-Fi setup.
+
+CLI imaging uses `CLOUD_INIT_WIFI_SSID`, `CLOUD_INIT_WIFI_PSK`,
+`CLOUD_INIT_WIFI_COUNTRY`, and optionally `CLOUD_INIT_WIFI_INTERFACE`.
+`CLOUD_INIT_WIFI_NETWORKS` is a JSON string containing objects with `ssid` and
+`password` fields. When supplying an explicit image, also set
+`CLOUD_INIT_WIFI_RENDERER` to `networkd` or `NetworkManager` only after verifying
+that image has compatible cloud-init, Netplan and Wi-Fi software. Network Toolkit
+uses its existing `CLOUD_INIT_TOOLKIT_WIFI_*` variables plus the additional
+networks variable.
+
+Passwords and the additional-network list are stored privately for the current
+browser session, not in public templates or job records. Restored credentials
+are masked; replace or remove the entire saved additional list and save to
+change it. Older templates may still have a generic Wi-Fi password in the
+on-disk profile file or backups: it is no longer returned and must be re-entered;
+saving a template rewrites the current file without these legacy credentials.
+The generated seed and any flashed media or server image contain Wi-Fi
+credentials. Protect those files, devices and backups accordingly; boot
+partitions may not enforce Unix permissions.
 
 Everything that should survive restarts or container recreation lives under `CALLBACK_APPDATA_DIR`.
 

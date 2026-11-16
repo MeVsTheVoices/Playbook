@@ -3,6 +3,7 @@
 import unittest
 
 import playbook_server as server
+import test_sd_cloud_init_render as sd_render
 from domain_defaults import IMAGE_CATALOG, NODE_PROVISION_PROFILES
 from services.live_config import readable_ids
 from services.node_state import _default_profiles_for_group
@@ -46,6 +47,16 @@ class PlaybookServerTests(unittest.TestCase):
             "profile": server.PROFILE, "distribution": "k3s", "cloud_init_options": {},
         })
         self.assertTrue(payload["config_errors"])
+
+    def test_server_wifi_bootstraps_supplicant_over_wired_network(self):
+        code, data, error = sd_render.SdCloudInitRenderTests().render(
+            R_PROFILE=server.PROFILE, R_DIST="standard", CLOUD_INIT_WIFI_SSID="example",
+            CLOUD_INIT_WIFI_PSK="password-123", CLOUD_INIT_WIFI_COUNTRY="US",
+        )
+        self.assertEqual(code, 0, error)
+        self.assertIn("wpasupplicant", data["packages"])
+        commands = sd_render.SdCloudInitRenderTests.runcmd(data)
+        self.assertTrue(any("network.ethernets.ethernet.optional=true" in command and "netplan apply" in command for command in commands))
 
     def test_node_ops_only_assigns_server_module(self):
         self.assertEqual(_default_profiles_for_group(server.GROUP), [server.PROFILE])

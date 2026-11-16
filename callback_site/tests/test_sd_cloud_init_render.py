@@ -33,13 +33,15 @@ def _harness_text() -> str:
     text = read_sd_script()
     func = re.search(r"^validate_ssh_public_key_lines\(\) \{\n.*?^\}\n", text, re.S | re.M)
     toolkit_func = re.search(r"^toolkit_render\(\) \{\n.*?^\}\n", text, re.S | re.M)
+    server_func = re.search(r"^server_render\(\) \{\n.*?^\}\n", text, re.S | re.M)
     url_func = re.search(r"^validate_http_url\(\) \{\n.*?^\}\n", text, re.S | re.M)
     body = re.search(r"^CLOUD_INIT_USERNAME=.*?(?=^cat > \"\$META_DATA_OUT\")", text, re.S | re.M)
-    assert func and toolkit_func and url_func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
+    assert func and toolkit_func and server_func and url_func and body, "user-data rendering section not found in prepare_sd_cloud_init.sh"
     return (
         "set -euo pipefail\n"
         + func.group(0)
         + toolkit_func.group(0)
+        + server_func.group(0)
         + url_func.group(0)
         + 'PROFILE="${R_PROFILE:-pi3bplus}"\nHOSTNAME="render-test"\nDISTRIBUTION="${R_DIST:-k3s}"\n'
         + f'SCRIPT_DIR="{Path(__file__).resolve().parents[2] / "scripts"}"\n'

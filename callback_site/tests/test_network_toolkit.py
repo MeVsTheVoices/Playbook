@@ -107,6 +107,30 @@ class NetworkToolkitTests(BaseCallbackSiteTest):
             with self.subTest(key=key):
                 self.assertTrue(toolkit.validate_options({**OPTIONS, key: value}, boot=True))
 
+    def test_multiple_wifi_networks_and_duplicate_validation(self) -> None:
+        additional = json.dumps([
+            {"ssid": "backup", "password": "another-password"},
+            {"ssid": "mobile", "password": "third-password"},
+        ])
+        options = {**OPTIONS, "wifi_networks": additional}
+        config = toolkit.network_config(options)
+        self.assertEqual(list(config["wifis"]["wlan0"]["access-points"]), ["Device uplink", "backup", "mobile"])
+        self.assertFalse(config["ethernets"]["eth0"]["dhcp4"])
+        self.assertTrue(toolkit.validate_options({
+            **OPTIONS, "wifi_networks": json.dumps([{"ssid": "Device uplink", "password": "other-password"}]),
+        }, boot=True))
+        self.assertTrue(toolkit.validate_options({**OPTIONS, "wifi_networks": "not-json"}, boot=True))
+
+    def test_wifi_secrets_are_redacted_from_templates(self) -> None:
+        secrets = {"wifi_psk": "secret-password", "wifi_networks": json.dumps([
+            {"ssid": "backup", "password": "another-password"},
+        ])}
+        self.assertFalse(set(secrets) & set(_redact_sd_secret_options(secrets)))
+        response = self.client.post("/api/sd/options-profiles", json={"name": "wifi", "options": secrets})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("secret-password", json.dumps(response.get_json()))
+        self.assertNotIn("another-password", json.dumps(self.client.get("/api/sd/options-profiles").get_json()))
+
     def test_sanitizing_never_converts_toolkit_into_k3s(self) -> None:
         payload = _sanitize_sd_prepare_payload({
             "profile": toolkit.PROFILE, "distribution": "standard",

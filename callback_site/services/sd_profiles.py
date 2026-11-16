@@ -42,7 +42,7 @@ def _load_sd_option_profiles() -> Dict[str, Dict[str, Any]]:
             "description": str(profile.get("description", "")).strip(),
             "distribution": distribution,
             "pi_only": bool(profile.get("pi_only", False)),
-            "options": {key: value for key, value in options.items() if key not in TOOLKIT_SECRETS},
+            "options": {key: value for key, value in options.items() if key not in TOOLKIT_SECRETS | {"wifi_psk", "wifi_networks"}},
             "updated_at": str(profile.get("updated_at", "")).strip(),
         }
         if profile.get("profile") in (TOOLKIT_PROFILE, SERVER_PROFILE):

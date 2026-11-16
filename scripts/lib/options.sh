@@ -198,6 +198,9 @@ elif [[ "$PROFILE" == "playbook-server" ]]; then
   PROFILE_ROLE="playbook-server"
   PROFILE_STORAGE="disk"
   PROFILE_PACKAGES="qemu-guest-agent htop lshw python3-apt $(server_render packages)"
+  if [[ -n "${CLOUD_INIT_WIFI_SSID:-}${CLOUD_INIT_WIFI_PSK:-}${CLOUD_INIT_WIFI_NETWORKS:-}" ]]; then
+    PROFILE_PACKAGES="$PROFILE_PACKAGES wpasupplicant"
+  fi
 fi
 
 PROFILE_PACKAGES="$PROFILE_PACKAGES $CLOUD_INIT_EXTRA_PACKAGES"

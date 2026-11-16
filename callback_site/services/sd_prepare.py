@@ -34,6 +34,7 @@ from services.kubernetes import _local_k3s_version
 from services.ssh_keys import _archive_ssh_public_key
 from services.storage import IMAGE_CACHE_DIR, INVENTORY_FILE, SCRIPT_PATH
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options
+from wifi_networks import combined_networks, validate_interface
 from network_toolkit import EXTRA_PACKAGES_OPTION, extra_packages
 from playbook_server import INPUT_SPECS as SERVER_SPECS, PROFILE as SERVER_PROFILE, validate_options as validate_server_options
 from package_options import package_names
@@ -53,7 +54,7 @@ _DEFAULT_CATALOG_ENTRY = {
     TOOLKIT_PROFILE: "network-toolkit-raspios-trixie-arm64-lite",
     SERVER_PROFILE: "playbook-server-ubuntu-noble-amd64",
 }
-SD_SECRET_OPTIONS = {"tailscale_auth_key", "password", "telegraf_influx_token", *TOOLKIT_SECRETS}
+SD_SECRET_OPTIONS = {"tailscale_auth_key", "password", "telegraf_influx_token", "wifi_psk", "wifi_networks", *TOOLKIT_SECRETS}
 
 
 def _ensure_prereqs() -> List[str]:
@@ -124,6 +125,16 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("configure_neovim", "install_cli_tools"):
             if key in cloud_options and not isinstance(cloud_options[key], bool):
                 option_errors.append(f"{key} must be true or false.")
+        try:
+            networks = combined_networks(cloud_options)
+            if networks and not re.fullmatch(r"[A-Z]{2}", str(cloud_options.get("wifi_country") or "")):
+                option_errors.append("Wi-Fi country must be two uppercase letters.")
+            if networks:
+                validate_interface(cloud_options.get("wifi_interface") or "wlan0")
+                if not _wifi_image_renderer(cleaned):
+                    option_errors.append("Wi-Fi requires a supported Ubuntu or Raspberry Pi OS Trixie catalog image; custom images are not supported.")
+        except ValueError as exc:
+            option_errors.append(str(exc))
         if option_errors:
             cleaned["config_errors"] = option_errors
     else:
@@ -153,14 +164,14 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "enable_firewall_baseline": False,
         })
         if errors:
-            cleaned["config_errors"] = errors
+            cleaned["config_errors"] = list(cleaned.get("config_errors") or []) + errors
     elif cleaned.get("profile") == SERVER_PROFILE:
         errors = validate_server_options(cloud_options, boot=True)
         if distribution != "standard" or k3s_config:
             errors.append("playbook-server requires the standard distribution, not K3s.")
         cloud_options.pop("k3s_config", None)
         if errors:
-            cleaned["config_errors"] = errors
+            cleaned["config_errors"] = list(cleaned.get("config_errors") or []) + errors
     elif distribution != "k3s" and k3s_config:
         # If the UI sent an explicit k3s config block, treat this as k3s intent
         # even if the distribution select was left on standard.
@@ -219,6 +230,32 @@ def _sd_image_selection_errors(payload: Dict[str, Any]) -> List[str]:
     return []
 
 
+def _wifi_image_renderer(payload: Dict[str, Any]) -> str:
+    supported = {
+        "ubuntu-24.04-pi-arm64": "networkd", "ubuntu-22.04-pi-arm64": "networkd",
+        "k3s-ubuntu-24.04-pi-arm64": "networkd",
+        "playbook-server-ubuntu-noble-amd64": "networkd",
+        "playbook-server-ubuntu-noble-arm64": "networkd",
+        "raspios-trixie-arm64": "NetworkManager", "raspios-trixie-armhf": "NetworkManager",
+    }
+    image_url = str(payload.get("image_url") or "").strip()
+    image_file = str(payload.get("image_file") or "").strip()
+    profile = str(payload.get("profile") or "").strip()
+    for entry in IMAGE_CATALOG:
+        renderer = supported.get(entry.get("id"))
+        if not renderer or profile not in entry.get("profiles", []):
+            continue
+        if image_file:
+            selected = Path(image_file).expanduser() == Path(_catalog_entry_with_availability(entry)["cache_path"])
+        elif image_url:
+            selected = image_url == entry.get("image_url")
+        else:
+            selected = entry.get("id") == _DEFAULT_CATALOG_ENTRY.get(profile)
+        if selected:
+            return renderer
+    return ""
+
+
 def _apply_k3s_lightweight_to_payload(cleaned: Dict[str, Any]) -> None:
     """Apply the selected role to the K3s config for the Pi boards; strip role options for anything else."""
     cloud_options = cleaned["cloud_init_options"]
@@ -253,6 +290,10 @@ def _redact_sd_secret_options(options: Any) -> Dict[str, Any]:
 
 def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud_init_options: Dict[str, Any]) -> List[str]:
     enabled_options: List[str] = []
+    for key in ("wifi_ssid", "wifi_psk", "wifi_country", "wifi_interface", "wifi_networks"):
+        if cloud_init_options.get(key):
+            env[f"CLOUD_INIT_{key.upper()}"] = str(cloud_init_options[key])
+            enabled_options.append(key)
     env["CLOUD_INIT_EXTRA_PACKAGES"] = " ".join(package_names(cloud_init_options.get("packages", [])))
     if "packages" in cloud_init_options:
         enabled_options.append("packages")
@@ -500,6 +541,8 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
                 distribution=distribution,
                 cloud_init_options=cloud_init_options,
             )
+            if profile != TOOLKIT_PROFILE and combined_networks(cloud_init_options):
+                env["CLOUD_INIT_WIFI_RENDERER"] = _wifi_image_renderer(form)
             if enabled_options:
                 logger.info(f"Cloud-init options enabled for {hostname}: {', '.join(enabled_options)}")
 

@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from package_options import package_names
+from wifi_networks import combined_networks, parse_networks
 
 PROFILE = "network-toolkit"
 GROUP = "network_toolkit_active"
@@ -72,13 +73,25 @@ def validate_options(options: dict[str, Any], *, boot: bool = False) -> list[str
         errors.append("toolkit_enable_funnel must be true or false.")
     if boot:
         ssid = str(options.get("toolkit_wifi_ssid") or "")
-        if not 1 <= len(ssid.encode("utf-8")) <= 32 or any(ord(c) < 32 for c in ssid):
+        try:
+            ssid_length = len(ssid.encode("utf-8"))
+        except UnicodeEncodeError:
+            ssid_length = 0
+        valid_ssid = 1 <= ssid_length <= 32 and not any(ord(c) < 32 or ord(c) == 127 for c in ssid)
+        if not valid_ssid:
             errors.append("Wi-Fi SSID must be 1-32 bytes without control characters.")
         password = str(options.get("toolkit_wifi_password") or "")
-        if not (8 <= len(password) <= 63 and all(32 <= ord(c) <= 126 for c in password)) and not re.fullmatch(r"[A-Fa-f0-9]{64}", password):
+        valid_password = (8 <= len(password) <= 63 and all(32 <= ord(c) <= 126 for c in password)) or bool(re.fullmatch(r"[A-Fa-f0-9]{64}", password))
+        if not valid_password:
             errors.append("Wi-Fi password must be 8-63 printable ASCII characters or a 64-digit hex PSK.")
         if not re.fullmatch(r"[A-Z]{2}", str(options.get("toolkit_wifi_country") or "")):
             errors.append("Wi-Fi country must be two uppercase letters.")
+        try:
+            additional = parse_networks(options.get("wifi_networks"))
+            if valid_ssid and any(network["ssid"] == ssid for network in additional):
+                raise ValueError("Wi-Fi SSIDs must be unique.")
+        except ValueError as exc:
+            errors.append(str(exc))
     return errors
 
 
@@ -110,7 +123,8 @@ def network_config(options: dict[str, Any]) -> dict[str, Any]:
         "wifis": {"wlan0": {
             "dhcp4": True, "optional": True,
             "regulatory-domain": options["toolkit_wifi_country"],
-            "access-points": {options["toolkit_wifi_ssid"]: {"password": options["toolkit_wifi_password"]}},
+            "access-points": {network["ssid"]: {"password": network["password"]}
+                              for network in combined_networks(options, toolkit=True)},
         }},
         "ethernets": {"eth0": {"dhcp4": False, "dhcp6": False, "optional": True, "link-local": ["ipv4"]}},
     }
@@ -118,6 +132,7 @@ def network_config(options: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     options = {spec["id"]: os.environ.get(f"CLOUD_INIT_{spec['id'].upper()}", spec.get("default", "")) for spec in BOOT_INPUT_SPECS}
+    options["wifi_networks"] = os.environ.get("CLOUD_INIT_WIFI_NETWORKS", "")
     options[EXTRA_PACKAGES_OPTION] = os.environ.get("CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES", "")
     errors = validate_options(options, boot=True)
     if errors:

@@ -5,8 +5,8 @@ echo "Injecting cloud-init files into boot partition"
 cp "$USER_DATA_OUT" "$TMP_DIR/boot/user-data"
 cp "$META_DATA_OUT" "$TMP_DIR/boot/meta-data"
 
-if [[ "$PROFILE" == "network-toolkit" ]]; then
-  cp "$TMP_DIR/network-config" "$TMP_DIR/boot/network-config"
+if [[ -f "$TMP_DIR/network-config" ]]; then
+  install -m 0600 "$TMP_DIR/network-config" "$TMP_DIR/boot/network-config"
 fi
 
 if [[ "$PROFILE" == "pi5" && "${CLOUD_INIT_USB_MAX_CURRENT_ENABLE:-false}" == "true" ]]; then
@@ -37,8 +37,8 @@ fi
 if [[ -d "$TMP_DIR/boot/boot/firmware" ]]; then
   cp "$USER_DATA_OUT" "$TMP_DIR/boot/boot/firmware/user-data"
   cp "$META_DATA_OUT" "$TMP_DIR/boot/boot/firmware/meta-data"
-  if [[ "$PROFILE" == "network-toolkit" ]]; then
-    cp "$TMP_DIR/boot/network-config" "$TMP_DIR/boot/boot/firmware/network-config"
+  if [[ -f "$TMP_DIR/network-config" ]]; then
+    install -m 0600 "$TMP_DIR/network-config" "$TMP_DIR/boot/boot/firmware/network-config"
   fi
 fi
 
@@ -69,7 +69,7 @@ for seed_dir in "$TMP_DIR/boot" "$TMP_DIR/boot/boot/firmware"; do
       exit 1
     fi
   done
-  if [[ "$PROFILE" == "network-toolkit" ]] && ! cmp -- "$TMP_DIR/network-config" "$seed_dir/network-config"; then
+  if [[ -f "$TMP_DIR/network-config" ]] && ! cmp -- "$TMP_DIR/network-config" "$seed_dir/network-config"; then
     echo "Network configuration readback failed: $seed_dir/network-config. Card is not ready." >&2
     exit 1
   fi

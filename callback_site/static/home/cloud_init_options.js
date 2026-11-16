@@ -2,7 +2,7 @@ const GENERAL_CLOUD_INIT_SECTIONS = [
   "k3s", "identity", "network", "packages", "misc", "hardening", "access", "tailscale", "telemetry",
 ];
 const SD_SAVED_SECRET = "__CONFIGURED__";
-const SD_SECRET_KEYS = new Set(["tailscale_auth_key", "toolkit_wifi_password", "toolkit_terminal_password_hash", "password", "telegraf_influx_token"]);
+const SD_SECRET_KEYS = new Set(["tailscale_auth_key", "toolkit_wifi_password", "toolkit_terminal_password_hash", "password", "telegraf_influx_token", "wifi_psk", "wifi_networks"]);
 let sdBrowserSessionReady = Promise.resolve();
 
 async function saveSdBrowserSelection(selection) {
@@ -28,7 +28,7 @@ const CLOUD_INIT_PROFILE_MATRIX = {
     sections: ["toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry"],
     optionKeys: [
       "toolkit_terminal_password_hash", "toolkit_enable_funnel",
-      "toolkit_wifi_ssid", "toolkit_wifi_password", "toolkit_wifi_country",
+      "toolkit_wifi_ssid", "toolkit_wifi_password", "toolkit_wifi_country", "wifi_networks",
       "toolkit_extra_packages",
       "full_name", "timezone", "locale", "username", "shell", "extra_ssh_keys",
       "tailscale_ssh", "tailscale_auth_key", "tailscale_hostname",
@@ -122,7 +122,7 @@ function gatherCloudInitOptions() {
     }
 
     const inputValue = String(el.value || "");
-    const raw = key === "toolkit_wifi_password" || key === "toolkit_wifi_ssid" ? inputValue : inputValue.trim();
+    const raw = ["toolkit_wifi_password", "toolkit_wifi_ssid", "wifi_ssid", "wifi_psk"].includes(key) ? inputValue : inputValue.trim();
     if (!raw) continue;
     if (kind === "csv") {
       const values = raw.split(",").map((v) => v.trim()).filter(Boolean);
@@ -221,6 +221,7 @@ function applyCloudInitOptions(options) {
     el.value = value === undefined || value === null ? String(el.dataset.optionDefault || "") : String(value);
     if (SD_SECRET_KEYS.has(key)) updateSdSavedSecretHint(el);
   }
+  document.querySelectorAll("[data-wifi-widget]").forEach(renderWifiWidget);
   updateOsScopedOptionsVisibility();
   updatePiScopedOptionsVisibility();
   updateSdOptionsConfiguredCount();
@@ -391,7 +392,7 @@ async function saveCurrentSdOptionProfile() {
     options: gatherCloudInitOptions(),
     secret_source_profile: String(sdOptionsProfileSelectEl.value || ""),
     clear_secret_options: [...sdOptionsInputEls]
-      .filter(el => SD_SECRET_KEYS.has(el.dataset.optionKey) && el.dataset.savedSecret === "1" && !el.value)
+      .filter(el => SD_SECRET_KEYS.has(el.dataset.optionKey) && !el.disabled && optionScopeMatches(el) && el.dataset.savedSecret === "1" && !el.value)
       .map(el => el.dataset.optionKey),
   };
   if (SD_FIXED_STANDARD_PROFILES.has(form.profile.value)) payload.profile = form.profile.value;
@@ -416,13 +417,14 @@ async function saveCurrentSdOptionProfile() {
       sdOptionsProfileNameEl.value = savedName;
       for (const el of sdOptionsInputEls) {
         const key = el.dataset.optionKey;
-        if (!SD_SECRET_KEYS.has(key) || el.disabled || !optionScopeMatches(el)) continue;
+        if (!SD_SECRET_KEYS.has(key) || (key !== "wifi_networks" && (el.disabled || !optionScopeMatches(el)))) continue;
         const value = data.profile.options[key];
-        if (value === SD_SAVED_SECRET) el.value = value;
+        if (value === SD_SAVED_SECRET || key === "wifi_networks") el.value = value || "";
         el.dataset.savedSecret = value === SD_SAVED_SECRET ? "1" : "";
         updateSdSavedSecretHint(el);
       }
     }
+    document.querySelectorAll("[data-wifi-widget]").forEach(renderWifiWidget);
     sdOptionsProfileStatusEl.textContent = `Saved template '${savedName || name}'.`;
     updateSdOptionsConfiguredCount();
     updateSdOptionActions();
@@ -459,6 +461,7 @@ async function deleteSelectedSdOptionProfile() {
     el.dataset.savedSecret = "";
     updateSdSavedSecretHint(el);
   }
+  document.querySelectorAll("[data-wifi-widget]").forEach(renderWifiWidget);
   sdOptionsProfileStatusEl.textContent = `Deleted template '${name}'.`;
   updateSdOptionActions();
 }

@@ -1,6 +1,12 @@
 # runcmd: install steps and the final callback.
 # Sourced by prepare_sd_cloud_init.sh; shares its shell, so it is not run on its own.
 
+if [[ "$PROFILE" == "playbook-server" && -n "${CLOUD_INIT_WIFI_SSID:-}${CLOUD_INIT_WIFI_PSK:-}${CLOUD_INIT_WIFI_NETWORKS:-}" ]]; then
+  cat >> "$USER_DATA_OUT" <<'WIFI_RUNCMD'
+  - [ sh, -c, 'test -x /usr/sbin/wpa_supplicant && netplan set --origin-hint 70-rack-wifi network.ethernets.ethernet.optional=true && netplan apply' ]
+WIFI_RUNCMD
+fi
+
 # Match raspi-config's per-user rule without deleting other cloud-init sudo grants.
 cat >> "$USER_DATA_OUT" <<ADMIN_RUNCMD
   - [ bash, -c, 'set -euo pipefail; rule="${CLOUD_INIT_USERNAME} ALL=(ALL) NOPASSWD: ALL"; printf "%s\n" "\$rule" | visudo -cf -; printf "%s\n" "\$rule" | install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; visudo -cf /etc/sudoers.d/010_${CLOUD_INIT_USERNAME}-nopasswd; runuser -u ${CLOUD_INIT_USERNAME} -- sudo -n true' ]

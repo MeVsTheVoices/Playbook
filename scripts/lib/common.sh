@@ -24,6 +24,8 @@ Notes:
 - Pi 5, Pi 4 and Pi 3B+ default to Ubuntu 24.04 preinstalled server ARM64.
 - Legacy Pi OS Bookworm/Bullseye images do not support this cloud-init workflow.
 - Network Toolkit defaults to Pi OS Lite 64-bit Trixie; set its Wi-Fi, browser password hash and Tailscale auth key before imaging.
+- Wi-Fi on an explicit image needs CLOUD_INIT_WIFI_RENDERER=networkd or NetworkManager; use only compatible images with the required Wi-Fi software.
+- Playbook Server needs wired internet on first boot to install wpasupplicant before Wi-Fi can connect.
 - playbook-server is plain Ubuntu Server 24.04 (generic UEFI, amd64 or arm64) that clones this repository
   and runs the dashboard under Docker on first boot. Its seed is written into the image before flashing.
 - --output-dir (playbook-server only) writes seeded image files instead of a device; --arch, --formats
@@ -45,6 +47,14 @@ toolkit_render() {
     interpreter="$(command -v python3)"
   fi
   "$interpreter" "$SCRIPT_DIR/../callback_site/network_toolkit.py" "$1"
+}
+
+wifi_render() {
+  local interpreter="$SCRIPT_DIR/../.venv/bin/python"
+  if [[ ! -x "$interpreter" ]]; then
+    interpreter="$(command -v python3)"
+  fi
+  "$interpreter" "$SCRIPT_DIR/../callback_site/wifi_networks.py"
 }
 
 server_render() {

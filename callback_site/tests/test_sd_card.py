@@ -18,6 +18,53 @@ import services.storage
 
 
 class SdCardTests(BaseCallbackSiteTest):
+    def test_additional_wifi_networks_save_restore_replace_and_scope(self) -> None:
+        page = self.client.get("/").get_data(as_text=True)
+        constants = re.search(r"<script>\s*(const imageCatalog = .*?)\s*</script>", page, re.S)
+        self.assertIsNotNone(constants)
+        scripts = [f"home/{name}.js" for name in (
+            "state", "catalog_filters", "k3s_roles", "cloud_init_options", "wifi_networks",
+        )]
+        self.browser_probe("/", scripts, constants.group(1) + """
+let savedPayload;
+window.fetch = async (url, request) => {
+  savedPayload = JSON.parse(request.body);
+  return {ok: true, json: async () => ({ok: true, profile: {
+    name: savedPayload.name, options: savedPayload.options.wifi_networks ? {wifi_networks: "__CONFIGURED__"} : {}
+  }})};
+};
+""", """
+initWifiWidgets();
+form.profile.value = "pi5";
+ensureK3sConfigDefaults();
+const generic = document.querySelector("[data-cloud-init-section='network'] [data-wifi-widget]");
+const toolkit = document.querySelector("[data-cloud-init-section='toolkit'] [data-wifi-widget]");
+generic.querySelector("[data-wifi-add]").click();
+const row = generic.querySelector("[data-wifi-row]");
+row.querySelector("[data-wifi-ssid]").value = "backup";
+row.querySelector("[data-wifi-password]").value = "secret-pass";
+row.querySelector("[data-wifi-password]").dispatchEvent(new Event("input"));
+check(row.querySelector("[data-wifi-password]").type === "password", "password input is masked");
+check(JSON.parse(gatherCloudInitOptions().wifi_networks)[0].ssid === "backup", "general profile gathers additional network");
+sdOptionsProfileNameEl.value = "wifi-test";
+await saveCurrentSdOptionProfile();
+check(JSON.parse(savedPayload.options.wifi_networks)[0].password === "secret-pass", "saved request retains additional password");
+check(!generic.querySelector("[data-wifi-saved]").hidden && !generic.querySelector("[data-wifi-row]"), "saved credentials are masked");
+applyCloudInitOptions({wifi_networks: "__CONFIGURED__"});
+check(!generic.querySelector("[data-wifi-saved]").hidden, "saved networks restore as marker");
+generic.querySelector("[data-wifi-clear]").click();
+await saveCurrentSdOptionProfile();
+check(savedPayload.clear_secret_options.includes("wifi_networks"), "removing replaced networks clears saved secret");
+form.profile.value = "network-toolkit";
+ensureK3sConfigDefaults();
+check(!toolkit.querySelector("[data-wifi-add]").hidden, "switching profiles does not restore a cleared network");
+toolkit.querySelector("[data-wifi-add]").click();
+toolkit.querySelector("[data-wifi-ssid]").value = "toolkit-backup";
+toolkit.querySelector("[data-wifi-password]").value = "another-password";
+toolkit.querySelector("[data-wifi-password]").dispatchEvent(new Event("input"));
+check(JSON.parse(gatherCloudInitOptions().wifi_networks)[0].ssid === "toolkit-backup", "toolkit uses its own network widget");
+""")
+
     def test_setup_panels_take_turns_without_affecting_cloud_init_or_inputs(self) -> None:
         checks = self.browser_probe("/", [], "", """
 const panels = [...document.querySelectorAll('#sd-form > details[name="sd-setup"]')];
@@ -61,7 +108,7 @@ check(openPanels().length === 0 && optional.open, "active step can be closed wit
             f"home/{name}.js" for name in (
                 "state", "activity", "hostname", "job_log", "image_library", "events",
                 "catalog_filters", "k3s_roles", "catalog_pull", "ssh_keys", "devices",
-                "cloud_init_options", "sd_jobs", "init",
+                "cloud_init_options", "wifi_networks", "sd_jobs", "init",
             )
         ]
         self.browser_probe("/", scripts, constants.group(1) + """

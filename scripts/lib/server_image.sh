@@ -25,10 +25,15 @@ mount "$ROOT_PART" "$TMP_DIR/root"
 install -d -m 0755 "$TMP_DIR/root$SEED_DIR"
 install -m 0600 "$USER_DATA_OUT" "$TMP_DIR/root$SEED_DIR/user-data"
 install -m 0600 "$META_DATA_OUT" "$TMP_DIR/root$SEED_DIR/meta-data"
+if [[ -f "$TMP_DIR/network-config" ]]; then
+  install -m 0600 "$TMP_DIR/network-config" "$TMP_DIR/root$SEED_DIR/network-config"
+fi
 sync
 umount "$TMP_DIR/root"
 mount -o ro "$ROOT_PART" "$TMP_DIR/root"
-for seed_file in user-data meta-data; do
+seed_files=(user-data meta-data)
+if [[ -f "$TMP_DIR/network-config" ]]; then seed_files+=(network-config); fi
+for seed_file in "${seed_files[@]}"; do
   if ! cmp -- "$TMP_DIR/$seed_file" "$TMP_DIR/root$SEED_DIR/$seed_file"; then
     echo "Cloud-init seed readback failed in the image: $SEED_DIR/$seed_file" >&2
     exit 1

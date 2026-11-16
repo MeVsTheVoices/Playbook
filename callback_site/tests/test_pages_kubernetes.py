@@ -221,7 +221,7 @@ check(rows().length === 2 && !eventsBodyEl.querySelector(".event-stage-toggle"),
         html = html.replace("</head>", f"<style>{css}</style></head>")
         scripts = "\n".join(
             (root / "static/home" / name).read_text()
-            for name in ("state.js", "catalog_filters.js", "k3s_roles.js", "cloud_init_options.js")
+            for name in ("state.js", "catalog_filters.js", "k3s_roles.js", "cloud_init_options.js", "wifi_networks.js")
         )
         probe = r"""
 const results = [];

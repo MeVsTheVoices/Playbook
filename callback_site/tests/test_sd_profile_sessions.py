@@ -32,6 +32,8 @@ class SdProfileSessionTests(BaseCallbackSiteTest):
             "toolkit_terminal_password_hash": "$6$salt$session-hash-proof",
             "password": "session-login-proof",
             "telegraf_influx_token": "session-influx-proof",
+            "wifi_psk": "general-wifi-proof",
+            "wifi_networks": json.dumps([{"ssid": "backup", "password": "backup-wifi-proof"}]),
         }
 
     def save(self, name="session-proof", options=None, **extra):
@@ -223,3 +225,12 @@ class SdProfileSessionTests(BaseCallbackSiteTest):
         with patch("services.sd_profile_sessions._atomic_write_text", side_effect=OSError("Disk full")), self.assertLogs(level="ERROR"):
             response = self.client.post("/api/sd/options-profiles/session", json={"name": ""})
         self.assertEqual(response.status_code, 500)
+
+    def test_legacy_public_wifi_credentials_are_not_returned(self):
+        sd_profiles.SD_OPTION_PROFILES_FILE.write_text(json.dumps({
+            "legacy": {"options": {"wifi_ssid": "home", "wifi_psk": "legacy-secret", "wifi_networks": "legacy-network-secret"}}
+        }))
+        state = self.client.get("/api/sd/options-profiles").get_json()
+        self.assertNotIn("legacy-secret", json.dumps(state))
+        self.assertNotIn("legacy-network-secret", json.dumps(state))
+        self.assertEqual(state["profiles"][0]["options"]["wifi_ssid"], "home")

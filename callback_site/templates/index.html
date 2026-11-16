@@ -260,6 +260,7 @@
                     <input id="opt_{{ spec.id }}" data-option-key="{{ spec.id }}" data-option-type="{{ spec.input_type }}" data-option-profile="network-toolkit" data-option-default="{{ spec.default | default('') }}" type="{{ 'checkbox' if spec.input_type == 'checkbox' else ('password' if spec.sensitive | default(false) else 'text') }}" value="{{ spec.default | default('') }}" placeholder="{{ spec.placeholder | default('') }}" autocomplete="off"{% if spec.required %} required{% endif %}>
                   </div>
                   {% endfor %}
+                  {% include "fragments/wifi_networks.html" %}
                 </div>
               </details>
               <details id="playbook-server-section" data-cloud-init-section="server" class="segment" hidden>
@@ -413,7 +414,15 @@ server: https://local-machine-ip:6443
                   </div>
                   <div>
                     <label for="opt_wifi_psk">WiFi PSK (optional)</label>
-                    <input id="opt_wifi_psk" data-option-key="wifi_psk" placeholder="passphrase">
+                    <input id="opt_wifi_psk" data-option-key="wifi_psk" type="password" autocomplete="off" placeholder="passphrase">
+                  </div>
+                  <div>
+                    <label for="opt_wifi_country">Wi-Fi country (two uppercase letters)</label>
+                    <input id="opt_wifi_country" data-option-key="wifi_country" placeholder="US" maxlength="2">
+                  </div>
+                  <div>
+                    <label for="opt_wifi_interface">Wi-Fi interface</label>
+                    <input id="opt_wifi_interface" data-option-key="wifi_interface" placeholder="wlan0" maxlength="15">
                   </div>
                   <div>
                     <label for="opt_dns_servers">DNS Servers (comma separated)</label>
@@ -424,6 +433,8 @@ server: https://local-machine-ip:6443
                     <input id="opt_ntp_servers" data-option-key="ntp_servers" data-option-type="csv" placeholder="time.cloudflare.com, pool.ntp.org">
                   </div>
                 </div>
+                {% include "fragments/wifi_networks.html" %}
+                <p class="segment-hint">Use a supported Ubuntu or Pi OS Trixie catalog image. Set the actual Wi-Fi interface name (PCs often use names like wlp2s0). Playbook Server requires wired internet on first boot to install Wi-Fi support.</p>
               </details>
 
               <details data-cloud-init-section="packages" class="segment">
@@ -753,6 +764,7 @@ server: https://local-machine-ip:6443
     <script src="{{ url_for('static', filename='home/ssh_keys.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/devices.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/cloud_init_options.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='home/wifi_networks.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/sd_jobs.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home/init.js') }}" defer></script>
   </body>

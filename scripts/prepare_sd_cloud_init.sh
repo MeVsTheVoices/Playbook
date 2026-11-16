@@ -161,6 +161,13 @@ if [[ "$PROFILE" == "network-toolkit" ]]; then
   fi
 fi
 
+if [[ "$PROFILE" != "network-toolkit" && -n "${CLOUD_INIT_WIFI_SSID:-}${CLOUD_INIT_WIFI_PSK:-}${CLOUD_INIT_WIFI_NETWORKS:-}" ]]; then
+  if [[ -z "${CLOUD_INIT_WIFI_RENDERER:-}" && -z "$IMAGE_URL" && -z "$IMAGE_FILE" ]]; then
+    export CLOUD_INIT_WIFI_RENDERER=networkd
+  fi
+  wifi_render >/dev/null
+fi
+
 if [[ "$PROFILE" == "playbook-server" ]]; then
   if [[ "$DISTRIBUTION" != "standard" ]]; then
     echo "playbook-server requires the standard distribution, not K3s." >&2

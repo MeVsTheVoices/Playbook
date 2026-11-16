@@ -101,11 +101,12 @@ class SdProfileSessionTests(BaseCallbackSiteTest):
         self.save()
         payload = {
             "profile": "pi5", "hostname": "session-prepare-proof", "device": "/dev/sdb",
+            "confirm_device": "/dev/sdb", "device_identity": "a" * 64,
             "ssh_public_key": "ssh-ed25519 AAAA proof", "callback_url": "http://192.0.2.1:8088/api/cloud-init/callback",
             "sd_options_profile": "session-proof",
             "cloud_init_options": {"tailscale_auth_key": "__CONFIGURED__"},
         }
-        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as worker:
+        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/sdb", "identity": "a" * 64}]), patch("routes.sd.threading.Thread") as worker:
             response = self.client.post("/api/sd/prepare", json=payload)
             self.assertEqual(response.status_code, 200)
             resolved = worker.call_args.kwargs["args"][1]
@@ -126,10 +127,11 @@ class SdProfileSessionTests(BaseCallbackSiteTest):
         restored = self.client.get("/api/sd/options-profiles").get_json()["profiles"][0]["options"]
         payload = {
             "profile": "network-toolkit", "hostname": "toolkit-session-proof", "device": "/dev/sdb",
+            "confirm_device": "/dev/sdb", "device_identity": "a" * 64,
             "ssh_public_key": "ssh-ed25519 AAAA proof", "callback_url": "http://192.0.2.1:8088/api/cloud-init/callback",
             "sd_options_profile": "session-proof", "cloud_init_options": restored,
         }
-        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as worker:
+        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/sdb", "identity": "a" * 64}]), patch("routes.sd.threading.Thread") as worker:
             response = self.client.post("/api/sd/prepare", json=payload)
         self.assertEqual(response.status_code, 200, response.get_json())
         resolved = worker.call_args.kwargs["args"][1]["cloud_init_options"]
@@ -141,10 +143,11 @@ class SdProfileSessionTests(BaseCallbackSiteTest):
     def test_auto_generated_profile_retains_credentials_for_session(self):
         payload = {
             "profile": "pi5", "hostname": "session-generated-proof", "device": "/dev/sdb",
+            "confirm_device": "/dev/sdb", "device_identity": "a" * 64,
             "ssh_public_key": "ssh-ed25519 AAAA proof", "callback_url": "http://192.0.2.1:8088/api/cloud-init/callback",
             "cloud_init_options": {"tailscale_auth_key": self.credentials["tailscale_auth_key"]},
         }
-        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread"):
+        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/sdb", "identity": "a" * 64}]), patch("routes.sd.threading.Thread"):
             response = self.client.post("/api/sd/prepare", json=payload)
         self.assertEqual(response.status_code, 200)
         state = self.client.get("/api/sd/options-profiles").get_json()

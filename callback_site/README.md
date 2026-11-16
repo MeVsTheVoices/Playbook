@@ -641,9 +641,12 @@ public-internet exposure.
 
 ### SD/USB flashing from Docker (host flasher)
 
-The dashboard's write button is currently disabled because its device-safety
-workflow is incomplete. Cloud-init settings remain available, but do not use
-the dashboard to flash a device until the workflow is restored.
+Select the intended removable device and confirm the overwrite. The dashboard
+checks its identity again before submission; the flasher rechecks it immediately
+before writing, using Linux's disk sequence to detect replugging. System and
+swap disks are excluded. If discovery fails or the device changes, select and
+confirm it again. The host must provide `/sys/class/block/*/diskseq`; existing
+host-flasher installations must be restarted after updating.
 
 The container cannot see host SD cards or USB drives; under Docker Desktop it
 runs inside a VM. SD preparation is therefore delegated to a small host agent,

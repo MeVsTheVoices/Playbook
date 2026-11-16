@@ -183,6 +183,15 @@ class HelperDeviceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             devices.verify(ALIAS, identity)
 
+    def test_removable_discovery_detects_replug_and_excludes_system_disk(self) -> None:
+        first = devices.discover_removable()[0]
+        self.assertEqual(first["path"], "/dev/sdz")
+        self.sequence = "43"
+        self.assertNotEqual(devices.discover_removable()[0]["identity"], first["identity"])
+        self.disk["children"][0]["maj:min"] = "8:0"
+        self.snapshot()
+        self.assertEqual(devices.discover_removable(), [])
+
     def test_protected_readonly_nonremovable_and_swap_disks_rejected(self) -> None:
         original = copy.deepcopy(self.disk)
         for change in (
@@ -339,6 +348,21 @@ class HelperWakeTests(unittest.TestCase):
 
 
 class HelperScriptTests(unittest.TestCase):
+    def test_changed_device_fails_before_dd(self) -> None:
+        script = (ROOT / "scripts/lib/flash.sh").read_text()
+        write = script[script.index('echo "Flashing image..."'):script.index('\nsync')]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.write_bytes(b"untouched")
+            result = subprocess.run([
+                "bash", "-c",
+                'set -euo pipefail; DEVICE="$1"; IMG_TO_WRITE="$1"; SCRIPT_DIR=unused; '
+                'FLASH_EXPECTED_IDENTITY=test; python3() { return 1; }; ' + write,
+                "test", str(target),
+            ], capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(target.read_bytes(), b"untouched")
+
     def test_write_descriptor_stays_bound_if_device_alias_is_reassigned(self) -> None:
         script = (ROOT / "scripts/lib/flash.sh").read_text()
         write = script[script.index('echo "Flashing image..."'):script.index('\nsync')]

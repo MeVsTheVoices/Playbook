@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import subprocess
 import threading
@@ -10,6 +11,9 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+from flash_helper.devices import discover_removable
+
+logger = logging.getLogger(__name__)
 
 DEVICE_SUBSCRIBERS: List[queue.Queue[str]] = []
 
@@ -27,52 +31,12 @@ def _list_sd_devices() -> List[Dict[str, Any]]:
     from services import sd_flasher_client
 
     if sd_flasher_client.enabled():
-        try:
-            return sd_flasher_client.list_devices()
-        except sd_flasher_client.FlasherError:
-            return []
+        return sd_flasher_client.list_devices()
     return _local_sd_devices()
 
 
 def _local_sd_devices() -> List[Dict[str, Any]]:
-    try:
-        result = subprocess.run(
-            [
-                "lsblk",
-                "-J",
-                "-o",
-                "NAME,PATH,SIZE,MODEL,RM,TYPE,TRAN,RO,HOTPLUG,MOUNTPOINTS",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        payload = json.loads(result.stdout)
-    except Exception:
-        return []
-
-    devices: List[Dict[str, Any]] = []
-    for d in payload.get("blockdevices", []):
-        if d.get("type") != "disk":
-            continue
-        if int(d.get("ro") or 0) != 0:
-            continue
-        rm = int(d.get("rm") or 0)
-        hotplug = int(d.get("hotplug") or 0)
-        tran = (d.get("tran") or "").lower()
-        if rm != 1 and hotplug != 1 and tran not in {"usb", "mmc"}:
-            continue
-        devices.append(
-            {
-                "name": d.get("name"),
-                "path": d.get("path"),
-                "size": d.get("size"),
-                "model": d.get("model") or "",
-                "transport": d.get("tran") or "",
-                "mountpoints": d.get("mountpoints") or [],
-            }
-        )
-    return devices
+    return discover_removable()
 
 
 def _device_signature(devices: List[Dict[str, Any]]) -> str:
@@ -83,6 +47,7 @@ def _device_signature(devices: List[Dict[str, Any]]) -> str:
             "model": d.get("model", ""),
             "transport": d.get("transport", ""),
             "mountpoints": d.get("mountpoints", []),
+            "identity": d.get("identity", ""),
         }
         for d in devices
     ]
@@ -90,17 +55,18 @@ def _device_signature(devices: List[Dict[str, Any]]) -> str:
     return json.dumps(reduced, sort_keys=True, separators=(",", ":"))
 
 
-def _device_event_message(devices: List[Dict[str, Any]]) -> str:
+def _device_event_message(devices: List[Dict[str, Any]], error: str = "") -> str:
     payload = {
         "devices": devices,
         "count": len(devices),
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        "error": error,
     }
     return f"event: devices\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
 
 
-def _broadcast_device_update(devices: List[Dict[str, Any]]) -> None:
-    message = _device_event_message(devices)
+def _broadcast_device_update(devices: List[Dict[str, Any]], error: str = "") -> None:
+    message = _device_event_message(devices, error)
     with DEVICE_SUBSCRIBERS_LOCK:
         subscribers = list(DEVICE_SUBSCRIBERS)
     for sub in subscribers:
@@ -116,12 +82,20 @@ def _broadcast_device_update(devices: List[Dict[str, Any]]) -> None:
 
 def _device_monitor_loop() -> None:
     last_sig = ""
+    last_error = ""
     while True:
-        devices = _list_sd_devices()
-        sig = _device_signature(devices)
+        try:
+            devices = _list_sd_devices()
+            last_error = ""
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError, RuntimeError) as exc:
+            if str(exc) != last_error:
+                logger.warning("SD device discovery failed: %s", exc)
+                last_error = str(exc)
+            devices = []
+        sig = _device_signature(devices) + last_error
         if sig != last_sig:
             last_sig = sig
-            _broadcast_device_update(devices)
+            _broadcast_device_update(devices, last_error)
         time.sleep(2)
 
 

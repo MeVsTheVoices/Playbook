@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
+sys.path.insert(0, str(BASE_DIR.parent))
 
 from services.sd_devices import _local_sd_devices  # noqa: E402
 
@@ -94,8 +95,11 @@ def validate_job(spec: Any, devices: List[Dict[str, Any]], config: Config) -> Tu
     if not isinstance(hostname, str) or not HOSTNAME_RE.match(hostname):
         errors.append("Invalid hostname.")
     device = spec.get("device")
-    if device not in {d.get("path") for d in devices}:
-        errors.append(f"Device {device!r} is not a removable SD/USB disk currently attached to this host.")
+    identity = spec.get("device_identity")
+    if spec.get("confirm_device") != device or not isinstance(identity, str) or not re.fullmatch(r"[a-f0-9]{64}", identity):
+        errors.append("Explicit confirmation and a fresh device identity are required.")
+    elif not any(d.get("path") == device and d.get("identity") == identity for d in devices):
+        errors.append("Device is absent, protected, or changed since confirmation.")
     if not _http_url(spec.get("callback_url")):
         errors.append("callback_url must be an http(s) URL.")
     key = spec.get("ssh_public_key")
@@ -125,7 +129,7 @@ def validate_job(spec: Any, devices: List[Dict[str, Any]], config: Config) -> Tu
     if errors:
         return {}, errors
     return {
-        "profile": profile, "hostname": hostname, "device": device,
+        "profile": profile, "hostname": hostname, "device": device, "device_identity": identity,
         "callback_url": spec["callback_url"], "ssh_public_key": key.strip(),
         "image_url": image_url, "image_sha256": image_sha256, "image_path": image_path, "env": env,
     }, []
@@ -146,6 +150,8 @@ def build_command(job: Dict[str, Any], key_file: Path, config: Config) -> Tuple[
     env.setdefault("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
     env["HOME"] = "/root"
     env["IMAGE_CACHE_DIR"] = str(config.image_cache_dir)
+    env["FLASH_EXPECTED_IDENTITY"] = job["device_identity"]
+    env["FLASH_REMOVABLE_DISCOVERY"] = "1"
     env.update(job["env"])
     image_path: Optional[Path] = job["image_path"]
     if job["image_url"]:
@@ -242,7 +248,11 @@ def make_handler(config: Config) -> type:
                 errors = health_errors(config)
                 self._send(200, {"ok": not errors, "root": os.geteuid() == 0, "errors": errors})
             elif self.path == "/devices":
-                self._send(200, {"ok": True, "devices": _local_sd_devices()})
+                try:
+                    self._send(200, {"ok": True, "devices": _local_sd_devices()})
+                except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+                    self.log_message("Device discovery failed: %s", exc)
+                    self._send(503, {"ok": False, "errors": ["Cannot verify removable devices. Check host flasher logs."]})
             elif self.path.startswith("/jobs/") and JOB_ID_RE.match(self.path[6:]):
                 with JOBS_LOCK:
                     job = dict(JOBS.get(self.path[6:]) or {})
@@ -275,7 +285,12 @@ def make_handler(config: Config) -> type:
             if errors:
                 self._send(503, {"ok": False, "errors": errors})
                 return
-            job, errors = validate_job(spec, _local_sd_devices(), config)
+            try:
+                job, errors = validate_job(spec, _local_sd_devices(), config)
+            except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+                self.log_message("Device verification failed: %s", exc)
+                self._send(503, {"ok": False, "errors": ["Cannot verify target device. Check host flasher logs."]})
+                return
             if errors:
                 self._send(400, {"ok": False, "errors": errors})
                 return

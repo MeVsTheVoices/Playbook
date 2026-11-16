@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 import re
+import subprocess
 import threading
 import uuid
 from urllib.parse import urlsplit, urlunsplit, quote
@@ -194,7 +195,13 @@ def register_sd_routes(app: Any) -> None:
     def sd_devices() -> Any:
         _ensure_device_monitor_started()
         prereq_errors = _ensure_prereqs()
-        return jsonify({"devices": _list_sd_devices(), "errors": prereq_errors})
+        if prereq_errors:
+            return jsonify(devices=[], errors=prereq_errors), 503
+        try:
+            return jsonify(devices=_list_sd_devices(), errors=[])
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError, RuntimeError) as exc:
+            app.logger.warning("SD device discovery failed: %s", exc)
+            return jsonify(devices=[], errors=[f"Cannot verify removable devices: {exc}"]), 503
 
     @app.get("/api/sd/devices/webhook")
     def sd_device_webhook() -> Response:
@@ -206,8 +213,11 @@ def register_sd_routes(app: Any) -> None:
                 DEVICE_SUBSCRIBERS.append(sub)
 
             try:
-                initial_devices = _list_sd_devices()
-                yield _device_event_message(initial_devices)
+                try:
+                    yield _device_event_message(_list_sd_devices())
+                except (OSError, ValueError, KeyError, subprocess.SubprocessError, RuntimeError) as exc:
+                    app.logger.warning("SD device monitor initialization failed: %s", exc)
+                    yield _device_event_message([], str(exc))
                 while True:
                     try:
                         yield sub.get(timeout=20)
@@ -290,6 +300,18 @@ def register_sd_routes(app: Any) -> None:
             k3s_check = _check_longform("k3s_config", payload["cloud_init_options"].get("k3s_config", ""))
             if not k3s_check["ok"]:
                 return jsonify({"ok": False, "errors": [f"K3s config: {err}" for err in k3s_check["errors"]]}), 400
+        device = payload.get("device")
+        identity = payload.get("device_identity")
+        if (not isinstance(device, str) or payload.get("confirm_device") != device
+                or not isinstance(identity, str) or not re.fullmatch(r"[a-f0-9]{64}", identity)):
+            return jsonify(ok=False, errors=["Refresh devices and confirm the selected disk before writing."]), 400
+        try:
+            devices = _list_sd_devices()
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError, RuntimeError) as exc:
+            app.logger.warning("SD target verification failed: %s", exc)
+            return jsonify(ok=False, errors=["Cannot verify the target disk. Refresh discovery and check the flasher."]), 503
+        if not any(d.get("path") == device and d.get("identity") == identity for d in devices):
+            return jsonify(ok=False, errors=["Target disk was removed or changed. Refresh and confirm again."]), 409
         payload["sd_options_profile"] = _auto_generate_sd_option_profile(payload)
         _retain_sd_session_secrets(payload["sd_options_profile"], payload["cloud_init_options"])
 

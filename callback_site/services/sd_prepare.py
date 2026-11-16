@@ -103,6 +103,8 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "sd_options_profile",
         "pi_only",
         "cloud_init_options",
+        "device_identity",
+        "confirm_device",
     }
     cleaned: Dict[str, Any] = {}
     for key in allowed_keys:
@@ -485,6 +487,11 @@ def _run_prepare_job(job_id: str, form: Dict[str, Any]) -> None:
         distribution = str(form.get("distribution", "standard")).strip().lower() or "standard"
         env["CLOUD_INIT_DISTRIBUTION"] = distribution
         env["CLOUD_INIT_SSH_PUBLIC_KEY_URL"] = str(form.get("ssh_public_key_url", ""))
+        if form.get("device_identity"):
+            env["FLASH_EXPECTED_IDENTITY"] = str(form["device_identity"])
+            env.pop("FLASH_REMOVABLE_DISCOVERY", None)
+            if not env.get("FLASH_ALLOWED_DEVICES"):
+                env["FLASH_REMOVABLE_DISCOVERY"] = "1"
 
         cloud_init_options = form.get("cloud_init_options", {})
         if isinstance(cloud_init_options, dict):
@@ -598,6 +605,8 @@ def _run_remote_prepare_job(
             "profile": form["profile"],
             "hostname": form["hostname"],
             "device": form["device"],
+            "device_identity": form.get("device_identity", ""),
+            "confirm_device": form.get("confirm_device", ""),
             "callback_url": form["callback_url"],
             "ssh_public_key": ssh_public_key,
             **_remote_image_spec(image_url, image_file, image_sha256, catalog_entry),

@@ -70,10 +70,20 @@ window.onerror = (message) => {
   document.querySelector("pre").textContent = JSON.stringify({error: String(message)});
 };
 const requestedUrls = [];
-window.fetch = async (url) => {
+let mockDevices = [], mockErrors = [], prepareBody = null, prepareCount = 0;
+let holdPrepare = false, finishPrepare, failPrepare = false;
+window.confirm = () => true;
+window.fetch = async (url, options) => {
   requestedUrls.push(url);
+  if (url === "/api/sd/prepare") {
+    prepareCount++;
+    prepareBody = JSON.parse(options.body);
+    if (failPrepare) throw new Error("connection lost");
+    if (holdPrepare) return await new Promise(resolve => { finishPrepare = resolve; });
+    return {ok: false, json: async () => ({errors: ["mock rejected"]})};
+  }
   return {ok: true, json: async () => ({
-    ok: true, profiles: [], keys: [], events: [], devices: [], backend: "helper"
+    ok: true, profiles: [], keys: [], events: [], devices: mockDevices, errors: mockErrors
   })};
 };
 window.setInterval = () => 0;
@@ -92,13 +102,53 @@ check(getComputedStyle(pi).display !== "none" && pi.open, "Pi-specific template 
 optional.open = true;
 check(document.querySelector("#opt_k3s_config").value.includes("server:"), "K3s configuration is initialized");
 check(document.getElementById("sd-options-delete").disabled, "template actions initialize");
-check(form.querySelector("button[type='submit']").disabled
-  && document.getElementById("installer-workflow-status").textContent.includes("device-safety"),
-  "incomplete flash integration is explicitly disabled");
+check(form.querySelector("button[type='submit']").disabled, "write disabled without selected device");
 form.dispatchEvent(new Event("submit", {cancelable: true}));
 await tick();
-check(!requestedUrls.includes("/api/sd/prepare") && statusEl.textContent.includes("device-safety"),
-  "programmatic submit also fails safely");
+check(!prepareBody && statusEl.textContent.includes("Select a verified target"), "submit without target fails safely");
+mockDevices = [{path: "/dev/sdz", identity: "a".repeat(64), model: "test", size: 16000000000}];
+await pollDevicesSnapshot();
+check(!form.device.value, "device is not selected automatically");
+form.device.value = "/dev/sdz";
+form.device.dispatchEvent(new Event("change"));
+check(!form.querySelector("button[type='submit']").disabled, "verified device enables write");
+form.confirm_overwrite.checked = true;
+mockDevices[0].identity = "b".repeat(64);
+form.dispatchEvent(new Event("submit", {cancelable: true}));
+await tick();
+check(!prepareBody && !form.device.value && !form.confirm_overwrite.checked, "replacement cancels confirmation");
+form.device.value = "/dev/sdz";
+form.device.dispatchEvent(new Event("change"));
+form.confirm_overwrite.checked = true;
+form.dispatchEvent(new Event("submit", {cancelable: true}));
+await tick();
+check(prepareBody && prepareBody.confirm_device === "/dev/sdz" && prepareBody.device_identity === "b".repeat(64),
+      "write sends confirmed device identity");
+prepareBody = null;
+mockErrors = ["discovery failed"];
+form.confirm_overwrite.checked = true;
+form.dispatchEvent(new Event("submit", {cancelable: true}));
+await tick();
+check(!prepareBody && !form.device.value && !form.confirm_overwrite.checked
+  && statusEl.textContent.includes("discovery failed"), "failed refresh stops write");
+mockErrors = [];
+await pollDevicesSnapshot();
+form.device.value = "/dev/sdz";
+form.device.dispatchEvent(new Event("change"));
+form.confirm_overwrite.checked = true;
+holdPrepare = true;
+const previousCount = prepareCount;
+form.dispatchEvent(new Event("submit", {cancelable: true}));
+form.dispatchEvent(new Event("submit", {cancelable: true}));
+await tick();
+check(prepareCount === previousCount + 1 && form.querySelector("button[type='submit']").disabled, "duplicate submission blocked");
+finishPrepare({ok: false, json: async () => ({errors: ["mock rejected"]})});
+await tick();
+holdPrepare = false;
+failPrepare = true;
+form.dispatchEvent(new Event("submit", {cancelable: true}));
+await tick();
+check(statusEl.textContent.includes("Check active jobs before retrying"), "uncertain submission reports retry risk");
 """)
 
     def test_misc_options_are_visible_and_map_to_provisioning(self) -> None:
@@ -434,13 +484,14 @@ check(!requestedUrls.includes("/api/sd/prepare") && statusEl.textContent.include
             services.sd_prepare.JOBS.clear()
 
     def test_sd_prepare_auto_generates_sd_options_profile_when_missing(self) -> None:
-        with patch_in("_ensure_prereqs", return_value=[]), patch("threading.Thread"):
+        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/sdb", "identity": "a" * 64}]), patch("threading.Thread"):
             response = self.client.post(
                 "/api/sd/prepare",
                 json={
                     "profile": "pi5",
                     "hostname": "rack-node-auto",
                     "device": "/dev/sdb",
+                    "confirm_device": "/dev/sdb", "device_identity": "a" * 64,
                     "ssh_public_key": "ssh-ed25519 AAAA test",
                     "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",
@@ -476,6 +527,25 @@ check(!requestedUrls.includes("/api/sd/prepare") && statusEl.textContent.include
         with services.sd_prepare.JOBS_LOCK:
             services.sd_prepare.JOBS.pop(job_id, None)
 
+    def test_prepare_requires_fresh_confirmed_target_before_creating_job(self) -> None:
+        payload = {
+            "profile": "pi5", "hostname": "rack-safe", "device": "/dev/sdb",
+            "confirm_device": "/dev/sdb", "device_identity": "a" * 64,
+            "ssh_public_key": "ssh-ed25519 AAAA test",
+            "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
+        }
+        with patch_in("_ensure_prereqs", return_value=[]), \
+             patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/sdb", "identity": "b" * 64}]) as discover, \
+             patch("routes.sd._auto_generate_sd_option_profile") as save, \
+             patch("routes.sd.threading.Thread") as worker:
+            for change, code in (({"confirm_device": ""}, 400), ({"device_identity": ""}, 400), ({}, 409)):
+                response = self.client.post("/api/sd/prepare", json={**payload, **change})
+                self.assertEqual(response.status_code, code, response.get_json())
+            discover.side_effect = OSError("discovery unavailable")
+            self.assertEqual(self.client.post("/api/sd/prepare", json=payload).status_code, 503)
+            save.assert_not_called()
+            worker.assert_not_called()
+
     def test_sanitize_sd_prepare_payload_includes_cloud_init_options(self) -> None:
         cleaned = services.sd_prepare._sanitize_sd_prepare_payload(
             {
@@ -496,13 +566,14 @@ check(!requestedUrls.includes("/api/sd/prepare") && statusEl.textContent.include
         self.assertTrue(cleaned["pi_only"])
 
     def test_sd_prepare_queues_cloud_init_options_metadata(self) -> None:
-        with patch_in("_ensure_prereqs", return_value=[]), patch("threading.Thread") as thread_cls:
+        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/sdb", "identity": "a" * 64}]), patch("threading.Thread") as thread_cls:
             response = self.client.post(
                 "/api/sd/prepare",
                 json={
                     "profile": "pi5",
                     "hostname": "rack-node-02",
                     "device": "/dev/sdb",
+                    "confirm_device": "/dev/sdb", "device_identity": "a" * 64,
                     "ssh_public_key": "ssh-ed25519 AAAA test",
                     "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",

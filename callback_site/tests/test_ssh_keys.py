@@ -101,11 +101,12 @@ check(sshKeySelectEl.value === "fresh-name", "cancel does not change current key
         created = self.client.post("/api/ssh/generate", json={"key_name": "boot-key", "mode": "generate"}).get_json()
         payload = {
             "profile": "pi3bplus", "hostname": "boot-test", "device": "/dev/fake",
+            "confirm_device": "/dev/fake", "device_identity": "a" * 64,
             "callback_url": "https://callback.test:8088/api/cloud-init/callback",
             "ssh_key_name": "boot-key", "ssh_public_key": created["public_key"],
             "ssh_public_key_url": "https://untrusted.test/key",
         }
-        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as thread:
+        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/fake", "identity": "a" * 64}]), patch("routes.sd.threading.Thread") as thread:
             response = self.client.post("/api/sd/prepare", json=payload)
             self.assertEqual(response.status_code, 200)
             form = thread.call_args.kwargs["args"][1]

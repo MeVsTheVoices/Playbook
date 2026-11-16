@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CALLBACK_APPDATA_DIR=/data \
     CALLBACK_RUNTIME=container \
     ANSIBLE_CONFIG=/app/ansible.cfg \
-    PYTHONPATH=/app/callback_site \
+    PYTHONPATH=/app:/app/callback_site \
     HOST=0.0.0.0 \
     PORT=8088 \
     CALLBACK_NODE_ONLY_PORT=8088 \
@@ -48,6 +48,7 @@ RUN python -m pip install \
 COPY ansible.cfg inventory.yml site.yml /app/
 COPY collections/requirements.yml /tmp/collections-requirements.yml
 COPY callback_site/ /app/callback_site/
+COPY flash_helper/ /app/flash_helper/
 COPY charts/ /app/charts/
 COPY scripts/ /app/scripts/
 COPY roles/ /app/roles/

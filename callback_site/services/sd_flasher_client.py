@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -91,7 +92,13 @@ def prereq_errors() -> List[str]:
 
 def list_devices() -> List[Dict[str, Any]]:
     devices = _request("GET", "/devices", timeout=5).get("devices")
-    return [d for d in devices if isinstance(d, dict)] if isinstance(devices, list) else []
+    if not isinstance(devices, list) or any(
+        not isinstance(d, dict) or not isinstance(d.get("path"), str)
+        or not isinstance(d.get("identity"), str) or not re.fullmatch(r"[a-f0-9]{64}", d["identity"])
+        for d in devices
+    ):
+        raise FlasherError("SD flasher returned an invalid device list. Update and restart the host flasher.")
+    return devices
 
 
 def submit_job(spec: Dict[str, Any]) -> str:

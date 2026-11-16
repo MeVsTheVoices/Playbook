@@ -24,7 +24,7 @@ except ImportError:
 
 class SdPrepareK3sTests(BaseCallbackSiteTest):
     def test_sd_prepare_endpoint_accepts_pi3bplus_profile(self) -> None:
-        with patch_in("_ensure_prereqs", return_value=[]), patch.object(
+        with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd._list_sd_devices", return_value=[{"path": "/dev/sdb", "identity": "a" * 64}]), patch.object(
             threading, "Thread"
         ) as thread_cls:
             response = self.client.post(
@@ -33,6 +33,7 @@ class SdPrepareK3sTests(BaseCallbackSiteTest):
                     "profile": "pi3bplus",
                     "hostname": "rack-node-3b-01",
                     "device": "/dev/sdb",
+                    "confirm_device": "/dev/sdb", "device_identity": "a" * 64,
                     "ssh_public_key": "ssh-ed25519 AAAA",
                     "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
                     "distribution": "k3s",

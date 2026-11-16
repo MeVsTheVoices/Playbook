@@ -17,7 +17,6 @@ from services.images import _read_image_history
 from services.k3s_config import _default_k3s_config
 from services.kubernetes import _local_k3s_version
 from services.network import _default_callback_url
-from services.sd_devices import _ensure_device_monitor_started, _list_sd_devices
 from services.sd_profiles import _load_sd_option_profiles
 from services.sd_prepare import _redact_sd_secret_options
 from services.settings import _load_app_settings, _tailscale_policy_defaults
@@ -30,7 +29,6 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
 
     @pages.get("/")
     def index() -> str:
-        _ensure_device_monitor_started()
         events = active_nodes(_read_events(limit=200))
         rack_name = _load_app_settings().get("rack_name", "homelab")
         option_profiles = _load_sd_option_profiles()
@@ -43,7 +41,7 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
             image_summary=_image_state_summary(),
             hostname_prefix=f"{rack_name}-",
             sd_option_profiles=option_profiles,
-            devices=_list_sd_devices(),
+            devices=[],
             callback_url_default=_default_callback_url(),
             k3s_config_default=_default_k3s_config(),
             k3s_version_default=_local_k3s_version(),

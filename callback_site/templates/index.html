@@ -103,6 +103,7 @@
               <div>
                 <label for="device">Target SD Device</label>
                 <select id="device" name="device" required>
+                  <option value="">Select a removable device</option>
                   {% for d in devices %}
                   <option value="{{ d.path }}">{{ d.path }} - {{ d.size }} - {{ d.model }}</option>
                   {% endfor %}
@@ -641,7 +642,7 @@ server: https://local-machine-ip:6443
             <label for="confirm_overwrite" style="margin: 0;">I confirm the selected drive will be overwritten.</label>
           </div>
           <div class="actions-row">
-            <button type="submit">Format + Write SD Card</button>
+            <button type="submit" disabled>Format + Write SD Card</button>
             <span class="hint">Checksum state appears in the log. Missing expected hash defaults to skip. Trust, but verify. 🕵️</span>
           </div>
         </form>

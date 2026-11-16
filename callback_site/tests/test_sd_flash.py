@@ -125,7 +125,7 @@ exit 0
                 tool.write_text("#!/bin/sh\nexit 0\n")
                 tool.chmod(0o755)
                 result = subprocess.run(
-                    ["bash", "-c", 'set -euo pipefail; IMG_TO_WRITE="$1"; DEVICE="$2"; IMAGE_BYTES=9; ' + check,
+                    ["bash", "-c", 'set -euo pipefail; IMG_TO_WRITE="$1"; DEVICE="$2"; WRITE_DEVICE="$2"; IMAGE_BYTES=9; ' + check,
                      "test", str(image), str(target)],
                     env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"},
                     capture_output=True, text=True, timeout=10,

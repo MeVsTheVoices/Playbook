@@ -24,7 +24,7 @@ import services.sd_devices
 import services.sd_prepare
 
 TOKEN = "t" * 40
-DEVICE = {"name": "sdz", "path": "/dev/sdz", "size": "58G", "model": "USB", "transport": "usb", "mountpoints": []}
+DEVICE = {"name": "sdz", "path": "/dev/sdz", "size": "58G", "model": "USB", "transport": "usb", "mountpoints": [], "identity": "a" * 64}
 FAKE_SCRIPT = """#!/bin/sh
 echo "ARGS $*"
 echo "PORT=${CLOUD_INIT_SSH_PORT:-}"
@@ -72,6 +72,7 @@ class SdFlasherTests(BaseCallbackSiteTest):
     def job_spec(self, **overrides: object) -> dict:
         spec = {
             "profile": "pi5", "hostname": "rack-01", "device": "/dev/sdz",
+            "confirm_device": "/dev/sdz", "device_identity": DEVICE["identity"],
             "callback_url": "http://192.168.1.5:8088", "ssh_public_key": "ssh-ed25519 AAAA test",
             "image_url": "", "image_sha256": "", "image_name": "", "env": {"CLOUD_INIT_SSH_PORT": "2222"},
         }
@@ -93,6 +94,9 @@ class SdFlasherTests(BaseCallbackSiteTest):
         for key, value in bad.items():
             _job, errors = sd_flasher.validate_job(self.job_spec(**{key: value}), [DEVICE], self.config)
             self.assertTrue(errors, key)
+        for change in ({"device_identity": ""}, {"device_identity": "b" * 64}, {"confirm_device": "/dev/sda"}):
+            _job, errors = sd_flasher.validate_job(self.job_spec(**change), [DEVICE], self.config)
+            self.assertTrue(errors, change)
         _job, errors = sd_flasher.validate_job(self.job_spec(image_name="missing.img.xz"), [DEVICE], self.config)
         self.assertIn("not in the flasher image cache", errors[0])
 
@@ -104,6 +108,8 @@ class SdFlasherTests(BaseCallbackSiteTest):
             self.assertIn("--image-file", cmd)
             self.assertEqual(cmd[cmd.index("--image-file") + 1], str(self.cache / "cached.img.xz"))
             self.assertNotIn("SD_FLASHER_TEST_SECRET", env)
+            self.assertEqual(env["FLASH_EXPECTED_IDENTITY"], DEVICE["identity"])
+            self.assertEqual(env["FLASH_REMOVABLE_DISCOVERY"], "1")
             job, _ = sd_flasher.validate_job(
                 self.job_spec(image_url="https://example.com/a.img.xz", image_name="new.img.xz"), [DEVICE], self.config)
             cmd, env = sd_flasher.build_command(job, Path("/k.pub"), self.config)
@@ -132,6 +138,14 @@ class SdFlasherTests(BaseCallbackSiteTest):
         self.assertIn("PORT=2222", job["output"])
         self.assertIn("LEAK=none", job["output"])
 
+    def test_discovery_errors_are_reported_and_do_not_start_jobs(self) -> None:
+        url = self.start_agent()
+        with patch.object(sd_flasher, "_local_sd_devices", side_effect=OSError("test failure")), \
+             patch.object(sd_flasher, "start_job") as start:
+            self.assertEqual(self.call(f"{url}/devices")[0], 503)
+            self.assertEqual(self.call(f"{url}/jobs", "POST", self.job_spec())[0], 503)
+            start.assert_not_called()
+
     def test_dashboard_delegates_prepare_job_to_flasher(self) -> None:
         url = self.start_agent()
         job_id = "job-remote"
@@ -152,6 +166,31 @@ class SdFlasherTests(BaseCallbackSiteTest):
         self.assertIn("Delegated to the host SD flasher", job["stdout"])
         self.assertIn("PORT=2222", job["stdout"])
         history.assert_called_once()
+
+    def test_confirmed_portal_request_reaches_host_flasher(self) -> None:
+        url = self.start_agent()
+        form = {
+            "profile": "pi5", "hostname": "rack-e2e", "device": DEVICE["path"],
+            "confirm_device": DEVICE["path"], "device_identity": DEVICE["identity"],
+            "ssh_public_key": "ssh-ed25519 AAAA test",
+            "callback_url": "http://192.0.2.10:8088/api/cloud-init/callback",
+        }
+        with patch.dict(os.environ, {"SD_FLASHER_URL": url, "SD_FLASHER_TOKEN": TOKEN}), \
+             patch_in("_ensure_prereqs", return_value=[]), \
+             patch("routes.sd._list_sd_devices", return_value=[DEVICE]), \
+             patch("routes.sd.threading.Thread") as thread, \
+             patch("routes.sd._auto_generate_sd_option_profile", return_value="test"), \
+             patch("routes.sd._retain_sd_session_secrets"):
+            response = self.client.post("/api/sd/prepare", json=form)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        job_id, prepared = thread.call_args.kwargs["args"]
+        self.addCleanup(lambda: services.sd_prepare.JOBS.pop(job_id, None))
+        with patch.dict(os.environ, {"SD_FLASHER_URL": url, "SD_FLASHER_TOKEN": TOKEN}), \
+             patch.object(services.sd_prepare, "REMOTE_POLL_SECONDS", 0.05), \
+             patch_in("_archive_ssh_public_key", return_value={"archive_path": "test"}), \
+             patch_in("_record_image_history"):
+            services.sd_prepare._run_prepare_job(job_id, prepared)
+        self.assertEqual(services.sd_prepare.JOBS[job_id]["status"], "completed")
 
     def test_device_endpoint_explains_missing_flasher(self) -> None:
         with socket.socket() as sock:

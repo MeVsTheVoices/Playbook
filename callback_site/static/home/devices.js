@@ -1,65 +1,84 @@
 function formatDeviceOption(device) {
   const model = device.model || "";
-  const size = device.size || "";
+  const size = typeof device.size === "number" ? `${(device.size / 1000000000).toFixed(1)} GB` : (device.size || "");
+  const serial = device.serial ? ` · S/N ${device.serial}` : "";
   const transport = device.transport ? ` (${device.transport})` : "";
-  return `${device.path} - ${size} - ${model}${transport}`.trim();
+  return `${device.path} - ${size} - ${model}${serial}${transport}`.trim();
 }
 
 function replaceDeviceOptions(devices) {
   const previous = form.device.value;
   const previousOption = form.device.options[form.device.selectedIndex];
-  const previousLabel = previousOption ? previousOption.textContent : previous;
+  const previousIdentity = previousOption ? previousOption.dataset.identity : "";
   form.device.innerHTML = "";
-  if (!devices.length) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "No removable SD/USB devices detected";
-    form.device.appendChild(option);
-    form.device.value = "";
-    deviceWebhookStatusEl.textContent = "Live device monitor: no removable device present. Reinsert card and wait for refresh.";
-    return;
-  }
-
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = devices.length ? "Select a removable device" : "No removable SD/USB devices detected";
+  form.device.appendChild(placeholder);
   for (const device of devices) {
     const option = document.createElement("option");
     option.value = device.path;
     option.textContent = formatDeviceOption(device);
+    option.dataset.identity = device.identity;
     form.device.appendChild(option);
   }
-
-  if (previous && devices.some((d) => d.path === previous)) {
+  if (previous && devices.some((d) => d.path === previous && d.identity === previousIdentity)) {
     form.device.value = previous;
     return;
   }
-
-  form.device.value = devices[0].path;
+  form.device.value = "";
   if (previous) {
-    deviceWebhookStatusEl.textContent = `Selected device '${previousLabel || previous}' is no longer present. Switched to '${devices[0].path}'.`;
+    form.confirm_overwrite.checked = false;
+    deviceWebhookStatusEl.textContent = "Target removed or changed. Select and confirm a device again.";
   }
+}
+
+function validDevices(devices) {
+  return Array.isArray(devices) && new Set(devices.map((device) => device?.path)).size === devices.length
+    && devices.every((device) => device && typeof device.path === "string" && device.path.startsWith("/dev/")
+      && typeof device.identity === "string" && /^[a-f0-9]{64}$/.test(device.identity));
 }
 
 async function pollDevicesSnapshot() {
+  const sequence = ++deviceRefreshSequence;
   try {
     const res = await fetch("/api/sd/devices");
     const payload = await res.json();
-    if (!res.ok) {
-      throw new Error((payload.errors || ["device refresh failed"])[0]);
+    if (sequence !== deviceRefreshSequence) {
+      lastDeviceRefreshError = "Device refresh was superseded. Try again.";
+      return false;
     }
-    const devices = Array.isArray(payload.devices) ? payload.devices : [];
-    const errors = Array.isArray(payload.errors) ? payload.errors.map(String).filter(Boolean) : [];
-    deviceProblem = errors.join(" ");
+    if (!Array.isArray(payload.errors)) throw new Error("Device discovery returned an invalid response.");
+    if (!res.ok || payload.errors.length) {
+      throw new Error(payload.errors[0] || "Device refresh failed");
+    }
+    const devices = payload.devices;
+    if (!validDevices(devices)) throw new Error("Device discovery returned invalid identity information.");
+    deviceProblem = "";
     replaceDeviceOptions(devices);
-    if (deviceProblem) {
-      deviceWebhookStatusEl.textContent = `SD/USB devices unavailable: ${deviceProblem}`;
-    }
-    updateDeviceActivity(devices.length, true, deviceProblem);
+    lastDeviceRefreshError = "";
+    deviceDiscoveryReady = true;
+    updateInstallerWorkflow();
+    updateDeviceActivity(devices.length, true);
+    return true;
   } catch (err) {
-    if (!String(deviceWebhookStatusEl.textContent || "").startsWith("Live device monitor disconnected")) {
-      deviceWebhookStatusEl.textContent = `Device refresh error: ${String(err.message || err)}`;
-    }
+    if (sequence !== deviceRefreshSequence) return false;
+    lastDeviceRefreshError = String(err.message || err);
+    deviceProblem = lastDeviceRefreshError;
+    deviceDiscoveryReady = false;
+    replaceDeviceOptions([]);
+    form.confirm_overwrite.checked = false;
+    updateInstallerWorkflow();
+    deviceWebhookStatusEl.textContent = `Device refresh error: ${lastDeviceRefreshError}`;
     updateDeviceActivity(0, false);
+    return false;
   }
 }
+
+form.device.addEventListener("change", () => {
+  form.confirm_overwrite.checked = false;
+  updateInstallerWorkflow();
+});
 
 function startDeviceWebhook() {
   if (typeof EventSource === "undefined") {
@@ -71,15 +90,23 @@ function startDeviceWebhook() {
   es.addEventListener("devices", (event) => {
     try {
       const payload = JSON.parse(event.data || "{}");
-      const devices = Array.isArray(payload.devices) ? payload.devices : [];
+      if (payload.error) throw new Error(String(payload.error));
+      const devices = payload.devices;
+      if (!validDevices(devices)) throw new Error("Invalid device identity information.");
       replaceDeviceOptions(devices);
+      updateInstallerWorkflow();
       const updated = payload.updated_at ? payload.updated_at.replace("T", " ").replace("+00:00", " UTC") : "just now";
       deviceWebhookStatusEl.textContent = deviceProblem
         ? `SD/USB devices unavailable: ${deviceProblem}`
         : `Live device monitor: ${devices.length} device(s), updated ${updated}`;
       updateDeviceActivity(devices.length, true, deviceProblem);
     } catch (err) {
-      deviceWebhookStatusEl.textContent = "Live device monitor: invalid update payload.";
+      deviceDiscoveryReady = false;
+      deviceProblem = String(err.message || err);
+      replaceDeviceOptions([]);
+      form.confirm_overwrite.checked = false;
+      updateInstallerWorkflow();
+      deviceWebhookStatusEl.textContent = `Device monitor error: ${deviceProblem}`;
       updateDeviceActivity(0, false);
     }
   });

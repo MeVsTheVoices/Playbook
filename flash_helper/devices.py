@@ -23,10 +23,7 @@ def _descendants(disk: dict[str, Any]) -> list[dict[str, Any]]:
     return [disk, *(child for node in disk.get("children", []) for child in _descendants(node))]
 
 
-def discover() -> list[dict[str, Any]]:
-    allowed = [Path(value.strip()) for value in os.environ.get("FLASH_ALLOWED_DEVICES", "").split(",") if value.strip()]
-    if not allowed or any(str(path.parent) != "/dev/disk/by-id" or "-part" in path.name for path in allowed):
-        raise ValueError("FLASH_ALLOWED_DEVICES must list whole-disk /dev/disk/by-id paths.")
+def _discover(allowed: list[Path] | None) -> list[dict[str, Any]]:
     mountinfo_path = os.environ.get("FLASH_HOST_MOUNTINFO", "/proc/1/mountinfo")
     mountinfo = Path(mountinfo_path).read_text()
     mounts = [(line.split()[2], _unescape(line.split()[4])) for line in mountinfo.splitlines()]
@@ -52,6 +49,8 @@ def discover() -> list[dict[str, Any]]:
         check=True, capture_output=True, text=True, timeout=10,
     )
     disks = json.loads(result.stdout)["blockdevices"]
+    if allowed is None:
+        allowed = [Path(disk["path"]) for disk in disks if disk.get("type") == "disk"]
     devices = []
     for alias in allowed:
         if not alias.exists():
@@ -86,6 +85,17 @@ def discover() -> list[dict[str, Any]]:
     return devices
 
 
+def discover() -> list[dict[str, Any]]:
+    allowed = [Path(value.strip()) for value in os.environ.get("FLASH_ALLOWED_DEVICES", "").split(",") if value.strip()]
+    if not allowed or any(str(path.parent) != "/dev/disk/by-id" or "-part" in path.name for path in allowed):
+        raise ValueError("FLASH_ALLOWED_DEVICES must list whole-disk /dev/disk/by-id paths.")
+    return _discover(allowed)
+
+
+def discover_removable() -> list[dict[str, Any]]:
+    return _discover(None)
+
+
 def verify(path: str, identity: str) -> None:
     if not identity or not any(device["path"] == path and device["identity"] == identity for device in discover()):
         raise ValueError("Target is absent, protected, or changed since confirmation. Refresh and confirm again.")
@@ -93,6 +103,12 @@ def verify(path: str, identity: str) -> None:
 
 if __name__ == "__main__":
     try:
-        verify(*sys.argv[1:])
+        if os.environ.get("FLASH_REMOVABLE_DISCOVERY") == "1":
+            path, identity = sys.argv[1:]
+            if not identity or not any(device["path"] == path and device["identity"] == identity
+                                       for device in discover_removable()):
+                raise ValueError("Target is absent, protected, or changed since confirmation. Refresh and confirm again.")
+        else:
+            verify(*sys.argv[1:])
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         sys.exit(f"Flash target verification failed: {exc}")

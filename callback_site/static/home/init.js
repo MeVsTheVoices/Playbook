@@ -21,13 +21,31 @@ document.getElementById("payload-inspect-clear").addEventListener("click", () =>
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!flashWorkflowAvailable()) {
-    statusEl.textContent = "SD flashing is unavailable: the device-safety integration is incomplete.";
+  if (flashSubmissionPending) return;
+  flashSubmissionPending = true;
+  updateInstallerWorkflow();
+  try {
+    await submitSdForm();
+  } catch (error) {
+    flashMascotEl.classList.remove("active");
+    statusEl.textContent = `Could not confirm the write request: ${error.message}. Check active jobs before retrying.`;
+  } finally {
+    flashSubmissionPending = false;
+    updateInstallerWorkflow();
+  }
+});
+
+async function submitSdForm() {
+  await sdBrowserSessionReady;
+  if (isUefiInstaller()) {
+    statusEl.textContent = "UEFI installer creation is not available in this dashboard.";
     return;
   }
-  await sdBrowserSessionReady;
-  if (isUefiInstaller() && deviceBackend !== "helper") {
-    statusEl.textContent = "UEFI installer creation requires a configured Linux flashing helper.";
+  const selected = form.device.selectedOptions[0];
+  const originalDevice = form.device.value;
+  const originalIdentity = selected && selected.dataset.identity;
+  if (!form.confirm_overwrite.checked || !originalDevice || !originalIdentity) {
+    statusEl.textContent = "Select a verified target and confirm it will be overwritten.";
     return;
   }
   const devicesAvailable = await pollDevicesSnapshot();
@@ -37,15 +55,17 @@ form.addEventListener("submit", async (e) => {
     flashMascotEl.classList.remove("active");
     return;
   }
-  if (!String(form.device.value || "").trim()) {
-    statusEl.textContent = "No target SD device selected. Insert a card and try again.";
+  if (!form.confirm_overwrite.checked || form.device.value !== originalDevice
+      || form.device.selectedOptions[0]?.dataset.identity !== originalIdentity) {
+    statusEl.textContent = "Target changed during verification. Select and confirm it again.";
     flashMascotEl.classList.remove("active");
     return;
   }
-  const helperConfirmation = deviceBackend === "helper" ? confirmHelperTarget() : null;
-  if (deviceBackend === "helper" && !helperConfirmation) {
+  const target = form.device.selectedOptions[0];
+  if (!window.confirm(`Permanently erase and write this device?\n\n${target.textContent}`)) {
     form.confirm_overwrite.checked = false;
     flashMascotEl.classList.remove("active");
+    statusEl.textContent = "Write cancelled. No device was written.";
     return;
   }
   const installer = isUefiInstaller();
@@ -82,7 +102,8 @@ form.addEventListener("submit", async (e) => {
     workflow: installer ? "uefi-installer" : "pi",
     catalog_id: form.os_preset.value,
     ...(installer ? { install_authorized: true, image_file: "", workspace: "", pi_only: false } : {}),
-    ...(helperConfirmation || {}),
+    confirm_device: originalDevice,
+    device_identity: originalIdentity,
   };
 
   const res = await fetch("/api/sd/prepare", {
@@ -100,7 +121,7 @@ form.addEventListener("submit", async (e) => {
   localStorage.setItem(SD_ACTIVE_JOB_KEY, currentJob);
   statusEl.textContent = `Job started: ${currentJob}`;
   pollJob();
-});
+}
 
 document.getElementById("generate-ssh-key").addEventListener("click", () => runSshKeyAction("generate"));
 
@@ -268,23 +289,8 @@ sdBrowserSessionReady = loadSdOptionProfiles();
 
 startDeviceFallbackPolling();
 
-if (flashWorkflowAvailable()) {
-  fetch("/api/sd/backend").then(async (response) => {
-    if (!response.ok) throw new Error("Could not read flashing backend capabilities.");
-    updateDeviceDiscoveryMode((await response.json()).backend);
-  }).catch((error) => {
-    statusEl.textContent = error.message;
-  });
-
-  pollDevicesSnapshot().then(() => {
-    if (deviceBackend === "native") {
-      startDeviceWebhook();
-    }
-  });
-} else {
-  startDeviceWebhook();
-  pollDevicesSnapshot();
-}
+startDeviceWebhook();
+pollDevicesSnapshot();
 
 loadEvents();
 

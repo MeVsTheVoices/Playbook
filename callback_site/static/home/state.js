@@ -102,6 +102,14 @@ let deviceFallbackPollTimer = null;
 
 let deviceProblem = "";
 
+let deviceDiscoveryReady = false;
+
+let lastDeviceRefreshError = "";
+
+let deviceRefreshSequence = 0;
+
+let flashSubmissionPending = false;
+
 let allEvents = [];
 
 let sdOptionProfiles = initialSdOptionProfiles || {};

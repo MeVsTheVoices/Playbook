@@ -60,19 +60,16 @@
                 </tbody>
               </table>
             </div>
+            <div class="checkbox-row">
+              <input id="catalog_pull_skip_existing" type="checkbox" checked>
+              <label for="catalog_pull_skip_existing" style="margin: 0;">Skip files already in cache</label>
+            </div>
             <div id="catalog-grouped-list" class="catalog-group-list" style="margin-top: 0.9rem;"></div>
-
+            <div class="actions-row" style="margin-top: 0.5rem;">
+              <button type="button" id="pull-selected-groups" style="width:auto;" disabled>Pull selected from both groups (0)</button>
+              <span class="hint" id="catalog-pull-status">Idle.</span>
+            </div>
             <div style="margin-top: 0.9rem; border-top: 1px dashed var(--line); padding-top: 0.9rem;">
-              <label for="catalog_pull_ids">Downloadable Distro Presets</label>
-              <select id="catalog_pull_ids" multiple size="6"></select>
-              <div class="checkbox-row">
-                <input id="catalog_pull_skip_existing" type="checkbox" checked>
-                <label for="catalog_pull_skip_existing" style="margin: 0;">Skip files already in cache</label>
-              </div>
-              <div class="actions-row" style="margin-top: 0.5rem;">
-                <button type="button" id="start-catalog-pull" style="width:auto;">Start Bulk Pull</button>
-                <span class="hint" id="catalog-pull-status">Idle.</span>
-              </div>
               <div class="download-status-card" id="catalog-pull-card">
                 <div class="job-status-header">
                   <div>
@@ -98,7 +95,7 @@
                   <a class="mini-link" href="/images#image-download-catalog" target="_self">Jump to download catalog</a>
                   <a class="mini-link" href="/images#retrieved-image-manager" target="_self">Jump to managed images</a>
                 </div>
-                <pre class="job-log" id="catalog-pull-log">No bulk pull activity yet.</pre>
+                <pre class="job-log" id="catalog-pull-log" data-format="json">No bulk pull activity yet.</pre>
               </div>
             </div>
           </div>

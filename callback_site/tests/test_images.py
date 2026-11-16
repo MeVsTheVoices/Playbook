@@ -368,6 +368,9 @@ setTimeout(() => {{
     def test_images_page_has_bulk_pull_controls(self) -> None:
         text = self.client.get("/images").get_data(as_text=True)
         self.assertIn('id="pull-all-missing"', text)
+        self.assertIn('id="pull-selected-groups"', text)
+        self.assertIn('id="catalog_pull_skip_existing"', text)
+        self.assertNotIn('id="catalog_pull_ids"', text)
         script = self.client.get("/static/images.js").get_data(as_text=True)
         self.assertIn("catalog-select-all", script)
         self.assertIn("Pull selected", script)
@@ -394,11 +397,61 @@ setTimeout(() => {{
         self.assertIn("Download failed.", text)
         self.assertNotIn("Still working. The bar is moving and the tiles are reacting.", text)
 
-    def test_images_catalog_group_defaults_keep_missing_collapsed(self) -> None:
-        text = (APP_DIR / "static" / "images.js").read_text(encoding="utf-8")
-        self.assertIn('title: "Missing from cache"', text)
-        self.assertIn('open: false', text)
-        self.assertIn('title: "Already downloaded"', text)
+    def test_catalog_groups_preserve_state_on_refresh_and_colorize_results(self) -> None:
+        self.browser_probe("/images", ["images.js", "structured_output.js"], """
+window.__IMAGE_CATALOG__ = [];
+const requests = [];
+const entries = [
+  {id: "cached", label: "Cached", image_url: "https://example.invalid/cached", local_available: true},
+  {id: "missing", label: "Missing", image_url: "https://example.invalid/missing", local_available: false}
+];
+window.fetch = async (url, options = {}) => {
+  if (options.method === "POST") requests.push(JSON.parse(options.body));
+  return {
+  ok: true,
+  json: async () => url === "/api/sd/catalog-pull"
+    ? {ok: true, job_id: "job"}
+    : url.startsWith("/api/sd/catalog-pull/jobs/")
+      ? {ok: true, job: {id: "job", status: "completed", storage_dir: "/cache",
+          accepted_ids: ["cached"], summary: {ok: 1, total: 1},
+          results: [{id: "cached", status: "ok", message: "<test>", download_path: "/cache/image"}]}}
+      : {ok: true, entries, profiles: []},
+  text: async () => ""
+  };
+};
+window.setInterval = () => 1;
+""", """
+document.dispatchEvent(new Event("DOMContentLoaded"));
+await tick();
+const group = (name) => document.querySelector(`details[data-group="${name}"]`);
+check(!group("downloaded").open && !group("missing").open, "groups initially collapsed");
+group("downloaded").open = true;
+group("downloaded").querySelector("input.catalog-select").click();
+document.getElementById("refresh-catalog-availability").click();
+await tick();
+check(group("downloaded").open, "open group stays open");
+check(group("downloaded").querySelector("input.catalog-select").checked, "selection survives refresh");
+check(!group("downloaded").querySelector(".catalog-inline-btn").disabled, "selection toolbar updated");
+group("downloaded").open = false;
+group("missing").open = true;
+document.getElementById("refresh-catalog-availability").click();
+await tick();
+check(!group("downloaded").open && group("missing").open, "closed and open groups retain state");
+const combined = document.getElementById("pull-selected-groups");
+check(combined.disabled, "combined pull requires both groups");
+group("missing").querySelector("input.catalog-select").click();
+check(!combined.disabled, "combined pull enabled for both groups");
+document.getElementById("catalog_pull_skip_existing").checked = false;
+combined.click();
+await tick();
+check(requests.length === 1 && requests[0].catalog_ids.length === 2
+  && requests[0].catalog_ids.includes("cached") && requests[0].catalog_ids.includes("missing")
+  && requests[0].skip_existing === false, "cross-group pull preserves skip option");
+const log = document.getElementById("catalog-pull-log");
+const output = JSON.parse(log.textContent);
+check(output.results[0].message === "<test>" && output.summary.ok === 1, "pull results preserved");
+check(log.querySelector(".hljs-attr") && log.querySelector(".hljs-string") && !log.querySelector("test"), "pull results colorized safely");
+""")
 
     def test_catalog_availability_endpoint(self) -> None:
         response = self.client.get("/api/sd/catalog")

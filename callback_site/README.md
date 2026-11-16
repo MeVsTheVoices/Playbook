@@ -197,7 +197,7 @@ Open:
 
 - `/` — SD image prep, SSH keys, optional cloud-init settings, and saved templates.
 - Activity Dock status cards link directly to their relevant dashboard sections; the banner follows the current attention state.
-- Image Library's download-catalog preview shows at most five named missing presets, with the full catalog and pull controls in the Image Source Panel. Settings combines catalog health and its source details into one panel.
+- Image Library's download-catalog preview shows at most five named missing presets, with the full catalog and pull controls in the Image Source Panel. Select presets in the missing and downloaded groups to pull one group or both; the skip-cached setting applies to all pulls. Group expansion and selections survive availability refreshes. Settings combines catalog health and its source details into one panel.
   On mobile, SSH key controls stack and callback tables scroll within their panel so the dashboard stays within the viewport.
   The newest callback per host stays visible; expand its history and a callback
   type to reveal compact older rows, or use Expand history to open everything.

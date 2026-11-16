@@ -18,8 +18,8 @@
   const imageExitCodeEl = document.getElementById("image_exit_code");
   const imageNotesEl = document.getElementById("image_notes");
   const imageCatalog = Array.isArray(window.__IMAGE_CATALOG__) ? window.__IMAGE_CATALOG__ : [];
-  const catalogPullSelectEl = document.getElementById("catalog_pull_ids");
   const catalogPullSkipExistingEl = document.getElementById("catalog_pull_skip_existing");
+  const pullSelectedGroupsBtn = document.getElementById("pull-selected-groups");
   const catalogPullStatusEl = document.getElementById("catalog-pull-status");
   const catalogPullLogEl = document.getElementById("catalog-pull-log");
   const catalogPullCardEl = document.getElementById("catalog-pull-card");
@@ -57,14 +57,6 @@
       return;
     }
     startCatalogPullForIds(ids, `${ids.length} missing preset${ids.length === 1 ? "" : "s"}`);
-  }
-
-  function availabilityGlyph(available) {
-    return available ? "✅" : "❌";
-  }
-
-  function availabilityLabel(available) {
-    return available ? "downloaded" : "missing";
   }
 
   function setCurrentCatalogPullJob(job) {
@@ -408,42 +400,36 @@
     }
   }
 
-  function rebuildCatalogPullOptions(catalogEntries) {
-    catalogPullSelectEl.innerHTML = "";
-    const entries = catalogEntries.filter((entry) => String(entry.image_url || "").trim()).sort((a, b) => String(a.label || "").localeCompare(String(b.label || "")));
-
-    if (!entries.length) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "No downloadable catalog entries available";
-      catalogPullSelectEl.appendChild(option);
-      catalogPullSelectEl.disabled = true;
-      return;
-    }
-
-    catalogPullSelectEl.disabled = false;
-    for (const entry of entries) {
-      const option = document.createElement("option");
-      option.value = entry.id;
-      option.textContent = `${entry.label} ${availabilityGlyph(entry.local_available)} ${availabilityLabel(entry.local_available)}`;
-      catalogPullSelectEl.appendChild(option);
-    }
+  function refreshCombinedSelection() {
+    const checked = catalogGroupedListEl.querySelectorAll("input.catalog-select:checked");
+    const groups = catalogGroupedListEl.querySelectorAll("details[data-group]");
+    pullSelectedGroupsBtn.disabled = Array.from(groups).filter((group) => group.querySelector("input.catalog-select:checked")).length < 2;
+    pullSelectedGroupsBtn.textContent = `Pull selected from both groups (${checked.length})`;
   }
 
   function renderGroupedCatalogEntries(entries) {
     if (!catalogGroupedListEl) return;
+    const openGroups = new Map(
+      Array.from(catalogGroupedListEl.querySelectorAll("details[data-group]"))
+        .map((details) => [details.dataset.group, details.open])
+    );
+    const selectedIds = new Set(
+      Array.from(catalogGroupedListEl.querySelectorAll("input.catalog-select:checked"))
+        .map((input) => input.value)
+    );
     const available = entries.filter((entry) => entry.local_available);
     const missing = entries.filter((entry) => !entry.local_available);
     const groups = [
       { key: "missing", title: "Missing from cache", subtitle: "These are the ones you can safely ignore for now while you focus on what is already present.", items: missing, open: false },
-      { key: "downloaded", title: "Already downloaded", subtitle: "These are the presets you can use immediately.", items: available, open: true },
+      { key: "downloaded", title: "Already downloaded", subtitle: "These are the presets you can use immediately.", items: available, open: false },
     ];
 
     catalogGroupedListEl.innerHTML = "";
     for (const group of groups) {
       const details = document.createElement("details");
       details.className = "catalog-group-card";
-      details.open = group.open;
+      details.dataset.group = group.key;
+      details.open = openGroups.get(group.key) ?? group.open;
 
       const summary = document.createElement("summary");
       summary.innerHTML = `
@@ -486,6 +472,7 @@
           bulkBtn.disabled = checked === 0;
           bulkBtn.textContent = `Pull selected (${checked})`;
           selectAll.checked = boxes.length > 0 && checked === boxes.length;
+          refreshCombinedSelection();
         };
         selectAll.addEventListener("change", () => {
           body.querySelectorAll("input.catalog-select:not(:disabled)").forEach((box) => { box.checked = selectAll.checked; });
@@ -506,6 +493,7 @@
           pick.className = "catalog-select";
           pick.value = entry.id || "";
           pick.disabled = !String(entry.image_url || "").trim();
+          pick.checked = !pick.disabled && selectedIds.has(pick.value);
           pick.title = pick.disabled ? "No download URL for this preset" : "Select for bulk pull";
           pick.addEventListener("change", refreshToolbar);
           item.appendChild(pick);
@@ -542,11 +530,13 @@
           item.appendChild(actions);
           body.appendChild(item);
         }
+        refreshToolbar();
       }
       details.appendChild(summary);
       details.appendChild(body);
       catalogGroupedListEl.appendChild(details);
     }
+    refreshCombinedSelection();
     updateCatalogPullTiles(currentCatalogPullJob);
   }
 
@@ -597,7 +587,6 @@
     }
 
     renderGroupedCatalogEntries(entries);
-    rebuildCatalogPullOptions(entries);
     const availableCount = entries.filter((entry) => entry.local_available).length;
     const missingCount = Math.max(0, entries.length - availableCount);
     catalogAvailabilityStatusEl.textContent = `Loaded ${entries.length} catalog entries (${availableCount} downloaded, ${missingCount} missing).`;
@@ -614,23 +603,23 @@
     const summary = job.summary || {};
     setPullCardState(job);
     catalogPullStatusEl.textContent = `Catalog pull ${job.id}: ${job.status}`;
-    const lines = [
-      `storage_dir: ${job.storage_dir || "n/a"}`,
-      `accepted: ${(job.accepted_ids || []).join(", ") || "(none)"}`,
-      `summary: ok=${summary.ok || 0} failed=${summary.failed || 0} skipped=${summary.skipped || 0} total=${summary.total || 0}`,
-      "",
-      "results:",
-    ];
-
     const results = Array.isArray(job.results) ? job.results : [];
+    const output = {
+      storage_dir: job.storage_dir || "n/a",
+      accepted: job.accepted_ids || [],
+      summary: { ok: summary.ok || 0, failed: summary.failed || 0, skipped: summary.skipped || 0, total: summary.total || 0 },
+      results: results.map((item) => ({
+        id: item.id || "?",
+        status: item.status || "unknown",
+        message: item.message || "",
+        download_path: item.download_path || "",
+      })),
+    };
     if (!results.length) {
-      lines.push(job.status === "completed" || job.status === "completed_with_errors" ? "(no results returned)" : "(waiting for worker progress)");
-    } else {
-      for (const item of results) {
-        lines.push(`- ${item.id || "?"}: ${item.status || "unknown"} | ${item.message || ""} | ${item.download_path || ""}`);
-      }
+      output.result_status = job.status === "completed" || job.status === "completed_with_errors"
+        ? "No results returned" : "Waiting for worker progress";
     }
-    catalogPullLogEl.textContent = lines.join("\n");
+    catalogPullLogEl.textContent = JSON.stringify(output, null, 2);
   }
 
   async function pollCatalogPullJob() {
@@ -690,15 +679,6 @@
     catalogPullStatusEl.textContent = `Pull job started for ${label}: ${data.job_id}`;
     setPullCardState(currentCatalogPullJob);
     pollCatalogPullJob();
-  }
-
-  async function startCatalogPull() {
-    const selectedIds = Array.from(catalogPullSelectEl.selectedOptions).map((option) => String(option.value || "").trim()).filter(Boolean);
-    if (!selectedIds.length) {
-      catalogPullStatusEl.textContent = "Select at least one catalog entry to pull.";
-      return;
-    }
-    await startCatalogPullForIds(selectedIds, "selected presets");
   }
 
   async function loadCloudInitProfiles() {
@@ -796,7 +776,10 @@
 
     document.getElementById("save-image-record").addEventListener("click", saveImageRecord);
     document.getElementById("clear-image-record").addEventListener("click", clearImageRecordForm);
-    document.getElementById("start-catalog-pull").addEventListener("click", startCatalogPull);
+    pullSelectedGroupsBtn.addEventListener("click", () => {
+      const ids = Array.from(catalogGroupedListEl.querySelectorAll("input.catalog-select:checked")).map((input) => input.value);
+      startCatalogPullForIds(ids, `${ids.length} selected presets`);
+    });
     document.getElementById("pull-all-missing").addEventListener("click", pullAllMissingCatalogEntries);
     document.getElementById("refresh-catalog-availability").addEventListener("click", loadCatalogAvailability);
     document.getElementById("refresh-cloud-init-profiles").addEventListener("click", loadCloudInitProfiles);

@@ -204,6 +204,24 @@ check(!("action" in collectModuleInputs()), "reboot action cannot be saved as mo
         text = self.page_text(response)
         self.assertIn("Use a stable mounted path for Longhorn data now", text)
         self.assertIn("default replica count at 2", text)
+        self.assertIn("On Pi workers this module only prepares the node", text)
+        self.assertIn("install the chart separately using a Helm configuration", text)
+
+    def test_longhorn_install_guidance_is_visible_when_configuring_a_worker(self) -> None:
+        from domain_defaults import NODE_PROVISION_PROFILES
+        profile = next(p for p in NODE_PROVISION_PROFILES if p["id"] == "longhorn")
+        self.browser_probe("/nodes", ["nodes/state.js", "nodes/module_config.js"], """
+function renderModulePresets() {}
+""", """
+nodes = [{name: "worker", group: "rpi5_active", selected_profiles: ["longhorn"]}];
+profiles = [PROFILE];
+renderNodeSelector();
+selectedModuleId = "longhorn";
+renderModuleSection();
+const detail = document.getElementById("module-detail").textContent;
+check(detail.includes("On Pi workers this module only prepares the node"), "worker limitation is visible");
+check(detail.includes("install the chart separately using a Helm configuration"), "separate installation is visible");
+""".replace("PROFILE", json.dumps(profile)))
 
     def test_settings_reset_node_ops(self) -> None:
         summary = self.client.get("/api/nodes/summary")

@@ -405,6 +405,45 @@ try {
         self.assertEqual(payload["jobs_running"], 1)
         self.assertTrue(payload["longhorn_ready"])
 
+    def test_longhorn_readiness_checks_active_pod_conditions(self) -> None:
+        def pod(phase, ready=None, **metadata):
+            status = {"phase": phase}
+            if ready is not None:
+                status["conditions"] = [{"type": "Ready", "status": ready}]
+            return {"metadata": {"namespace": "longhorn-system", **metadata}, "status": status}
+
+        namespaces = {"items": [{"metadata": {"name": "longhorn-system"}}]}
+        with patch.object(services.kubernetes, "_detect_kubernetes_runtime", return_value={"available": True}):
+            for pods, expected_ready, active, ready in (
+                ([pod("Running", "True"), pod("Succeeded")], True, 1, 1),
+                ([pod("Running", "False")], False, 1, 0),
+                ([pod("Running")], False, 1, 0),
+                ([pod("Pending")], False, 1, 0),
+                ([pod("Running", "True", deletionTimestamp="2026-01-01T00:00:00Z")], False, 1, 0),
+                ([pod("Succeeded")], False, 0, 0),
+            ):
+                with self.subTest(pods=pods), patch.object(
+                    services.kubernetes, "_run_kubectl_json",
+                    side_effect=[({"items": []}, ""), ({"items": pods}, ""), (namespaces, ""), ({"items": []}, "")],
+                ):
+                    summary = services.kubernetes._kubernetes_local_summary()
+                self.assertEqual(summary["longhorn_ready"], expected_ready)
+                self.assertEqual((summary["longhorn_pods_active"], summary["longhorn_pods_ready"]), (active, ready))
+
+    def test_longhorn_degraded_readiness_is_displayed_in_browser(self) -> None:
+        self.browser_probe("/kubernetes", ["kubernetes.js"], """
+window.fetch = async () => ({ok: true, json: async () => ({
+  ok: true, available: true, runtime: {}, longhorn_namespace_present: true,
+  longhorn_pods_running: 2, longhorn_pods_total: 2,
+  longhorn_pods_active: 2, longhorn_pods_ready: 1, longhorn_ready: false
+})});
+""", """
+await tick();
+check(document.getElementById("kube-longhorn").textContent === "1 / 2", "ready pods count displayed");
+check(document.getElementById("kube-longhorn-hero").textContent === "pods degraded", "degraded status displayed");
+check(document.getElementById("kube-longhorn-ready").textContent === "no", "readiness is not inferred from running phase");
+""")
+
     def test_kubernetes_page_renders_dense_dashboard_sections(self) -> None:
         response = self.client.get("/kubernetes")
         self.assertEqual(response.status_code, 200)

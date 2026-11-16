@@ -385,6 +385,10 @@ function renderModuleSection() {
     helper.className = "module-callout";
     helper.textContent = "Use a stable mounted path for Longhorn data now; when you move the Pi boot/storage layout to NVMe later, change only the storage path value rather than the workflow. Storage Disk 'auto' formats and mounts a single blank disk at that path for you (a disk that already holds data is never touched). Recommended first pass: keep the default replica count at 2 on a 2-node storage pair.";
     moduleDetailEl.appendChild(helper);
+    const installHint = document.createElement("p");
+    installHint.className = "module-callout";
+    installHint.textContent = "On Pi workers this module only prepares the node; it installs the Longhorn chart only on a Pi K3s server when Install Longhorn chart is selected. If your server is not a Pi 5, install the chart separately using a Helm configuration in the Kubernetes dashboard. Ensure open-iscsi and iscsid are available on every node that runs Longhorn workloads.";
+    moduleDetailEl.appendChild(installHint);
   }
   if (!specs.length) {
     const empty = document.createElement("p");

@@ -233,8 +233,9 @@ Open:
 - The default storage path is `/var/lib/longhorn` on the existing filesystem. The Storage Disk input defaults to `none`, which does not format or mount a disk; this keeps Longhorn data on the OS filesystem and shares its capacity and IO.
 - The storage path is configurable so you can later move Longhorn data to an NVMe-backed mount without changing the operator flow. Only select `auto` or a device after confirming the disk is intended for Longhorn: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts a blank disk by UUID. Disks that already hold data are never touched.
 - The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
+- If the K3s server is not a Pi 5, install Longhorn separately through a saved Helm configuration on the Kubernetes dashboard; applying the Pi worker profile alone does not install it. Verify the [Longhorn node prerequisites](https://longhorn.io/docs/latest/deploy/install/) on every node running Longhorn workloads, including the control plane.
 - Before applying the Longhorn profile, confirm the K3s API server and every kubelet are on compatible versions; a kubelet must not be newer than the API server. Then select the Longhorn profile for the Pi 5 nodes in Node Ops and apply it. Longhorn is not installed by `site.yml` unless the profile is explicitly selected.
-- The K3s dashboard reports whether the `longhorn-system` namespace and pods are present and healthy.
+- The Kubernetes dashboard reports Longhorn pod readiness, excluding successfully completed pods. This is not a check of Longhorn node, disk, or volume health.
 
 ## Architecture
 
@@ -838,11 +839,14 @@ Secret access and encryption are governed by the cluster. Use HTTPS on a
 trusted connection, and restart an existing bot pod after rotation. Kubernetes
 server-side apply may reject the update if another field manager owns the token
 key; resolve ownership deliberately rather than forcing it.
+Leave **Tailscale workload exposure** set to **Off**: Dockerbot connects
+outbound to Discord and its chart does not render a Service.
 
 An optional **Tailscale workload exposure** section uses an installed, ready
-operator. Enter a Service name from the preview and a Tailscale hostname. HTTPS
-creates a Helm-managed Tailscale Ingress using the Service's TCP port; service
-mode exposes its TCP/UDP ports. Preview shows the resulting resources, and
+operator. Save and preview with exposure Off to find a rendered Service name,
+then enter that name and a Tailscale hostname. Charts without a Service cannot
+use this exposure. HTTPS creates a Helm-managed Tailscale Ingress using the
+Service's TCP port; service mode exposes its TCP/UDP ports. Preview shows the resulting resources, and
 deployment is still explicitly confirmed. The operator and tailnet policy
 control actual reachability; API server RBAC does not protect application
 traffic. Enable tailnet HTTPS certificates for HTTPS ingress.

@@ -24,6 +24,7 @@ class DockerbotChartTests(unittest.TestCase):
 
     def test_default_deployment_and_claim(self):
         docs = self.render()
+        self.assertNotIn("Service", docs)
         deployment = docs["Deployment"]["spec"]
         pod = deployment["template"]["spec"]
         container = pod["containers"][0]

@@ -161,14 +161,14 @@ async function loadKubernetesSummary() {
     podsEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
     namespacesEl.textContent = String(data.namespaces_total || 0);
     jobsEl.textContent = `${Number(data.jobs_running || 0)} / ${Number(data.jobs_total || 0)}`;
-    longhornEl.textContent = `${Number(data.longhorn_pods_running || 0)} / ${Number(data.longhorn_pods_total || 0)}`;
+    longhornEl.textContent = `${Number(data.longhorn_pods_ready || 0)} / ${Number(data.longhorn_pods_active || 0)}`;
     nodesTotalHeroEl.textContent = String(data.nodes_total || 0);
     nodesReadyHeroEl.textContent = String(data.nodes_ready || 0);
     controlPlaneHeroEl.textContent = String(data.control_plane_nodes || 0);
     podsHeroEl.textContent = `${Number(data.pods_running || 0)} / ${Number(data.pods_total || 0)}`;
     namespacesHeroEl.textContent = String(data.namespaces_total || 0);
     jobsHeroEl.textContent = `${Number(data.jobs_running || 0)} / ${Number(data.jobs_total || 0)}`;
-    longhornHeroEl.textContent = data.longhorn_ready ? "ready" : (data.longhorn_namespace_present ? "degraded" : "absent");
+    longhornHeroEl.textContent = data.longhorn_ready ? "pods ready" : (data.longhorn_namespace_present ? "pods degraded" : "absent");
 
     readyPercentEl.textContent = `${data.nodes_total ? Math.round((Number(data.nodes_ready || 0) / Number(data.nodes_total || 1)) * 100) : 0}%`;
     runningPercentEl.textContent = `${data.pods_total ? Math.round((Number(data.pods_running || 0) / Number(data.pods_total || 1)) * 100) : 0}%`;
@@ -222,7 +222,7 @@ async function loadKubernetesSummary() {
       `Nodes ready ${escapeHtml(data.nodes_ready || 0)} of ${escapeHtml(data.nodes_total || 0)}`,
       `Pods running ${escapeHtml(data.pods_running || 0)} of ${escapeHtml(data.pods_total || 0)}`,
       `Jobs running ${escapeHtml(data.jobs_running || 0)} of ${escapeHtml(data.jobs_total || 0)}`,
-      `Longhorn ${escapeHtml(data.longhorn_pods_running || 0)} of ${escapeHtml(data.longhorn_pods_total || 0)} pods · ready ${escapeHtml(data.longhorn_ready ? "yes" : "no")}`,
+      `Longhorn pods ready ${escapeHtml(data.longhorn_pods_ready || 0)} of ${escapeHtml(data.longhorn_pods_active || 0)} active`,
       `Namespaces tracked ${escapeHtml(data.namespaces_total || 0)}`,
       `Last error ${escapeHtml(lastErrorText)}`,
     ].map((line) => `<li>${line}</li>`).join("");

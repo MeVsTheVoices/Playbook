@@ -19,9 +19,11 @@
    HTTPS connection to Playbook. The Secret name and key come from the saved
    `bot.existingSecret` and `bot.tokenKey` values. Stop any old instance using
    the same token before deploying.
-6. Preview and deploy. Check the pod logs for errors, then try `^ping` in a
-   channel the bot can access. The default prefix is `^`. If rotating a token,
-   restart the existing Deployment so its pod reads the updated Secret.
+6. Leave Tailscale workload exposure **Off**: Dockerbot connects outbound to
+   Discord and this chart does not render a Service. Preview and deploy. Check
+   the pod logs for errors, then try `^ping` in a channel the bot can access.
+   The default prefix is `^`. If rotating a token, restart the existing
+   Deployment so its pod reads the updated Secret.
 
 This image does not include Audio cog support. See the full chart README for
 manual installation, migration, backups, and storage options.

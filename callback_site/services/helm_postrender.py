@@ -12,12 +12,20 @@ def render(text, config):
     chunks = re.split(r"^---[ \t]*(?:\#.*)?\r?$", text, flags=re.MULTILINE)
     documents = [yaml.safe_load(chunk) for chunk in chunks]
     namespace = config["namespace"]
-    services = [
+    rendered_services = [
         doc for doc in documents
         if isinstance(doc, dict) and doc.get("apiVersion") == "v1" and doc.get("kind") == "Service"
-        and (doc.get("metadata") or {}).get("name") == config["service"]
         and (doc.get("metadata") or {}).get("namespace", namespace) == namespace
     ]
+    services = [doc for doc in rendered_services if (doc.get("metadata") or {}).get("name") == config["service"]]
+    if not services:
+        names = sorted({str(doc["metadata"]["name"]) for doc in rendered_services if (doc.get("metadata") or {}).get("name")})
+        available = f"Rendered Services: {', '.join(names[:10])}{', ...' if len(names) > 10 else ''}." if names else "This chart renders no Services in that namespace."
+        raise ValueError(
+            f"No rendered Service named {config['service']} in {namespace}. {available} "
+            "Set Tailscale exposure to Off and save, then preview to find a Service name; "
+            "leave exposure Off if the workload has no Service."
+        )
     if len(services) != 1:
         raise ValueError(f"Expected exactly one rendered Service named {config['service']} in {namespace}; found {len(services)}.")
     service = services[0]

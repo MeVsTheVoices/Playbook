@@ -155,7 +155,7 @@
               <details class="tailnet-api-panel">
                 <summary>Tailscale workload exposure</summary>
                 <p class="kube-subtle" id="helm-tailscale-status">Checking operator...</p>
-                <p class="kube-subtle">Optional. Select a Service rendered by this chart. HTTPS requires tailnet certificates; access is controlled by tailnet policy, not Kubernetes API RBAC. Alloy still needs its own collection and destination configuration; n8n may need its public URL and webhook settings.</p>
+                <p class="kube-subtle">Optional. Select a Service rendered by this chart. Save and preview with exposure Off to find its Service names. Dockerbot has no Service and should use Off. HTTPS requires tailnet certificates; access is controlled by tailnet policy, not Kubernetes API RBAC. Alloy still needs its own collection and destination configuration; n8n may need its public URL and webhook settings.</p>
                 <div class="helm-fields">
                   <label>Exposure
                     <select id="helm-ts-mode">
@@ -195,8 +195,8 @@
             <div class="kube-card"><div class="k">Pods Running / Total</div><div class="v" id="kube-pods">0 / 0</div></div>
             <div class="kube-card"><div class="k">Namespaces</div><div class="v" id="kube-namespaces">0</div></div>
             <div class="kube-card"><div class="k">Jobs Running / Total</div><div class="v" id="kube-jobs">0 / 0</div></div>
-            <div class="kube-card"><div class="k">Longhorn Pods Running / Total</div><div class="v" id="kube-longhorn">0 / 0</div></div>
-            <div class="kube-card"><div class="k">Longhorn Ready</div><div class="v" id="kube-longhorn-ready">no</div></div>
+            <div class="kube-card"><div class="k">Longhorn Pods Ready / Active</div><div class="v" id="kube-longhorn">0 / 0</div></div>
+            <div class="kube-card"><div class="k">Longhorn Pods Ready</div><div class="v" id="kube-longhorn-ready">no</div></div>
             <div class="kube-card"><div class="k">Ready %</div><div class="v" id="kube-ready-percent">0%</div></div>
             <div class="kube-card"><div class="k">Running %</div><div class="v" id="kube-running-percent">0%</div></div>
             <div class="kube-card"><div class="k">Last Error</div><div class="v" id="kube-last-error">none</div></div>

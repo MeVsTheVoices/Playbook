@@ -427,6 +427,15 @@ spec:
             with self.subTest(config=config), self.assertRaises(ValueError):
                 helm_postrender.render(text, config)
 
+    def test_missing_service_explains_how_to_select_or_disable_exposure(self):
+        with self.assertRaisesRegex(ValueError, "Rendered Services: app.*exposure to Off"):
+            helm_postrender.render(self.SERVICE, self.config(service="missing"))
+        with self.assertRaisesRegex(ValueError, "renders no Services.*leave exposure Off"):
+            helm_postrender.render("apiVersion: apps/v1\nkind: Deployment\n", self.config(service="missing"))
+        other_namespace = self.SERVICE.replace("  name: app", "  name: app\n  namespace: other")
+        with self.assertRaisesRegex(ValueError, "renders no Services"):
+            helm_postrender.render(other_namespace, self.config(service="missing"))
+
 
 class KubernetesClientRuntimeTests(BaseCallbackSiteTest):
     def test_configured_client_is_detected_without_k3s(self):

@@ -456,6 +456,8 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
         "longhorn_namespace_present": False,
         "longhorn_pods_total": 0,
         "longhorn_pods_running": 0,
+        "longhorn_pods_active": 0,
+        "longhorn_pods_ready": 0,
         "longhorn_ready": False,
         "node_rows": [],
         "pod_rows": [],
@@ -527,6 +529,8 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
         pods_running = 0
         longhorn_pods_total = 0
         longhorn_pods_running = 0
+        longhorn_pods_active = 0
+        longhorn_pods_ready = 0
         for pod in pod_items:
             if not isinstance(pod, dict):
                 continue
@@ -539,6 +543,14 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
                 longhorn_pods_total += 1
                 if phase == "Running":
                     longhorn_pods_running += 1
+                if phase != "Succeeded":
+                    longhorn_pods_active += 1
+                    conditions = status.get("conditions", []) if isinstance(status.get("conditions"), list) else []
+                    if phase == "Running" and not metadata.get("deletionTimestamp") and any(
+                        isinstance(condition, dict) and condition.get("type") == "Ready" and condition.get("status") == "True"
+                        for condition in conditions
+                    ):
+                        longhorn_pods_ready += 1
             container_statuses = status.get("containerStatuses", []) if isinstance(status.get("containerStatuses"), list) else []
             ready_count = 0
             restart_count = 0
@@ -568,8 +580,10 @@ def _kubernetes_local_summary() -> Dict[str, Any]:
         summary["pods_running"] = pods_running
         summary["longhorn_pods_total"] = longhorn_pods_total
         summary["longhorn_pods_running"] = longhorn_pods_running
+        summary["longhorn_pods_active"] = longhorn_pods_active
+        summary["longhorn_pods_ready"] = longhorn_pods_ready
         summary["longhorn_ready"] = bool(
-            longhorn_namespace_present and longhorn_pods_total > 0 and longhorn_pods_running == longhorn_pods_total
+            longhorn_namespace_present and longhorn_pods_active > 0 and longhorn_pods_ready == longhorn_pods_active
         )
         summary["pod_rows"] = pod_rows[:60]
 

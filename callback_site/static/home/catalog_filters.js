@@ -10,9 +10,22 @@ function isUefiInstaller() {
   return ["uefi-x86_64", "uefi-arm64"].includes(form.profile.value);
 }
 
+function flashWorkflowAvailable() {
+  return typeof deviceBackend !== "undefined"
+    && typeof lastDeviceRefreshError !== "undefined"
+    && typeof updateDeviceDiscoveryMode === "function"
+    && typeof confirmHelperTarget === "function";
+}
+
 function updateInstallerWorkflow() {
   const installer = isUefiInstaller();
   const note = document.getElementById("installer-workflow-status");
+  if (!flashWorkflowAvailable()) {
+    note.hidden = false;
+    note.textContent = "SD flashing is unavailable: the device-safety integration is incomplete.";
+    form.querySelector("button[type='submit']").disabled = true;
+    return;
+  }
   note.hidden = !installer;
   note.textContent = deviceBackend === "helper"
     ? "Unattended installer USB: booting it erases the sole eligible internal disk without another prompt, then powers off. Remove USB before restarting. ARM64 requires UEFI firmware."

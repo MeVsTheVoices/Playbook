@@ -260,8 +260,7 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
         warn("Admin members are only used when the admin is a group:name; they were ignored.")
     elif _GROUP_RE.match(admin):
         warn(
-            f"{admin} must exist under 'groups' in your policy or Tailscale will reject it. "
-            "Add the admin login emails below to have it emitted here, or define it in the admin console.",
+            f"{admin} must exist under 'groups'. Add login emails here or define the group in Tailscale.",
         )
 
     policy["tagOwners"] = {tag: [admin] for tag in rack_tags}
@@ -297,8 +296,7 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
             rack_ports.append(K3S_ETCD_PORTS[0])
             why += f"; {K3S_ETCD_PORTS[0]} {K3S_ETCD_PORTS[1]}"
             warn(
-                "etcd ports are open between every rack node because a tag cannot tell a K3s server from a worker. "
-                "Keep the number of K3s servers odd (the NucBox plus two Pi servers makes three).",
+                "etcd ports are open to all rack nodes; tags do not distinguish servers. Keep an odd number of K3s servers.",
                 "info",
             )
         rack_ports += extra_ports
@@ -369,11 +367,10 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
             approvers["exitNode"] = list(rack_tags)
         policy["autoApprovers"] = approvers
         warn(
-            "Auto-approval only applies when a route or exit node is first advertised. For one that is already "
-            "advertised, stop advertising it on the node and advertise it again.",
+            "Auto-approval applies when a route or exit node is first advertised. Re-advertise existing routes or exit nodes to trigger it.",
             "info",
         )
-        warn("Routes and exit nodes are approved for every rack tag; narrow this to your subnet router if you have one.", "info")
+        warn("Routes and exit nodes are approved for all rack tags; narrow approval to your router if appropriate.", "info")
 
     admin_testable = not admin.startswith("autogroup:")
     test_count = 0
@@ -416,13 +413,12 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
                 test_count += 1
 
     warn(
-        "Tailscale's default policy ships an allow-all grant (* to *). These rules only restrict anything after that "
-        "grant is removed, so keep it until the tests pass, then delete it.",
+        "The default allow-all grant overrides restrictions. Keep it until the rack works, then remove it; deny tests require its removal.",
         "info",
     )
     warn(
-        "Define the tags here before creating auth keys: a key must be created with the same tags the node advertises "
-        f"({', '.join(rack_tags)}).",
+        "Define tags before creating auth keys, and use matching tags on each node: "
+        f"{', '.join(rack_tags)}.",
         "info",
     )
 

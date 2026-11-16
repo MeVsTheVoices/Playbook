@@ -44,6 +44,16 @@
         </section>
 
         <section
+          id="acl-apply-guide-section"
+          class="panel lazy reveal"
+          hx-get="/fragments/tailscale-acl/apply-guide"
+          hx-trigger="load delay:160ms"
+          hx-swap="innerHTML"
+        >
+          <p class="skeleton">Loading apply guide...</p>
+        </section>
+
+        <section
           id="acl-inputs-section"
           class="panel lazy reveal"
           hx-get="/fragments/tailscale-acl/inputs"
@@ -63,15 +73,6 @@
           <p class="skeleton">Loading policy output panel...</p>
         </section>
 
-        <section
-          id="acl-apply-guide-section"
-          class="panel lazy reveal"
-          hx-get="/fragments/tailscale-acl/apply-guide"
-          hx-trigger="load delay:620ms"
-          hx-swap="innerHTML"
-        >
-          <p class="skeleton">Loading apply guide...</p>
-        </section>
       </div>
     </main>
 

@@ -21,6 +21,10 @@ document.getElementById("payload-inspect-clear").addEventListener("click", () =>
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!flashWorkflowAvailable()) {
+    statusEl.textContent = "SD flashing is unavailable: the device-safety integration is incomplete.";
+    return;
+  }
   await sdBrowserSessionReady;
   if (isUefiInstaller() && deviceBackend !== "helper") {
     statusEl.textContent = "UEFI installer creation requires a configured Linux flashing helper.";
@@ -238,6 +242,8 @@ ensureK3sConfigDefaults();
 
 rebuildCatalogFilters();
 
+updateInstallerWorkflow();
+
 applyK3sRoleDefaults();
 
 updateOsScopedOptionsVisibility();
@@ -262,18 +268,23 @@ sdBrowserSessionReady = loadSdOptionProfiles();
 
 startDeviceFallbackPolling();
 
-fetch("/api/sd/backend").then(async (response) => {
-  if (!response.ok) throw new Error("Could not read flashing backend capabilities.");
-  updateDeviceDiscoveryMode((await response.json()).backend);
-}).catch((error) => {
-  statusEl.textContent = error.message;
-});
+if (flashWorkflowAvailable()) {
+  fetch("/api/sd/backend").then(async (response) => {
+    if (!response.ok) throw new Error("Could not read flashing backend capabilities.");
+    updateDeviceDiscoveryMode((await response.json()).backend);
+  }).catch((error) => {
+    statusEl.textContent = error.message;
+  });
 
-pollDevicesSnapshot().then(() => {
-  if (deviceBackend === "native") {
-    startDeviceWebhook();
-  }
-});
+  pollDevicesSnapshot().then(() => {
+    if (deviceBackend === "native") {
+      startDeviceWebhook();
+    }
+  });
+} else {
+  startDeviceWebhook();
+  pollDevicesSnapshot();
+}
 
 loadEvents();
 

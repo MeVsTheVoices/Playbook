@@ -115,6 +115,7 @@
                 <p class="hint">Use this server's LAN or Tailscale address and callback port, not localhost, a Docker address, or the dashboard-only port. A Tailscale address requires the Pi to join that tailnet during setup.</p>
               </div>
             </div>
+            <p class="hint" id="installer-workflow-status" hidden></p>
           </details>
 
           <details class="fieldset" id="sd-image-settings" name="sd-setup">
@@ -172,7 +173,7 @@
                 <input id="ssh_key_name" name="ssh_key_name" value="rack-bootstrap-ed25519" placeholder="rack-bootstrap-ed25519">
                 <button type="button" id="generate-ssh-key">Generate Key</button>
                 <button type="button" id="kload-ssh-key">Load Key</button>
-              </details>
+              </div>
               <div class="key-preset-row">
                 <div>
                   <label for="ssh_key_select" style="margin-top: 0.55rem;">Saved Generated Keys</label>
@@ -182,6 +183,18 @@
                 </div>
                 <button type="button" id="load-selected-ssh-key">Use Selected</button>
                 <button type="button" id="refresh-ssh-key-list" class="secondary">Refresh List</button>
+              </div>
+              <button type="button" id="regenerate-ssh-key" class="secondary" aria-expanded="false" aria-controls="ssh-key-regeneration" disabled>Regenerate Selected</button>
+              <div id="ssh-key-regeneration" hidden>
+                <p class="hint">Create a fresh key under a different name. The original key is kept; existing nodes are not changed. Download the new private key before using it.</p>
+                <div class="key-picker-row">
+                  <div>
+                    <label for="ssh_key_new_name">New key name</label>
+                    <input id="ssh_key_new_name" autocomplete="off" placeholder="rack-bootstrap-ed25519-2">
+                  </div>
+                  <button type="button" id="confirm-regenerate-ssh-key">Create New Key</button>
+                  <button type="button" id="cancel-regenerate-ssh-key" class="secondary">Cancel</button>
+                </div>
               </div>
               <div class="key-upload-row">
                 <div>
@@ -198,7 +211,7 @@
               <textarea id="ssh_public_key" name="ssh_public_key" placeholder="ssh-ed25519 AAAA... user@host" required></textarea>
               <p class="hint">Generated or loaded website keys are also fetched and verified during first boot from the callback host's public-key endpoint. Keep the matching private key for future SSH access. Uploaded or edited keys are embedded only. The callback address must be reachable from the node, not localhost.</p>
             </div>
-          </div>
+          </details>
 
           <details class="fieldset" id="cloud-init-optional-settings">
             <summary>
@@ -644,7 +657,7 @@ server: https://local-machine-ip:6443
         <div class="section-head">
           <h1>Rack Cloud-Init Callback Dashboard 📡🙂</h1>
           <div class="actions-row callback-toolbar" style="margin-top: 0;">
-            <button type="button" id="events-toggle-older" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;" title="The newest callback per host is always shown in full">Expand older (0)</button>
+            <button type="button" id="events-toggle-older" class="secondary" style="width:auto; padding:0.3rem 0.75rem; font-size:0.82rem;" title="The newest callback per host is always shown in full">Expand history (0)</button>
             <a class="mini-link" id="open-terminal-link" href="/test-terminal" target="_blank" rel="noopener noreferrer">Open node terminal</a>
             <span class="status-chip"><span class="status-dot"></span> Live Event Feed</span>
           </div>
@@ -689,7 +702,7 @@ server: https://local-machine-ip:6443
           </div>
         </div>
         <p class="small-note" id="event-meta">Waiting for callback updates...</p>
-        <p class="small-note">Click a row to inspect it. Archive a retired node from its newest callback; history stays safe and restoration is available in <a href="/settings#archived-nodes">Settings</a>. Older callbacks per host are condensed (▸ expands).</p>
+        <p class="small-note">Click a callback to inspect it. Expand a host's older callbacks, then a callback type, to see its history. Archive a retired node from its newest callback; restore it in <a href="/settings#archived-nodes">Settings</a>.</p>
         <div class="table-wrap">
         <table class="events-table">
           <thead>

@@ -2,6 +2,39 @@
 @use "../../abstracts/tokens";
 @use "../../abstracts/palette";
 
+.apply-guide > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.apply-guide > summary::-webkit-details-marker {
+  display: none;
+}
+
+.apply-guide > summary .eyebrow,
+.apply-guide-title {
+  display: block;
+}
+
+.apply-guide-title {
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.apply-guide-indicator {
+  color: var(--accent);
+  transition: transform 0.18s ease;
+}
+
+.apply-guide[open] .apply-guide-indicator {
+  transform: rotate(180deg);
+}
+
 .guide-steps {
   margin-top: 0.66rem;
   display: grid;

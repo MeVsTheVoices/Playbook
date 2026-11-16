@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from unittest.mock import patch
 
 try:
@@ -25,6 +26,9 @@ const image = document.querySelector("#sd-image-settings");
 const ssh = document.querySelector("#sd-ssh-settings");
 const optional = document.querySelector("#cloud-init-optional-settings");
 const openPanels = () => panels.filter(panel => panel.open);
+check(ssh.contains(document.querySelector("#ssh_key_select"))
+  && ssh.contains(document.querySelector("#ssh_public_key"))
+  && !ssh.contains(optional), "SSH fields stay inside their own panel");
 check(panels.length === 3 && panels[0] === target && panels[1] === image && panels[2] === ssh,
   "three setup panels follow target, image, access order");
 check(openPanels().length === 1 && target.open, "only Target Settings starts open");
@@ -47,7 +51,55 @@ check(openPanels().length === 1 && image.open, "programmatic opening also stays 
 image.querySelector("summary").click();
 check(openPanels().length === 0 && optional.open, "active step can be closed without affecting Cloud-Init");
 """)
-        self.assertEqual(len(checks), 9)
+        self.assertEqual(len(checks), 10)
+
+    def test_cloud_init_initializes_and_tracks_profile_and_distribution(self) -> None:
+        page = self.client.get("/").get_data(as_text=True)
+        constants = re.search(r"<script>\s*(const imageCatalog = .*?)\s*</script>", page, re.S)
+        self.assertIsNotNone(constants)
+        scripts = [
+            f"home/{name}.js" for name in (
+                "state", "activity", "hostname", "job_log", "image_library", "events",
+                "catalog_filters", "k3s_roles", "catalog_pull", "ssh_keys", "devices",
+                "cloud_init_options", "sd_jobs", "init",
+            )
+        ]
+        self.browser_probe("/", scripts, constants.group(1) + """
+window.onerror = (message) => {
+  document.body.innerHTML = '<pre id="browser-result"></pre>';
+  document.querySelector("pre").textContent = JSON.stringify({error: String(message)});
+};
+const requestedUrls = [];
+window.fetch = async (url) => {
+  requestedUrls.push(url);
+  return {ok: true, json: async () => ({
+    ok: true, profiles: [], keys: [], events: [], devices: [], backend: "helper"
+  })};
+};
+window.setInterval = () => 0;
+""", """
+await tick();
+const k3s = document.getElementById("k3s-distribution-section");
+const pi = document.getElementById("pi-specific-section");
+const optional = document.getElementById("cloud-init-optional-settings");
+check(k3s.hidden && getComputedStyle(pi).display === "none", "standard image hides irrelevant K3s and Pi-specific sections");
+form.distribution.value = "k3s";
+form.distribution.dispatchEvent(new Event("change"));
+check(!k3s.hidden && k3s.open, "K3s selection shows and opens its section");
+sdOptionsProfilePiOnlyEl.checked = true;
+sdOptionsProfilePiOnlyEl.dispatchEvent(new Event("change"));
+check(getComputedStyle(pi).display !== "none" && pi.open, "Pi-specific template reveals board options");
+optional.open = true;
+check(document.querySelector("#opt_k3s_config").value.includes("server:"), "K3s configuration is initialized");
+check(document.getElementById("sd-options-delete").disabled, "template actions initialize");
+check(form.querySelector("button[type='submit']").disabled
+  && document.getElementById("installer-workflow-status").textContent.includes("device-safety"),
+  "incomplete flash integration is explicitly disabled");
+form.dispatchEvent(new Event("submit", {cancelable: true}));
+await tick();
+check(!requestedUrls.includes("/api/sd/prepare") && statusEl.textContent.includes("device-safety"),
+  "programmatic submit also fails safely");
+""")
 
     def test_misc_options_are_visible_and_map_to_provisioning(self) -> None:
         page = self.page_text(self.client.get("/"))

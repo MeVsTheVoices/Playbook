@@ -96,11 +96,36 @@
   line-height: inherit;
 }
 
-.event-twisty {
-  cursor: pointer;
+.events-table .event-history-toggle {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: palette.$teal-700;
+  font: inherit;
   font-weight: 700;
-  user-select: none;
+  text-align: left;
+}
+
+.events-table .event-history-toggle:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.event-host-history {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+}
+
+.events-table tbody tr.event-stage-group td {
+  padding: 0.35rem 0.75rem 0.35rem 1.5rem;
+  background: palette.$slate-100;
+  font-size: 0.82rem;
+}
+
+.events-table tbody tr.event-history-row td:first-child {
+  padding-left: 2.5rem;
 }
 
 @keyframes event-row-fade {

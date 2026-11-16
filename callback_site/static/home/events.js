@@ -159,7 +159,9 @@ const EVENTS_OLDER_KEY = "callback-older-expanded";
 
 let olderExpanded = localStorage.getItem(EVENTS_OLDER_KEY) === "1";
 
-const expandedEventIds = new Set();
+const hostExpansion = new Map();
+const stageExpansion = new Map();
+const eventExpansion = new Map();
 
 const eventsToggleOlderBtn = document.getElementById("events-toggle-older");
 
@@ -179,15 +181,39 @@ function updateOlderToggle(olderCount) {
   if (!eventsToggleOlderBtn) return;
   eventsToggleOlderBtn.disabled = olderCount === 0;
   eventsToggleOlderBtn.textContent = olderExpanded
-    ? `Condense older (${olderCount})`
-    : `Expand older (${olderCount})`;
+    ? `Collapse history (${olderCount})`
+    : `Expand history (${olderCount})`;
 }
 
 function toggleOlderEvents() {
   olderExpanded = !olderExpanded;
   localStorage.setItem(EVENTS_OLDER_KEY, olderExpanded ? "1" : "0");
-  expandedEventIds.clear();
+  hostExpansion.clear();
+  stageExpansion.clear();
+  eventExpansion.clear();
   renderEvents(filterEvents(allEvents));
+}
+
+function expansionState(states, key) {
+  return states.has(key) ? states.get(key) : olderExpanded;
+}
+
+function addHistoryToggle(container, label, expanded, states, key, kind) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `event-history-toggle event-${kind}-toggle`;
+  button.dataset.expansionKey = key;
+  button.setAttribute("aria-expanded", String(expanded));
+  button.textContent = `${expanded ? "▾" : "▸"} ${label}`;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    states.set(key, !expanded);
+    renderEvents(filterEvents(allEvents));
+    const replacement = [...eventsBodyEl.querySelectorAll(`.event-${kind}-toggle`)]
+      .find((item) => item.dataset.expansionKey === key);
+    if (replacement) replacement.focus();
+  });
+  container.appendChild(button);
 }
 
 function eventIdentity(event) {
@@ -224,6 +250,11 @@ function showPayloadInspect(event) {
 }
 
 function renderEvents(events) {
+  const focused = document.activeElement;
+  const focusedKind = ["host", "stage", "detail"].find(
+    (kind) => focused && focused.classList.contains(`event-${kind}-toggle`),
+  );
+  const focusedKey = focusedKind ? focused.dataset.expansionKey : null;
   eventsBodyEl.innerHTML = "";
   if (!events || !events.length) {
     const tr = document.createElement("tr");
@@ -236,21 +267,26 @@ function renderEvents(events) {
     return;
   }
 
-  // Events arrive newest first: the first one per host stays full, the rest are older.
-  const seenHosts = new Set();
-  let olderCount = 0;
+  const hosts = new Map();
   for (const e of events.slice(0, 200)) {
     const hostKey = eventHostKey(e);
-    const isOlder = Boolean(hostKey) && seenHosts.has(hostKey);
-    if (hostKey) seenHosts.add(hostKey);
-    if (isOlder) olderCount += 1;
+    const key = hostKey || Symbol();
+    if (!hosts.has(key)) hosts.set(key, []);
+    hosts.get(key).push(e);
+  }
+  let olderCount = 0;
+
+  function appendEvent(e, isOlder, hostKey, historyCount = 0) {
     const tr = document.createElement("tr");
     tr.className = "event-row-new";
     const eventId = eventIdentity(e);
     tr.dataset.eventId = eventId;
-    const condensed = isOlder && !olderExpanded && !expandedEventIds.has(eventId);
+    const condensed = isOlder && !expansionState(eventExpansion, eventId);
     if (condensed) tr.classList.add("event-row-condensed");
-    if (isOlder) tr.dataset.older = "1";
+    if (isOlder) {
+      tr.dataset.older = "1";
+      tr.classList.add("event-history-row");
+    }
     if (inspectedEventId && inspectedEventId === eventId) {
       tr.classList.add("event-row-selected");
     }
@@ -274,18 +310,8 @@ function renderEvents(events) {
     values.forEach((v, idx) => {
       const td = document.createElement("td");
       if (idx === 0 && isOlder) {
-        const twisty = document.createElement("span");
-        twisty.className = "event-twisty";
-        twisty.textContent = condensed ? "▸ " : "▾ ";
-        twisty.title = condensed ? "Expand this older callback" : "Condense this older callback";
-        twisty.addEventListener("click", (event) => {
-          event.stopPropagation();
-          if (expandedEventIds.has(eventId)) expandedEventIds.delete(eventId);
-          else expandedEventIds.add(eventId);
-          renderEvents(filterEvents(allEvents));
-        });
-        td.appendChild(twisty);
-        td.appendChild(document.createTextNode(v));
+        addHistoryToggle(td, "Details", !condensed, eventExpansion, eventId, "detail");
+        td.appendChild(document.createTextNode(` ${v}`));
         tr.appendChild(td);
         return;
       }
@@ -317,6 +343,15 @@ function renderEvents(events) {
     }
 
     tr.addEventListener("click", () => showPayloadInspect(e));
+    if (historyCount) {
+      const history = document.createElement("div");
+      history.className = "event-host-history";
+      addHistoryToggle(
+        history, `${historyCount} older callback${historyCount === 1 ? "" : "s"}`,
+        expansionState(hostExpansion, hostKey), hostExpansion, hostKey, "host",
+      );
+      tr.children[1].appendChild(history);
+    }
     if (!isOlder && (e.hostname || e.fqdn)) {
       const actions = document.createElement("div");
       actions.className = "inline-actions";
@@ -331,7 +366,42 @@ function renderEvents(events) {
     }
     eventsBodyEl.appendChild(tr);
   }
+
+  for (const [hostKey, hostEvents] of hosts) {
+    const history = hostEvents.slice(1);
+    olderCount += history.length;
+    appendEvent(hostEvents[0], false, hostKey, history.length);
+    if (!history.length || !expansionState(hostExpansion, hostKey)) continue;
+
+    const stages = new Map();
+    for (const event of history) {
+      const stage = String(event.stage || "phone_home");
+      if (!stages.has(stage)) stages.set(stage, []);
+      stages.get(stage).push(event);
+    }
+    for (const [stage, stageEvents] of stages) {
+      const key = JSON.stringify([hostKey, stage]);
+      const expanded = expansionState(stageExpansion, key);
+      const row = document.createElement("tr");
+      row.className = "event-stage-group";
+      const cell = document.createElement("td");
+      cell.colSpan = 8;
+      addHistoryToggle(
+        cell, `${stage} (${stageEvents.length})`, expanded, stageExpansion, key, "stage",
+      );
+      row.appendChild(cell);
+      eventsBodyEl.appendChild(row);
+      if (expanded) {
+        stageEvents.forEach((event) => appendEvent(event, true, hostKey));
+      }
+    }
+  }
   updateOlderToggle(olderCount);
+  if (focusedKind) {
+    const replacement = [...eventsBodyEl.querySelectorAll(`.event-${focusedKind}-toggle`)]
+      .find((button) => button.dataset.expansionKey === focusedKey);
+    if (replacement) replacement.focus();
+  }
 
   if (inspectedEventId && inspectedSnapshot) {
     const match = events.find((e) => eventIdentity(e) === inspectedEventId);

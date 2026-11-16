@@ -1,13 +1,15 @@
-<div class="section-head">
-	<div>
-		<p class="eyebrow">Apply Guide</p>
-		<h2>Rolling It Out</h2>
-	</div>
-</div>
-<div class="guide-steps">
+<details class="apply-guide">
+	<summary>
+		<span>
+			<span class="eyebrow">Apply Guide</span>
+			<span class="apply-guide-title">Rolling It Out</span>
+		</span>
+		<span class="apply-guide-indicator" aria-hidden="true">▾</span>
+	</summary>
+	<div class="guide-steps">
 	<article class="guide-step">
 		<span class="step-index">1</span>
-		<p><strong>Merge, do not replace.</strong> Open the Tailscale admin console, go to Access Controls and add the generated sections (<code>tagOwners</code>, <code>grants</code>, <code>ssh</code>, <code>autoApprovers</code>, <code>tests</code>). Grants and legacy <code>acls</code> can coexist. Keep Tailscale's default allow-all grant until the rack works, then delete it.</p>
+		<p><strong>Merge, do not replace.</strong> In Tailscale's Access Controls, merge the generated sections into your existing policy; grants and legacy <code>acls</code> can coexist. Keep the default allow-all grant until the rack works, then remove it.</p>
 	</article>
 	<article class="guide-step">
 		<span class="step-index">2</span>
@@ -23,6 +25,7 @@
 	</article>
 	<article class="guide-step">
 		<span class="step-index">5</span>
-		<p><strong>Save and read the result.</strong> Tailscale runs the tests when you save and rejects the change if one fails, so a broken rule shows up before it reaches the rack. A reimaged node gets a new tailnet IP; tags keep the rules working.</p>
+		<p><strong>Save and check.</strong> Tailscale rejects a policy if its tests fail. Deny tests can only pass after the default allow-all grant is removed. Tags keep rules working when a reimaged node gets a new tailnet IP.</p>
 	</article>
-</div>
+	</div>
+</details>

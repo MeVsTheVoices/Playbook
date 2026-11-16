@@ -186,6 +186,14 @@ function measure(frame) {
       taskCardLayout: taskCards ? style(taskCards.firstElementChild).display : null,
       helmSelectionHeight: doc.querySelector("#helm-selection")?.getBoundingClientRect().height ?? null,
       helmSelectionArrow: doc.querySelector("#helm-selection") ? style(doc.querySelector("#helm-selection")).backgroundImage : null,
+      cloudGridColumns: doc.querySelector("#cloud-init-optional-settings > .form-grid")
+        ? style(doc.querySelector("#cloud-init-optional-settings > .form-grid")).gridTemplateColumns.split(" ").length : null,
+      cloudFieldsFit: doc.querySelector("#cloud-init-optional-settings")
+        ? [...doc.querySelectorAll("#cloud-init-optional-settings input, #cloud-init-optional-settings select, #cloud-init-optional-settings textarea")]
+          .every(element => {
+            const bounds = element.getBoundingClientRect(), parent = element.parentElement.getBoundingClientRect();
+            return !bounds.width || (bounds.left >= parent.left - 1 && bounds.right <= parent.right + 1);
+          }) : null,
       sidebarWidth: doc.querySelector(".sidebar").getBoundingClientRect().width,
       sidebarToggleWidth: doc.querySelector("#sidebar-toggle").getBoundingClientRect().width,
       sidebarToggleFitsHeader: (() => {
@@ -252,6 +260,9 @@ function measure(frame) {
                 self.assertLess(snapshot["checkboxWidth"], 30)
                 self.assertTrue(snapshot["navigationIcons"])
                 self.assertTrue(snapshot["sidebarToggleFitsHeader"])
+                if snapshot["path"] == "/" and snapshot["state"] == "expanded":
+                    self.assertEqual(snapshot["cloudGridColumns"], 1 if snapshot["viewport"] <= 900 else 2)
+                    self.assertTrue(snapshot["cloudFieldsFit"])
                 self.assertEqual(snapshot["sidebarBrandVisible"],
                                  snapshot["viewport"] <= 760 or snapshot["state"] == "default")
                 if snapshot["path"] == "/tailscale-acl":

@@ -144,6 +144,19 @@ class TailscalePolicyBuilderTests(BaseCallbackSiteTest):
         self.assertEqual(with_members["policy"]["groups"], {"group:admins": ["a@example.com", "b@example.com"]})
         self.assertFalse(any("must exist under 'groups'" in w["text"] for w in with_members["warnings"]))
 
+    def test_rollout_notices_are_concise_and_keep_safety_caveats(self) -> None:
+        warnings = [item["text"] for item in build(
+            pi_servers=True, subnets="192.0.2.0/24", exit_node=True,
+        )["warnings"]]
+        self.assertEqual(len(warnings), 6)
+        self.assertTrue(all(len(text) <= 160 for text in warnings), warnings)
+        self.assertTrue(any("groups" in text and "group:admins" in text for text in warnings))
+        self.assertTrue(any("etcd" in text and "all rack nodes" in text for text in warnings))
+        self.assertTrue(any("first advertised" in text and "exit node" in text for text in warnings))
+        self.assertTrue(any("all rack tags" in text for text in warnings))
+        self.assertTrue(any("allow-all" in text and "deny tests" in text for text in warnings))
+        self.assertTrue(any("auth keys" in text and "tag:homelab" in text for text in warnings))
+
     def test_tests_can_be_switched_off(self) -> None:
         policy = build(tests=False)["policy"]
         self.assertNotIn("tests", policy)
@@ -291,6 +304,15 @@ class TailscalePolicyApiAndPageTests(BaseCallbackSiteTest):
         guide = self.client.get("/fragments/tailscale-acl/apply-guide").get_data(as_text=True)
         for phrase in ("tagOwners", "first advertised", "--ssh", "allow-all"):
             self.assertIn(phrase, guide)
+        page = self.client.get("/tailscale-acl").get_data(as_text=True)
+        self.assertLess(page.index('id="acl-apply-guide-section"'), page.index('id="acl-inputs-section"'))
+        self.browser_probe("/tailscale-acl", [], "", """
+document.getElementById("acl-apply-guide-section").innerHTML = %s;
+const guide = document.querySelector(".apply-guide");
+check(!guide.open, "apply guide starts collapsed");
+guide.querySelector("summary").click();
+check(guide.open && guide.textContent.includes("Merge, do not replace"), "guide opens on request");
+""" % json.dumps(guide))
 
     def test_page_script_uses_the_server_side_builder(self) -> None:
         script = (REPO_ROOT / "callback_site" / "static" / "tailscale_acl.js").read_text(encoding="utf-8")

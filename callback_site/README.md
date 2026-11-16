@@ -165,8 +165,9 @@ Open:
 - Activity Dock status cards link directly to their relevant dashboard sections; the banner follows the current attention state.
 - Image Library's download-catalog preview shows at most five named missing presets, with the full catalog and pull controls in the Image Source Panel. Settings combines catalog health and its source details into one panel.
   On mobile, SSH key controls stack and callback tables scroll within their panel so the dashboard stays within the viewport.
-  Older callbacks per host use single-line compact rows, including certificate
-  text and badges; expand a row or use Expand older to see full details.
+  The newest callback per host stays visible; expand its history and a callback
+  type to reveal compact older rows, or use Expand history to open everything.
+  Select a callback for its payload, or expand its row for full table details.
 - `/images` — cached and downloadable image catalog with bulk pull jobs.
 - `/monitor` — callback event feed, hardware snapshots (including a dedicated Architecture column), and certificate pull helpers. Reachability checks try ICMP and fall back to TCP on the selected SSH port when ICMP is blocked. Architecture comes from hardware-check callbacks (`uname -m` on boot or `ansible_architecture` from Node Ops); run Get Hardware Profile to populate it for older reports. This action gathers hardware facts only; it does not check or apply provisioning modules.
 - `/nodes` — node inventory, saved inputs, per-module configuration with remembered/named configurations, and provisioning check/apply.
@@ -639,6 +640,10 @@ inside the container. Keep the site on a trusted network; it is not intended for
 public-internet exposure.
 
 ### SD/USB flashing from Docker (host flasher)
+
+The dashboard's write button is currently disabled because its device-safety
+workflow is incomplete. Cloud-init settings remain available, but do not use
+the dashboard to flash a device until the workflow is restored.
 
 The container cannot see host SD cards or USB drives; under Docker Desktop it
 runs inside a VM. SD preparation is therefore delegated to a small host agent,

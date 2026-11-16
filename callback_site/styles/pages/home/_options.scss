@@ -54,6 +54,24 @@
   transform: rotate(180deg);
 }
 
+#cloud-init-optional-settings > .form-grid {
+  margin-top: 1rem;
+}
+
+#cloud-init-optional-settings .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+#cloud-init-optional-settings .checkbox-row {
+  align-items: flex-start;
+  line-height: 1.45;
+}
+
+#cloud-init-optional-settings .checkbox-row input {
+  margin-top: 0.25rem;
+}
+
 .segment-list {
   display: grid;
   gap: 0.7rem;
@@ -62,18 +80,28 @@
 .segment {
   @include mixins.outlined(tokens.$radius-control);
   background: palette.$slate-50;
-  padding: 0.25rem 0.6rem 0.65rem;
+  padding: 0.35rem 0.85rem;
 }
 
-.segment summary {
+.segment > summary {
   cursor: pointer;
   font-weight: 700;
   color: palette.$slate-900;
-  margin: 0.35rem 0 0.45rem;
+  padding: 0.45rem 0;
+  overflow-wrap: anywhere;
 }
 
-.segment summary::marker {
+.segment > summary::marker {
   color: palette.$teal-700;
+}
+
+.segment[open] {
+  padding-bottom: 0.9rem;
+}
+
+.segment[open] > summary {
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .segment-hint {
@@ -120,4 +148,10 @@
   border-radius: tokens.$radius-control;
   padding: 0.6rem;
   margin: 0.6rem 0;
+}
+
+@media (max-width: 900px) {
+  #cloud-init-optional-settings .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

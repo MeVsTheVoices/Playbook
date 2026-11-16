@@ -49,19 +49,22 @@ class KubernetesPageTests(BaseCallbackSiteTest):
         probe = """
 const measurements = [];
 function measure(label) {
-  const rows = [...eventsBodyEl.rows];
+  const rows = [...eventsBodyEl.querySelectorAll("tr.event-row-new")];
   measurements.push({
     label, heights: rows.map(row => row.getBoundingClientRect().height),
     condensed: rows.map(row => row.classList.contains("event-row-condensed")),
-    noteHidden: getComputedStyle(rows[2].querySelector(".payload-kv")).display === "none",
+    noteHidden: rows[1] && rows[1].dataset.older ? getComputedStyle(rows[1].querySelector(".payload-kv")).display === "none" : null,
   });
 }
+renderEvents(allEvents);
+eventsBodyEl.querySelector(".event-host-toggle").click();
+eventsBodyEl.querySelector(".event-stage-toggle").click();
 measure("initial");
 renderEvents(allEvents);
 measure("refresh");
-eventsBodyEl.rows[2].querySelector(".event-twisty").click();
+eventsBodyEl.querySelector(".event-detail-toggle").click();
 measure("expanded");
-eventsBodyEl.rows[2].querySelector(".event-twisty").click();
+eventsBodyEl.querySelector(".event-detail-toggle").click();
 measure("recondensed");
 toggleOlderEvents();
 measure("all-expanded");
@@ -102,14 +105,88 @@ const allEvents = {json.dumps(events)};
                 measurements = json.loads(html_lib.unescape(match.group(1)))
                 for measured in measurements:
                     with self.subTest(width=width, phase=measured["label"]):
+                        if measured["label"] == "all-condensed":
+                            self.assertEqual(measured["condensed"], [False, False])
+                            continue
                         compact = measured["label"] not in ("expanded", "all-expanded")
-                        self.assertEqual(measured["condensed"], [False, False, compact])
+                        self.assertEqual(measured["condensed"], [False, compact, False])
                         self.assertEqual(measured["noteHidden"], compact)
                         if compact:
-                            self.assertLessEqual(measured["heights"][2], 24)
-                            self.assertLess(measured["heights"][2], measured["heights"][0] * 0.65)
+                            self.assertLessEqual(measured["heights"][1], 24)
+                            self.assertLess(measured["heights"][1], measured["heights"][0] * 0.65)
                         else:
-                            self.assertGreater(measured["heights"][2], 24)
+                            self.assertGreater(measured["heights"][1], 24)
+
+    def test_callback_history_groups_by_host_and_type(self) -> None:
+        events = [
+            {"hostname": host, "stage": stage, "profile": "pi5",
+             "received_at": f"2026-11-07T12:00:{20 - index:02d}+00:00",
+             "instance_id": f"instance-{index}", "raw": {"marker": index}}
+            for index, (host, stage) in enumerate((
+                ("alpha", "ready"), ("bravo", "ready"), ("ALPHA", "boot"),
+                ("alpha", "boot"), ("alpha", "hardware-check"),
+                ("bravo", "boot"), ("alpha", "<unsafe>"),
+            ))
+        ]
+        bootstrap = f"""
+localStorage.removeItem("callback-older-expanded");
+const eventsBodyEl = document.getElementById("events-body");
+const eventSearchEl = document.getElementById("event-search");
+const eventProfileEl = document.getElementById("event-profile");
+const eventStageEl = document.getElementById("event-stage");
+let allEvents = {json.dumps(events)};
+"""
+        probe = """
+const rows = () => [...eventsBodyEl.querySelectorAll("tr[data-event-id]")];
+const host = name => [...eventsBodyEl.querySelectorAll(".event-host-toggle")]
+  .find(button => button.dataset.expansionKey === name);
+const stage = (name, type) => [...eventsBodyEl.querySelectorAll(".event-stage-toggle")]
+  .find(button => button.dataset.expansionKey === JSON.stringify([name, type]));
+renderEvents(allEvents);
+check(rows().length === 2, "one latest row per host");
+check(host("alpha").textContent.includes("4 older callbacks"), "host history count");
+check(eventsBodyEl.querySelectorAll("[data-archive-node]").length === 2, "archive only newest rows");
+host("alpha").click();
+check(host("alpha").getAttribute("aria-expanded") === "true", "host expands");
+check(stage("alpha", "boot").textContent.includes("(2)"), "type groups count callbacks");
+check(rows().length === 2, "type groups initially collapsed");
+check(!eventsBodyEl.querySelector("unsafe") && stage("alpha", "<unsafe>").textContent.includes("<unsafe>"), "type names are escaped");
+stage("alpha", "boot").click();
+check(rows().length === 4 && rows()[1].classList.contains("event-row-condensed"), "type shows compact history");
+rows()[1].click();
+check(JSON.parse(document.getElementById("payload-inspect-json").textContent).raw.marker === 2, "older payload inspection");
+const detail = eventsBodyEl.querySelector(".event-detail-toggle");
+detail.click();
+check(!rows()[1].classList.contains("event-row-condensed"), "details expand");
+renderEvents(allEvents);
+check(host("alpha").getAttribute("aria-expanded") === "true" &&
+      stage("alpha", "boot").getAttribute("aria-expanded") === "true" &&
+      !rows()[1].classList.contains("event-row-condensed"), "refresh preserves expansion");
+check(document.activeElement.classList.contains("event-detail-toggle"), "refresh preserves toggle focus");
+allEvents.unshift({hostname: "alpha", stage: "final", profile: "pi5", received_at: "2026-11-07T12:01:00+00:00"});
+renderEvents(allEvents);
+check(rows()[0].textContent.includes("final") && stage("alpha", "boot").getAttribute("aria-expanded") === "true",
+      "new callback becomes latest without closing history");
+allEvents.shift();
+updateEventFilterOptions(allEvents);
+eventStageEl.value = "boot";
+renderEvents(filterEvents(allEvents));
+check(rows().length === 3 && rows().every(row => row.textContent.includes("boot")), "stage filter groups matching events");
+eventStageEl.value = "";
+eventSearchEl.value = "bravo";
+renderEvents(filterEvents(allEvents));
+check(rows().length === 1 && host("bravo"), "host filter");
+eventSearchEl.value = "";
+renderEvents(filterEvents(allEvents));
+check(stage("alpha", "boot").getAttribute("aria-expanded") === "true", "filter preserves expansion");
+toggleOlderEvents();
+check(rows().length === 7 && !eventsBodyEl.querySelector(".event-row-condensed"), "expand all");
+stage("alpha", "boot").click();
+check(stage("alpha", "boot").getAttribute("aria-expanded") === "false" && rows().length === 5, "individual collapse after expand all");
+toggleOlderEvents();
+check(rows().length === 2 && !eventsBodyEl.querySelector(".event-stage-toggle"), "collapse all");
+"""
+        self.browser_probe("/", ["home/events.js"], bootstrap, probe)
 
     def test_dashboard_and_pages_render(self) -> None:
         for path in ("/", "/nodes", "/monitor", "/images", "/tailscale-acl", "/settings", "/test-terminal", "/kubernetes"):

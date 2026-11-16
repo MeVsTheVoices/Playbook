@@ -66,6 +66,7 @@ class TerminalCheckTests(BaseCallbackSiteTest):
         self.assertIn("cloud_init", check_ids)
         self.assertIn("remote_inventory", check_ids)
         self.assertIn("boot_log", check_ids)
+        self.assertIn("block_devices", check_ids)
         for check in checks:
             self.assertIn(check["category"], ("System", "Boot & logs", "Inventory"))
             self.assertEqual(check["command"], services.terminal_checks.TERMINAL_CHECKS[check["id"]]["command"])
@@ -112,6 +113,16 @@ class TerminalCheckTests(BaseCallbackSiteTest):
         self.assertIn("lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL", command)
         self.assertIn("systemctl is-active ssh", command)
         self.assertIn("sudo -n cat /etc/rancher/k3s/config.yaml", command)
+
+    def test_block_devices_check_details_all_block_devices(self) -> None:
+        check = services.terminal_checks.TERMINAL_CHECKS.get("block_devices")
+        self.assertIsNotNone(check)
+        self.assertEqual(check["category"], "Inventory")
+        command = str(check.get("command", ""))
+        self.assertIn("lsblk -o NAME,KNAME,SIZE,TYPE,FSTYPE,LABEL,UUID,MOUNTPOINT,MODEL,SERIAL,TRAN,ROTA,RM", command)
+        self.assertIn("blkid", command)
+        self.assertIn("/proc/partitions", command)
+        self.assertIn("df -h", command)
 
     def test_test_terminal_targets_include_callback_hosts(self) -> None:
         self.client.post(

@@ -54,6 +54,17 @@ TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
             'printf "\\n=== cloud-init-output.log (last 200) ===\\n"; sudo -n tail -n 200 /var/log/cloud-init-output.log || true'
         ),
     },
+    "block_devices": {
+        "label": "Block Devices",
+        "category": "Inventory",
+        "description": "Detail all block devices, partitions, filesystems, and mounts",
+        "command": (
+            'printf "=== lsblk ===\\n"; lsblk -o NAME,KNAME,SIZE,TYPE,FSTYPE,LABEL,UUID,MOUNTPOINT,MODEL,SERIAL,TRAN,ROTA,RM || lsblk || true; '
+            'printf "\\n=== blkid ===\\n"; sudo -n blkid || blkid || true; '
+            'printf "\\n=== partitions ===\\n"; cat /proc/partitions || true; '
+            'printf "\\n=== disk usage ===\\n"; df -h -x tmpfs -x devtmpfs || df -h || true'
+        ),
+    },
     "remote_inventory": {
         "label": "Remote Inventory",
         "category": "Inventory",

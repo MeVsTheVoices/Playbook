@@ -27,7 +27,7 @@ def _node_group_options() -> List[Dict[str, str]]:
     options = [{"name": group, "description": f"{boards.get(group, group)} nodes, modules available"} for group in K3S_NODE_GROUPS]
     options.append({"name": TOOLKIT_GROUP, "description": "Pi 3B+ Network Toolkit appliance, no Kubernetes"})
     options.append({"name": SERVER_GROUP, "description": "Ubuntu server running this dashboard under Docker"})
-    options.append({"name": "manual", "description": "no modules, listed in Node Ops only"})
+    options.append({"name": "manual", "description": "generic Linux nodes, Package Manager available"})
     options.append({"name": "openwrt", "description": "routers, listed in the OpenWrt panel"})
 
     try:

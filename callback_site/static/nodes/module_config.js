@@ -145,7 +145,7 @@ function applyLiveConfig(result) {
     if (!input.dataset.saved && !input.dataset.touched) {
       setFieldValue(input, live);
       host.classList.add("from-live");
-      slot.textContent = "Filled in from the node";
+      slot.textContent = selectedModuleId === "package-manager" ? "Filled in from cloud-init on the node" : "Filled in from the node";
       return;
     }
     if (fieldValueOf(input) === live) {
@@ -288,11 +288,12 @@ function renderModuleSection() {
   if (profileBodyEl) profileBodyEl.innerHTML = "";
   const nodeGroup = String(selectedNode.group || "");
   // A module that targets a single group belongs to that profile: it is listed below, not in the shared table.
-  const isProfileSpecific = (profile) => Array.isArray(profile.groups) && profile.groups.length === 1;
+  const isProfileSpecific = (profile) => Array.isArray(profile.groups) && profile.groups.length === 1 && profile.groups[0] !== "*";
   const sharedProfiles = profiles.filter((profile) => !isProfileSpecific(profile));
   const groupProfiles = profiles.filter((profile) => isProfileSpecific(profile) && profile.groups[0] === nodeGroup);
   const current = profileById(selectedModuleId);
   if (current && isProfileSpecific(current) && current.groups[0] !== nodeGroup) selectedModuleId = "";
+  document.getElementById("module-apply").textContent = selectedModuleId === "package-manager" ? "Install packages" : "Apply Module";
   renderProfileSpecificHead(nodeGroup, groupProfiles.length);
   let selectedRow = null;
   if (!sharedProfiles.length) {
@@ -496,6 +497,33 @@ function renderModuleSection() {
     appendLiveSlot(fieldHost, fieldId);
   }
   if (!optionsGrid.children.length) optionsSection.remove();
+  if (profile.id === "package-manager") {
+    const actions = document.createElement("div");
+    actions.className = "inline-actions module-test-row";
+    const update = document.createElement("button");
+    update.type = "button";
+    update.id = "package-update-reboot";
+    update.className = "secondary";
+    update.textContent = "Update all + reboot";
+    update.addEventListener("click", async () => {
+      if (!runAnsible.checked) {
+        moduleStatusEl.textContent = "Enable Ansible execution before updating and rebooting.";
+        return;
+      }
+      if (!window.confirm(`Update ALL system packages on ${nodeName}, then reboot even if no packages changed? Services will be interrupted.`)) return;
+      update.disabled = true;
+      try {
+        await runProvision(nodeName, "apply", ["package-manager"], true);
+      } finally {
+        update.disabled = false;
+      }
+    });
+    const note = document.createElement("p");
+    note.className = "module-hint";
+    note.textContent = "Updates every system package, not just this list. Reboots only after updates succeed, then waits for SSH. On cluster nodes, drain workloads first.";
+    actions.appendChild(update);
+    moduleDetailEl.append(actions, note);
+  }
   if (profile.id === "telegraf") {
     const testRow = document.createElement("div");
     testRow.className = "inline-actions module-test-row";

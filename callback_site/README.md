@@ -99,6 +99,40 @@ owners/mixins; avoid page-specific copies of the shell or controls.
 - OpenWrt routers as Node Ops hosts (group `openwrt`). Selecting a router shows router tools in the Profile-specific block: SSH probe, key push, and a read-only UCI summary organized into System, LAN, WAN, DHCP (with the computed address pool), and one card per Wi-Fi radio with its SSIDs. The summary uses the saved key, a fixed script, and an allowlist; wireless keys and passwords are never returned.
 - Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
 
+### Node Ops: Linux Package Manager
+
+**Package Manager (Linux)** is available for every Node Ops group, including
+manually added nodes. Ansible checks that the target really is Linux before
+changing packages. It uses the node's native package manager over the existing
+SSH connection, with sudo privileges.
+The target needs Python and a package backend supported by Ansible.
+
+- Select the module to read **Added software** from the node's merged cloud-init
+  `packages` list (`/var/lib/cloud/instance/cloud-config.txt`). This is the
+  cloud-init request, not proof installation succeeded or a full OS inventory.
+  Version-pinned entries contribute their names only. A node without that file
+  can still use the module by entering package names manually.
+- Edit package names, **Save Module Inputs**, then **Check Module** for a dry run
+  or **Install packages** to ensure those packages are present. Removing a name
+  does not uninstall software. These actions never reboot the node.
+- **Update all + reboot** is a separate confirmation for the selected node.
+  It updates **all system packages**, then always reboots after success, even
+  when no updates were available, and waits up to 10 minutes for SSH to return.
+  A failed update stops before reboot. The action is never saved in module
+  inputs, so ordinary Apply runs cannot repeat it accidentally.
+
+Full updates support apt, dnf/dnf5, yum, zypper, pacman and apk. The latter
+backends use `community.general`, included in the Galaxy requirements; local
+Ansible installations should run
+`ansible-galaxy collection install -r collections/requirements.yml -p collections`.
+Other native Ansible package backends can install named packages, but full
+updates fail explicitly if unsupported. Package jobs have an 80-minute limit.
+On Arch, installing named packages uses the existing package index to avoid a
+partial system upgrade; use **Update all + reboot** to refresh and upgrade it.
+Drain Kubernetes workloads before rebooting a cluster node. Updating/rebooting
+the machine hosting this dashboard can interrupt its job tracking; use a
+dashboard on another host for an observed reboot.
+
 ## Runtime Contract
 
 Image URL downloads during flashing now populate the persistent `image_cache/`

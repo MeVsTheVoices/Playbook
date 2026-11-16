@@ -20,6 +20,7 @@ from urllib import error as urlerror, parse as urlparse, request as urlrequest
 from k3s_lightweight import profile_for_group as _k3s_profile_for_group
 from network_toolkit import GROUP as TOOLKIT_GROUP, PROFILE as TOOLKIT_PROFILE, validate_options as validate_toolkit_options
 from playbook_server import GROUP as SERVER_GROUP, PROFILE as SERVER_PROFILE, validate_options as validate_server_options
+from package_options import package_names
 
 from services.network import _default_callback_url, _preferred_node_connect_target
 from services.node_inventory import _node_ops_inventory_view
@@ -87,7 +88,12 @@ def _run_node_profile(
         }
 
     toolkit_errors = []
-    if profile_id == TOOLKIT_PROFILE:
+    if profile_id == "package-manager":
+        try:
+            package_names(profile_inputs.get("packages", ""), debian_only=False)
+        except ValueError as exc:
+            toolkit_errors.append(str(exc))
+    elif profile_id == TOOLKIT_PROFILE:
         toolkit_errors = validate_toolkit_options(profile_inputs)
     elif profile_id == SERVER_PROFILE:
         toolkit_errors = validate_server_options(profile_inputs)
@@ -205,7 +211,7 @@ def _run_node_profile(
             capture_output=True,
             text=True,
             stdin=subprocess.DEVNULL,
-            timeout=420,
+            timeout=4800 if profile_id == "package-manager" else 420,
             cwd=str(BASE_DIR.parent),
             env=env,
         )
@@ -546,7 +552,11 @@ def _run_hardware_check_callback(node_name: str, node_group: str | None = None, 
             pass
 
 
-def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, run_ansible: bool) -> Dict[str, Any]:
+def _apply_node_provisioning(
+    node_name: str, profile_ids: List[str], mode: str, run_ansible: bool, package_update: bool = False,
+) -> Dict[str, Any]:
+    if package_update and (mode != "apply" or profile_ids != ["package-manager"]):
+        raise ValueError("Update all + reboot requires applying only Package Manager.")
     profile_by_id = _profile_map()
     state = _load_node_provisioning()
     valid_profile_ids = [pid for pid in profile_ids if pid in profile_by_id]
@@ -563,7 +573,9 @@ def _apply_node_provisioning(node_name: str, profile_ids: List[str], mode: str, 
     node_certificate = str(node_entry.get("certificate", "") or "").strip()
     node_results: Dict[str, Any] = {}
     for pid in valid_profile_ids:
-        profile_inputs = inputs_by_profile.get(pid, {})
+        profile_inputs = dict(inputs_by_profile.get(pid, {}))
+        if pid == "package-manager":
+            profile_inputs["action"] = "update-reboot" if package_update else "install"
         result = _run_node_profile(
             node_name,
             profile_by_id[pid],

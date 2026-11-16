@@ -1,4 +1,13 @@
 ---
+- name: Manage packages on any Linux node
+  hosts: all
+  gather_facts: false
+  become: true
+  roles:
+    - role: node_maintenance
+      when: (provision_profile | default('')) == 'package-manager'
+      tags: [package-manager]
+
 - name: Configure active Raspberry Pi 5 hosts
   hosts: rpi5_active
   become: true

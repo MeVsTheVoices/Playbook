@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 def _start_node_provision_job(
     target_node_names: list[str], mode: str, run_ansible: bool,
     profile_filter: list[str] | None = None,
+    package_update: bool = False,
 ) -> str:
     job_id = uuid.uuid4().hex
     stamp = datetime.now(timezone.utc).isoformat()
@@ -35,7 +36,7 @@ def _start_node_provision_job(
     try:
         threading.Thread(
             target=_run_node_provision_job,
-            args=(job_id, target_node_names, mode, run_ansible, profile_filter),
+            args=(job_id, target_node_names, mode, run_ansible, profile_filter, package_update),
             daemon=True,
         ).start()
     except RuntimeError as exc:
@@ -52,6 +53,7 @@ def _run_node_provision_job(
     mode: str,
     run_ansible: bool,
     profile_filter: list[str] | None = None,
+    package_update: bool = False,
 ) -> None:
     started_at = datetime.now(timezone.utc).isoformat()
     with PROVISION_JOBS_LOCK:
@@ -103,7 +105,8 @@ def _run_node_provision_job(
                             job["finished_at"] = datetime.now(timezone.utc).isoformat()
                             job["updated_at"] = job["finished_at"]
                     return
-            result = _apply_node_provisioning(node_name, profile_ids, mode=mode, run_ansible=run_ansible)
+            extra = {"package_update": True} if package_update else {}
+            result = _apply_node_provisioning(node_name, profile_ids, mode=mode, run_ansible=run_ansible, **extra)
             results.append(result)
             with PROVISION_JOBS_LOCK:
                 PROVISION_JOBS[job_id]["results"] = list(results)

@@ -154,6 +154,23 @@ K3S_API_ENDPOINT_DEFAULT = "https://100.65.24.76:6443"
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
+        "id": "package-manager",
+        "label": "Package Manager (Linux)",
+        "description": "Install named packages, initially filled from cloud-init on the node. Update all + reboot is a separate, confirmed action.",
+        "tags": ["package-manager"],
+        "groups": ["*"],
+        "input_specs": [
+            {
+                "id": "packages",
+                "label": "Added software (package names)",
+                "input_type": "textarea",
+                "placeholder": "git, curl, htop",
+                "hint": "Read from node fills this from cloud-init's packages list, not the entire OS package inventory. Edit to add packages; removing a name does not uninstall it. Save before Check or Install packages.",
+                "required": False,
+            },
+        ],
+    },
+    {
         "id": "network-toolkit",
         "label": "Network Toolkit (Pi 3B+)",
         "description": "Serial/Ethernet tools, a restricted browser terminal and opt-in authenticated Tailscale Funnel. Wi-Fi uplink; no forwarding.",

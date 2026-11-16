@@ -1,0 +1,60 @@
+---
+- name: Detect operating system and package manager
+  ansible.builtin.setup:
+    gather_subset: [min]
+    filter:
+      - ansible_system
+      - ansible_pkg_mgr
+
+- name: Validate Linux package operation
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.system == 'Linux'
+      - (provision_inputs.action | default('install')) in ['install', 'update-reboot']
+    fail_msg: Package Manager requires Linux and an install or update-reboot action.
+
+- name: Parse selected package names
+  ansible.builtin.set_fact:
+    node_maintenance_packages: "{{ (provision_inputs.packages | default('') | regex_replace(',', ' ')).split() | unique | list }}"
+
+- name: Validate explicit package names
+  ansible.builtin.assert:
+    that:
+      - node_maintenance_packages | reject('match', '^[A-Za-z0-9][A-Za-z0-9+_.:-]*$') | list | length == 0
+      - (provision_inputs.action | default('install')) != 'install' or node_maintenance_packages | length > 0
+    fail_msg: Enter package names separated by commas or whitespace; versions, URLs, wildcards and command options are not allowed.
+
+- name: Install selected packages without upgrading the system
+  ansible.builtin.package:
+    name: "{{ node_maintenance_packages }}"
+    state: present
+    update_cache: "{{ ansible_facts.pkg_mgr != 'pacman' }}"
+  when: (provision_inputs.action | default('install')) == 'install'
+
+- name: Update all packages and reboot
+  when: (provision_inputs.action | default('install')) == 'update-reboot'
+  block:
+    - name: Verify support for a full system update
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.pkg_mgr in ['apt', 'dnf', 'dnf5', 'yum', 'zypper', 'pacman', 'apk']
+        fail_msg: "Full system updates are not supported for {{ ansible_facts.pkg_mgr }}; no reboot was requested."
+
+    - name: Update all packages with the native package manager
+      ansible.builtin.package:
+        name: "*"
+        state: latest
+        update_cache: true
+      when: ansible_facts.pkg_mgr not in ['pacman', 'apk']
+
+    - name: Upgrade all packages on Arch or Alpine
+      ansible.builtin.package:
+        upgrade: true
+        update_cache: true
+      when: ansible_facts.pkg_mgr in ['pacman', 'apk']
+
+    - name: Reboot after successful updates and wait for SSH
+      ansible.builtin.reboot:
+        reboot_command: reboot
+        reboot_timeout: 600
+      when: not ansible_check_mode

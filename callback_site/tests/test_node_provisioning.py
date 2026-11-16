@@ -20,6 +20,110 @@ import services.storage
 
 
 class NodeProvisioningTests(BaseCallbackSiteTest):
+    def test_package_manager_applies_to_any_group_without_changing_node_defaults(self) -> None:
+        state = {"node_configs": {"node": ["tailscale"]}}
+        for group in ("rpi5_active", "manual", "ubuntu", "fedora", "openwrt"):
+            node = {"name": "node", "group": group}
+            self.assertEqual(services.node_state._profiles_to_run(node, state, ["package-manager"]), ["package-manager"])
+            self.assertEqual(services.node_state._profiles_to_run(node, state, None), ["tailscale"])
+
+    def test_package_update_requires_explicit_single_node_reboot_confirmation(self) -> None:
+        base = {"node": "node", "mode": "apply", "profile_ids": ["package-manager"], "package_update": True, "confirm_reboot": True}
+        with patch("routes.nodes._node_ops_inventory_view", return_value=[{"name": "node", "group": "manual"}]), \
+             patch("routes.nodes._load_node_provisioning", return_value={}), \
+             patch("routes.nodes._save_node_provisioning") as save, \
+             patch("routes.nodes._start_node_provision_job", return_value="package-job") as start:
+            for override in (
+                {"confirm_reboot": False}, {"node": ""}, {"mode": "check"},
+                {"profile_ids": ["package-manager", "baseline"]}, {"package_update": "true"},
+            ):
+                response = self.client.post("/api/nodes/provision", json={**base, **override})
+                self.assertEqual(response.status_code, 400, response.get_json())
+            start.assert_not_called()
+            response = self.client.post("/api/nodes/provision", json=base)
+            self.assertEqual(response.status_code, 202, response.get_json())
+            start.assert_called_once_with(["node"], "apply", True, ["package-manager"], package_update=True)
+            save.assert_not_called()
+
+    def test_package_reboot_action_is_transient_even_if_stored_inputs_contain_it(self) -> None:
+        state = {"node_inputs": {"node": {"package-manager": {"packages": "curl", "action": "update-reboot"}}}}
+        with patch("services.node_runs._load_node_provisioning", return_value=state), \
+             patch("services.node_runs._save_node_provisioning"), \
+             patch("services.node_runs._node_ops_inventory_view", return_value=[{"name": "node", "group": "manual"}]), \
+             patch("services.node_runs._preferred_node_connect_target", return_value=("", "")), \
+             patch("services.node_runs._run_node_profile", return_value={"status": "ok"}) as run:
+            services.node_runs._apply_node_provisioning("node", ["package-manager"], "apply", True, package_update=True)
+            self.assertEqual(run.call_args.kwargs["profile_inputs"]["action"], "update-reboot")
+            services.node_runs._apply_node_provisioning("node", ["package-manager"], "apply", True)
+            self.assertEqual(run.call_args.kwargs["profile_inputs"]["action"], "install")
+            self.assertEqual(state["node_inputs"]["node"]["package-manager"]["action"], "update-reboot")
+            with self.assertRaises(ValueError):
+                services.node_runs._apply_node_provisioning("node", ["baseline"], "apply", True, package_update=True)
+
+    def test_package_input_rejects_options_versions_and_wildcards(self) -> None:
+        with patch("routes.nodes._node_ops_inventory_view", return_value=[{"name": "node"}]), \
+             patch("routes.nodes._load_node_provisioning", return_value={"node_configs": {"node": ["package-manager"]}}), \
+             patch("routes.nodes._save_node_provisioning") as save:
+            for packages in ("--allow-unauthenticated", "*", "curl=1.0", "https://example.invalid/pkg", "curl;reboot"):
+                response = self.client.post("/api/nodes/node-inputs", json={
+                    "node": "node", "profile_inputs": {"package-manager": {"packages": packages}},
+                })
+                self.assertEqual(response.status_code, 400, response.get_json())
+            save.assert_not_called()
+
+    def test_package_manager_browser_uses_cloud_init_and_confirms_a_separate_update(self) -> None:
+        from domain_defaults import NODE_PROVISION_PROFILES
+        profile = next(p for p in NODE_PROVISION_PROFILES if p["id"] == "package-manager")
+        self.browser_probe("/nodes", ["nodes/state.js", "nodes/module_config.js", "nodes/provisioning.js"], """
+let requests = [];
+let allowReboot = false;
+let confirmations = [];
+window.confirm = (text) => { confirmations.push(text); return allowReboot; };
+function renderModulePresets() {}
+async function loadSummary() {}
+window.fetch = async (url, options = {}) => {
+  requests.push({url, options});
+  if (url === "/api/nodes/provision") return {ok: true, json: async () => ({ok: true, job_id: "job"})};
+  if (url.includes("/provision/jobs/")) return {ok: true, json: async () => ({ok: true, job: {status: "completed", results: []}})};
+  return {ok: true, json: async () => ({ok: true, readable: [], fields: {}})};
+};
+""", """
+nodes = [{name: "linux-node", group: "custom-linux", selected_profiles: []}];
+profiles = [PROFILE];
+renderNodeSelector();
+selectedModuleId = "package-manager";
+renderModuleSection();
+check(document.querySelector("#module-status-body").textContent.includes("Package Manager"), "shared module is available for arbitrary Linux group");
+check(document.querySelector("#profile-module-body").children.length === 0, "wildcard module is not profile-specific");
+check(document.getElementById("module-apply").textContent === "Install packages", "installation is separate from system updates");
+applyLiveConfig({readable: ["packages"], fields: {packages: "git, curl"}});
+const field = document.getElementById("module-field-packages");
+check(field.value === "git, curl", "package names are populated from cloud-init");
+field.value = "htop";
+field.dispatchEvent(new Event("input"));
+applyLiveConfig({readable: ["packages"], fields: {packages: "git, curl"}});
+check(field.value === "htop", "late reads preserve edits");
+const update = document.getElementById("package-update-reboot");
+runAnsible.checked = true;
+update.click();
+await tick();
+check(!requests.length, "declining reboot sends no request");
+runAnsible.checked = false;
+allowReboot = true;
+update.click();
+await tick();
+check(!requests.length, "disabled Ansible cannot reboot");
+runAnsible.checked = true;
+update.click();
+await tick();
+const request = requests.find(item => item.url === "/api/nodes/provision");
+const body = JSON.parse(request.options.body);
+check(body.node === "linux-node" && body.package_update === true && body.confirm_reboot === true, "confirmed update targets exactly one node");
+check(JSON.stringify(body.profile_ids) === '["package-manager"]', "update cannot run other modules");
+check(confirmations[0].includes("ALL system packages") && confirmations[0].includes("reboot"), "confirmation explains full update and reboot");
+check(!("action" in collectModuleInputs()), "reboot action cannot be saved as module input");
+""".replace("PROFILE", json.dumps(profile)))
+
     def test_nodes_page_exposes_profile_segment_and_galaxy_controls(self) -> None:
         response = self.client.get("/nodes")
         self.assertEqual(response.status_code, 200)

@@ -37,8 +37,8 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 20000) {
   }
 }
 
-async function pollProvisionJob(jobId, mode) {
-  const deadline = Date.now() + (mode === "hardware" ? 180000 : 120000);
+async function pollProvisionJob(jobId, mode, packageOperation = false) {
+  const deadline = Date.now() + (packageOperation ? 4800000 : mode === "hardware" ? 180000 : 120000);
   const label = mode === "hardware" ? "Hardware profile" : mode === "check" ? "Check" : "Apply";
   while (Date.now() < deadline) {
     try {
@@ -95,12 +95,16 @@ async function runHardwareProfile(node) {
   }
 }
 
-async function runProvision(node, mode, profileIds) {
+async function runProvision(node, mode, profileIds, packageUpdate = false) {
   provisionStatus.textContent = `${mode === "check" ? "Checking" : "Applying"} provisioning for the selected node...`;
   try {
     const requestBody = { node, mode, run_ansible: runAnsible.checked };
     if (Array.isArray(profileIds) && profileIds.length) {
       requestBody.profile_ids = profileIds;
+    }
+    if (packageUpdate) {
+      requestBody.package_update = true;
+      requestBody.confirm_reboot = true;
     }
     const res = await fetchJsonWithTimeout("/api/nodes/provision", {
       method: "POST",
@@ -125,7 +129,7 @@ async function runProvision(node, mode, profileIds) {
     }
 
     if (data.job_id) {
-      await pollProvisionJob(data.job_id, mode);
+      await pollProvisionJob(data.job_id, mode, profileIds?.includes("package-manager"));
       return;
     }
 

@@ -36,6 +36,36 @@ yesno() { if "$@" >/dev/null 2>&1; then echo true; else echo false; fi; }
 '''
 
 _READERS: Dict[str, str] = {
+    "package-manager": r'''
+$S python3 - <<'PY' || exit $?
+import pathlib, re, sys
+path = pathlib.Path("/var/lib/cloud/instance/cloud-config.txt")
+if not path.exists():
+    sys.exit(0)
+try:
+    import yaml
+except ImportError:
+    sys.exit("Reading cloud-init packages requires YAML support in the system Python.")
+try:
+    config = yaml.safe_load(path.read_text())
+    if not isinstance(config, dict):
+        raise ValueError()
+    packages = config.get("packages", [])
+    if not isinstance(packages, list):
+        raise ValueError()
+    names = []
+    for package in packages:
+        name = package[0] if isinstance(package, list) and package else package
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+_.:-]*", name):
+            raise ValueError()
+        if name not in names:
+            names.append(name)
+except (OSError, ValueError, yaml.YAMLError):
+    sys.exit("Could not read cloud-init package names; check cloud-config.txt and the system Python YAML support.")
+if names:
+    print("packages=" + ", ".join(names))
+PY
+''',
     "playbook-server": r'''
 conf() { sed -n "s/^$1=//p" /etc/playbook-server.env 2>/dev/null | tail -n1; }
 emit server_repo_url "$(conf PLAYBOOK_REPO_URL)"
@@ -226,7 +256,7 @@ def _readable_specs(module_id: str, group: str) -> Dict[str, Dict[str, Any]]:
 
 
 def _normalise(spec: Dict[str, Any], value: str, group: str) -> str:
-    value = value.strip()[:MAX_VALUE_CHARS]
+    value = value.strip() if spec.get("id") == "packages" else value.strip()[:MAX_VALUE_CHARS]
     kind = str(spec.get("input_type") or "text").lower()
     if kind == "checkbox":
         return "true" if value.lower() in TRUE_WORDS else "false"

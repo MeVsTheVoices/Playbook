@@ -5,6 +5,9 @@ from __future__ import annotations
 import base64
 import re
 import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 try:
@@ -16,6 +19,24 @@ import services.live_config as live
 
 
 class RemoteScriptTests(BaseCallbackSiteTest):
+    def test_cloud_init_package_reader_reads_names_only_and_reports_invalid_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "cloud-config.txt"
+            script = live.build_script("package-manager").replace(
+                "/var/lib/cloud/instance/cloud-config.txt", str(config),
+            ).replace(live._PREAMBLE, 'S=""\n').replace("python3 -", f'"{sys.executable}" -')
+            missing = subprocess.run(["bash"], input=script, text=True, capture_output=True)
+            self.assertEqual((missing.returncode, missing.stdout), (0, ""))
+            config.write_text("packages:\n  - curl\n  - [git, '1.2']\n  - curl\n  - python3-devel\npassword: never-print-this\n")
+            result = subprocess.run(["bash"], input=script, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "packages=curl, git, python3-devel")
+            config.write_text("packages: [\npassword: never-print-this")
+            failed = subprocess.run(["bash"], input=script, text=True, capture_output=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("Could not read", failed.stderr)
+            self.assertNotIn("never-print-this", failed.stdout + failed.stderr)
+
     def test_every_reader_is_valid_bash(self) -> None:
         for module_id in live.supported_modules():
             proc = subprocess.run(["bash", "-n"], input=live.build_script(module_id), capture_output=True, text=True)
@@ -42,6 +63,11 @@ class RemoteScriptTests(BaseCallbackSiteTest):
 
 
 class ParseTests(BaseCallbackSiteTest):
+    def test_cloud_init_package_list_is_not_truncated_to_one_partial_name(self) -> None:
+        packages = ", ".join(f"package-{i}" for i in range(100))
+        parsed = live.parse_live_output(f"packages={packages}\naction=update-reboot\n", "package-manager", "manual")
+        self.assertEqual(parsed, {"packages": packages})
+
     def test_keeps_known_fields_and_drops_secrets_and_strangers(self) -> None:
         text = "hostname=alpha\nauth_key=tskey-123\nadvertise_tags=tag:rpi5,tag:homelab\nnonsense=1\nenable_ssh=true\nnot a pair\n"
         parsed = live.parse_live_output(text, "tailscale", "rpi5_active")

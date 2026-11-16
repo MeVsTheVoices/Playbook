@@ -9,6 +9,7 @@ from typing import Any, Dict
 from flask import jsonify, request
 
 from domain_defaults import NODE_PROVISION_PROFILES
+from package_options import package_names
 
 from services.k3s_config import LONGFORM_CHECKS, _check_longform, _longform_input_errors
 from services.module_presets import _record_save
@@ -290,6 +291,11 @@ def register_node_routes(app: Any) -> None:
         profile_ids = _effective_node_profiles(node, state)
         ignored = [str(pid) for pid in raw_inputs if str(pid) not in profile_ids]
         sanitized = _sanitize_node_profile_inputs(raw_inputs, profile_ids=profile_ids)
+        if "package-manager" in sanitized:
+            try:
+                package_names(sanitized["package-manager"].get("packages", ""), debian_only=False)
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
         longform_errors = [err for pid, values in sanitized.items() for err in _longform_input_errors(pid, values)]
         if longform_errors:
             return jsonify({"ok": False, "error": "; ".join(longform_errors)}), 400
@@ -375,6 +381,15 @@ def register_node_routes(app: Any) -> None:
             known_profiles = _profile_map()
             profile_filter = [str(pid) for pid in raw_profile_ids if str(pid) in known_profiles]
 
+        package_update = payload.get("package_update", False)
+        if not isinstance(package_update, bool):
+            return jsonify({"ok": False, "error": "package_update must be a boolean"}), 400
+        if package_update and (
+            not node_name or raw_profile_ids != ["package-manager"] or mode != "apply"
+            or payload.get("confirm_reboot") is not True
+        ):
+            return jsonify({"ok": False, "error": "Update all + reboot requires one node, only Package Manager, apply mode and confirm_reboot=true."}), 400
+
         nodes = _node_ops_inventory_view()
         if node_name:
             target_nodes = [n for n in nodes if n["name"] == node_name]
@@ -409,7 +424,7 @@ def register_node_routes(app: Any) -> None:
                 }
             ), 400
 
-        if mode == "apply" and profile_filter:
+        if mode == "apply" and profile_filter and not package_update:
             # Applying a module makes it part of the node, like saving its inputs does.
             remembered = False
             for node in target_nodes:
@@ -422,13 +437,15 @@ def register_node_routes(app: Any) -> None:
                 _save_node_provisioning(state)
 
         if run_ansible:
-            job_id = _start_node_provision_job([node["name"] for node in target_nodes], mode, run_ansible, profile_filter)
+            extra = {"package_update": True} if package_update else {}
+            job_id = _start_node_provision_job([node["name"] for node in target_nodes], mode, run_ansible, profile_filter, **extra)
             return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "job_id": job_id, "status": "queued"}), 202
 
         results: List[Dict[str, Any]] = []
         for node in target_nodes:
             profile_ids = _profiles_to_run(node, state, profile_filter)
-            results.append(_apply_node_provisioning(node["name"], profile_ids, mode=mode, run_ansible=run_ansible))
+            extra = {"package_update": True} if package_update else {}
+            results.append(_apply_node_provisioning(node["name"], profile_ids, mode=mode, run_ansible=run_ansible, **extra))
 
         return jsonify({"ok": True, "mode": mode, "run_ansible": run_ansible, "results": results})
 

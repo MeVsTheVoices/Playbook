@@ -442,7 +442,14 @@ def _profiles_to_run(node: Dict[str, Any], state: Dict[str, Any], profile_filter
     # A module asked for by name runs even when it is not ticked for the node, if it applies to the node's group.
     group = str(node.get("group", "") or "")
     profile_by_id = _profile_map()
-    return [pid for pid in profile_filter if pid in selected or group in (profile_by_id.get(pid, {}).get("groups") or [])]
+    return [
+        pid for pid in profile_filter
+        if (
+            pid in selected
+            or group in (profile_by_id.get(pid, {}).get("groups") or [])
+            or "*" in (profile_by_id.get(pid, {}).get("groups") or [])
+        )
+    ]
 
 
 def _latest_node_check(node_name: str, state: Dict[str, Any]) -> Dict[str, Any]:

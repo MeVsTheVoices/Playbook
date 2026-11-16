@@ -24,6 +24,20 @@ class ProvisionJobTests(BaseCallbackSiteTest):
         self.assertEqual(job["status"], "failed")
         self.assertIn("no longer in inventory", job["error"])
 
+    def test_explicit_package_update_survives_queue_and_worker(self):
+        with patch.object(jobs.threading, "Thread") as thread:
+            job_id = jobs._start_node_provision_job(["node"], "apply", True, ["package-manager"], package_update=True)
+        self.addCleanup(jobs.PROVISION_JOBS.pop, job_id, None)
+        args = thread.call_args.kwargs["args"]
+        result = {"node": "node", "results": [{"profile_id": "package-manager", "status": "ok"}]}
+        with patch.object(jobs, "_node_ops_inventory_view", return_value=[{"name": "node", "group": "manual"}]), \
+             patch.object(jobs, "_load_node_provisioning", return_value={}), \
+             patch.object(jobs, "_missing_required_inputs", return_value=[]), \
+             patch.object(jobs, "_apply_node_provisioning", return_value=result) as apply:
+            jobs._run_node_provision_job(*args)
+        apply.assert_called_once_with("node", ["package-manager"], mode="apply", run_ansible=True, package_update=True)
+        self.assertEqual(jobs.PROVISION_JOBS[job_id]["status"], "completed")
+
     def test_empty_targets_and_profiles_fail_explicitly(self):
         for targets, profiles in (([], ["baseline"]), (["node"], [])):
             with patch.object(jobs, "_node_ops_inventory_view", return_value=[{"name": "node"}]), \

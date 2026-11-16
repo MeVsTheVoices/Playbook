@@ -1,4 +1,9 @@
 ---
+- name: Manage Linux packages
+  ansible.builtin.import_tasks: packages.yml
+  when: (provision_profile | default('')) == 'package-manager'
+  tags: [package-manager]
+
 - name: Configure Pi cgroup boot flags
   ansible.builtin.import_tasks: cgroups.yml
   when: (provision_profile | default('')) == 'cgroups'

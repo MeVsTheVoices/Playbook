@@ -16,6 +16,7 @@ from services.module_presets import _record_save
 from services.connection_profiles import gather_profiles, remember_profiles, select_profile
 from services.live_config import read_live_config
 from services.node_tailscale import read_node_tailscale
+from services.node_network import read_node_network
 from services.node_inventory import _node_group_options, _node_ops_inventory_view, _ping_status
 from services.node_runs import _apply_node_provisioning, _send_webhook, _telegraf_influx_dummy_check
 from services.node_state import (
@@ -315,6 +316,17 @@ def register_node_routes(app: Any) -> None:
         if not any(n.get("name") == node_name for n in _node_ops_inventory_view()):
             return jsonify({"ok": False, "error": "node not found in active node set"}), 404
         response = jsonify(read_node_tailscale(node_name))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/api/nodes/network")
+    def nodes_network() -> Any:
+        node_name = str(request.args.get("node", "")).strip()
+        if not node_name:
+            return jsonify({"ok": False, "error": "node is required"}), 400
+        if not any(n.get("name") == node_name for n in _node_ops_inventory_view()):
+            return jsonify({"ok": False, "error": "node not found in active node set"}), 404
+        response = jsonify(read_node_network(node_name))
         response.headers["Cache-Control"] = "no-store"
         return response
 

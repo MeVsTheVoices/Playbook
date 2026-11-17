@@ -42,7 +42,8 @@ function validDevices(devices) {
 async function pollDevicesSnapshot() {
   const sequence = ++deviceRefreshSequence;
   try {
-    const res = await fetch("/api/sd/devices");
+    const workflowQuery = isUefiInstaller() ? "?workflow=uefi-installer" : "";
+    const res = await fetch(`/api/sd/devices${workflowQuery}`);
     const payload = await res.json();
     if (sequence !== deviceRefreshSequence) {
       lastDeviceRefreshError = "Device refresh was superseded. Try again.";
@@ -58,6 +59,9 @@ async function pollDevicesSnapshot() {
     replaceDeviceOptions(devices);
     lastDeviceRefreshError = "";
     deviceDiscoveryReady = true;
+    if (isUefiInstaller()) {
+      deviceWebhookStatusEl.textContent = `Flash-helper USB discovery: ${devices.length} removable device(s).`;
+    }
     updateInstallerWorkflow();
     updateDeviceActivity(devices.length, true);
     return true;
@@ -88,6 +92,7 @@ function startDeviceWebhook() {
 
   const es = new EventSource("/api/sd/devices/webhook");
   es.addEventListener("devices", (event) => {
+    if (isUefiInstaller()) return;
     try {
       const payload = JSON.parse(event.data || "{}");
       if (payload.error) throw new Error(String(payload.error));

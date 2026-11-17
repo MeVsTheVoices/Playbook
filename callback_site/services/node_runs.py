@@ -88,9 +88,9 @@ def _run_node_profile(
         }
 
     toolkit_errors = []
-    if profile_id == "package-manager":
+    if profile_id in {"package-manager", "linux-x64"}:
         try:
-            package_names(profile_inputs.get("packages", ""), debian_only=False)
+            package_names(profile_inputs.get("packages", ""), debian_only=profile_id == "linux-x64")
         except ValueError as exc:
             toolkit_errors.append(str(exc))
     elif profile_id == TOOLKIT_PROFILE:

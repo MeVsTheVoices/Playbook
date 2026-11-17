@@ -154,6 +154,36 @@ K3S_API_ENDPOINT_DEFAULT = "https://100.65.24.76:6443"
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
+        "id": "linux-x64",
+        "label": "Generic Linux x86_64",
+        "description": "Reusable Debian/Ubuntu x86_64 host baseline for NUCs, mini-PCs and OptiPlex-class systems. Installs the common package baseline; upgrades are opt-in. Does not assign Kubernetes or network roles.",
+        "tags": ["linux-x64"],
+        "groups": ["linux_x64_active"],
+        "input_specs": [
+            {
+                "id": "timezone",
+                "label": "Timezone (optional)",
+                "placeholder": "America/Los_Angeles",
+                "input_type": "text",
+                "required": False,
+            },
+            {
+                "id": "packages",
+                "label": "Baseline packages (comma-separated, optional)",
+                "placeholder": "git,curl,vim,htop",
+                "input_type": "csv",
+                "required": False,
+            },
+            {
+                "id": "upgrade_packages",
+                "label": "Upgrade installed packages",
+                "input_type": "checkbox",
+                "default": False,
+                "required": False,
+            },
+        ],
+    },
+    {
         "id": "package-manager",
         "label": "Package Manager (Linux)",
         "description": "Install named packages, initially filled from cloud-init on the node. Update all + reboot is a separate, confirmed action.",

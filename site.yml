@@ -44,3 +44,9 @@
   become: true
   roles:
     - role: playbook_server
+
+- name: Configure generic x86_64 Linux nodes
+  hosts: linux_x64_active
+  become: true
+  roles:
+    - role: generic_linux_x64

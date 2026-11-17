@@ -36,6 +36,20 @@ image_catalog:
     image_sha256: 50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e
     docs_url: https://cloud-images.ubuntu.com/releases/noble/
     notes: Generic arm64 UEFI server or VM disk (not Raspberry Pi firmware). Same first-boot self-deployment as amd64.
+  - id: uefi-ubuntu-noble-amd64
+    label: Ubuntu Server 24.04.5 LTS (UEFI installer, x86_64)
+    distro: Ubuntu
+    release: 24.04.5 LTS (noble)
+    arch: amd64
+    profiles:
+      - uefi-x86_64
+    recommended: true
+    image_url: https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso
+    image_sha256: 97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8
+    docs_url: https://releases.ubuntu.com/24.04/
+    notes: Creates an unattended installer USB. Booting it installs a baseline Ubuntu system and erases the sole eligible internal disk. K3s and first-boot networking customization are not included.
+    workflow: uefi-installer
+    installer_family: ubuntu
   - id: raspios-trixie-arm64
     label: Raspberry Pi OS (64-bit, Trixie)
     distro: Raspberry Pi OS

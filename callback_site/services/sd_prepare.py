@@ -106,6 +106,9 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "cloud_init_options",
         "device_identity",
         "confirm_device",
+        "workflow",
+        "catalog_id",
+        "install_authorized",
     }
     cleaned: Dict[str, Any] = {}
     for key in allowed_keys:

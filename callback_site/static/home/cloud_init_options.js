@@ -74,7 +74,7 @@ function updateCloudInitSectionsVisibility() {
 
 function ensureK3sConfigDefaults() {
   const toolkit = form.profile.value === "network-toolkit";
-  const fixedStandard = SD_FIXED_STANDARD_PROFILES.has(form.profile.value);
+  const fixedStandard = SD_FIXED_STANDARD_PROFILES.has(form.profile.value) || isUefiInstaller();
   if (fixedStandard) form.distribution.value = "standard";
   form.distribution.disabled = fixedStandard;
   updateCloudInitSectionsVisibility();

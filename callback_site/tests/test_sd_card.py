@@ -57,7 +57,11 @@ await saveCurrentSdOptionProfile();
 check(savedPayload.clear_secret_options.includes("wifi_networks"), "removing replaced networks clears saved secret");
 form.profile.value = "network-toolkit";
 ensureK3sConfigDefaults();
+// This probe omits init.js, whose profile-change handler refreshes field scopes.
+updateOsScopedOptionsVisibility();
 check(!toolkit.querySelector("[data-wifi-add]").hidden, "switching profiles does not restore a cleared network");
+check(!toolkit.querySelector("[data-option-key='wifi_networks']").disabled
+  && generic.querySelector("[data-option-key='wifi_networks']").disabled, "only the active Wi-Fi field is enabled");
 toolkit.querySelector("[data-wifi-add]").click();
 toolkit.querySelector("[data-wifi-ssid]").value = "toolkit-backup";
 toolkit.querySelector("[data-wifi-password]").value = "another-password";
@@ -196,6 +200,17 @@ failPrepare = true;
 form.dispatchEvent(new Event("submit", {cancelable: true}));
 await tick();
 check(statusEl.textContent.includes("Check active jobs before retrying"), "uncertain submission reports retry risk");
+form.profile.value = "uefi-x86_64";
+form.profile.dispatchEvent(new Event("change"));
+await tick();
+check(form.distribution.value === "standard" && form.distribution.disabled
+  && requestedUrls.includes("/api/sd/devices?workflow=uefi-installer"), "x64 USB locks Standard and uses helper discovery");
+for (const profile of ["network-toolkit", "playbook-server", "pi5"]) {
+  form.profile.value = profile;
+  form.profile.dispatchEvent(new Event("change"));
+  await tick();
+  check(form.distribution.disabled === (profile !== "pi5"), `${profile} retains its distribution policy`);
+}
 """)
 
     def test_misc_options_are_visible_and_map_to_provisioning(self) -> None:

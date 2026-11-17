@@ -1,0 +1,10 @@
+---
+generic_linux_x64_manage_system: true
+generic_linux_x64_upgrade_packages: "{{ provision_inputs.upgrade_packages | default(false) | bool }}"
+generic_linux_x64_timezone: "{{ provision_inputs.timezone | default(timezone | default('')) | string | trim }}"
+generic_linux_x64_packages: >-
+  {{
+    (provision_inputs.packages | default('') | string | split(',') | map('trim') | reject('equalto', '') | list)
+    if (provision_inputs.packages | default('') | string | trim)
+    else (common_packages | default(['git', 'curl', 'vim', 'htop']))
+  }}

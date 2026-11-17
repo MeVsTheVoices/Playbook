@@ -103,3 +103,10 @@ all:
       children:
         playbook_server_active:
           hosts: {}
+    linux_x64:
+      vars:
+        rack_node_family: linux-x86_64
+        rack_node_storage_profile: disk-or-usb
+      children:
+        linux_x64_active:
+          hosts: {}

@@ -86,6 +86,7 @@
                   <option value="pi3bplus">pi3bplus</option>
                   <option value="network-toolkit">Network Toolkit (Pi 3B+)</option>
                   <option value="playbook-server">Playbook Server (Ubuntu amd64/arm64)</option>
+                  <option value="uefi-x86_64">Generic Linux x86_64 (UEFI USB installer)</option>
                 </select>
               </div>
               <div>
@@ -101,7 +102,7 @@
                 <div class="hint">Suggested prefix: <strong>{{ hostname_prefix }}</strong></div>
               </div>
               <div>
-                <label for="device">Target SD Device</label>
+                <label for="device">Target removable device (SD card or USB stick)</label>
                 <select id="device" name="device" required>
                   <option value="">Select a removable device</option>
                   {% for d in devices %}
@@ -113,10 +114,10 @@
               <div>
                 <label for="callback_url">Callback URL</label>
                 <input id="callback_url" name="callback_url" value="{{ callback_url_default }}" required>
-                <p class="hint">Use this server's LAN or Tailscale address and callback port, not localhost, a Docker address, or the dashboard-only port. A Tailscale address requires the Pi to join that tailnet during setup.</p>
+                <p class="hint">Use this server's LAN or Tailscale address and callback port, not localhost, a Docker address, or the dashboard-only port. The installed Linux system must be able to reach it during setup.</p>
               </div>
             </div>
-            <p class="hint" id="installer-workflow-status" hidden></p>
+            <p class="hint" id="installer-workflow-status" role="status" hidden></p>
           </details>
 
           <details class="fieldset" id="sd-image-settings" name="sd-setup">

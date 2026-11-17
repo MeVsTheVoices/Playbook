@@ -1,0 +1,83 @@
+---
+- name: Skip host when it is marked unmanaged
+  ansible.builtin.meta: end_host
+  when: not (rack_manage_with_ansible | default(true) | bool)
+
+- name: Validate generic x86_64 Linux target
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture in ['x86_64', 'amd64']
+      - ansible_os_family == 'Debian'
+      - generic_linux_x64_timezone | length == 0 or generic_linux_x64_timezone is match('^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$')
+    fail_msg: "generic_linux_x64 currently supports Debian-family x86_64 Linux only."
+  when: (provision_profile | default('')) == 'linux-x64'
+  tags: [linux-x64]
+
+- name: Refresh apt package metadata
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    lock_timeout: 300
+  when:
+    - (provision_profile | default('')) == 'linux-x64'
+    - generic_linux_x64_manage_system | bool
+  tags: [linux-x64]
+
+- name: Install baseline packages
+  ansible.builtin.apt:
+    name: "{{ generic_linux_x64_packages }}"
+    state: present
+    lock_timeout: 300
+  when:
+    - (provision_profile | default('')) == 'linux-x64'
+    - generic_linux_x64_manage_system | bool
+    - generic_linux_x64_packages | length > 0
+  tags: [linux-x64]
+
+- name: Optionally upgrade installed packages
+  ansible.builtin.apt:
+    upgrade: dist
+    lock_timeout: 300
+  when:
+    - (provision_profile | default('')) == 'linux-x64'
+    - generic_linux_x64_manage_system | bool
+    - generic_linux_x64_upgrade_packages | bool
+  tags: [linux-x64]
+
+- name: Set requested timezone
+  block:
+    - name: Check that the requested timezone exists
+      ansible.builtin.stat:
+        path: "/usr/share/zoneinfo/{{ generic_linux_x64_timezone }}"
+      register: generic_linux_x64_timezone_file
+      when: generic_linux_x64_timezone | length > 0
+
+    - name: Reject an unknown timezone
+      ansible.builtin.assert:
+        that:
+          - generic_linux_x64_timezone_file.stat.exists
+          - generic_linux_x64_timezone_file.stat.isreg
+        fail_msg: "The requested timezone is not available in /usr/share/zoneinfo."
+      when: generic_linux_x64_timezone | length > 0
+
+    - name: Point local time to requested zoneinfo
+      ansible.builtin.file:
+        src: "/usr/share/zoneinfo/{{ generic_linux_x64_timezone }}"
+        dest: /etc/localtime
+        state: link
+        force: true
+      when: generic_linux_x64_timezone | length > 0
+
+    - name: Persist requested timezone
+      ansible.builtin.copy:
+        content: "{{ generic_linux_x64_timezone }}\n"
+        dest: /etc/timezone
+        owner: root
+        group: root
+        mode: "0644"
+      when: generic_linux_x64_timezone | length > 0
+  when:
+    - (provision_profile | default('')) == 'linux-x64'
+    - generic_linux_x64_manage_system | bool
+    - ansible_os_family == 'Debian'
+  tags: [linux-x64]

@@ -22,6 +22,8 @@ from services.storage import KEYS_DIR
 from services.network import _validate_node_callback_url
 
 from services.k3s_config import _check_longform
+from services import flash_helper
+from services.installer_config import is_installer, validate as validate_installer
 from services.sd_devices import (
     DEVICE_SUBSCRIBERS,
     DEVICE_SUBSCRIBERS_LOCK,
@@ -194,10 +196,14 @@ def register_sd_routes(app: Any) -> None:
     @app.get("/api/sd/devices")
     def sd_devices() -> Any:
         _ensure_device_monitor_started()
-        prereq_errors = _ensure_prereqs()
-        if prereq_errors:
-            return jsonify(devices=[], errors=prereq_errors), 503
         try:
+            if request.args.get("workflow") == "uefi-installer":
+                if not flash_helper.enabled():
+                    return jsonify(devices=[], errors=["UEFI USB creation requires the configured flash-helper service."]), 503
+                return jsonify(devices=flash_helper.devices(), errors=[])
+            prereq_errors = _ensure_prereqs()
+            if prereq_errors:
+                return jsonify(devices=[], errors=prereq_errors), 503
             return jsonify(devices=_list_sd_devices(), errors=[])
         except (OSError, ValueError, KeyError, subprocess.SubprocessError, RuntimeError) as exc:
             app.logger.warning("SD device discovery failed: %s", exc)
@@ -241,19 +247,28 @@ def register_sd_routes(app: Any) -> None:
     @app.post("/api/sd/prepare")
     @sd_storage_errors
     def sd_prepare() -> Any:
-        prereq_errors = _ensure_prereqs()
-        if prereq_errors:
-            return jsonify({"ok": False, "errors": prereq_errors}), 400
-
         payload_raw = request.get_json(silent=True)
         if not isinstance(payload_raw, dict):
             return jsonify(ok=False, errors=["Invalid preparation payload."]), 400
+        installer = is_installer(payload_raw)
+        if installer:
+            if not flash_helper.enabled():
+                return jsonify(ok=False, errors=["UEFI USB creation requires the configured flash-helper service."]), 400
+        else:
+            prereq_errors = _ensure_prereqs()
+            if prereq_errors:
+                return jsonify({"ok": False, "errors": prereq_errors}), 400
         options = payload_raw.get("cloud_init_options")
         if isinstance(options, dict):
             try:
                 payload_raw["cloud_init_options"] = _resolve_sd_session_secrets(str(payload_raw.get("sd_options_profile") or ""), options)
             except ValueError as exc:
                 app.logger.warning("Cloud-init credential restore rejected: %s", exc)
+                return jsonify(ok=False, errors=[str(exc)]), 400
+        if installer:
+            try:
+                validate_installer(payload_raw)
+            except ValueError as exc:
                 return jsonify(ok=False, errors=[str(exc)]), 400
         payload = _sanitize_sd_prepare_payload(payload_raw if isinstance(payload_raw, dict) else {})
         required = ["profile", "hostname", "device", "ssh_public_key", "callback_url"]
@@ -286,6 +301,8 @@ def register_sd_routes(app: Any) -> None:
                 callback.scheme, callback.netloc, f"/api/ssh/public/{quote(key_name, safe='')}", "", "",
             ))
         sd_profiles = (*K3S_ROLE_PROFILES, TOOLKIT_PROFILE, SERVER_PROFILE)
+        if installer:
+            sd_profiles = (*sd_profiles, "uefi-x86_64", "uefi-arm64")
         if payload["profile"] not in sd_profiles:
             return jsonify({"ok": False, "errors": [f"profile must be one of: {', '.join(sd_profiles)}"]}), 400
 
@@ -306,7 +323,7 @@ def register_sd_routes(app: Any) -> None:
                 or not isinstance(identity, str) or not re.fullmatch(r"[a-f0-9]{64}", identity)):
             return jsonify(ok=False, errors=["Refresh devices and confirm the selected disk before writing."]), 400
         try:
-            devices = _list_sd_devices()
+            devices = flash_helper.devices() if installer else _list_sd_devices()
         except (OSError, ValueError, KeyError, subprocess.SubprocessError, RuntimeError) as exc:
             app.logger.warning("SD target verification failed: %s", exc)
             return jsonify(ok=False, errors=["Cannot verify the target disk. Refresh discovery and check the flasher."]), 503
@@ -336,7 +353,8 @@ def register_sd_routes(app: Any) -> None:
                 "exit_code": None,
             }
 
-        thread = threading.Thread(target=_run_prepare_job, args=(job_id, payload), daemon=True)
+        runner = flash_helper.run_prepare_job if installer else _run_prepare_job
+        thread = threading.Thread(target=runner, args=(job_id, payload), daemon=True)
         thread.start()
         return jsonify({"ok": True, "job_id": job_id})
 

@@ -99,6 +99,8 @@ For host setup, Kubernetes connectivity, credentials, and device-access limits,
 follow the [operator deployment guide](callback_site/README.md#deployment-notes).
 For a Pi deployment preflight and callback troubleshooting, see the
 [callback checklist](callback_site/README.md#pi-deployment-and-callback-checklist).
+For the generic x86_64 host baseline and its separately authorized UEFI USB
+installer workflow, see the [Generic Linux x86_64 profile](docs/generic-linux-x64.md).
 For the Linux K3s cluster connection, see
 [Linux K3s and the Kubernetes dashboard](callback_site/README.md#linux-k3s-and-the-kubernetes-dashboard).
 

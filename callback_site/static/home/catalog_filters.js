@@ -14,8 +14,10 @@ function updateInstallerWorkflow() {
   const installer = isUefiInstaller();
   const note = document.getElementById("installer-workflow-status");
   note.hidden = !installer;
-  note.textContent = "UEFI installer creation is not available in this dashboard.";
-  form.querySelector("button[type='submit']").disabled = installer || flashSubmissionPending || !deviceDiscoveryReady || !form.device.value;
+  note.textContent = installer
+    ? "Requires the configured flash-helper service. Choose a pinned ISO and a removable USB stick, then create the installer. Boot that stick on the x86_64 target to install a baseline OS. Installation is unattended and erases the target's sole eligible internal disk; the USB itself is erased when created. This does not install K3s. After the system boots, use its callback entry in Node Ops to apply the generic Linux x86_64 baseline."
+    : "";
+  form.querySelector("button[type='submit']").disabled = flashSubmissionPending || !deviceDiscoveryReady || !form.device.value;
   form.querySelector("button[type='submit']").textContent = installer
     ? "Create Unattended Installer USB" : "Format + Write SD Card";
   sdOptionsProfilePiOnlyEl.disabled = installer;

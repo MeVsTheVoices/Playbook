@@ -37,8 +37,8 @@ form.addEventListener("submit", async (e) => {
 
 async function submitSdForm() {
   await sdBrowserSessionReady;
-  if (isUefiInstaller()) {
-    statusEl.textContent = "UEFI installer creation is not available in this dashboard.";
+  if (isUefiInstaller() && !form.os_preset.value) {
+    statusEl.textContent = "Select a pinned UEFI installer ISO before creating the USB.";
     return;
   }
   const selected = form.device.selectedOptions[0];
@@ -205,6 +205,12 @@ document.getElementById("opt_k3s_role")?.addEventListener("change", () => {
 document.getElementById("ssh_key_name").addEventListener("input", refreshKeyLinks);
 
 form.profile.addEventListener("change", () => {
+  const nextDeviceWorkflow = isUefiInstaller() ? "uefi-installer" : "pi";
+  if (activeDeviceWorkflow !== nextDeviceWorkflow) {
+    activeDeviceWorkflow = nextDeviceWorkflow;
+    form.confirm_overwrite.checked = false;
+    pollDevicesSnapshot();
+  }
   ensureK3sConfigDefaults();
   form.image_sha256.value = "";
   rebuildCatalogFilters();

@@ -203,6 +203,8 @@ def _save_node_config(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _default_profiles_for_group(group: str) -> List[str]:
+    if group == "linux_x64_active":
+        return ["linux-x64"]
     if group == TOOLKIT_GROUP:
         return ["baseline", "tailscale", "network-toolkit"]
     if group == SERVER_GROUP:

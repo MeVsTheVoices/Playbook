@@ -103,6 +103,7 @@ let deviceFallbackPollTimer = null;
 let deviceProblem = "";
 
 let deviceDiscoveryReady = false;
+let activeDeviceWorkflow = "pi";
 
 let lastDeviceRefreshError = "";
 

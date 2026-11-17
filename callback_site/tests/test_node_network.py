@@ -115,3 +115,32 @@ requests[2].resolve({ok: true, json: async () => ({ok: false, error: "SSH denied
 await tick();
 check(document.getElementById("node-network-status").textContent.includes("SSH denied"), "error displayed");
 """)
+
+    def test_network_configuration_is_listed_and_stays_read_only(self) -> None:
+        self.browser_probe("/nodes", ["nodes/state.js", "nodes/network.js", "nodes/module_config.js"], """
+const requests = [];
+function fetchJsonWithTimeout(url) {
+  requests.push(url);
+  return Promise.resolve({ok: true, json: async () => ({ok: true, readable: [], fields: {}})});
+}
+function renderModulePresets() {}
+""", """
+nodes = [{name: "alpha", group: "rpi5_active", selected_profiles: ["baseline"]}];
+profiles = [{id: "baseline", label: "Baseline", groups: ["*"], tags: ["baseline"], input_specs: []}];
+provisionNode.innerHTML = '<option value="alpha">alpha</option>';
+renderModuleSection();
+const rows = [...document.querySelectorAll("#module-status-body tr")];
+const networkRow = rows.find(row => row.textContent.includes("Network Configuration (read-only)"));
+check(Boolean(networkRow), "network configuration appears with shared modules");
+check(networkRow.textContent.includes("read-only") && networkRow.textContent.includes("Configure"),
+  "network facts are marked read-only and configurable");
+networkRow.querySelector("button").click();
+check(selectedModuleId === "network-facts", "configure selects the network facts view");
+check(document.getElementById("node-network").parentElement === moduleDetailEl
+  && document.getElementById("node-network").open, "live facts view opens in module detail");
+check(document.getElementById("module-save-inputs").closest(".module-actions").hidden
+  && document.getElementById("module-status").hidden
+  && document.getElementById("module-presets").hidden
+  && runAnsible.closest(".module-toggle").hidden, "provisioning and save controls are hidden");
+check(requests.length === 0, "selecting network configuration does not start a live-config or write request");
+""")

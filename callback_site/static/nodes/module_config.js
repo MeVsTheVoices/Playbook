@@ -7,8 +7,18 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+const NETWORK_FACTS_PROFILE = {
+  id: "network-facts",
+  label: "Network Configuration (read-only)",
+  description: "Read basic live Ansible network facts from the selected Linux node. This does not change networking or read Wi-Fi passwords.",
+  tags: ["read-only"],
+  groups: ["*"],
+  input_specs: [],
+  read_only: true,
+};
+
 function profileById(id) {
-  return profiles.find((p) => p.id === id);
+  return profiles.find((p) => p.id === id) || (id === NETWORK_FACTS_PROFILE.id ? NETWORK_FACTS_PROFILE : undefined);
 }
 
 function selectedProfileIdsForNode(nodeName) {
@@ -204,7 +214,7 @@ function restoreLiveConfig() {
 async function loadLiveConfig() {
   const nodeName = provisionNode.value;
   const moduleId = selectedModuleId;
-  if (!nodeName || !moduleId) return;
+  if (!nodeName || !moduleId || moduleId === NETWORK_FACTS_PROFILE.id) return;
   const key = liveKey(nodeName, moduleId);
   const requestId = ++liveConfigRequestId;
   liveConfigInFlight = key;
@@ -271,6 +281,12 @@ function renderModuleSection() {
   if (!moduleStatusBodyEl || !moduleDetailEl) {
     return;
   }
+  const networkDetailsEl = document.getElementById("node-network");
+  const networkSlotEl = document.getElementById("node-network-slot");
+  if (networkDetailsEl && networkSlotEl && networkDetailsEl.parentElement !== networkSlotEl) {
+    networkDetailsEl.open = false;
+    networkSlotEl.appendChild(networkDetailsEl);
+  }
   const nodeName = provisionNode.value;
   const selected = new Set(selectedProfileIdsForNode(nodeName));
   const selectedNode = nodes.find((n) => n.name === nodeName) || {};
@@ -290,6 +306,7 @@ function renderModuleSection() {
   // A module that targets a single group belongs to that profile: it is listed below, not in the shared table.
   const isProfileSpecific = (profile) => Array.isArray(profile.groups) && profile.groups.length === 1 && profile.groups[0] !== "*";
   const sharedProfiles = profiles.filter((profile) => !isProfileSpecific(profile));
+  sharedProfiles.push(NETWORK_FACTS_PROFILE);
   const groupProfiles = profiles.filter((profile) => isProfileSpecific(profile) && profile.groups[0] === nodeGroup);
   const current = profileById(selectedModuleId);
   if (current && isProfileSpecific(current) && current.groups[0] !== nodeGroup) selectedModuleId = "";
@@ -303,21 +320,27 @@ function renderModuleSection() {
     const isActive = selected.has(profile.id);
     const tags = Array.isArray(profile.tags) ? profile.tags.join(", ") : "-";
     const tr = document.createElement("tr");
-    const activePill = isActive
+    const activePill = profile.read_only
+      ? "<span class='status-chip'>read-only</span>"
+      : isActive
       ? "<span class='status-chip ok'>active</span>"
       : "<span class='status-chip'>inactive</span>";
     tr.innerHTML = `
       <td><strong>${escapeHtml(profile.label || profile.id)}</strong></td>
       <td class='mono'>${escapeHtml(tags)}</td>
       <td>${activePill}</td>
-      <td><button type='button' class='node-action-btn secondary module-configure-btn'>${profile.id === selectedModuleId ? "Editing" : "Configure"}</button></td>
+      <td><button type='button' class='node-action-btn secondary module-configure-btn'>${profile.id === selectedModuleId ? (profile.read_only ? "Viewing" : "Editing") : "Configure"}</button></td>
     `;
     tr.className = profile.id === selectedModuleId ? "module-row module-row-selected" : "module-row";
     const selectModule = () => {
       selectedModuleId = profile.id;
       moduleStatusEl.textContent = "";
       renderModuleSection();
-      loadLiveConfig();
+      if (profile.read_only) {
+        resetNodeNetwork();
+      } else {
+        loadLiveConfig();
+      }
     };
     tr.querySelector(".module-configure-btn").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -338,11 +361,40 @@ function renderModuleSection() {
   }
   keepRowVisible(selectedRow);
 
-  const profile = profiles.find((p) => p.id === selectedModuleId);
+  const profile = profileById(selectedModuleId);
   if (!profile) {
     moduleDetailEl.classList.add("collapsed");
     moduleDetailEl.innerHTML = "<p class='note'>Select a module from the table to view its parameter template.</p>";
+    document.getElementById("module-save-inputs").closest(".module-actions").hidden = false;
+    document.getElementById("module-status").hidden = false;
+    document.getElementById("module-presets").hidden = false;
+    document.getElementById("module-connection-context").hidden = false;
+    document.getElementById("profile-specific").hidden = false;
+    runAnsible.closest(".module-toggle").hidden = false;
     renderModulePresets();
+    return;
+  }
+  const readOnly = Boolean(profile.read_only);
+  document.getElementById("module-save-inputs").closest(".module-actions").hidden = readOnly;
+  document.getElementById("module-status").hidden = readOnly;
+  document.getElementById("module-presets").hidden = readOnly;
+  document.getElementById("module-connection-context").hidden = readOnly;
+  document.getElementById("profile-specific").hidden = readOnly;
+  runAnsible.closest(".module-toggle").hidden = readOnly;
+  if (readOnly) {
+    moduleDetailEl.classList.remove("collapsed");
+    moduleDetailEl.replaceChildren();
+    const heading = document.createElement("h4");
+    heading.textContent = profile.label;
+    const description = document.createElement("p");
+    description.className = "module-desc";
+    description.textContent = profile.description;
+    moduleDetailEl.append(heading, description);
+    if (networkDetailsEl) {
+      networkDetailsEl.open = true;
+      moduleDetailEl.appendChild(networkDetailsEl);
+    }
+    document.getElementById("module-presets").replaceChildren();
     return;
   }
   const saved = (nodeInputs[nodeName] && typeof nodeInputs[nodeName] === "object" && typeof nodeInputs[nodeName][profile.id] === "object")

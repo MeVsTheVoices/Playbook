@@ -55,6 +55,7 @@ async function loadSummary() {
   if (oldNode && nodes.some((n) => n.name === oldNode)) {
     provisionNode.value = oldNode;
   }
+  if (oldNode !== provisionNode.value) resetNodeNetwork();
   renderModuleSection();
   renderOpenwrtHosts();
   renderRows();
@@ -74,6 +75,7 @@ async function syncNodes() {
     if (oldNode && nodes.some((n) => n.name === oldNode)) {
       provisionNode.value = oldNode;
     }
+    if (oldNode !== provisionNode.value) resetNodeNetwork();
     renderOpenwrtHosts();
   } catch (err) {
     // Keep the table as it is; the monitor poll below still reports reachability.

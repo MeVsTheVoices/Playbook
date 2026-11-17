@@ -175,6 +175,13 @@
                 </table>
               </div>
             </div>
+            <details class="profile-specific" id="node-network">
+              <summary>Network configuration (read-only)</summary>
+              <p class="module-hint">Read basic live Ansible network facts from the selected Linux node. This does not change networking or read Wi-Fi passwords.</p>
+              <button id="node-network-read" type="button" class="secondary">Read network facts</button>
+              <p id="node-network-status" class="module-hint" role="status">Select a node and read its network facts.</p>
+              <div id="node-network-result"></div>
+            </details>
             <div style="margin-top: 0.8rem;">
               <p id="module-connection-context" class="module-callout"></p>
               <section id="profile-specific" class="profile-specific" aria-labelledby="profile-specific-title">
@@ -350,6 +357,7 @@
     <script src="{{ url_for('static', filename='connection_routes.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/tailscale.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/state.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='nodes/network.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/module_config.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/module_presets.js') }}" defer></script>
     <script src="{{ url_for('static', filename='nodes/node_table.js') }}" defer></script>

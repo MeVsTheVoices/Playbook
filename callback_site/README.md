@@ -166,6 +166,11 @@ previous image path, URL and checksum together, including clearing stale checksu
 
 ### Wi-Fi during imaging
 
+In **Node Ops**, select a Linux node and open **Network configuration
+(read-only)** to fetch its current Ansible interface, address, default gateway,
+and DNS facts. This does not change Wi-Fi settings or retrieve passwords; missing
+facts depend on the node's Ansible and networking tools.
+
 In **Cloud-Init Settings**, enter a primary WPA/WPA2 SSID and password, then use
 **Add Wi-Fi network** for other networks. Each SSID must be unique; the device
 chooses among available networks without an ordered priority. Network Toolkit

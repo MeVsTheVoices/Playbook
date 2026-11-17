@@ -4,6 +4,7 @@ toggleBtn.addEventListener("click", () => {
 });
 
 provisionNode.addEventListener("change", () => {
+  resetNodeNetwork();
   renderModuleSection();
   renderOpenwrtHosts();
   loadLiveConfig();

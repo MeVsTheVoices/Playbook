@@ -869,6 +869,16 @@ intent and invite setup. Imported charts show `PLAYBOOK_GUIDE.md` or, if absent,
 their `README.md` as untrusted plain text; charts without either show a notice.
 Reimport an older configuration to pick up a guide.
 
+The bundled **Headlamp (Kubernetes web UI)** option installs upstream Headlamp
+only when explicitly deployed after the cluster is ready. Its wrapper pins the
+upstream Helm dependency with a `Chart.lock`; preview/deployment downloads that
+dependency. It defaults to a private ClusterIP Service, no ingress or storage,
+and no cluster-admin binding or login bypass. The included guide covers local
+port-forwarding, an optional read-only login account, and private Tailscale HTTPS
+access. Headlamp settings are nested under `headlamp:` in the values editor.
+Login tokens must not be stored in Helm values. This is separate from Playbook's
+Kubernetes page and replaces the archived upstream Kubernetes Dashboard.
+
 For Dockerbot, save the target namespace and values, create that namespace,
 then use **Create / update Secret** to submit the token directly to the cluster.
 The dashboard does not store it in its configuration or Helm values; Kubernetes

@@ -24,8 +24,14 @@ from services.storage import APPDATA_DIR, _atomic_write_text
 
 logger = logging.getLogger(__name__)
 CONFIG_FILE = APPDATA_DIR / "helm_configurations.json"
-BUNDLED_CHARTS = {"dockerbot": Path(__file__).resolve().parents[2] / "charts" / "dockerbot"}
-BUNDLED = [{"id": "dockerbot", "name": "Dockerbot (Red Discord Bot)"}]
+BUNDLED_CHARTS = {
+    name: Path(__file__).resolve().parents[2] / "charts" / name
+    for name in ("dockerbot", "headlamp")
+}
+BUNDLED = [
+    {"id": "dockerbot", "name": "Dockerbot (Red Discord Bot)"},
+    {"id": "headlamp", "name": "Headlamp (Kubernetes web UI)"},
+]
 LOCK = threading.Lock()
 EXAMPLES = [
     {"name": "Hello World (NGINX)", "repository": "https://github.com/helm/examples", "chart_path": "charts/hello-world"},

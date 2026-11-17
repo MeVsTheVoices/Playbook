@@ -61,17 +61,46 @@ class HelmConfigurationTests(BaseCallbackSiteTest):
         self.assertEqual(response.status_code, 200, response.json)
         return response.json["configuration"]
 
-    def bundled(self):
+    def bundled(self, name="dockerbot"):
         def commands(args, **kwargs):
             if args[:3] == ["helm", "show", "chart"]:
-                return (helm.BUNDLED_CHARTS["dockerbot"] / "Chart.yaml").read_text()
+                return (helm.BUNDLED_CHARTS[name] / "Chart.yaml").read_text()
             if args[:3] == ["helm", "show", "values"]:
-                return (helm.BUNDLED_CHARTS["dockerbot"] / "values.yaml").read_text()
+                return (helm.BUNDLED_CHARTS[name] / "values.yaml").read_text()
             return self.command(args, **kwargs)
         with patch.object(helm, "_command", side_effect=commands):
-            response = self.client.post("/api/helm/configurations/import", json={"bundled": "dockerbot"})
+            response = self.client.post("/api/helm/configurations/import", json={"bundled": name})
         self.assertEqual(response.status_code, 200, response.json)
         return response.json["configuration"]
+
+    def test_headlamp_is_optional_and_snapshots_locked_upstream_chart(self):
+        record = self.bundled("headlamp")
+        self.assertIn("headlamp", [item["id"] for item in self.client.get("/api/helm/configurations").json["bundled"]])
+        self.assertEqual(record["bundled"], "headlamp")
+        self.assertEqual(record["tailscale"], {"mode": "off"})
+        self.assertIsNone(record["last_submission"])
+        self.assertFalse(any("upgrade" in args for args in self.commands))
+        snapshot = helm._snapshot_path(record["id"])
+        lock = yaml.safe_load((snapshot / "Chart.lock").read_text())
+        metadata = yaml.safe_load((snapshot / "Chart.yaml").read_text())
+        self.assertEqual(lock["dependencies"], metadata["dependencies"])
+        self.assertEqual(helm._chart_digest(snapshot), record["commit"])
+        self.assertIn("port-forward", record["guide"])
+        self.assertIn("short-lived token", record["guide"])
+        commands = []
+
+        def command(args, **kwargs):
+            commands.append(args)
+            if args[:3] == ["helm", "repo", "add"] or args[:3] == ["helm", "dependency", "build"]:
+                return ""
+            return self.command(args, **kwargs)
+
+        with patch.object(helm, "_command", side_effect=command), \
+             patch.object(helm, "_checkout", side_effect=AssertionError("bundled import must not fetch Git")):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/preview", json={"revision": 1})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertTrue(any(args[:3] == ["helm", "dependency", "build"] for args in commands))
+        self.assertFalse(any("upgrade" in args for args in self.commands))
 
     def test_bundled_chart_snapshots_guide_and_detects_changes(self):
         record = self.bundled()
@@ -337,6 +366,45 @@ document.getElementById("helm-values").dispatchEvent(new Event("input"));
 check(document.getElementById("helm-dockerbot-token-save").disabled, "unsaved values block token submission");
 """
         self.browser_probe("/kubernetes", ["helm.js"], bootstrap, probe)
+
+    def test_browser_headlamp_import_is_optional_and_has_no_bot_token_controls(self):
+        record = {
+            "id": "headlamp-saved", "name": "headlamp", "release": "headlamp-demo",
+            "namespace": "playbook-helm", "values": "headlamp: {}", "repository": "",
+            "chart_path": "charts/headlamp", "chart_name": "headlamp", "chart_version": "0.1.0",
+            "commit": "abc", "revision": 1, "bundled": "headlamp",
+            "guide": "Headlamp setup guide", "last_submission": None,
+        }
+        self.browser_probe("/kubernetes", ["helm.js"], """
+const requests = [];
+let imported = false;
+const record = %s;
+window.fetch = async (url, options = {}) => {
+  requests.push({url, options});
+  if (url.includes("tailscale-operator")) return {ok: true, json: async () => ({ok: true, status: {}})};
+  if (url.endsWith("/import")) {
+    imported = true;
+    return {ok: true, json: async () => ({ok: true, configuration: record})};
+  }
+  return {ok: true, json: async () => ({ok: true, configurations: imported ? [record] : [],
+    examples: [], bundled: [{id: "dockerbot", name: "Dockerbot"}, {id: "headlamp", name: "Headlamp"}]})};
+};
+""" % json.dumps(record), """
+await tick();
+const select = document.getElementById("helm-selection");
+check([...select.options].some(option => option.value === "bundled:headlamp"), "Headlamp listed alongside Dockerbot");
+select.value = "bundled:headlamp";
+select.dispatchEvent(new Event("change"));
+check(document.getElementById("helm-panel").open, "selection opens Helm panel");
+check(!requests.some(item => item.options.method === "POST"), "selection makes no changes");
+document.getElementById("helm-import").click();
+await tick();
+const posts = requests.filter(item => item.options.method === "POST");
+check(posts.length === 1 && JSON.parse(posts[0].options.body).bundled === "headlamp", "imports only Headlamp defaults");
+check(document.getElementById("helm-guide").value === record.guide, "setup guide displayed");
+check(document.getElementById("helm-dockerbot-token-panel").hidden, "Dockerbot token controls hidden");
+check(document.getElementById("helm-submission").textContent.includes("Not submitted"), "import does not deploy");
+""")
 
     def test_tailscale_settings_are_saved_and_checked_before_deployment(self):
         record = self.imported()

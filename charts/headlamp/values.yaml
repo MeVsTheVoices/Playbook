@@ -1,0 +1,29 @@
+# Upstream chart settings are nested under headlamp.
+headlamp:
+  replicaCount: 1
+  config:
+    inCluster: true
+    unsafeUseServiceAccountToken: false
+    oidc:
+      secret:
+        create: false
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: false
+  serviceAccount:
+    create: true
+  # Users authenticate separately; do not grant the pod cluster-admin.
+  clusterRoleBinding:
+    create: false
+  persistentVolumeClaim:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  nodeSelector: {}
+  tolerations: []

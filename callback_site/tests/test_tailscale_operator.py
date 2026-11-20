@@ -246,3 +246,91 @@ class TailscaleOperatorPolicyTests(BaseCallbackSiteTest):
         self.assertNotIn("tag:k8s-operator", build_policy(self.BASE)["policy"]["tagOwners"])
         self.assertFalse(build_policy({**self.BASE, "k8s_operator": True, "k8s_api_role": "root"})["ok"])
         self.assertFalse(build_policy({**self.BASE, "k8s_operator": True, "homelab_tag": "tag:k8s"})["ok"])
+
+
+class KubernetesRbacBindingTests(BaseCallbackSiteTest):
+    URL = "/api/kubernetes/rbac/bindings"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.commands: list[list[str]] = []
+        self.applied: list[dict] = []
+        self.objects = {
+            "hand-made": {"metadata": {"name": "hand-made"}, "roleRef": {"name": "cluster-admin"}, "subjects": []},
+        }
+        for name, value in (("_command", self.command), ("_helm_connection", lambda: [])):
+            patcher = patch.object(helm, name, side_effect=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def command(self, args, **kwargs):
+        self.commands.append(list(args))
+        if "apply" in args:
+            manifest = json.loads(Path(args[args.index("-f") + 1]).read_text())
+            self.applied.append(manifest)
+            self.objects[manifest["metadata"]["name"]] = manifest
+            return "configured"
+        if "delete" in args:
+            del self.objects[args[-1]]
+            return "deleted"
+        if "clusterrolebindings" in args:
+            managed = [o for o in self.objects.values() if o["metadata"].get("labels", {}).get("app.kubernetes.io/managed-by") == "playbook"]
+            return json.dumps({"items": managed})
+        if "clusterrolebinding" in args:
+            return json.dumps(self.objects.get(args[args.index("clusterrolebinding") + 1], {})) if args[args.index("clusterrolebinding") + 1] in self.objects else ""
+        raise AssertionError(f"unexpected command {args}")
+
+    def put(self, name, body):
+        return self.client.put(f"{self.URL}/{name}", json={"confirm": True, **body})
+
+    def test_create_read_update_delete_homelab_controller_admin(self) -> None:
+        subjects = [{"kind": "Group", "name": "tag:homelab-controller"}]
+        created = self.put("tailscale-homelab-controller-admin", {"role": "cluster-admin", "subjects": subjects})
+        self.assertEqual(created.status_code, 200, created.get_json())
+        self.assertTrue(created.get_json()["created"])
+        self.assertEqual(self.applied[-1], {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "ClusterRoleBinding",
+            "metadata": {"name": "tailscale-homelab-controller-admin", "labels": {"app.kubernetes.io/managed-by": "playbook"}},
+            "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "cluster-admin"},
+            "subjects": [{"apiGroup": "rbac.authorization.k8s.io", "kind": "Group", "name": "tag:homelab-controller"}],
+        })
+
+        listed = self.client.get(self.URL).get_json()["bindings"]
+        self.assertEqual([(b["name"], b["role"], b["subjects"]) for b in listed],
+                         [("tailscale-homelab-controller-admin", "cluster-admin", subjects)])
+
+        self.commands.clear()
+        updated = self.put("tailscale-homelab-controller-admin", {"role": "view", "subjects": subjects + [{"kind": "User", "name": "alice@example.com"}]})
+        self.assertEqual(updated.status_code, 200, updated.get_json())
+        self.assertFalse(updated.get_json()["created"])
+        self.assertTrue(any("delete" in c for c in self.commands), "roleRef is immutable, so a role change recreates the binding")
+        self.assertEqual(self.objects["tailscale-homelab-controller-admin"]["roleRef"]["name"], "view")
+
+        deleted = self.client.delete(f"{self.URL}/tailscale-homelab-controller-admin", json={"confirm": True})
+        self.assertEqual(deleted.status_code, 200)
+        self.assertNotIn("tailscale-homelab-controller-admin", self.objects)
+
+    def test_unmanaged_bindings_are_never_changed(self) -> None:
+        body = {"role": "view", "subjects": [{"kind": "Group", "name": "tailnet-readers"}]}
+        self.assertEqual(self.put("hand-made", body).status_code, 409)
+        self.assertEqual(self.client.delete(f"{self.URL}/hand-made", json={"confirm": True}).status_code, 409)
+        self.assertEqual(self.client.delete(f"{self.URL}/missing", json={"confirm": True}).status_code, 404)
+        self.assertFalse(any("apply" in c or "delete" in c for c in self.commands))
+
+    def test_rejects_unsafe_input_before_touching_the_cluster(self) -> None:
+        group = [{"kind": "Group", "name": "tag:homelab-controller"}]
+        for name, body in (
+            ("ok-name", {"role": "cluster-admin", "subjects": group, "confirm": False}),
+            ("ok-name", {"role": "system:node", "subjects": group}),
+            ("ok-name", {"role": "view", "subjects": []}),
+            ("ok-name", {"role": "view", "subjects": [{"kind": "ServiceAccount", "name": "default"}]}),
+            ("ok-name", {"role": "view", "subjects": [{"kind": "Group", "name": "system:masters"}]}),
+            ("ok-name", {"role": "view", "subjects": [{"kind": "User", "name": "bad name"}]}),
+            ("Bad_Name", {"role": "view", "subjects": group}),
+            ("system-admin", {"role": "view", "subjects": group}),
+        ):
+            with self.subTest(name=name, body=body):
+                response = self.client.put(f"{self.URL}/{name}", json={"confirm": True, **body})
+                self.assertEqual(response.status_code, 400, response.get_json())
+        self.assertEqual(self.commands, [])

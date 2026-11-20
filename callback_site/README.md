@@ -964,6 +964,27 @@ Live checks lead with a one-line verdict, then:
 The dashboard host can't resolve MagicDNS names, so the final proof is always
 kubectl from one of your own devices.
 
+#### 🪪 Tailnet RBAC bindings
+
+The **Tailnet RBAC bindings** card on `/kubernetes` creates, lists, edits, and
+deletes `ClusterRoleBinding`s for Tailscale identities. In auth mode, these
+bindings decide what callers can do through the API proxy. Use one subject per line:
+`Group tag:homelab-controller` for tagged machines or tailnet groups, and
+`User alice@example.com` for a login. Only the built-in `view`, `edit`,
+`admin`, and `cluster-admin` ClusterRoles can be chosen.
+
+For example, binding **cluster-admin** to `Group tag:homelab-controller` gives
+every machine with that tag full control of the cluster. It is equivalent to the
+`tailscale-homelab-controller-admin` binding you'd otherwise apply by hand.
+
+Bindings created here carry `app.kubernetes.io/managed-by=playbook`. Only those
+bindings are listed or changed; system and hand-made bindings are left alone.
+Kubernetes can't change a binding's role in place, so changing the role deletes
+and recreates the binding.
+
+The tag also needs a tailnet grant to `tag:k8s-operator:443` before its
+requests reach the proxy.
+
 #### 🧯 When it isn't working
 
 - **"Forbidden" or no route from the NUC.** Tagged machines (like the NucBox)

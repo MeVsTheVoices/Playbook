@@ -105,6 +105,37 @@
           <div class="status" id="tailnet-api-message" role="status" aria-live="polite"></div>
         </section>
 
+        <section class="panel kube-section" id="rbac-bindings">
+          <h2>Tailnet RBAC bindings</h2>
+          <p class="kube-subtle">Grant Tailscale identities a built-in ClusterRole through the API server proxy (auth mode). Use a <code>Group</code> for tags such as <code>tag:homelab-controller</code> or tailnet groups, and a <code>User</code> for a login such as <code>alice@example.com</code>. Only bindings created here (labelled <code>app.kubernetes.io/managed-by=playbook</code>) can be edited or deleted. <strong>cluster-admin</strong> grants full control of the cluster.</p>
+          <div style="max-height: 18rem; overflow: auto;">
+            <table class="kube-table">
+              <thead><tr><th>Name</th><th>Role</th><th>Subjects</th><th>Actions</th></tr></thead>
+              <tbody id="rbac-rows"><tr><td colspan="4">Loading bindings...</td></tr></tbody>
+            </table>
+          </div>
+          <form id="rbac-form" class="helm-fields" autocomplete="off">
+            <label>Binding name <input id="rbac-name" maxlength="253" placeholder="tailscale-homelab-controller-admin" spellcheck="false" required></label>
+            <label>ClusterRole
+              <select id="rbac-role">
+                <option value="view">view (read-only)</option>
+                <option value="edit">edit</option>
+                <option value="admin">admin</option>
+                <option value="cluster-admin">cluster-admin (full control)</option>
+              </select>
+            </label>
+            <label>Subjects (one per line: <code>Group tag:homelab-controller</code> or <code>User alice@example.com</code>)
+              <textarea id="rbac-subjects" rows="3" spellcheck="false" placeholder="Group tag:homelab-controller"></textarea>
+            </label>
+          </form>
+          <div class="kube-actions">
+            <button type="button" class="kube-btn" id="rbac-save">Create / update binding</button>
+            <button type="button" class="kube-btn" id="rbac-clear">Clear form</button>
+            <button type="button" class="kube-btn" id="rbac-refresh">Refresh</button>
+          </div>
+          <div class="status" id="rbac-message" role="status" aria-live="polite"></div>
+        </section>
+
         <section class="panel kube-section" id="helm-workspace">
           <h2>Helm configurations</h2>
           <p class="kube-subtle">Choose an included chart or import a public GitHub chart. Save, preview, and explicitly deploy it to the configured cluster. Only import charts you trust.</p>
@@ -330,5 +361,6 @@
     <script src="{{ url_for('static', filename='kubernetes.js') }}" defer></script>
     <script src="{{ url_for('static', filename='helm.js') }}" defer></script>
     <script src="{{ url_for('static', filename='tailnet_api.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='kubernetes_rbac.js') }}" defer></script>
   </body>
 </html>

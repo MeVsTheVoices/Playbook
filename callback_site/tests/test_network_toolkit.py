@@ -353,6 +353,11 @@ class NetworkToolkitTests(BaseCallbackSiteTest):
         self.assertNotIn("User=root", terminal)
         sudoers = files["/etc/sudoers.d/network-toolkit"]["content"]
         self.assertNotIn("NOPASSWD: ALL", sudoers)
+        self.assertEqual(
+            [rule for rule in sudoers.splitlines() if "/usr/bin/ls" in rule],
+            ["network-console ALL=(root) NOPASSWD: /usr/bin/ls -l -- /dev/serial/by-id/"],
+        )
+        self.assertNotIn("/usr/bin/screen", sudoers)
         funnel = files["/etc/systemd/system/rack-toolkit-funnel.service"]["content"]
         self.assertIn("ExecStartPre=/usr/local/bin/rack-toolkit-check", funnel)
         self.assertIn("--https=443 http://127.0.0.1:7681", funnel)

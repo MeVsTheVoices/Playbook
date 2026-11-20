@@ -543,10 +543,15 @@ Funnel. Routing and exit nodes remain disabled.
 
 `eth0` is dedicated to equipment, uses link-local addressing initially, and never
 provides a default route. USB serial adapters appear under `/dev/serial/by-id/`
-(or `/dev/ttyUSB*` and `/dev/ttyACM*`). Examples from the browser terminal:
+(or `/dev/ttyUSB*` and `/dev/ttyACM*`). The browser terminal has `dialout`
+access, so run `screen` or `picocom` without sudo. Passwordless sudo permits
+only the toolkit's network and capture helpers and the exact serial directory
+listing shown below; it does not grant general root access.
 
 ```bash
 ls -l /dev/serial/by-id/
+sudo /usr/bin/ls -l -- /dev/serial/by-id/
+screen /dev/ttyUSB0 9600
 picocom --baud 9600 --flow n /dev/ttyUSB0
 sudo rack-device-network show
 sudo rack-device-network static 192.168.1.2/24

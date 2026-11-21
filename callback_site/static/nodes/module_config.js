@@ -441,6 +441,7 @@ function renderModuleSection() {
     installHint.className = "module-callout";
     installHint.textContent = "On Pi workers this module only prepares the node; it installs the Longhorn chart only on a Pi K3s server when Install Longhorn chart is selected. If your server is not a Pi 5, install the chart separately using a Helm configuration in the Kubernetes dashboard. Ensure open-iscsi and iscsid are available on every node that runs Longhorn workloads.";
     moduleDetailEl.appendChild(installHint);
+    if (typeof appendLonghornDiskCheck === "function") appendLonghornDiskCheck(moduleDetailEl);
   }
   if (!specs.length) {
     const empty = document.createElement("p");

@@ -14,6 +14,7 @@ except ImportError:
     from test_support import BaseCallbackSiteTest
 
 import services.node_network as network
+import services.node_storage as storage
 
 
 class NodeNetworkTests(BaseCallbackSiteTest):
@@ -85,6 +86,55 @@ class NodeNetworkTests(BaseCallbackSiteTest):
                 self.assertFalse(result["ok"])
                 self.assertTrue(result["error"])
                 self.assertNotIn("network", result)
+
+    def test_longhorn_disks_run_the_storage_module_in_report_only_mode(self) -> None:
+        node = {"name": "alpha", "address": "192.0.2.9"}
+        report = {"disks": [{"name": "/dev/nvme0n1", "usable": True}], "plan": {"action": "format", "disk": "/dev/nvme0n1"}}
+
+        def run(cmd, **kwargs):
+            self.assertEqual(cmd[cmd.index("-m") + 1], "rack_storage_disk")
+            self.assertTrue(cmd[cmd.index("-M") + 1].endswith("/library"))
+            args = json.loads(cmd[cmd.index("-a") + 1])
+            self.assertEqual(args, {"path": "/mnt/lh", "device": "auto", "label": "longhorn", "nvme_only": True, "report_only": True})
+            self.assertFalse(json.loads(Path(cmd[2]).read_text())["all"]["hosts"]["storage_target"]["ansible_become"])
+            return SimpleNamespace(returncode=0, stdout="storage_target | SUCCESS => " + json.dumps(report), stderr="")
+
+        with patch("routes.nodes._node_ops_inventory_view", return_value=[node]), \
+             patch.object(network, "_node_ops_inventory_view", return_value=[node]), \
+             patch.object(network, "_preferred_node_connect_target", return_value=("192.0.2.9", "inventory")), \
+             patch.object(network, "_ssh_private_key_preflight", return_value=""), \
+             patch.object(network, "_seed_known_host"), \
+             patch.object(network.subprocess, "run", side_effect=run) as ran:
+            result = self.client.get("/api/nodes/longhorn-disks?node=alpha&path=/mnt/lh&device=").get_json()
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["plan"]["action"], "format")
+            for device in ("none", "/dev/sda; reboot"):
+                refused = storage.read_longhorn_disks("alpha", "/mnt/lh", device)
+                self.assertFalse(refused["ok"])
+            self.assertEqual(ran.call_count, 1)
+
+    def test_longhorn_disk_check_renders_node_data_as_text(self) -> None:
+        self.browser_probe("/nodes", ["nodes/state.js", "nodes/longhorn_disks.js"], """
+const requests = [];
+function fetchJsonWithTimeout(url, options) {
+  return new Promise(resolve => requests.push({url, options, resolve}));
+}
+""", """
+provisionNode.innerHTML = '<option value="alpha">alpha</option>';
+moduleDetailEl.innerHTML = '<input data-module-field="storage_path" value="/var/lib/longhorn"><input data-module-field="storage_disk" value="auto">';
+appendLonghornDiskCheck(moduleDetailEl);
+document.getElementById("longhorn-disks-check").click();
+check(requests[0].url.includes("node=alpha") && requests[0].url.includes("device=auto"), "node and inputs are sent");
+requests[0].resolve({ok: true, json: async () => ({ok: true, target: "alpha", read_at: "now", path: "/var/lib/longhorn",
+  plan: {action: "format", disk: "/dev/nvme0n1"},
+  disks: [{name: "/dev/mmcblk0", size_bytes: 64 * 1024 ** 3, usable: false, reason: "SD card"},
+          {name: "/dev/nvme0n1", size_bytes: 128 * 1024 ** 3, model: "<img src=x>", nvme: true, usable: true, reason: "blank"}]})});
+await tick();
+const output = document.getElementById("longhorn-disks-result");
+check(output.textContent.includes("partition and format /dev/nvme0n1"), "plan shown");
+check(output.textContent.includes("128.0 GiB") && output.textContent.includes("not used: SD card"), "disks shown");
+check(!output.querySelector("img"), "node data is text");
+""")
 
     def test_network_view_is_read_only_and_ignores_stale_responses(self) -> None:
         self.browser_probe("/nodes", ["nodes/state.js", "nodes/network.js"], """

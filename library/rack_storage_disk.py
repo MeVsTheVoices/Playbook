@@ -50,6 +50,12 @@ options:
         NVMe is an error, so the data can never land on the SD card or a USB drive.
     type: bool
     default: false
+  report_only:
+    description:
+      - Change nothing. Return RV(disks), every disk with whether it can hold the data and why, and RV(plan),
+        what this module would do with the same options.
+    type: bool
+    default: false
   fstab:
     description: fstab file to update.
     type: path
@@ -87,11 +93,19 @@ disk:
   type: str
 formatted:
   description: Whether a new partition table and filesystem were written.
-  returned: always
+  returned: unless report_only
   type: bool
+disks:
+  description: Each disk with size, model, transport, NVMe flag, mounts, labels, C(usable), C(status) and C(reason).
+  returned: when report_only
+  type: list
+plan:
+  description: C(action) and C(disk) the module would use (present, mount or format), or C(error) when it would refuse.
+  returned: when report_only
+  type: dict
 """
 
-LSBLK_COLUMNS = "NAME,TYPE,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS,RM,RO"
+LSBLK_COLUMNS = "NAME,TYPE,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS,RM,RO,MODEL,TRAN"
 # Never auto-picked: loop/ram devices, the SD card, optical and floppy drives, device-mapper and md volumes.
 IGNORED_PREFIXES = ("loop", "ram", "zram", "mmcblk", "sr", "fd", "dm-", "md")
 WEAK_ID_PREFIXES = ("nvme-eui.", "wwn-")
@@ -199,6 +213,50 @@ def make_plan(devices, device, path, label, nvme_only=False):
     if len(spare) > 1:
         raise PlanError("more than one blank disk found (%s); set device to choose one" % ", ".join(describe(d) for d in spare))
     return {"action": "format", "node": None, "disk": spare[0]}
+
+
+def disk_report(devices, path, label, nvme_only=False):
+    """Every real disk, whether this module could use it for path, and why."""
+    rows = []
+    for top in devices:
+        name = os.path.basename(top["name"])
+        if top.get("type") != "disk" or name.startswith(("loop", "ram", "zram")):
+            continue
+        parts = [node for node, _disk in walk([top])]
+        mounts = tree_mounts(top)
+        prepared = any(n.get("fstype") and n.get("label") == label and not mounts_of(n) for n in parts)
+        if name.startswith("mmcblk"):
+            status, reason = "excluded", "SD card or eMMC (the OS disk); never used"
+        elif name.startswith(IGNORED_PREFIXES):
+            status, reason = "excluded", "system or virtual device; never used"
+        elif nvme_only and not is_nvme(top):
+            status, reason = "excluded", "not an NVMe disk" + (" (mounted at %s; move the data to NVMe)" % path if path in mounts else "")
+        elif path in mounts:
+            status, reason = "in-use", "already mounted at %s" % path
+        elif truthy(top.get("rm")):
+            status, reason = "excluded", "removable"
+        elif truthy(top.get("ro")):
+            status, reason = "excluded", "read-only"
+        elif prepared:
+            status, reason = "prepared", "has a filesystem labelled '%s'; would be mounted, not formatted" % label
+        elif not is_blank(top):
+            status, reason = "excluded", "holds partitions, a filesystem or mounts; never touched"
+        else:
+            status, reason = "blank", "blank; auto would partition and format it"
+        rows.append({
+            "name": top["name"],
+            "size_bytes": top.get("size") or 0,
+            "model": (top.get("model") or "").strip(),
+            "transport": top.get("tran") or "",
+            "nvme": is_nvme(top),
+            "mounts": mounts,
+            "fstypes": sorted({n["fstype"] for n in parts if n.get("fstype")}),
+            "labels": sorted({n["label"] for n in parts if n.get("label")}),
+            "usable": status in ("in-use", "prepared", "blank"),
+            "status": status,
+            "reason": reason,
+        })
+    return rows
 
 
 def update_fstab(text, uuid, path, fstype, options):
@@ -317,6 +375,7 @@ def main():
             identify_by=dict(type="str", default="uuid", choices=["uuid", "id"]),
             fstab=dict(type="path", default="/etc/fstab"),
             nvme_only=dict(type="bool", default=False),
+            report_only=dict(type="bool", default=False),
         ),
         supports_check_mode=True,
     )
@@ -328,6 +387,14 @@ def main():
         module.fail_json(msg="label must be 1 to 12 characters")
 
     devices = read_blockdevices(module)
+    if module.params["report_only"]:
+        try:
+            found = make_plan(devices, module.params["device"], path, label, module.params["nvme_only"])
+            plan = {"action": found["action"], "disk": found["disk"]["name"]}
+        except PlanError as exc:
+            plan = {"error": str(exc)}
+        module.exit_json(changed=False, path=path, disks=disk_report(devices, path, label, module.params["nvme_only"]), plan=plan)
+
     try:
         plan = make_plan(devices, module.params["device"], path, label, module.params["nvme_only"])
     except PlanError as exc:

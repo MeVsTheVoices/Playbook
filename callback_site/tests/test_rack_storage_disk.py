@@ -108,6 +108,19 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(disk.PlanError, "not an NVMe disk"):
             disk.make_plan([sd_card(), on_sda], "auto", PATH, "longhorn", nvme_only=True)
 
+    def test_report_explains_every_real_disk_against_the_nvme_only_rules(self) -> None:
+        usb = {**blank_nvme("/dev/sda"), "tran": "usb"}
+        rows = {r["name"]: r for r in disk.disk_report([LOOP, sd_card(), usb, prepared_nvme()], PATH, "longhorn", nvme_only=True)}
+        self.assertEqual(set(rows), {"/dev/mmcblk0", "/dev/sda", "/dev/nvme0n1"})
+        self.assertFalse(rows["/dev/mmcblk0"]["usable"])
+        self.assertIn("SD card", rows["/dev/mmcblk0"]["reason"])
+        self.assertEqual((rows["/dev/sda"]["usable"], rows["/dev/sda"]["reason"]), (False, "not an NVMe disk"))
+        self.assertEqual(rows["/dev/nvme0n1"]["status"], "prepared")
+        self.assertTrue(rows["/dev/nvme0n1"]["usable"])
+        mounted = {r["name"]: r for r in disk.disk_report([sd_card(), prepared_nvme(PATH)], PATH, "longhorn", nvme_only=True)}
+        self.assertEqual(mounted["/dev/nvme0n1"]["status"], "in-use")
+        self.assertEqual(mounted["/dev/nvme0n1"]["mounts"], [PATH])
+
     def test_old_lsblk_single_mountpoint_key_is_understood(self) -> None:
         self.assertEqual(disk.mounts_of({"mountpoint": "/boot"}), ["/boot"])
         self.assertEqual(disk.mounts_of({"mountpoint": None}), [])

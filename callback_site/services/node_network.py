@@ -64,7 +64,16 @@ def _network_snapshot(facts: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def read_node_network(node_name: str) -> dict[str, Any]:
+ANSIBLE_TIMEOUT_SECONDS = 150
+
+
+def run_ansible_module(
+    node_name: str, module: str, args: str, *, alias: str, library: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Run one read-only Ansible module ad hoc against a node, as its login user (no become).
+
+    Returns (result, response): result carries ok/node/target/read_at/error, response is the module's JSON or None.
+    """
     node = next((item for item in _node_ops_inventory_view() if item.get("name") == node_name), {})
     callback_ip = str(node.get("callback_connect_ip") or node.get("callback_source_ip") or "").strip()
     host, source = _preferred_node_connect_target(node_name, str(node.get("address") or "").strip(), callback_ip)
@@ -77,18 +86,18 @@ def read_node_network(node_name: str) -> dict[str, Any]:
     }
     if not host:
         result["error"] = "No node address known yet."
-        return result
+        return result, None
     key_error = _ssh_private_key_preflight(key_path)
     if key_error:
         result["error"] = key_error
-        return result
+        return result, None
     _seed_known_host(host)
     ansible = shutil.which("ansible")
     if not ansible:
         venv_ansible = BASE_DIR.parent / ".venv" / "bin" / "ansible"
         ansible = str(venv_ansible) if venv_ansible.is_file() else "ansible"
 
-    inventory = {"all": {"hosts": {"network_target": {
+    inventory = {"all": {"hosts": {alias: {
         "ansible_host": host,
         "ansible_user": user,
         "ansible_ssh_private_key_file": key_path,
@@ -100,34 +109,49 @@ def read_node_network(node_name: str) -> dict[str, Any]:
     env = os.environ.copy()
     for key in ("ANSIBLE_ASK_VAULT_PASS", "ANSIBLE_VAULT_IDENTITY_LIST", "ANSIBLE_VAULT_PASSWORD_FILE"):
         env.pop(key, None)
+    library_args = ["-M", str(BASE_DIR.parent / "library")] if library else []
+    response: dict[str, Any] | None = None
     try:
-        with tempfile.TemporaryDirectory(prefix="node-network-") as directory:
+        with tempfile.TemporaryDirectory(prefix="node-ansible-") as directory:
             inventory_path = Path(directory) / "inventory.json"
             inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
             proc = subprocess.run(
-                [ansible, "-i", str(inventory_path), "network_target", "-m", "ansible.builtin.setup",
-                 "-a", "gather_subset=!all,network", "-o"],
+                [ansible, "-i", str(inventory_path), alias, *library_args, "-m", module, "-a", args, "-o"],
                 check=False, capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                timeout=150, cwd=str(BASE_DIR.parent), env=env,
+                timeout=ANSIBLE_TIMEOUT_SECONDS, cwd=str(BASE_DIR.parent), env=env,
             )
+        _, separator, payload = (proc.stdout or "").partition("=>")
+        try:
+            parsed = json.loads(payload.strip()) if separator else None
+        except ValueError:
+            parsed = None
         if proc.returncode:
-            result["error"] = (proc.stderr or proc.stdout or f"Ansible exited with code {proc.returncode}.").strip()[-1000:]
+            message = parsed.get("msg") if isinstance(parsed, dict) else ""
+            result["error"] = (str(message or "") or proc.stderr or proc.stdout or f"Ansible exited with code {proc.returncode}.").strip()[-1000:]
+        elif not isinstance(parsed, dict):
+            result["error"] = "Could not parse the Ansible result."
         else:
-            try:
-                _, separator, payload = proc.stdout.partition("=>")
-                if not separator:
-                    raise ValueError("missing Ansible result")
-                response = json.loads(payload.strip())
-                facts = response.get("ansible_facts") if isinstance(response, dict) else None
-                if not isinstance(facts, dict):
-                    raise ValueError("missing Ansible facts")
-                result.update(ok=True, network=_network_snapshot(facts))
-            except (ValueError, TypeError) as exc:
-                result["error"] = f"Could not read network facts: {exc}"
+            response = parsed
     except FileNotFoundError:
         result["error"] = "ansible command not found on this host."
     except subprocess.TimeoutExpired:
-        result["error"] = "Ansible network facts timed out after 150 seconds."
+        result["error"] = f"Ansible timed out after {ANSIBLE_TIMEOUT_SECONDS} seconds."
     if result["error"]:
-        logger.warning("Network facts failed for node=%s via %s: %s", node_name, result["target"], result["error"])
+        logger.warning("Ansible %s failed for node=%s via %s: %s", module, node_name, result["target"], result["error"])
+    return result, response
+
+
+def read_node_network(node_name: str) -> dict[str, Any]:
+    result, response = run_ansible_module(
+        node_name, "ansible.builtin.setup", "gather_subset=!all,network", alias="network_target",
+    )
+    if response is None:
+        return result
+    try:
+        facts = response.get("ansible_facts")
+        if not isinstance(facts, dict):
+            raise ValueError("missing Ansible facts")
+        result.update(ok=True, network=_network_snapshot(facts))
+    except (ValueError, TypeError) as exc:
+        result["error"] = f"Could not read network facts: {exc}"
     return result

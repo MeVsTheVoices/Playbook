@@ -15,6 +15,7 @@ from services.k3s_config import LONGFORM_CHECKS, _check_longform, _longform_inpu
 from services.module_presets import _record_save
 from services.connection_profiles import gather_profiles, remember_profiles, select_profile
 from services.live_config import read_live_config
+from services.node_storage import read_longhorn_disks
 from services.node_tailscale import read_node_tailscale
 from services.node_network import read_node_network
 from services.node_inventory import _node_group_options, _node_ops_inventory_view, _ping_status
@@ -327,6 +328,18 @@ def register_node_routes(app: Any) -> None:
         if not any(n.get("name") == node_name for n in _node_ops_inventory_view()):
             return jsonify({"ok": False, "error": "node not found in active node set"}), 404
         response = jsonify(read_node_network(node_name))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/api/nodes/longhorn-disks")
+    def nodes_longhorn_disks() -> Any:
+        node_name = str(request.args.get("node", "")).strip()
+        if not node_name:
+            return jsonify({"ok": False, "error": "node is required"}), 400
+        if not any(n.get("name") == node_name for n in _node_ops_inventory_view()):
+            return jsonify({"ok": False, "error": "node not found in active node set"}), 404
+        result = read_longhorn_disks(node_name, str(request.args.get("path", "")), str(request.args.get("device", "")))
+        response = jsonify(result)
         response.headers["Cache-Control"] = "no-store"
         return response
 

@@ -4,8 +4,10 @@ function renderJob(job) {
   } else {
     flashMascotEl.classList.remove("active");
   }
+  const verifying = job.status === "running" && deriveRunningPhase(job).key === "verifying";
   const statusBadgeClass = job.status === "running" ? "running" : (job.exit_code === 0 ? "completed" : "failed");
-  const statusEmoji = job.status === "running" ? "⏳" : (job.exit_code === 0 ? "✅" : "🔥");
+  const statusEmoji = verifying ? "🔍" : (job.status === "running" ? "⏳" : (job.exit_code === 0 ? "✅" : "🔥"));
+  const statusLabel = verifying ? "VERIFYING" : String(job.status || "").toUpperCase();
   const statusNudge = job.status === "running"
     ? deriveRunningHint(job)
     : (job.exit_code === 0
@@ -16,7 +18,7 @@ function renderJob(job) {
   statusEl.innerHTML = `
     <div class="job-status-header">
       <div>
-        <span class="job-status-badge ${statusBadgeClass}">${statusEmoji} ${job.status.toUpperCase()}</span>
+        <span class="job-status-badge ${statusBadgeClass}">${statusEmoji} ${statusLabel}</span>
         <span style="color: #8b9ab2; font-size: 0.82rem; margin-left: 0.4rem;">ID: <code style="color: #a5f3fc; font-size: 0.78rem;">${job.id.substring(0, 12)}...</code></span>
       </div>
       ${timingInfo ? `<div class="job-timing">${timingInfo}</div>` : ""}
@@ -65,18 +67,32 @@ function formatJobTiming(job) {
   return `Duration: ${duration}${job.status === "running" ? " (ongoing)" : ""}`;
 }
 
-function deriveRunningHint(job) {
+const RUNNING_PHASES = [
+  { key: "downloading", pattern: /Downloading image|Download progress:/gi, hint: "Downloading image payload. Internet and patience in tandem." },
+  { key: "decompressing", pattern: /Decompressing image/gi, hint: "Decompressing image bits. CPU is earning snacks." },
+  { key: "writing", pattern: /Flashing image|copied,\s*\d+(?:\.\d+)?\s*[kMGT]?B\/s/gi, hint: "Writing image to disk. Final sync can look quiet for a moment." },
+  { key: "verifying", pattern: /Verifying the entire written image|Verifying cloud-init seed/gi, hint: "Reading the card back to verify every byte. Big cards take a few minutes." },
+  { key: "injecting", pattern: /Injecting cloud-init files/gi, hint: "Injecting cloud-init files into the boot partition." },
+];
+
+// The phase whose marker appears last in stdout is the one currently running.
+function deriveRunningPhase(job) {
   const out = String(job.stdout || "");
-  if (/Decompressing image/i.test(out)) {
-    return "Decompressing image bits. CPU is earning snacks.";
+  let latest = null;
+  let latestAt = -1;
+  for (const phase of RUNNING_PHASES) {
+    for (const match of out.matchAll(phase.pattern)) {
+      if (match.index > latestAt) {
+        latest = phase;
+        latestAt = match.index;
+      }
+    }
   }
-  if (/Flashing image/i.test(out) || /copied,\s*\d+(?:\.\d+)?\s*[kMGT]?B\/s/i.test(out)) {
-    return "Writing image to disk. Final sync can look quiet for a moment.";
-  }
-  if (/Downloading image/i.test(out) || /Download progress:/i.test(out)) {
-    return "Downloading image payload. Internet and patience in tandem.";
-  }
-  return "Flashing in progress. Tiny bytes, big ambitions.";
+  return latest || { key: "running", hint: "Flashing in progress. Tiny bytes, big ambitions." };
+}
+
+function deriveRunningHint(job) {
+  return deriveRunningPhase(job).hint;
 }
 
 function escapeHtml(text) {

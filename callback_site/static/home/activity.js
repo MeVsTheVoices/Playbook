@@ -55,7 +55,7 @@ function updateSdActivityFromJob(job) {
       activitySdStateEl,
       activitySdDetailEl,
       "waiting",
-      "⏳ Cooking",
+      deriveRunningPhase(job).key === "verifying" ? "🔍 Verifying" : "⏳ Cooking",
       deriveRunningHint(job)
     );
   } else if (job && Number(job.exit_code) === 0) {

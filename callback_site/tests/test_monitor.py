@@ -67,6 +67,38 @@ check(output.querySelector("summary").textContent.length <= 99, "saved check out
 check(output.querySelector("pre").textContent.includes("A".repeat(140)), "full saved check output remains available");
 """)
 
+    def test_monitor_ping_reset_when_selected_node_changes(self) -> None:
+        self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+window.fetch = async (url, options = {}) => {
+  if (url === "/api/state/source-of-truth") {
+    return {ok: true, json: async () => ({ok: true, state: {nodes: [
+      {name: "node-alpha", group: "rpi5_active", in_monitor_view: true},
+      {name: "node-beta", group: "rpi5_active", in_monitor_view: true},
+    ]}})};
+  }
+  if (url.includes("/ping")) {
+    return {ok: true, json: async () => ({ok: true, reachable: false, latency_ms: null, error: "packet loss"})};
+  }
+  return {ok: true, json: async () => ({ok: true})};
+};
+""", """
+await tick();
+const selector = document.getElementById("monitor-ping-node-select");
+const button = document.getElementById("summary-run-ping");
+selector.value = "node-alpha";
+button.click();
+await tick();
+check(button.textContent === "Bad" && button.disabled, "failed ping shows Bad and temporarily disables its button");
+selector.value = "node-beta";
+selector.dispatchEvent(new Event("change"));
+await tick();
+check(!button.disabled, "changing nodes re-enables the ping button");
+check(button.textContent === "Simple Ping", "changing nodes restores the default ping label");
+button.click();
+await tick();
+check(button.disabled || button.textContent === "Bad", "a second ping remains usable for the newly selected node");
+""")
+
     def test_monitor_shows_loading_then_empty_saved_outcomes(self) -> None:
         self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
 let finishRequest;

@@ -57,6 +57,50 @@
     return item;
   }
 
+  function detailCheck(state, label, summary, fullDetail) {
+    const item = document.createElement("li");
+    const chip = document.createElement("span");
+    chip.className = `chip ${{ ok: "completed", warn: "running", bad: "failed" }[state] || ""}`;
+    chip.textContent = { ok: "OK", warn: "Wait", bad: "Fail" }[state] || "Info";
+    const name = document.createElement("strong");
+    name.textContent = label;
+    const detail = document.createElement("details");
+    detail.className = "tailnet-live-detail";
+    const summaryEl = document.createElement("summary");
+    summaryEl.textContent = summary;
+    detail.append(summaryEl);
+    if (fullDetail) {
+      const full = document.createElement("span");
+      full.className = "tailnet-live-detail-full";
+      full.textContent = fullDetail;
+      detail.append(full);
+    }
+    item.append(chip, name, detail);
+    return item;
+  }
+
+  function networkCheck(state, nodes) {
+    const item = document.createElement("li");
+    const chip = document.createElement("span");
+    chip.className = `chip ${{ ok: "completed", warn: "running", bad: "failed" }[state] || ""}`;
+    chip.textContent = { ok: "OK", warn: "Wait", bad: "Fail" }[state] || "Info";
+    const name = document.createElement("strong");
+    name.textContent = "Pod network";
+    const detail = document.createElement("details");
+    detail.className = "tailnet-network-detail";
+    const summary = document.createElement("summary");
+    summary.textContent = nodes.length ? `flannel over ${nodes.length} node${nodes.length === 1 ? "" : "s"}` : "no nodes reported";
+    detail.append(summary);
+    if (nodes.length) {
+      const full = document.createElement("span");
+      full.className = "tailnet-network-full";
+      full.textContent = nodes.join(" · ");
+      detail.append(full);
+    }
+    item.append(chip, name, detail);
+    return item;
+  }
+
   function renderLive(live, hostname, reason) {
     choosePanel(!!live);
     if (!live) {
@@ -74,10 +118,20 @@
     const { pod = {}, tailnet = {}, logs = {}, network = {} } = live;
     const items = [];
     items.push(pod.found
-      ? check(pod.ready ? "ok" : "bad", "Pod", `${pod.name} on ${pod.node || "?"} · ${pod.phase}${pod.started_at ? ` · up ${since(pod.started_at)}` : ""} · ${pod.restarts} restart${pod.restarts === 1 ? "" : "s"}`)
+      ? detailCheck(
+          pod.ready ? "ok" : "bad",
+          "Pod",
+          `${pod.phase || "unknown"}${pod.started_at ? ` · up ${since(pod.started_at)}` : ""} · ${pod.restarts || 0} restart${pod.restarts === 1 ? "" : "s"}`,
+          `${pod.name} on ${pod.node || "?"} · ${pod.phase}${pod.started_at ? ` · up ${since(pod.started_at)}` : ""} · ${pod.restarts || 0} restart${pod.restarts === 1 ? "" : "s"}`
+        )
       : check("bad", "Pod", "no operator pod found"));
     items.push(tailnet.logged_in
-      ? check("ok", "Tailnet", `joined as ${tailnet.name} (node ${tailnet.node_id})`)
+      ? detailCheck(
+          "ok",
+          "Tailnet",
+          `joined · node ${tailnet.node_id || "unknown"}`,
+          `joined as ${tailnet.name}${tailnet.node_id ? ` (node ${tailnet.node_id})` : ""}`
+        )
       : check("bad", "Tailnet", "not logged in; check the OAuth client and tag:k8s-operator"));
     items.push(check(tailnet.certificate ? "ok" : "warn", "TLS certificate",
       tailnet.certificate ? "issued" : "not issued yet; it is fetched on the first kubectl request"));
@@ -88,7 +142,7 @@
     if (logs.recent_errors) logParts.push(`${logs.recent_errors} recent errors, last: ${logs.last_error}`);
     items.push(check(logState, "Operator logs", logParts.join(" · ")));
     const nodes = (network.nodes || []).map((row) => `${row.node} ${row.address || "no address"}${row.tailscale ? "" : " (not Tailscale)"}`);
-    items.push(check(network.ok ? "ok" : "bad", "Pod network", nodes.length ? `flannel over ${nodes.join(", ")}` : "no nodes reported"));
+    items.push(networkCheck(network.ok ? "ok" : "bad", nodes));
     element("checks").replaceChildren(...items);
   }
 

@@ -457,6 +457,11 @@ check(document.getElementById("kube-longhorn-ready").textContent === "no", "read
         self.assertIn("Snapshot Notes", text)
         self.assertIn("Raw JSON snapshot", text)
         self.assertIn("Longhorn", text)
+        self.assertIn('class="kube-raw-details"', text)
+
+        tailnet_script = (Path(__file__).resolve().parents[1] / "static" / "tailnet_api.js").read_text(encoding="utf-8")
+        self.assertIn("tailnet-live-detail", tailnet_script)
+        self.assertIn("tailnet-network-detail", tailnet_script)
 
     def test_kubernetes_page_refreshes_summary_without_cache(self) -> None:
         text = (Path(__file__).resolve().parents[1] / "static" / "kubernetes.js").read_text(encoding="utf-8")

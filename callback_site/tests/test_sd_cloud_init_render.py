@@ -97,6 +97,29 @@ class SdCloudInitRenderTests(unittest.TestCase):
             self.assertNotEqual(code, 0)
             self.assertIn("Invalid", err)
 
+    def test_local_ip_reports_tailnet_address_once_joined(self) -> None:
+        code, data, err = self.render(R_PROFILE="pi5", R_DIST="standard")
+        self.assertEqual(code, 0, err)
+        script = self.files(data)["/usr/local/bin/rack-local-ip"]["content"]
+        fake_ip = (
+            '#!/bin/sh\n'
+            'case "$*" in\n'
+            '  *"dev tailscale0"*) [ -n "$TS" ] && echo "5: tailscale0    inet $TS/32 scope global tailscale0" ;;\n'
+            '  *) echo "2: eth0    inet 192.168.8.240/24 brd 192.168.8.255 scope global eth0" ;;\n'
+            'esac\n'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ip").write_text(fake_ip)
+            (root / "ip").chmod(0o755)
+            (root / "rack-local-ip").write_text(script)
+            for ts, expected in (("100.79.199.26", "100.79.199.26"), ("", "192.168.8.240")):
+                with self.subTest(tailnet=ts or "none"):
+                    env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}", "TS": ts}
+                    result = subprocess.run(["bash", str(root / "rack-local-ip")], env=env, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
+
     def test_neovim_bootstrap_preserves_existing_configs_and_is_repeatable(self) -> None:
         code, data, err = self.render(CLOUD_INIT_CONFIGURE_NEOVIM="true")
         self.assertEqual(code, 0, err)

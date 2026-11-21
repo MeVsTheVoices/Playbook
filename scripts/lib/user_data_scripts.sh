@@ -56,6 +56,12 @@ cat >> "$USER_DATA_OUT" <<EOF
     content: |
       #!/bin/bash
       set -euo pipefail
+      # The tailnet address is reachable from the dashboard even when the LAN only allows outbound traffic.
+      TS_IP="\$(ip -4 -o addr show dev tailscale0 2>/dev/null | awk '{split(\$4, a, "/"); print a[1]; exit}' || true)"
+      if [[ -n "\$TS_IP" ]]; then
+        echo "\$TS_IP"
+        exit 0
+      fi
       ip -4 -o addr show scope global up 2>/dev/null | awk '
         {
           split(\$4, a, "/");

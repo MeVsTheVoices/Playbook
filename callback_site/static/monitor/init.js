@@ -16,6 +16,17 @@ monitorRunPingBtn.addEventListener("click", () =>
   runSimplePing(monitorNodeSelectEl.value, monitorRunPingBtn)
 );
 
+monitorPingNodeSelectEl.addEventListener("change", () => {
+  resetPingButton(summaryRunPingBtn);
+  monitorStatus.textContent = "Idle.";
+});
+
+monitorNodeSelectEl.addEventListener("change", () => {
+  resetPingButton(monitorRunPingBtn);
+  resetPingButton(monitorRunCheckBtn);
+  setMonitorCheckState("ok", "Node selection changed.");
+});
+
 document.getElementById("save-node").addEventListener("click", saveNode);
 
 nodeFormPingBtn.addEventListener("click", () => {

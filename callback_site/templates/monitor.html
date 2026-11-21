@@ -142,7 +142,7 @@
             <div class="kpi"><div class="label">Step Results Shown</div><div class="value">-</div></div>
           </div>
           <div class="table-wrap">
-            <table>
+            <table class="latest-checks-table">
               <thead>
                 <tr>
                   <th>Node</th>
@@ -273,30 +273,6 @@
             <p class="note" id="node-form-status"></p>
           </div>
 
-          <div class="panel">
-            <div class="section-head">
-              <div class="section-copy">
-                <p class="section-kicker">Summary</p>
-                <h2>Monitor Guidance</h2>
-                <p class="note">This page is strongest when read top-down: fleet state first, config coverage second, then execution and hardware details, with manual overrides at the bottom.</p>
-              </div>
-              <div class="section-meta">Reading order</div>
-            </div>
-            <div class="cards">
-              <div class="card">
-                <h3 style="margin-bottom: 0.35rem;">What is fresh?</h3>
-                <p class="note">Use <strong>Hardware Fresh</strong>, <strong>Last HW Check</strong>, and the provision outcome section to decide whether the page reflects the current node state or stale callback history.</p>
-              </div>
-              <div class="card">
-                <h3 style="margin-bottom: 0.35rem;">What is assigned?</h3>
-                <p class="note">Use the cloud-init coverage section to identify nodes carrying no optional settings, and to see which option IDs are actually in use across the fleet.</p>
-              </div>
-              <div class="card">
-                <h3 style="margin-bottom: 0.35rem;">What needs action?</h3>
-                <p class="note">Use Live Node Checks to trigger fresh callbacks, then use Hardware Status and the report link to inspect the exact node facts that came back.</p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </main>

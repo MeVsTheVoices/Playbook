@@ -459,15 +459,44 @@ def _latest_node_check(node_name: str, state: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(node_results, dict):
         return {"status": "not-run", "checked_at": "", "mode": ""}
 
+    step_results = [
+        result
+        for result in node_results.values()
+        if isinstance(result, dict) and "profile_id" in result
+    ]
+    if step_results:
+        checked_at = max(
+            (str(result.get("checked_at", "")) for result in step_results),
+            default="",
+        )
+        statuses = [str(result.get("status", "")).strip().lower() for result in step_results]
+        if any(status in {"failed", "timeout", "unavailable"} for status in statuses):
+            status = "failed"
+            ok = False
+        elif statuses and all(status in {"ok", "completed"} for status in statuses):
+            status = "ok"
+            ok = True
+        else:
+            status = "planned" if statuses and all(status == "planned" for status in statuses) else "unknown"
+            ok = None
+        modes = [str(result.get("mode", "")).strip() for result in step_results if str(result.get("mode", "")).strip()]
+        latest = {
+            "status": status,
+            "checked_at": checked_at,
+            "mode": modes[-1] if modes else "",
+            "ok": ok,
+            "results": step_results,
+        }
+        return latest
+
     latest: Dict[str, Any] = {"status": "not-run", "checked_at": "", "mode": ""}
     for result in node_results.values():
         if not isinstance(result, dict):
             continue
         checked_at = str(result.get("checked_at", ""))
         if checked_at and checked_at >= str(latest.get("checked_at", "")):
-            latest = {
-                "status": str(result.get("status", "not-run")),
-                "checked_at": checked_at,
-                "mode": str(result.get("mode", "")),
-            }
+            latest = dict(result)
+            latest["status"] = str(result.get("status", "not-run"))
+            latest["checked_at"] = checked_at
+            latest["mode"] = str(result.get("mode", ""))
     return latest

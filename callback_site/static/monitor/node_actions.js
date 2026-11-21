@@ -41,14 +41,18 @@ async function pullCertificate() {
   }
   pullCertBtn.disabled = true;
   setPingVisualState(pullCertBtn, "ping-pending", "Pulling");
+  await pullCertificateForNode(nodeName, pullCertBtn);
+}
+
+async function pullCertificateForNode(nodeName, pullCertBtn = null) {
   certStatusEl.textContent = `Pulling certificate for ${nodeName}...`;
   try {
     const res = await fetch(`/api/monitor/nodes/${encodeURIComponent(nodeName)}/certificate`);
     const data = await res.json();
     if (!res.ok || !data.ok) {
       certStatusEl.textContent = data.error || "Failed to pull certificate.";
-      finishPingButton(pullCertBtn, "ping-bad", "Bad");
-      return;
+      if (pullCertBtn) finishPingButton(pullCertBtn, "ping-bad", "Bad");
+      return false;
     }
     const cert = data.certificate || {};
     certOutputEl.textContent = [
@@ -61,12 +65,14 @@ async function pullCertificate() {
       `source_ip: ${cert.source_ip || "-"}`,
     ].join("\n");
     certStatusEl.textContent = `Certificate info loaded for ${nodeName}.`;
-    finishPingButton(pullCertBtn, cert.cert_present ? "ping-good" : "ping-warn", cert.cert_present ? "Good" : "Slow");
+    if (pullCertBtn) finishPingButton(pullCertBtn, cert.cert_present ? "ping-good" : "ping-warn", cert.cert_present ? "Good" : "Slow");
+    return true;
   } catch (err) {
     certStatusEl.textContent = `Failed to pull certificate: ${String(err && err.message ? err.message : err)}`;
-    finishPingButton(pullCertBtn, "ping-bad", "Bad");
+    if (pullCertBtn) finishPingButton(pullCertBtn, "ping-bad", "Bad");
+    return false;
   } finally {
-    if (!pingResetTimers.has(pullCertBtn)) {
+    if (pullCertBtn && !pingResetTimers.has(pullCertBtn)) {
       resetPingButton(pullCertBtn);
     }
   }

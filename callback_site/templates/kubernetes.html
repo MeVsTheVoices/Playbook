@@ -71,7 +71,10 @@
             <summary>Live checks <small class="kube-subtle" id="tailnet-api-checked"></small></summary>
             <p class="tailnet-api-verdict" id="tailnet-api-verdict">No live data yet.</p>
             <ul class="tailnet-api-checks" id="tailnet-api-checks"></ul>
-            <p class="kube-subtle">Refreshes every 30 seconds. Confirm from an untagged admin device: <code id="tailnet-api-try">tailscale configure kubeconfig &lt;hostname&gt;</code>, then <code>kubectl get nodes</code>.</p>
+            <div class="tailnet-api-confirm">
+              <p class="kube-subtle">Refreshes every 30 seconds. Confirm from an untagged admin device:</p>
+              <pre><code id="tailnet-api-try">tailscale configure kubeconfig &lt;hostname&gt;</code><code>kubectl get nodes</code></pre>
+            </div>
           </details>
           <details class="tailnet-api-panel" id="tailnet-api-setup" name="tailnet-api-panels">
             <summary id="tailnet-api-setup-title">Install operator</summary>
@@ -350,7 +353,10 @@
               </div>
               <div class="kube-note-block">
                 <p class="kube-subtle">Raw JSON snapshot</p>
-                <pre class="kube-raw" id="kube-raw-json" data-format="json">Loading Kubernetes status...</pre>
+                <details class="kube-raw-details">
+                  <summary>View raw JSON snapshot</summary>
+                  <pre class="kube-raw" id="kube-raw-json" data-format="json">Loading Kubernetes status...</pre>
+                </details>
               </div>
             </div>
           </div>

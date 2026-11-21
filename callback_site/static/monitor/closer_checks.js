@@ -1,3 +1,77 @@
+async function runPostHardwareProfileChecks(nodeName, triggerButton) {
+  await pullCertificateForNode(nodeName);
+
+  const node = nodes.find((item) => item.name === nodeName);
+  const profileIds = Array.isArray(node?.selected_profiles) ? node.selected_profiles : [];
+  if (!profileIds.length) {
+    setMonitorCheckState("ok", `Hardware and certificate refreshed for ${nodeName}. No provision profiles are assigned.`);
+    return;
+  }
+
+  setMonitorCheckState("busy", `Checking provisioned modules for ${nodeName}: ${profileIds.join(", ")}...`);
+  try {
+    const res = await fetch("/api/nodes/provision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        node: nodeName,
+        mode: "check",
+        run_ansible: true,
+        profile_ids: profileIds,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      setMonitorCheckState("error", data.error || `Provisioned module check failed for ${nodeName}.`);
+      return;
+    }
+    if (data.job_id) {
+      const deadline = Date.now() + 180000;
+      while (Date.now() < deadline) {
+        const jobRes = await fetch(`/api/nodes/provision/jobs/${encodeURIComponent(data.job_id)}`);
+        const jobData = await jobRes.json();
+        if (!jobRes.ok || !jobData.ok) {
+          setMonitorCheckState("error", jobData.error || `Provision check lookup failed for ${nodeName}.`);
+          return;
+        }
+        const job = jobData.job || {};
+        if (job.status === "completed") {
+          await loadSummary();
+          const failedSteps = (job.results || [])
+            .flatMap((entry) => Array.isArray(entry.results) ? entry.results : [])
+            .filter((step) => ["failed", "timeout", "unavailable"].includes(String(step.status || "").toLowerCase())
+          );
+          setMonitorCheckState(
+            failedSteps.length ? "error" : "ok",
+            failedSteps.length
+              ? `Provisioned module check found ${failedSteps.length} failed step(s) for ${nodeName}.`
+              : `Certificate refreshed and all provisioned module checks passed for ${nodeName}.`
+          );
+          return;
+        }
+        if (job.status === "failed") {
+          setMonitorCheckState("error", job.error || `Provisioned module check failed for ${nodeName}.`);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      setMonitorCheckState("error", `Provisioned module check is still running for ${nodeName}.`);
+      return;
+    }
+    const failedSteps = (data.results || [])
+      .flatMap((entry) => Array.isArray(entry.results) ? entry.results : [])
+      .filter((step) => ["failed", "timeout", "unavailable"].includes(String(step.status || "").toLowerCase()));
+    setMonitorCheckState(
+      failedSteps.length ? "error" : "ok",
+      failedSteps.length
+        ? `Provisioned module check found ${failedSteps.length} failed step(s) for ${nodeName}.`
+        : `Certificate refreshed and all provisioned module checks passed for ${nodeName}.`
+    );
+  } catch (err) {
+    setMonitorCheckState("error", `Provisioned module check failed for ${nodeName}: ${String(err && err.message ? err.message : err)}`);
+  }
+}
+
 async function pollMonitorProvisionJob(jobId, nodeName, previouslySeenHardwareAt, triggerButton) {
   const deadline = Date.now() + 180000;
   while (Date.now() < deadline) {
@@ -15,7 +89,7 @@ async function pollMonitorProvisionJob(jobId, nodeName, previouslySeenHardwareAt
         const currentNode = nodes.find((item) => item.name === nodeName);
         const currentHardwareAt = currentNode && currentNode.hardware ? currentNode.hardware.received_at : "";
         if (currentHardwareAt && currentHardwareAt !== previouslySeenHardwareAt) {
-          setMonitorCheckState("ok", `Hardware callback refreshed for ${nodeName}.`);
+          await runPostHardwareProfileChecks(nodeName, triggerButton);
           finishPingButton(triggerButton, "ping-good", "Good");
           return;
         }

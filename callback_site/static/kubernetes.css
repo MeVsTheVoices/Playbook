@@ -283,6 +283,19 @@
   max-height: 24rem;
 }
 
+.kube-raw-details {
+  min-width: 0;
+}
+.kube-raw-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.kube-raw-details[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
 .kube-subtle {
   color: var(--muted);
   font-size: 0.84rem;
@@ -431,4 +444,60 @@
 }
 .tailnet-api-checks strong {
   font-weight: 600;
+}
+
+.tailnet-api-confirm {
+  margin-top: 0.55rem;
+}
+.tailnet-api-confirm > p {
+  margin: 0 0 0.35rem;
+}
+.tailnet-api-confirm pre {
+  display: grid;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: #f8fafc;
+  overflow-x: auto;
+}
+.tailnet-api-confirm code {
+  width: fit-content;
+  font-size: 0.76rem;
+}
+
+.tailnet-network-detail {
+  min-width: 0;
+}
+.tailnet-network-detail summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.tailnet-live-detail {
+  min-width: 0;
+}
+.tailnet-live-detail summary {
+  cursor: pointer;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tailnet-live-detail-full {
+  display: block;
+  margin-top: 0.35rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tailnet-network-full {
+  display: block;
+  margin-top: 0.35rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

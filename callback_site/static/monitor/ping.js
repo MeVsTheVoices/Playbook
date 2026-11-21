@@ -95,6 +95,20 @@ async function runSimplePing(nodeName, triggerButton) {
     return;
   }
 
+  const selectionStillCurrent = () => {
+    if (triggerButton === summaryRunPingBtn) {
+      return monitorPingNodeSelectEl.value === selected;
+    }
+    if (triggerButton === monitorRunPingBtn) {
+      return monitorNodeSelectEl.value === selected;
+    }
+    if (triggerButton === nodeFormPingBtn) {
+      const nodeNameEl = document.getElementById("node-name");
+      return !nodeNameEl || nodeNameEl.value.trim() === selected;
+    }
+    return true;
+  };
+
   const existingTimer = pingResetTimers.get(triggerButton);
   if (existingTimer) {
     clearTimeout(existingTimer);
@@ -118,6 +132,10 @@ async function runSimplePing(nodeName, triggerButton) {
   try {
     const res = await fetchJsonWithTimeout(`/api/monitor/nodes/${encodeURIComponent(selected)}/ping`, {}, 12000);
     const data = await res.json();
+    if (!selectionStillCurrent()) {
+      resetPingButton(triggerButton);
+      return;
+    }
     if (!res.ok || !data.ok) {
       finishPingButton(triggerButton, "ping-bad", "Bad");
       publishPingResult(selected, { state: "ping-bad", label: "Bad" }, data || {}, triggerButton);
@@ -128,6 +146,10 @@ async function runSimplePing(nodeName, triggerButton) {
     finishPingButton(triggerButton, outcome.state, outcome.label);
     publishPingResult(selected, outcome, data, triggerButton);
   } catch (err) {
+    if (!selectionStillCurrent()) {
+      resetPingButton(triggerButton);
+      return;
+    }
     if (err && err.name === "AbortError") {
       finishPingButton(triggerButton, "ping-warn", "Slow");
       publishPingResult(selected, { state: "ping-warn", label: "Slow" }, { error: "Request timed out" }, triggerButton);

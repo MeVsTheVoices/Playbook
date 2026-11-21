@@ -12,3 +12,62 @@
 .cert-box {
   max-height: 240px;
 }
+
+.latest-checks-table {
+  table-layout: fixed;
+}
+
+.latest-checks-table th:nth-child(1),
+.latest-checks-table td:nth-child(1) {
+  width: 16%;
+}
+
+.latest-checks-table th:nth-child(2),
+.latest-checks-table td:nth-child(2) {
+  width: 19%;
+}
+
+.latest-checks-table th:nth-child(3),
+.latest-checks-table td:nth-child(3) {
+  width: 15%;
+}
+
+.latest-checks-table th:nth-child(4),
+.latest-checks-table td:nth-child(4) {
+  width: 12%;
+}
+
+.latest-checks-table th:nth-child(5),
+.latest-checks-table td:nth-child(5) {
+  width: 38%;
+}
+
+.latest-checks-table th,
+.latest-checks-table td {
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+
+.check-output {
+  min-width: 0;
+}
+
+.check-output summary {
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: palette.$slate-700;
+}
+
+.check-output-full {
+  max-height: 12rem;
+  margin: 0.45rem 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: palette.$slate-50;
+  border: 1px solid palette.$line;
+  border-radius: 8px;
+  padding: 0.55rem;
+}

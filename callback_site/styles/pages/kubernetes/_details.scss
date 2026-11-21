@@ -49,6 +49,21 @@
   max-height: 24rem;
 }
 
+.kube-raw-details {
+  min-width: 0;
+
+  > summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  &[open] > summary {
+    margin-bottom: 0.5rem;
+  }
+}
+
 .kube-subtle {
   color: var(--muted);
   font-size: 0.84rem;

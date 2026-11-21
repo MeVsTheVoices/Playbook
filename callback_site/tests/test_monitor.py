@@ -52,7 +52,7 @@ window.fetch = async (url, options) => {
       name: "saved-check-node",
       in_monitor_view: true,
       latest_check: {checked_at: "2026-11-10T12:00:00Z", ok: true},
-      latest_check_steps: [{profile_id: "baseline", status: "ok", output: "Saved check output"}],
+    latest_check_steps: [{profile_id: "baseline", status: "ok", output: "Saved check output " + "A".repeat(140)}],
     }],
   }})};
 };
@@ -61,6 +61,42 @@ await tick();
 check(requests.length === 1 && requests[0] === "/api/state/source-of-truth", "loads saved state without starting checks");
 check(document.getElementById("latest-checks-body").textContent.includes("Saved check output"), "saved check output appears on page load");
 check(document.getElementById("latest-check-kpis").textContent.includes("1/1"), "saved check KPIs appear on page load");
+const output = document.querySelector("#latest-checks-body .check-output");
+check(output && !output.open, "saved check output starts collapsed");
+check(output.querySelector("summary").textContent.length <= 99, "saved check output summary is foreshortened");
+check(output.querySelector("pre").textContent.includes("A".repeat(140)), "full saved check output remains available");
+""")
+
+    def test_monitor_ping_reset_when_selected_node_changes(self) -> None:
+        self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
+window.fetch = async (url, options = {}) => {
+  if (url === "/api/state/source-of-truth") {
+    return {ok: true, json: async () => ({ok: true, state: {nodes: [
+      {name: "node-alpha", group: "rpi5_active", in_monitor_view: true},
+      {name: "node-beta", group: "rpi5_active", in_monitor_view: true},
+    ]}})};
+  }
+  if (url.includes("/ping")) {
+    return {ok: true, json: async () => ({ok: true, reachable: false, latency_ms: null, error: "packet loss"})};
+  }
+  return {ok: true, json: async () => ({ok: true})};
+};
+""", """
+await tick();
+const selector = document.getElementById("monitor-ping-node-select");
+const button = document.getElementById("summary-run-ping");
+selector.value = "node-alpha";
+button.click();
+await tick();
+check(button.textContent === "Bad" && button.disabled, "failed ping shows Bad and temporarily disables its button");
+selector.value = "node-beta";
+selector.dispatchEvent(new Event("change"));
+await tick();
+check(!button.disabled, "changing nodes re-enables the ping button");
+check(button.textContent === "Simple Ping", "changing nodes restores the default ping label");
+button.click();
+await tick();
+check(button.disabled || button.textContent === "Bad", "a second ping remains usable for the newly selected node");
 """)
 
     def test_monitor_shows_loading_then_empty_saved_outcomes(self) -> None:
@@ -111,6 +147,7 @@ check(document.getElementById("latest-checks-body").textContent.includes("No pro
         self.assertIn("Cloud-Init Coverage And Security Profile", text)
         self.assertIn("Latest Provision Check Outcomes", text)
         self.assertIn('id="fleet-kpis"', text)
+        self.assertNotIn("Monitor Guidance", text)
 
     def test_monitor_page_exposes_discovered_node_closer_controls(self) -> None:
         response = self.client.get("/monitor")
@@ -136,7 +173,7 @@ check(document.getElementById("latest-checks-body").textContent.includes("No pro
         self.assertIn("GB NVMe", text)
         self.assertIn("nvme_capacity_gb", text)
 
-    def test_monitor_hardware_action_uses_hardware_only_job(self) -> None:
+    def test_monitor_hardware_action_refreshes_certificate_and_checks_profiles(self) -> None:
         self.browser_probe("/monitor", self.MONITOR_SCRIPTS, """
 let requests = [];
 let refreshed = false;
@@ -149,8 +186,17 @@ window.fetch = async (url, options = {}) => {
   if (url === "/api/nodes/provision/jobs/job") {
     return {ok: true, json: async () => ({ok: true, job: {status: "completed", results: []}})};
   }
+  if (url.includes("/certificate")) {
+    return {ok: true, json: async () => ({ok: true, certificate: {cert_present: true, received_at: "new"}})};
+  }
+  if (url === "/api/nodes/provision") {
+    return {ok: true, json: async () => ({ok: true, job_id: "check-job"})};
+  }
+  if (url === "/api/nodes/provision/jobs/check-job") {
+    return {ok: true, json: async () => ({ok: true, job: {status: "completed", results: []}})};
+  }
   return {ok: true, json: async () => ({ok: true, state: {nodes: [{
-    name: "node-01", source: "callback", in_monitor_view: true,
+    name: "node-01", source: "callback", in_monitor_view: true, selected_profiles: ["baseline", "tailscale"],
     hardware: {received_at: refreshed ? "new" : "old"}
   }]}})};
 };
@@ -159,8 +205,10 @@ await tick();
 await runMonitorCloserCheck();
 const request = requests.find(item => item.url === "/api/nodes/hardware-check");
 check(request && JSON.parse(request.options.body).node === "node-01", "requests the selected hardware probe");
-check(!requests.some(item => item.url === "/api/nodes/provision"), "does not run provisioning profiles");
-check(document.getElementById("monitor-check-status").textContent.includes("Hardware callback refreshed"), "reports refreshed hardware");
+check(requests.some(item => item.url === "/api/monitor/nodes/node-01/certificate"), "automatically refreshes the certificate");
+const provision = requests.find(item => item.url === "/api/nodes/provision");
+check(provision && JSON.parse(provision.options.body).profile_ids.join(",") === "baseline,tailscale", "checks the node's provisioned profiles");
+check(document.getElementById("monitor-check-status").textContent.includes("provisioned module checks"), "reports certificate and module check completion");
 """)
 
     def test_monitor_page_shows_hardware_first_callback_copy(self) -> None:

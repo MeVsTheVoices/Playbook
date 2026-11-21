@@ -130,6 +130,32 @@
   }
 }
 
+.tailnet-api-confirm {
+  margin-top: 0.55rem;
+
+  > p {
+    margin: 0 0 0.35rem;
+  }
+
+  pre {
+    display: grid;
+    gap: 0.25rem;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid rgba(palette.$slate-400, 0.35);
+    border-radius: tokens.$radius-control;
+    background: palette.$slate-50;
+    overflow-x: auto;
+  }
+
+  code {
+    width: fit-content;
+    font-size: 0.76rem;
+  }
+}
+
 .tailnet-network-detail {
   min-width: 0;
 

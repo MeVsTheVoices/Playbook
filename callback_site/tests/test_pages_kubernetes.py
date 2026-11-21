@@ -458,6 +458,8 @@ check(document.getElementById("kube-longhorn-ready").textContent === "no", "read
         self.assertIn("Raw JSON snapshot", text)
         self.assertIn("Longhorn", text)
         self.assertIn('class="kube-raw-details"', text)
+        self.assertIn('class="tailnet-api-confirm"', text)
+        self.assertIn('id="tailnet-api-try"', text)
 
         tailnet_script = (Path(__file__).resolve().parents[1] / "static" / "tailnet_api.js").read_text(encoding="utf-8")
         self.assertIn("tailnet-live-detail", tailnet_script)

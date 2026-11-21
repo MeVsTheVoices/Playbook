@@ -446,6 +446,29 @@
   font-weight: 600;
 }
 
+.tailnet-api-confirm {
+  margin-top: 0.55rem;
+}
+.tailnet-api-confirm > p {
+  margin: 0 0 0.35rem;
+}
+.tailnet-api-confirm pre {
+  display: grid;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: #f8fafc;
+  overflow-x: auto;
+}
+.tailnet-api-confirm code {
+  width: fit-content;
+  font-size: 0.76rem;
+}
+
 .tailnet-network-detail {
   min-width: 0;
 }

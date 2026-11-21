@@ -217,6 +217,9 @@ def _append_terminal_target(
             "last_seen": str(event.get("received_at", "") or "").strip(),
             "usable_callback_ip": _is_usable_callback_ip(target_connect_host) if source in TERMINAL_IP_SOURCES else None,
             "label_hint": hostname or fqdn or profile,
+            "node_username": str(event.get("node_username", "") or "").strip(),
+            "certificate": str(event.get("certificate", "") or "").strip(),
+            "port": str(event.get("port", "") or "").strip(),
         }
     )
 
@@ -249,6 +252,9 @@ def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
             "profile": str(node.get("callback_profile", "") or "").strip(),
             "instance_id": str(node.get("callback_instance_id", "") or "").strip(),
             "received_at": str(node.get("last_callback", "") or "").strip(),
+            "node_username": str(node.get("node_username", "") or "").strip(),
+            "certificate": str(node.get("certificate", "") or "").strip(),
+            "port": str(node.get("ssh_port", "") or "").strip(),
         }
         _append_terminal_target(targets, seen, host=node_address, source=source, event=event_like, connect_host=node_address)
 

@@ -82,6 +82,20 @@ class TerminalCheckTests(BaseCallbackSiteTest):
             script = response.get_data(as_text=True)
         self.assertIn('data-action="routes"', script)
 
+    def test_terminal_host_select_groups_hosts_and_syncs_identity_controls(self) -> None:
+        html = self.client.get("/test-terminal").get_data(as_text=True)
+        script = self.client.get("/static/test_terminal.js").get_data(as_text=True)
+        css = self.client.get("/static/test_terminal.css").get_data(as_text=True)
+        self.assertIn('id="use-selected-host"', html)
+        self.assertIn('id="refresh-targets"', html)
+        self.assertIn('id="refresh-keys"', html)
+        self.assertIn('createElement("optgroup")', script)
+        self.assertIn('savedGroup.label = "Saved hosts"', script)
+        self.assertIn("discoveredGroups", script)
+        self.assertIn("syncHostIdentity", script)
+        self.assertIn("display: flex", css)
+        self.assertIn("gap:", css)
+
     def test_route_preview_resolves_the_same_host_as_terminal_start(self) -> None:
         route = {"interface": "eth0", "gateway": "172.18.0.1", "source_ip": "172.18.0.2", "family": "IPv4", "error": ""}
         with patch("routes.test_terminal._resolve_terminal_host", return_value="192.168.1.20") as resolve, \

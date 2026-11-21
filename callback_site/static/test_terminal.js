@@ -63,9 +63,30 @@ function currentTarget() {
     .some((value) => String(value || "").trim().toLowerCase() === host));
 }
 
+function syncHostIdentity() {
+  const target = currentTarget();
+  if (!target) {
+    return;
+  }
+  const username = String(target.node_username || target.username || "").trim();
+  if (username) {
+    usernameEl.value = username;
+  }
+  const port = Number.parseInt(String(target.port || target.ssh_port || ""), 10);
+  if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+    portEl.value = String(port);
+  }
+  const certificate = String(target.certificate || "").trim();
+  if (certificate && Array.from(keyNameEl.options).some((option) => option.value === certificate)) {
+    keyNameEl.value = certificate;
+  }
+  updateRunButton();
+}
+
 async function refreshRoute() {
   const requestId = ++routeRequestId;
   const host = resolveVerificationHost();
+  syncHostIdentity();
   routesBtn.disabled = !currentTarget()?.hostname;
   updateRunButton();
   if (!host) {
@@ -300,12 +321,23 @@ function renderTargets() {
   placeholder.textContent = "Select discovered host...";
   hostSelectEl.appendChild(placeholder);
 
+  const discoveredGroups = new Map();
   for (const target of callbackTargets) {
     const connectHost = String(target.connect_host || target.host || "").trim();
     if (!connectHost) {
       continue;
     }
     const displayHost = String(target.host || connectHost).trim();
+    const groupLabel = String(
+      target.hostname ||
+      target.fqdn ||
+      target.label_hint ||
+      displayHost ||
+      "Other discovered hosts"
+    ).trim();
+    if (!discoveredGroups.has(groupLabel)) {
+      discoveredGroups.set(groupLabel, new Map());
+    }
     const opt = document.createElement("option");
     opt.value = connectHost;
     const profile = target.profile ? ` | ${target.profile}` : "";
@@ -317,7 +349,7 @@ function renderTargets() {
     } else {
       opt.textContent = `${connectHost}${aliasHint} (${target.source}${profile})`;
     }
-    hostSelectEl.appendChild(opt);
+    discoveredGroups.get(groupLabel).set(`${connectHost}\u0000${opt.textContent}`, opt);
   }
 
   const discovered = new Set(
@@ -325,14 +357,31 @@ function renderTargets() {
       .flatMap((t) => [String(t.host || "").toLowerCase(), String(t.connect_host || "").toLowerCase()])
       .filter((v) => Boolean(v))
   );
+  for (const [groupLabel, options] of discoveredGroups) {
+    const group = document.createElement("optgroup");
+    group.label = groupLabel;
+    for (const opt of options.values()) {
+      group.appendChild(opt);
+    }
+    hostSelectEl.appendChild(group);
+  }
+  const savedHosts = [];
   for (const host of manual) {
     if (discovered.has(host.toLowerCase())) {
       continue;
     }
-    const opt = document.createElement("option");
-    opt.value = host;
-    opt.textContent = `${host} (manual)`;
-    hostSelectEl.appendChild(opt);
+    savedHosts.push(host);
+  }
+  if (savedHosts.length) {
+    const savedGroup = document.createElement("optgroup");
+    savedGroup.label = "Saved hosts";
+    for (const host of savedHosts) {
+      const opt = document.createElement("option");
+      opt.value = host;
+      opt.textContent = host;
+      savedGroup.appendChild(opt);
+    }
+    hostSelectEl.appendChild(savedGroup);
   }
 
   if (current && Array.from(hostSelectEl.options).some((o) => o.value === current)) {
@@ -378,6 +427,7 @@ function useSelectedHost() {
     return;
   }
   hostEl.value = selected;
+  syncHostIdentity();
   jobStatusEl.textContent = `Using host '${selected}'.`;
   refreshRoute();
 }
@@ -479,6 +529,7 @@ function applyHostFromQuery() {
   if (Array.from(hostSelectEl.options).some((o) => o.value === connectHost)) {
     hostSelectEl.value = connectHost;
   }
+  syncHostIdentity();
   jobStatusEl.textContent = match ? `Pre-selected ${requested} (${connectHost}).` : `'${requested}' is not a discovered target; using it as typed.`;
   refreshRoute();
 }

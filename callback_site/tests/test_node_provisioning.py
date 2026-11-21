@@ -202,7 +202,7 @@ check(!("action" in collectModuleInputs()), "reboot action cannot be saved as mo
         response = self.client.get("/nodes")
         self.assertEqual(response.status_code, 200)
         text = self.page_text(response)
-        self.assertIn("Use a stable mounted path for Longhorn data now", text)
+        self.assertIn("Longhorn data lives only on NVMe", text)
         self.assertIn("default replica count at 2", text)
         self.assertIn("On Pi workers this module only prepares the node", text)
         self.assertIn("install the chart separately using a Helm configuration", text)
@@ -400,7 +400,7 @@ check(detail.includes("install the chart separately using a Helm configuration")
         longhorn_specs = {s["id"]: s for s in profiles["longhorn"]["input_specs"]}
         self.assertEqual(longhorn_specs["install_chart"].get("input_type"), "checkbox")
         self.assertTrue(longhorn_specs["install_chart"].get("default"))
-        self.assertEqual(longhorn_specs["storage_disk"].get("default"), "none")
+        self.assertEqual(longhorn_specs["storage_disk"].get("default"), "auto")
 
         kubernetes_specs = {s["id"]: s for s in profiles["kubernetes"]["input_specs"]}
         self.assertTrue(kubernetes_specs["server_token"].get("sensitive"))

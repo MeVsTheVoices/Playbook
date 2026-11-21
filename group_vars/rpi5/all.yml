@@ -11,6 +11,6 @@ raspberry_pi5_tailscale_tags:
   - tag:rpi5
   - tag:homelab
 
-# Keep Longhorn on the existing filesystem until a dedicated data disk is confirmed.
+# Longhorn data goes only on the Pi's NVMe, mounted at the storage path.
 raspberry_pi5_longhorn_storage_path: /var/lib/longhorn
-raspberry_pi5_longhorn_storage_disk: none
+raspberry_pi5_longhorn_storage_disk: auto

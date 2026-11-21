@@ -92,6 +92,22 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(disk.PlanError, "refusing to touch"):
             disk.make_plan([sd_card(), other], "/dev/nvme0n1", PATH, "longhorn")
 
+    def test_nvme_only_skips_a_blank_usb_disk(self) -> None:
+        usb = blank_nvme("/dev/sda")
+        plan = disk.make_plan([sd_card(), usb, blank_nvme()], "auto", PATH, "longhorn", nvme_only=True)
+        self.assertEqual(plan["disk"]["name"], "/dev/nvme0n1")
+        with self.assertRaisesRegex(disk.PlanError, "no blank NVMe disk"):
+            disk.make_plan([sd_card(), usb], "auto", PATH, "longhorn", nvme_only=True)
+
+    def test_nvme_only_refuses_a_named_or_mounted_non_nvme_disk(self) -> None:
+        with self.assertRaisesRegex(disk.PlanError, "not an NVMe disk"):
+            disk.make_plan([sd_card(), blank_nvme("/dev/sda")], "/dev/sda", PATH, "longhorn", nvme_only=True)
+        on_sda = prepared_nvme(PATH)
+        on_sda["name"] = "/dev/sda"
+        on_sda["children"][0]["name"] = "/dev/sda1"
+        with self.assertRaisesRegex(disk.PlanError, "not an NVMe disk"):
+            disk.make_plan([sd_card(), on_sda], "auto", PATH, "longhorn", nvme_only=True)
+
     def test_old_lsblk_single_mountpoint_key_is_understood(self) -> None:
         self.assertEqual(disk.mounts_of({"mountpoint": "/boot"}), ["/boot"])
         self.assertEqual(disk.mounts_of({"mountpoint": None}), [])
@@ -145,6 +161,16 @@ class RoleUsageTests(unittest.TestCase):
         task = next(t for t in tasks if t.get("name") == "Prepare the Longhorn storage disk")
         documented = set(yaml.safe_load(disk.DOCUMENTATION)["options"])
         self.assertLessEqual(set(task["rack_storage_disk"]), documented)
+
+    def test_the_node_is_labelled_for_longhorn_only_after_its_nvme_is_prepared(self) -> None:
+        tasks = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi5" / "tasks" / "main.yml").read_text(encoding="utf-8"))
+        names = [t.get("name") for t in tasks]
+        prepare = names.index("Prepare the Longhorn storage disk")
+        label = names.index("Label this node for a Longhorn default disk")
+        self.assertLess(names.index("Refuse Longhorn data on the OS disk"), prepare)
+        self.assertLess(prepare, label)
+        self.assertIn("raspberry_pi5_longhorn_disk is not skipped", tasks[label]["when"])
+        self.assertTrue(tasks[prepare]["rack_storage_disk"]["nvme_only"])
 
 
 if __name__ == "__main__":

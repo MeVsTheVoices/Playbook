@@ -422,11 +422,11 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
             },
             {
                 "id": "storage_disk",
-                "label": "Storage Disk (none = existing filesystem; auto or a device formats a blank disk)",
-                "placeholder": "none",
+                "label": "Storage Disk (NVMe only: auto or an NVMe device)",
+                "placeholder": "auto",
                 "input_type": "text",
-                "default": "none",
-                "warning": "Using auto or a device can partition and format a blank disk. none keeps data at the storage path on the existing filesystem.",
+                "default": "auto",
+                "warning": "auto partitions, formats and mounts the single blank NVMe disk (a disk labelled longhorn is reused). Non-NVMe disks and none are refused.",
                 "required": False,
             },
             {

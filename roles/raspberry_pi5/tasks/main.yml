@@ -1091,12 +1091,27 @@
   tags:
     - longhorn
 
+- name: Refuse Longhorn data on the OS disk
+  ansible.builtin.fail:
+    msg: >-
+      Longhorn stores data only on NVMe. Storage Disk is
+      '{{ raspberry_pi5_longhorn_storage_disk_effective }}', which would leave
+      {{ raspberry_pi5_longhorn_storage_path_effective }} on the SD card. Use auto or an NVMe device.
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+    - raspberry_pi5_longhorn_nvme_only | bool
+    - raspberry_pi5_longhorn_storage_disk_effective | lower in ['', 'none', 'off', 'false']
+  tags:
+    - longhorn
+
 - name: Prepare the Longhorn storage disk
   rack_storage_disk:
     path: "{{ raspberry_pi5_longhorn_storage_path_effective }}"
     device: "{{ raspberry_pi5_longhorn_storage_disk_effective }}"
     label: longhorn
     identify_by: "{{ raspberry_pi5_longhorn_storage_identify_by }}"
+    nvme_only: "{{ raspberry_pi5_longhorn_nvme_only | bool }}"
   register: raspberry_pi5_longhorn_disk
   when:
     - rack_manage_with_ansible | bool
@@ -1132,6 +1147,39 @@
   tags:
     - longhorn
 
+- name: Check whether this node has joined K3s
+  ansible.builtin.stat:
+    path: /var/lib/rancher/k3s/agent/kubelet.kubeconfig
+  register: raspberry_pi5_longhorn_kubelet_kubeconfig
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+  tags:
+    - longhorn
+
+# Longhorn runs with createDefaultDiskLabeledNodes, so only labelled nodes get a disk.
+# The label goes on only after the NVMe is mounted, never onto a node whose path is still on the SD card.
+- name: Label this node for a Longhorn default disk
+  ansible.builtin.shell: |
+    set -eu
+    K="k3s kubectl --kubeconfig /var/lib/rancher/k3s/agent/kubelet.kubeconfig"
+    node="$($K auth whoami -o jsonpath='{.status.userInfo.username}')"
+    node="${node#system:node:}"
+    current="$($K get node "$node" -o jsonpath='{.metadata.labels.node\.longhorn\.io/create-default-disk}')"
+    if [ "$current" = true ]; then echo unchanged; exit 0; fi
+    $K label node "$node" node.longhorn.io/create-default-disk=true --overwrite
+  register: raspberry_pi5_longhorn_disk_label
+  changed_when: "'unchanged' not in raspberry_pi5_longhorn_disk_label.stdout"
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'longhorn'
+    - raspberry_pi5_longhorn_disk is defined
+    - raspberry_pi5_longhorn_disk is not skipped
+    - raspberry_pi5_longhorn_disk.device_ref | default(none) is not none
+    - raspberry_pi5_longhorn_kubelet_kubeconfig.stat.exists | default(false)
+  tags:
+    - longhorn
+
 - name: Check whether this node is a K3s server
   ansible.builtin.command: systemctl is-active k3s
   register: raspberry_pi5_k3s_server_active
@@ -1163,6 +1211,7 @@
         valuesContent: |-
           defaultSettings:
             defaultDataPath: {{ raspberry_pi5_longhorn_storage_path_effective | quote }}
+            createDefaultDiskLabeledNodes: true
             defaultReplicaCount: {{ raspberry_pi5_longhorn_default_replica_count_effective | int }}
           persistence:
             defaultClassReplicaCount: {{ raspberry_pi5_longhorn_default_replica_count_effective | int }}

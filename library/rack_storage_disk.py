@@ -44,6 +44,12 @@ options:
     type: str
     default: uuid
     choices: [uuid, id]
+  nvme_only:
+    description:
+      - Only ever use an NVMe disk. V(auto) skips every other disk, and a named or already mounted disk that is not
+        NVMe is an error, so the data can never land on the SD card or a USB drive.
+    type: bool
+    default: false
   fstab:
     description: fstab file to update.
     type: path
@@ -138,8 +144,13 @@ def describe(disk):
     return "%s (%.1f GiB)" % (disk["name"], size_gib)
 
 
-def make_plan(devices, device, path, label):
+def is_nvme(disk):
+    return os.path.basename(disk["name"]).startswith("nvme")
+
+
+def make_plan(devices, device, path, label, nvme_only=False):
     """Decide whether to reuse a mount, mount a labelled filesystem, or format a blank disk."""
+    allowed = is_nvme if nvme_only else (lambda _disk: True)
     nodes = list(walk(devices))
     by_name = {node["name"]: (node, disk) for node, disk in nodes}
 
@@ -149,11 +160,15 @@ def make_plan(devices, device, path, label):
         if real not in by_name:
             raise PlanError("%s is not a block device that lsblk can see" % device)
         wanted = by_name[real]
+        if not allowed(wanted[1]):
+            raise PlanError("%s is not an NVMe disk and nvme_only is set" % device)
 
     mounted = next(((n, d) for n, d in nodes if path in mounts_of(n)), None)
     if mounted:
         if wanted and wanted[1]["name"] != mounted[1]["name"]:
             raise PlanError("%s is already mounted from %s, not from %s" % (path, mounted[0]["name"], device))
+        if not allowed(mounted[1]):
+            raise PlanError("%s is mounted from %s, which is not an NVMe disk" % (path, mounted[0]["name"]))
         return {"action": "present", "node": mounted[0], "disk": mounted[1]}
 
     def labelled(disk_filter):
@@ -174,13 +189,13 @@ def make_plan(devices, device, path, label):
             "refusing to touch it" % (device, label)
         )
 
-    hit = labelled(lambda d: d.get("type") == "disk")
+    hit = labelled(lambda d: d.get("type") == "disk" and allowed(d))
     if hit:
         return {"action": "mount", "node": hit[0], "disk": hit[1]}
 
-    spare = [d for d in devices if is_spare(d)]
+    spare = [d for d in devices if is_spare(d) and allowed(d)]
     if not spare:
-        raise PlanError("no blank disk found")
+        raise PlanError("no blank NVMe disk found" if nvme_only else "no blank disk found")
     if len(spare) > 1:
         raise PlanError("more than one blank disk found (%s); set device to choose one" % ", ".join(describe(d) for d in spare))
     return {"action": "format", "node": None, "disk": spare[0]}
@@ -301,6 +316,7 @@ def main():
             mount_options=dict(type="str", default="defaults,noatime,nofail"),
             identify_by=dict(type="str", default="uuid", choices=["uuid", "id"]),
             fstab=dict(type="path", default="/etc/fstab"),
+            nvme_only=dict(type="bool", default=False),
         ),
         supports_check_mode=True,
     )
@@ -313,7 +329,7 @@ def main():
 
     devices = read_blockdevices(module)
     try:
-        plan = make_plan(devices, module.params["device"], path, label)
+        plan = make_plan(devices, module.params["device"], path, label, module.params["nvme_only"])
     except PlanError as exc:
         disks = [describe(d) for d in devices if d.get("type") == "disk"]
         module.fail_json(msg=str(exc), disks=disks)

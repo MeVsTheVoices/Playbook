@@ -435,7 +435,7 @@ function renderModuleSection() {
   if (profile.id === "longhorn") {
     const helper = document.createElement("p");
     helper.className = "module-callout";
-    helper.textContent = "Use a stable mounted path for Longhorn data now; when you move the Pi boot/storage layout to NVMe later, change only the storage path value rather than the workflow. Storage Disk 'auto' formats and mounts a single blank disk at that path for you (a disk that already holds data is never touched). Recommended first pass: keep the default replica count at 2 on a 2-node storage pair.";
+    helper.textContent = "Longhorn data lives only on NVMe. Storage Disk 'auto' formats and mounts the single blank NVMe disk at the storage path (a disk that already holds data is never touched), and the node is labelled for a Longhorn disk only once that mount is in place. Recommended first pass: keep the default replica count at 2 on a 2-node storage pair.";
     moduleDetailEl.appendChild(helper);
     const installHint = document.createElement("p");
     installHint.className = "module-callout";

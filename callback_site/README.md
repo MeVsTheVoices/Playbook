@@ -270,12 +270,11 @@ Open:
 
 ## Longhorn Notes
 
-- Longhorn is intentionally wired as an optional Pi 5 profile for now.
-- The first pass assumes the nodes still boot from SD card.
-- The default storage path is `/var/lib/longhorn` on the existing filesystem. The Storage Disk input defaults to `none`, which does not format or mount a disk; this keeps Longhorn data on the OS filesystem and shares its capacity and IO.
-- The storage path is configurable so you can later move Longhorn data to an NVMe-backed mount without changing the operator flow. Only select `auto` or a device after confirming the disk is intended for Longhorn: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts a blank disk by UUID. Disks that already hold data are never touched.
+- Longhorn is intentionally wired as an optional Pi 5 profile for now. Nodes boot from SD card, but Longhorn data lives only on NVMe.
+- The Storage Disk input defaults to `auto`: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts the single blank NVMe disk at the storage path (`/var/lib/longhorn`) by UUID, or reuses one already labelled `longhorn`. Disks that already hold data are never touched. With `raspberry_pi5_longhorn_nvme_only` (default `true`) a non-NVMe disk or `none` fails the run instead of putting data on the SD card.
+- Longhorn must run with `defaultSettings.createDefaultDiskLabeledNodes: true`, so only nodes labelled `node.longhorn.io/create-default-disk=true` get a disk. The profile adds that label from the node itself, through its kubelet credentials, only after the NVMe is mounted. Never label a node by hand before its NVMe is mounted, or Longhorn creates the disk on the SD card. Nodes without NVMe (for example the NucBox control plane) still run Longhorn components but store no replicas.
 - The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
-- If the K3s server is not a Pi 5, install Longhorn separately through a saved Helm configuration on the Kubernetes dashboard; applying the Pi worker profile alone does not install it. Verify the [Longhorn node prerequisites](https://longhorn.io/docs/latest/deploy/install/) on every node running Longhorn workloads, including the control plane.
+- If the K3s server is not a Pi 5, install Longhorn separately through a saved Helm configuration on the Kubernetes dashboard; applying the Pi worker profile alone does not install it. Set `defaultSettings.createDefaultDiskLabeledNodes: true` in its values. Verify the [Longhorn node prerequisites](https://longhorn.io/docs/latest/deploy/install/) on every node running Longhorn workloads, including the control plane.
 - Before applying the Longhorn profile, confirm the K3s API server and every kubelet are on compatible versions; a kubelet must not be newer than the API server. Then select the Longhorn profile for the Pi 5 nodes in Node Ops and apply it. Longhorn is not installed by `site.yml` unless the profile is explicitly selected.
 - The Kubernetes dashboard reports Longhorn pod readiness, excluding successfully completed pods. This is not a check of Longhorn node, disk, or volume health.
 

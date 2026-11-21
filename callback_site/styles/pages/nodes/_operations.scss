@@ -91,12 +91,21 @@
 }
 
 .node-monitor-table {
-  min-width: 64rem;
+  min-width: 52rem;
 }
 
 .node-monitor-table th,
 .node-monitor-table td {
   overflow-wrap: anywhere;
+  word-break: normal;
+  vertical-align: middle;
+}
+
+.node-monitor-table td:nth-child(2),
+.node-monitor-table td:nth-child(4),
+.node-monitor-table td:nth-child(8),
+.node-monitor-table td:nth-child(9) {
+  word-break: break-word;
 }
 
 .node-monitor-actions {

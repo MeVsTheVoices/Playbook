@@ -75,7 +75,12 @@ function renderLatestChecks() {
   }
   latestChecksBodyEl.innerHTML = "";
   const rows = [];
-  for (const node of nodes) {
+  const sortedNodes = [...nodes].sort((a, b) => {
+    const aTime = String(a.latest_check?.checked_at || "");
+    const bTime = String(b.latest_check?.checked_at || "");
+    return bTime.localeCompare(aTime) || String(a.name || "").localeCompare(String(b.name || ""));
+  });
+  for (const node of sortedNodes) {
     const latest = node.latest_check || {};
     const checkedAt = formatTimestamp(latest.checked_at || "-");
     const steps = Array.isArray(node.latest_check_steps) ? node.latest_check_steps : [];
@@ -133,13 +138,23 @@ function renderLatestChecks() {
       : String(row.status || "").toLowerCase() === "failed"
         ? "failed"
         : "warn";
+    const fullOutput = String(row.output || "-").replace(/\s+/g, " ").trim();
+    const compactOutput = fullOutput.length > 96
+      ? `${fullOutput.slice(0, 96).trimEnd()}...`
+      : fullOutput;
+    const outputCell = row.output === "No step details available"
+      ? "<span class='text-muted'>No step details available</span>"
+      : `<details class='check-output'>
+          <summary class='mono' title='Expand full check output'>${escapeHtml(compactOutput)}</summary>
+          <pre class='check-output-full mono'>${escapeHtml(fullOutput)}</pre>
+        </details>`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><strong>${escapeHtml(row.node)}</strong></td>
       <td>${escapeHtml(row.checkedAt)}</td>
       <td class='mono'>${escapeHtml(row.step)}</td>
       <td><span class='status-tag ${tone}'>${escapeHtml(row.status)}</span></td>
-      <td class='mono'>${escapeHtml(String(row.output || "-").slice(0, 240))}</td>
+      <td>${outputCell}</td>
     `;
     latestChecksBodyEl.appendChild(tr);
   }

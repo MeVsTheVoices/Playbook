@@ -52,7 +52,7 @@ window.fetch = async (url, options) => {
       name: "saved-check-node",
       in_monitor_view: true,
       latest_check: {checked_at: "2026-11-10T12:00:00Z", ok: true},
-      latest_check_steps: [{profile_id: "baseline", status: "ok", output: "Saved check output"}],
+    latest_check_steps: [{profile_id: "baseline", status: "ok", output: "Saved check output " + "A".repeat(140)}],
     }],
   }})};
 };
@@ -61,6 +61,10 @@ await tick();
 check(requests.length === 1 && requests[0] === "/api/state/source-of-truth", "loads saved state without starting checks");
 check(document.getElementById("latest-checks-body").textContent.includes("Saved check output"), "saved check output appears on page load");
 check(document.getElementById("latest-check-kpis").textContent.includes("1/1"), "saved check KPIs appear on page load");
+const output = document.querySelector("#latest-checks-body .check-output");
+check(output && !output.open, "saved check output starts collapsed");
+check(output.querySelector("summary").textContent.length <= 99, "saved check output summary is foreshortened");
+check(output.querySelector("pre").textContent.includes("A".repeat(140)), "full saved check output remains available");
 """)
 
     def test_monitor_shows_loading_then_empty_saved_outcomes(self) -> None:
@@ -111,6 +115,7 @@ check(document.getElementById("latest-checks-body").textContent.includes("No pro
         self.assertIn("Cloud-Init Coverage And Security Profile", text)
         self.assertIn("Latest Provision Check Outcomes", text)
         self.assertIn('id="fleet-kpis"', text)
+        self.assertNotIn("Monitor Guidance", text)
 
     def test_monitor_page_exposes_discovered_node_closer_controls(self) -> None:
         response = self.client.get("/monitor")

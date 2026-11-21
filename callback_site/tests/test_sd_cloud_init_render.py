@@ -120,6 +120,26 @@ class SdCloudInitRenderTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.strip(), expected)
 
+    def test_firewall_baseline_opens_tailnet_and_k3s_paths_only_when_used(self) -> None:
+        code, data, err = self.render(
+            R_PROFILE="pi5", CLOUD_INIT_ENABLE_FIREWALL_BASELINE="true", CLOUD_INIT_K3S_CONFIG=K3S_WORKER_CONFIG,
+            CLOUD_INIT_K3S_MODE="agent", CLOUD_INIT_TAILSCALE_ENABLE="true", CLOUD_INIT_TAILSCALE_AUTH_KEY=AUTH_KEY,
+        )
+        self.assertEqual(code, 0, err)
+        ufw = next(c for c in self.runcmd(data) if "ufw --force enable" in c)
+        for rule in ("ufw allow in on tailscale0", "ufw allow 10250/tcp", "ufw allow 8472/udp",
+                     "ufw allow from 10.42.0.0/16", "ufw route allow to 10.43.0.0/16"):
+            self.assertIn(rule, ufw)
+        self.assertNotIn("6443/tcp", ufw)
+        self.assertLess(ufw.index("tailscale0"), ufw.index("ufw --force enable"))
+
+        code, data, err = self.render(R_PROFILE="pi5", R_DIST="standard", CLOUD_INIT_ENABLE_FIREWALL_BASELINE="true")
+        self.assertEqual(code, 0, err)
+        ufw = next(c for c in self.runcmd(data) if "ufw --force enable" in c)
+        self.assertIn("ufw allow 22/tcp", ufw)
+        self.assertNotIn("tailscale0", ufw)
+        self.assertNotIn("10.42.0.0/16", ufw)
+
     def test_neovim_bootstrap_preserves_existing_configs_and_is_repeatable(self) -> None:
         code, data, err = self.render(CLOUD_INIT_CONFIGURE_NEOVIM="true")
         self.assertEqual(code, 0, err)

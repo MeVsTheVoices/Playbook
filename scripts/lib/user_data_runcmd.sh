@@ -118,8 +118,22 @@ RUNCMD_EOF
 fi
 
 if [[ "$CLOUD_INIT_ENABLE_FIREWALL_BASELINE" == "true" ]]; then
+  # Default deny-incoming/deny-routed would otherwise cut tailnet SSH, kubelet, flannel VXLAN and pod traffic.
+  UFW_EXTRA_RULES=""
+  if [[ "${CLOUD_INIT_TAILSCALE_ENABLE:-false}" == "true" ]]; then
+    UFW_EXTRA_RULES+="ufw allow in on tailscale0 || true; "
+  fi
+  if [[ "$DISTRIBUTION" == "k3s" ]]; then
+    UFW_EXTRA_RULES+="ufw allow 10250/tcp || true; ufw allow 8472/udp || true; "
+    if [[ "${K3S_INSTALL_MODE:-agent}" == "server" ]]; then
+      UFW_EXTRA_RULES+="ufw allow 6443/tcp || true; "
+    fi
+    for k3s_cidr in 10.42.0.0/16 10.43.0.0/16; do
+      UFW_EXTRA_RULES+="ufw allow from ${k3s_cidr} || true; ufw route allow from ${k3s_cidr} || true; ufw route allow to ${k3s_cidr} || true; "
+    done
+  fi
   cat >> "$USER_DATA_OUT" <<RUNCMD_EOF
-  - [ sh, -c, 'if command -v firewall-cmd >/dev/null 2>&1; then systemctl enable --now firewalld || true; firewall-cmd --permanent --add-service=ssh || true; firewall-cmd --reload || true; elif command -v ufw >/dev/null 2>&1; then ufw allow ${CLOUD_INIT_SSH_PORT:-22}/tcp || true; ufw --force enable || true; fi' ]
+  - [ sh, -c, 'if command -v firewall-cmd >/dev/null 2>&1; then systemctl enable --now firewalld || true; firewall-cmd --permanent --add-service=ssh || true; firewall-cmd --reload || true; elif command -v ufw >/dev/null 2>&1; then ufw allow ${CLOUD_INIT_SSH_PORT:-22}/tcp || true; ${UFW_EXTRA_RULES}ufw --force enable || true; fi' ]
 RUNCMD_EOF
 fi
 

@@ -26,6 +26,36 @@ class NodeInventoryTests(BaseCallbackSiteTest):
         services.node_archive.ARCHIVE_FILE.unlink(missing_ok=True)
         self.addCleanup(lambda: services.node_archive.ARCHIVE_FILE.unlink(missing_ok=True))
 
+    def test_latest_node_check_preserves_saved_step_results(self) -> None:
+        state = {
+            "results": {
+                "node-a": {
+                    "baseline": {
+                        "profile_id": "baseline",
+                        "status": "ok",
+                        "mode": "check",
+                        "checked_at": "2026-11-20T16:46:55Z",
+                        "output": "Baseline check passed",
+                    },
+                    "tailscale": {
+                        "profile_id": "tailscale",
+                        "status": "failed",
+                        "mode": "check",
+                        "checked_at": "2026-11-20T16:46:56Z",
+                        "output": "Tailscale check failed",
+                    },
+                },
+            },
+        }
+
+        latest = services.node_state._latest_node_check("node-a", state)
+
+        self.assertEqual(latest["status"], "failed")
+        self.assertFalse(latest["ok"])
+        self.assertEqual(latest["checked_at"], "2026-11-20T16:46:56Z")
+        self.assertEqual([step["profile_id"] for step in latest["results"]], ["baseline", "tailscale"])
+        self.assertEqual(latest["results"][1]["output"], "Tailscale check failed")
+
     def test_nodes_summary_uses_canonical_source_of_truth(self) -> None:
         fake_state = {
             "nodes": [{"name": "node-a", "selected_profiles": ["baseline"], "latest_check": {"ok": True}, "in_node_ops_view": True}],

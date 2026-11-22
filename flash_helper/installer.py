@@ -47,7 +47,7 @@ def seed(form: dict[str, Any], family: str, root: Path) -> None:
                     "authorized-keys": form["ssh_public_key"].strip().splitlines()},
             "storage": {"layout": {"name": "direct", "match": {"serial": "PLAYBOOK-NO-DISK-UNTIL-PREFLIGHT"}}},
             "early-commands": ["python3 /cdrom/playbook/installer_target.py ubuntu"],
-            "packages": ["curl"],
+            "packages": ["curl"] + (["nfs-common"] if options["install_nfs_client"] else []),
             "late-commands": [
                 ["curtin", "in-target", "--", "sh", "-c",
                  f"printf '%s\\n' {shlex.quote(user + ' ALL=(ALL) NOPASSWD:ALL')} > /etc/sudoers.d/90-playbook; "
@@ -79,7 +79,8 @@ def seed(form: dict[str, Any], family: str, root: Path) -> None:
             "%pre --interpreter=/usr/bin/python3 --erroronfail\n"
             + selector.split('if __name__ == "__main__":', 1)[0] + "\nmain('rocky')\n%end\n"
             "%include /tmp/playbook-storage.ks\n"
-            "%packages\n@^minimal-environment\nopenssh-server\ncurl\nsudo\n%end\n"
+            "%packages\n@^minimal-environment\nopenssh-server\ncurl\nsudo\n"
+            + ("nfs-utils\n" if options["install_nfs_client"] else "") + "%end\n"
             "%post --erroronfail\nset -eu\n"
             f"printf '%s\\n' {shlex.quote(user + ' ALL=(ALL) NOPASSWD:ALL')} > /etc/sudoers.d/90-playbook\n"
             "chmod 440 /etc/sudoers.d/90-playbook\n"

@@ -18,6 +18,26 @@ import services.storage
 
 
 class SdCardTests(BaseCallbackSiteTest):
+    def test_nfs_option_is_default_on_and_restores_disabled_for_all_profiles(self) -> None:
+        scripts = [f"home/{name}.js" for name in ("state", "catalog_filters", "k3s_roles", "cloud_init_options", "wifi_networks")]
+        page = self.client.get("/").get_data(as_text=True)
+        constants = re.search(r"<script>\s*(const imageCatalog = .*?)\s*</script>", page, re.S)
+        self.assertIsNotNone(constants)
+        self.browser_probe("/", scripts, constants.group(1), """
+for (const profile of ["pi5", "pi4", "pi3bplus", "network-toolkit", "playbook-server", "uefi-x86_64"]) {
+  form.profile.value = profile;
+  ensureK3sConfigDefaults();
+  applyCloudInitOptions({});
+  check(gatherCloudInitOptions().install_nfs_client === true, `${profile} defaults to NFS`);
+  applyCloudInitOptions({install_nfs_client: false});
+  check(gatherCloudInitOptions().install_nfs_client === false, `${profile} preserves disabled NFS`);
+}
+""")
+        for value in (True, False):
+            env = {}
+            services.sd_prepare._map_cloud_init_options_to_env(env, "standard", {"install_nfs_client": value})
+            self.assertEqual(env["CLOUD_INIT_INSTALL_NFS_CLIENT"], str(value).lower())
+
     def test_additional_wifi_networks_save_restore_replace_and_scope(self) -> None:
         page = self.client.get("/").get_data(as_text=True)
         constants = re.search(r"<script>\s*(const imageCatalog = .*?)\s*</script>", page, re.S)
@@ -238,7 +258,7 @@ for (const profile of ["network-toolkit", "playbook-server", "pi5"]) {
         for options in (
             {"packages": ["curl;reboot"]}, {"packages": ["--help"]},
             {"packages": ["git=1.0"]}, {"packages": [42]},
-            {"configure_neovim": "false"}, {"install_cli_tools": 1},
+            {"configure_neovim": "false"}, {"install_cli_tools": 1}, {"install_nfs_client": "false"},
         ):
             with self.subTest(options=options):
                 with patch_in("_ensure_prereqs", return_value=[]), patch("routes.sd.threading.Thread") as thread:

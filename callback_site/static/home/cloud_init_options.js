@@ -1,5 +1,5 @@
 const GENERAL_CLOUD_INIT_SECTIONS = [
-  "k3s", "identity", "network", "packages", "misc", "hardening", "access", "tailscale", "telemetry",
+  "k3s", "identity", "network", "packages", "nfs", "misc", "hardening", "access", "tailscale", "telemetry",
 ];
 const SD_SAVED_SECRET = "__CONFIGURED__";
 const SD_SECRET_KEYS = new Set(["tailscale_auth_key", "toolkit_wifi_password", "toolkit_terminal_password_hash", "password", "telegraf_influx_token", "wifi_psk", "wifi_networks"]);
@@ -25,7 +25,7 @@ const CLOUD_INIT_PROFILE_MATRIX = {
   pi4: { sections: GENERAL_CLOUD_INIT_SECTIONS },
   pi3bplus: { sections: GENERAL_CLOUD_INIT_SECTIONS },
   "network-toolkit": {
-    sections: ["toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry"],
+    sections: ["toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry", "nfs"],
     optionKeys: [
       "toolkit_terminal_password_hash", "toolkit_enable_funnel",
       "toolkit_wifi_ssid", "toolkit_wifi_password", "toolkit_wifi_country", "wifi_networks",
@@ -33,11 +33,14 @@ const CLOUD_INIT_PROFILE_MATRIX = {
       "full_name", "timezone", "locale", "username", "shell", "extra_ssh_keys",
       "tailscale_ssh", "tailscale_auth_key", "tailscale_hostname",
       "enable_power_restore_callback", "boot_summary", "enable_unattended_upgrades",
+      "install_nfs_client",
     ],
   },
   "playbook-server": {
-    sections: ["server", "identity", "network", "packages", "misc", "hardening", "access", "tailscale", "telemetry"],
+    sections: ["server", ...GENERAL_CLOUD_INIT_SECTIONS.filter(section => section !== "k3s")],
   },
+  "uefi-x86_64": { sections: ["nfs"] },
+  "uefi-arm64": { sections: ["nfs"] },
 };
 const SD_FIXED_STANDARD_PROFILES = new Set(["network-toolkit", "playbook-server"]);
 

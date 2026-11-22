@@ -33,9 +33,12 @@ def validate(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(options, dict):
         raise ValueError("cloud_init_options must be an object.")
     unsupported = [key for key, value in options.items()
-                   if key not in {"username", "timezone", "locale"} and value not in (False, None, "", [], {})]
+                   if key not in {"username", "timezone", "locale", "install_nfs_client"} and value not in (False, None, "", [], {})]
     if unsupported:
         raise ValueError("UEFI baseline does not support Pi-specific options: " + ", ".join(sorted(unsupported)))
+    install_nfs_client = options.get("install_nfs_client", True)
+    if not isinstance(install_nfs_client, bool):
+        raise ValueError("install_nfs_client must be true or false.")
     username = options.get("username") or "rackadmin"
     if not isinstance(username, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]{0,30}", username) or username in {"root", "nobody"}:
         raise ValueError("Select a non-root administrative username.")
@@ -46,5 +49,6 @@ def validate(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(locale, str) or not re.fullmatch(r"[A-Za-z0-9_.@-]+", locale):
         raise ValueError("Invalid locale.")
     payload.update(image_url=entry["image_url"], image_sha256=entry["image_sha256"],
-                   cloud_init_options={"username": username, "timezone": timezone, "locale": locale})
+                   cloud_init_options={"username": username, "timezone": timezone, "locale": locale,
+                                       "install_nfs_client": install_nfs_client})
     return entry

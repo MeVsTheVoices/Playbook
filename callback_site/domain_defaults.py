@@ -277,7 +277,8 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "label": "Auth Key",
                 "placeholder": "tskey-auth-...",
                 "input_type": "text",
-                "required": True,
+                "hint": "Needed to connect a new node unless OAuth is configured; not needed to update an already connected node.",
+                "required": False,
                 "sensitive": True,
             },
             {
@@ -285,7 +286,8 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "label": "Tailnet",
                 "placeholder": "tail00c2ce.ts.net",
                 "input_type": "text",
-                "required": True,
+                "hint": "Used when creating an auth key through OAuth; otherwise the group default applies.",
+                "required": False,
             },
             {
                 "id": "hostname",

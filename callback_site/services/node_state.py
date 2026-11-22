@@ -431,7 +431,7 @@ def _redact_profile_inputs(profile_id: str, inputs: Dict[str, str]) -> Dict[str,
 def _effective_node_profiles(node: Dict[str, Any], state: Dict[str, Any]) -> List[str]:
     node_configs = state.get("node_configs", {})
     selected = node_configs.get(node["name"])
-    if isinstance(selected, list) and selected:
+    if isinstance(selected, list):
         return [str(v) for v in selected]
     return _default_profiles_for_group(node.get("group", ""))
 

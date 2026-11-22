@@ -23,7 +23,12 @@ NAME_MAX = 60
 
 # SD option key -> module input id, where the two differ. Same-named keys (k3s_*, timezone, ...) map directly.
 _SD_KEY_ALIASES: Dict[str, Dict[str, str]] = {
-    "tailscale": {"tailscale_auth_key": "auth_key", "tailscale_ssh": "enable_ssh", "tailscale_tags": "advertise_tags"},
+    "tailscale": {
+        "tailscale_auth_key": "auth_key",
+        "tailscale_ssh": "enable_ssh",
+        "tailscale_hostname": "hostname",
+        "tailscale_advertise_tags": "advertise_tags",
+    },
     "kubernetes": {"k3s_role": "node_role"},
     "telegraf": {
         "telegraf_influx_url": "influx_endpoint",
@@ -214,7 +219,7 @@ def _sd_profile_inputs(module_id: str, profile: Dict[str, Any]) -> Dict[str, str
     """What an SD-card option profile already enabled, expressed as this module's inputs."""
     options = profile.get("options") if isinstance(profile.get("options"), dict) else {}
     allowed = set(_profile_input_spec_map(module_id))
-    if module_id == "tailscale" and not options.get("tailscale_enable"):
+    if module_id == "tailscale" and not (options.get("tailscale_enable") or profile.get("profile") == "network-toolkit"):
         return {}
     if module_id == "kubernetes" and profile.get("distribution") != "k3s":
         return {}
@@ -231,6 +236,10 @@ def _sd_profile_inputs(module_id: str, profile: Dict[str, Any]) -> Dict[str, str
             text = _as_text(value)
             if text:
                 out[field_id] = text
+    if module_id == "tailscale" and "advertise_tags" not in out:
+        legacy_tags = _as_text(options.get("tailscale_tags"))
+        if legacy_tags:
+            out["advertise_tags"] = legacy_tags
 
     if module_id == "kubernetes":
         config = str(options.get("k3s_config", ""))

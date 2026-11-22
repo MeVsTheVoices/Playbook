@@ -72,6 +72,16 @@
   tags:
     - baseline
 
+- name: Apply Baseline module inputs
+  ansible.builtin.include_role:
+    name: node_baseline
+    apply:
+      tags: [baseline]
+  when:
+    - provision_profile | default('') == 'baseline'
+    - raspberry_pi4_manage_system | bool
+  tags: [baseline]
+
 - name: Resolve Tailscale provisioning inputs
   ansible.builtin.set_fact:
     raspberry_pi4_tailscale_auth_key_provisioned: >-
@@ -94,6 +104,10 @@
            and (provision_inputs.advertise_tags | default('') | string | trim) | length > 0
         else raspberry_pi4_tailscale_tags
       }}
+    raspberry_pi4_tailscale_hostname_effective: "{{ provision_inputs.hostname | default(raspberry_pi4_tailscale_hostname, true) }}"
+    raspberry_pi4_tailscale_ssh_effective: "{{ provision_inputs.enable_ssh | default(raspberry_pi4_tailscale_enable_ssh) | bool }}"
+    raspberry_pi4_tailscale_exit_effective: "{{ provision_inputs.advertise_exit_node | default(raspberry_pi4_tailscale_advertise_exit_node) | bool }}"
+  no_log: true
   when:
     - rack_manage_with_ansible | bool
     - raspberry_pi4_tailscale_manage | bool
@@ -181,6 +195,7 @@
   no_log: true
   when:
     - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_needs_up | bool or raspberry_pi4_tailscale_force_reconfigure | bool
     - raspberry_pi4_tailscale_oauth_enabled | bool
     - raspberry_pi4_tailscale_auth_key_provisioned | default('') | length == 0
     - raspberry_pi4_tailscale_auth_key | length == 0
@@ -210,6 +225,7 @@
   no_log: true
   when:
     - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_needs_up | bool or raspberry_pi4_tailscale_force_reconfigure | bool
     - raspberry_pi4_tailscale_oauth_enabled | bool
     - raspberry_pi4_tailscale_auth_key_provisioned | default('') | length == 0
     - raspberry_pi4_tailscale_auth_key | length == 0
@@ -242,6 +258,7 @@
       and raspberry_pi4_tailscale_tailnet.
   when:
     - raspberry_pi4_tailscale_manage | bool
+    - raspberry_pi4_tailscale_needs_up | bool or raspberry_pi4_tailscale_force_reconfigure | bool
     - raspberry_pi4_tailscale_auth_key_effective | default('') | length == 0
   tags:
     - tailscale
@@ -255,7 +272,7 @@
     reload: true
   when:
     - raspberry_pi4_tailscale_manage | bool
-    - raspberry_pi4_tailscale_advertise_exit_node | bool
+    - raspberry_pi4_tailscale_exit_effective | bool
       or (raspberry_pi4_tailscale_advertise_routes | length > 0)
   tags:
     - tailscale
@@ -269,7 +286,7 @@
     reload: true
   when:
     - raspberry_pi4_tailscale_manage | bool
-    - raspberry_pi4_tailscale_advertise_exit_node | bool
+    - raspberry_pi4_tailscale_exit_effective | bool
       or (raspberry_pi4_tailscale_advertise_routes | length > 0)
   tags:
     - tailscale
@@ -278,10 +295,10 @@
   ansible.builtin.command: >-
     tailscale up
     --auth-key={{ raspberry_pi4_tailscale_auth_key_effective }}
-    --hostname={{ raspberry_pi4_tailscale_hostname }}
+    --hostname={{ raspberry_pi4_tailscale_hostname_effective }}
     {{ '--accept-dns=true' if raspberry_pi4_tailscale_accept_dns else '--accept-dns=false' }}
-    {{ '--ssh' if raspberry_pi4_tailscale_enable_ssh else '' }}
-    {{ '--advertise-exit-node' if raspberry_pi4_tailscale_advertise_exit_node else '' }}
+    {{ '--ssh' if raspberry_pi4_tailscale_ssh_effective else '' }}
+    {{ '--advertise-exit-node' if raspberry_pi4_tailscale_exit_effective else '' }}
     {{ '--advertise-routes=' + (raspberry_pi4_tailscale_advertise_routes | join(','))
        if (raspberry_pi4_tailscale_advertise_routes | length > 0) else '' }}
     {{ '--advertise-tags=' + (raspberry_pi4_tailscale_tags_effective | join(','))
@@ -296,6 +313,39 @@
   when:
     - raspberry_pi4_tailscale_manage | bool
     - raspberry_pi4_tailscale_force_reconfigure | bool or raspberry_pi4_tailscale_needs_up | default(true)
+  tags:
+    - tailscale
+
+- name: Apply explicit Tailscale inputs on connected nodes
+  ansible.builtin.command:
+    argv: >-
+      {{ ['tailscale', 'set']
+         + (['--hostname=' ~ (provision_inputs.hostname | trim)] if provision_inputs.hostname | default('') | trim else [])
+         + (['--ssh=' ~ (raspberry_pi4_tailscale_ssh_effective | ternary('true', 'false'))] if 'enable_ssh' in (provision_inputs | default({})) else [])
+         + (['--advertise-exit-node=' ~ (raspberry_pi4_tailscale_exit_effective | ternary('true', 'false'))] if 'advertise_exit_node' in (provision_inputs | default({})) else [])
+         + (['--advertise-tags=' ~ (raspberry_pi4_tailscale_tags_effective | join(','))] if provision_inputs.advertise_tags | default('') | trim else []) }}
+  changed_when: true
+  when:
+    - provision_profile | default('') == 'tailscale'
+    - raspberry_pi4_tailscale_manage | bool
+    - not (raspberry_pi4_tailscale_needs_up | default(true) | bool)
+    - not (raspberry_pi4_tailscale_force_reconfigure | bool)
+    - not ansible_check_mode
+    - provision_inputs.hostname | default('') | trim or 'enable_ssh' in (provision_inputs | default({})) or 'advertise_exit_node' in (provision_inputs | default({})) or provision_inputs.advertise_tags | default('') | trim
+  tags:
+    - tailscale
+
+- name: Report explicit Tailscale inputs in check mode
+  ansible.builtin.debug:
+    msg: "Explicit Tailscale preferences will be applied; current values are not compared."
+  changed_when: true
+  when:
+    - provision_profile | default('') == 'tailscale'
+    - raspberry_pi4_tailscale_manage | bool
+    - not (raspberry_pi4_tailscale_needs_up | default(true) | bool)
+    - not (raspberry_pi4_tailscale_force_reconfigure | bool)
+    - ansible_check_mode
+    - provision_inputs.hostname | default('') | trim or 'enable_ssh' in (provision_inputs | default({})) or 'advertise_exit_node' in (provision_inputs | default({})) or provision_inputs.advertise_tags | default('') | trim
   tags:
     - tailscale
 

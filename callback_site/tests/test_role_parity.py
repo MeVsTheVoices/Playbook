@@ -19,6 +19,8 @@ PI5_ONLY = {"Resolve Longhorn inputs from provisioning payload", "Ensure Longhor
             "Ensure iscsid service is enabled and running", "Ensure open-iscsi service is enabled and running",
             "Prepare the Longhorn storage disk", "Report the Longhorn storage path",
             "Ensure Longhorn storage path exists", "Check whether this node is a K3s server",
+            "Refuse Longhorn data on the OS disk", "Check whether this node has joined K3s",
+            "Label this node for a Longhorn default disk",
             "Install or update Longhorn via K3s HelmChart manifest"}
 # The Docker module targets Pi 4 and Pi 5 only (see its groups in NODE_PROVISION_PROFILES).
 DOCKER_TASKS = {

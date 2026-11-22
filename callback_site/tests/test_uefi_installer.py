@@ -142,6 +142,25 @@ class UefiInstallerTests(unittest.TestCase):
             self.assertFalse(config["ssh"]["allow-pw"])
             self.assertEqual(config["ssh"]["authorized-keys"], ["ssh-ed25519 dGVzdA=="])
 
+    def test_nfs_client_option_in_both_installer_families(self):
+        for family, package in (("ubuntu", "nfs-common"), ("rocky", "nfs-utils")):
+            for enabled in (True, False):
+                with self.subTest(family=family, enabled=enabled), tempfile.TemporaryDirectory() as tmp:
+                    form = self.form()
+                    if not enabled:
+                        form["cloud_init_options"]["install_nfs_client"] = False
+                    validate(form)
+                    seed(form, family, Path(tmp))
+                    if family == "ubuntu":
+                        packages = yaml.safe_load((Path(tmp) / "nocloud/user-data").read_text())["autoinstall"]["packages"]
+                    else:
+                        packages = (Path(tmp) / "ks.cfg").read_text().split("%packages\n")[1].split("%end")[0].splitlines()
+                    self.assertEqual(package in packages, enabled)
+        form = self.form()
+        form["cloud_init_options"]["install_nfs_client"] = "false"
+        with self.assertRaises(ValueError):
+            validate(form)
+
     def test_rocky_kickstart_runs_preflight_without_main_argument_bug(self):
         form = self.form("rocky")
         validate(form)

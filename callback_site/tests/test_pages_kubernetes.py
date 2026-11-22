@@ -300,8 +300,8 @@ try {
         match = re.search(r'<pre id="matrix-result">(.*?)</pre>', result.stdout, re.DOTALL)
         self.assertIsNotNone(match, result.stdout)
         snapshots = json.loads(html_lib.unescape(match.group(1)))
-        general = {"identity", "network", "packages", "misc", "hardening", "access", "tailscale", "telemetry"}
-        toolkit = {"toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry"}
+        general = {"identity", "network", "packages", "nfs", "misc", "hardening", "access", "tailscale", "telemetry"}
+        toolkit = {"toolkit", "toolkit-tools", "identity", "access", "tailscale", "telemetry", "nfs"}
         for snapshot in snapshots:
             with self.subTest(profile=snapshot["profile"], distribution=snapshot["distribution"]):
                 expected = set(toolkit if snapshot["profile"] == "network-toolkit" else general)

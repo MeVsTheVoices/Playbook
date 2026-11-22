@@ -73,6 +73,28 @@ class SdCloudInitRenderTests(unittest.TestCase):
     def runcmd(data: dict) -> list[str]:
         return [c if isinstance(c, str) else " ".join(c) for c in data["runcmd"]]
 
+    def test_nfs_client_defaults_on_and_can_be_disabled_for_each_profile(self) -> None:
+        for profile in ("pi5", "pi4", "pi3bplus", "network-toolkit", "playbook-server"):
+            for enabled in ("true", "false"):
+                with self.subTest(profile=profile, enabled=enabled):
+                    options = {"R_PROFILE": profile, "R_DIST": "standard"}
+                    if profile == "network-toolkit":
+                        options.update({
+                            "CLOUD_INIT_TAILSCALE_AUTH_KEY": AUTH_KEY,
+                            "CLOUD_INIT_TOOLKIT_TERMINAL_PASSWORD_HASH": "$6$testsalt$" + "a" * 86,
+                            "CLOUD_INIT_TOOLKIT_WIFI_SSID": "test-uplink",
+                            "CLOUD_INIT_TOOLKIT_WIFI_PASSWORD": "test-password",
+                            "CLOUD_INIT_TOOLKIT_WIFI_COUNTRY": "US",
+                        })
+                    if enabled == "false":
+                        options["CLOUD_INIT_INSTALL_NFS_CLIENT"] = enabled
+                    code, data, err = self.render(**options)
+                    self.assertEqual(code, 0, err)
+                    self.assertEqual("nfs-common" in data["packages"], enabled == "true")
+        code, _, err = self.render(CLOUD_INIT_INSTALL_NFS_CLIENT="invalid")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Invalid package option flag", err)
+
     def test_misc_packages_and_neovim_are_opt_in_on_all_general_profiles(self) -> None:
         for profile in ("pi5", "pi4", "pi3bplus"):
             with self.subTest(profile=profile):

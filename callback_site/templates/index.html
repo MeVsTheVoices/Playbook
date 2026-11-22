@@ -438,6 +438,15 @@ server: https://local-machine-ip:6443
                 <p class="segment-hint">Use a supported Ubuntu or Pi OS Trixie catalog image. Set the actual Wi-Fi interface name (PCs often use names like wlp2s0). Playbook Server requires wired internet on first boot to install Wi-Fi support.</p>
               </details>
 
+              <details data-cloud-init-section="nfs" class="segment">
+                <summary>NFS Client</summary>
+                <div>
+                  <input id="opt_install_nfs_client" data-option-key="install_nfs_client" data-option-type="checkbox" data-option-default="true" type="checkbox" checked>
+                  <label for="opt_install_nfs_client">Install NFS client support</label>
+                  <p class="segment-hint">Installed by default: nfs-common on Debian/Ubuntu, nfs-utils on Rocky Linux.</p>
+                </div>
+              </details>
+
               <details data-cloud-init-section="packages" class="segment">
                 <summary>Packages and First-Boot Commands</summary>
                 <p class="segment-hint">Define package bootstrap and simple cloud-init command lists.</p>

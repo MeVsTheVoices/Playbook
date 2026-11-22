@@ -100,6 +100,7 @@ owners/mixins; avoid page-specific copies of the shell or controls.
 - Module Configuration in `/nodes` splits modules: the top table lists modules shared across profiles (groups), and a persistent **Profile-specific** block below it lists modules that target only the selected node's group, plus profile tools.
 - OpenWrt routers as Node Ops hosts (group `openwrt`). Selecting a router shows router tools in the Profile-specific block: SSH probe, key push, and a read-only UCI summary organized into System, LAN, WAN, DHCP (with the computed address pool), and one card per Wi-Fi radio with its SSIDs. The summary uses the saved key, a fixed script, and an allowlist; wireless keys and passwords are never returned.
 - Optional Pi 5 Longhorn provisioning for k3s nodes, with a configurable storage path so a later SD-boot to NVMe-boot/storage move can be handled by changing the path value instead of rewriting the workflow.
+- New SD/cloud-image and UEFI deployments install NFS client support by default (`nfs-common` on Debian/Ubuntu, `nfs-utils` on Rocky). Disable **Cloud-Init Settings > NFS Client** when preparing media, or set `CLOUD_INIT_INSTALL_NFS_CLIENT=false` when using the SD preparation script. Disabling it does not uninstall an existing package; the separate Longhorn profile still installs its required `nfs-common`.
 
 ### Node Ops: Linux Package Manager
 

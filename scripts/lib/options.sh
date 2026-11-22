@@ -20,10 +20,11 @@ CLOUD_INIT_K3S_SECURITY_BASELINE="${CLOUD_INIT_K3S_SECURITY_BASELINE:-false}"
 CLOUD_INIT_FANCY_MOTD="${CLOUD_INIT_FANCY_MOTD:-false}"
 CLOUD_INIT_CONFIGURE_NEOVIM="${CLOUD_INIT_CONFIGURE_NEOVIM:-false}"
 CLOUD_INIT_INSTALL_CLI_TOOLS="${CLOUD_INIT_INSTALL_CLI_TOOLS:-false}"
+CLOUD_INIT_INSTALL_NFS_CLIENT="${CLOUD_INIT_INSTALL_NFS_CLIENT:-true}"
 CLOUD_INIT_EXTRA_PACKAGES="${CLOUD_INIT_EXTRA_PACKAGES:-}"
-for misc_value in "$CLOUD_INIT_CONFIGURE_NEOVIM" "$CLOUD_INIT_INSTALL_CLI_TOOLS"; do
+for misc_value in "$CLOUD_INIT_CONFIGURE_NEOVIM" "$CLOUD_INIT_INSTALL_CLI_TOOLS" "$CLOUD_INIT_INSTALL_NFS_CLIENT"; do
   if [[ "$misc_value" != "true" && "$misc_value" != "false" ]]; then
-    echo "Invalid Neovim or CLI tools flag: expected true or false." >&2
+    echo "Invalid package option flag: expected true or false." >&2
     exit 1
   fi
 done
@@ -204,6 +205,9 @@ elif [[ "$PROFILE" == "playbook-server" ]]; then
 fi
 
 PROFILE_PACKAGES="$PROFILE_PACKAGES $CLOUD_INIT_EXTRA_PACKAGES"
+if [[ "$CLOUD_INIT_INSTALL_NFS_CLIENT" == "true" ]]; then
+  PROFILE_PACKAGES="$PROFILE_PACKAGES nfs-common"
+fi
 if [[ "$CLOUD_INIT_CONFIGURE_NEOVIM" == "true" ]]; then
   PROFILE_PACKAGES="$PROFILE_PACKAGES neovim"
 fi

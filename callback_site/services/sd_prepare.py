@@ -119,6 +119,8 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     cleaned["sd_options_profile"] = str(cleaned.get("sd_options_profile", "")).strip()
     cleaned["pi_only"] = bool(cleaned.get("pi_only", False))
     cloud_options = cleaned["cloud_init_options"]
+    if "install_nfs_client" in cloud_options and not isinstance(cloud_options["install_nfs_client"], bool):
+        cleaned["config_errors"] = ["install_nfs_client must be true or false."]
     if cleaned.get("profile") != TOOLKIT_PROFILE:
         option_errors = []
         try:
@@ -139,7 +141,7 @@ def _sanitize_sd_prepare_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         except ValueError as exc:
             option_errors.append(str(exc))
         if option_errors:
-            cleaned["config_errors"] = option_errors
+            cleaned["config_errors"] = list(cleaned.get("config_errors") or []) + option_errors
     else:
         for key in ("packages", "configure_neovim", "install_cli_tools"):
             cloud_options.pop(key, None)
@@ -303,6 +305,10 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
     if EXTRA_PACKAGES_OPTION in cloud_init_options:
         env["CLOUD_INIT_TOOLKIT_EXTRA_PACKAGES"] = " ".join(extra_packages(cloud_init_options))
         enabled_options.append(EXTRA_PACKAGES_OPTION)
+    if "install_nfs_client" in cloud_init_options:
+        env["CLOUD_INIT_INSTALL_NFS_CLIENT"] = "true" if cloud_init_options["install_nfs_client"] else "false"
+        if cloud_init_options["install_nfs_client"]:
+            enabled_options.append("install_nfs_client")
     for spec in (*TOOLKIT_SPECS, *SERVER_SPECS):
         key = spec["id"]
         if key in cloud_init_options:

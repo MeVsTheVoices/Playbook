@@ -1,0 +1,129 @@
+---
+- name: Resolve Baseline module inputs
+  ansible.builtin.set_fact:
+    node_baseline_timezone: "{{ provision_inputs.timezone | default('') | string | trim }}"
+    node_baseline_ntp_servers: "{{ (provision_inputs.ntp_servers | default('') | string).split(',') | map('trim') | reject('equalto', '') | list }}"
+    node_baseline_packages: "{{ (provision_inputs.packages | default('') | string).split(',') | map('trim') | reject('equalto', '') | list }}"
+
+- name: Validate Baseline module inputs
+  ansible.builtin.assert:
+    that:
+      - node_baseline_timezone == '' or node_baseline_timezone is match('^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$')
+      - node_baseline_ntp_servers | reject('match', '^[A-Za-z0-9._:%-]+$') | list | length == 0
+      - node_baseline_packages | reject('match', '^[a-z0-9][a-z0-9+.-]*(:[a-z0-9-]+)?$') | list | length == 0
+    fail_msg: "Invalid Baseline timezone, NTP server, or package name."
+
+- name: Check requested timezone exists
+  ansible.builtin.stat:
+    path: "/usr/share/zoneinfo/{{ node_baseline_timezone }}"
+  register: node_baseline_timezone_file
+  when: node_baseline_timezone | length > 0
+
+- name: Reject unknown timezone
+  ansible.builtin.assert:
+    that:
+      - node_baseline_timezone_file.stat.exists
+      - node_baseline_timezone_file.stat.isreg
+    fail_msg: "The requested timezone is not available in /usr/share/zoneinfo."
+  when: node_baseline_timezone | length > 0
+
+- name: Set Baseline timezone
+  ansible.builtin.file:
+    src: "/usr/share/zoneinfo/{{ node_baseline_timezone }}"
+    dest: /etc/localtime
+    state: link
+    force: true
+  when: node_baseline_timezone | length > 0
+
+- name: Persist Baseline timezone
+  ansible.builtin.copy:
+    content: "{{ node_baseline_timezone }}\n"
+    dest: /etc/timezone
+    owner: root
+    group: root
+    mode: '0644'
+  when: node_baseline_timezone | length > 0
+
+- name: Create timesyncd configuration directory
+  ansible.builtin.file:
+    path: /etc/systemd/timesyncd.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: node_baseline_ntp_servers | length > 0
+
+- name: Configure Baseline NTP servers
+  ansible.builtin.copy:
+    content: "[Time]\nNTP={{ node_baseline_ntp_servers | join(' ') }}\n"
+    dest: /etc/systemd/timesyncd.conf.d/60-rack-baseline.conf
+    owner: root
+    group: root
+    mode: '0644'
+  register: node_baseline_ntp_config
+  when: node_baseline_ntp_servers | length > 0
+
+- name: Start timesyncd and apply NTP changes
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    state: "{{ 'restarted' if node_baseline_ntp_config.changed else 'started' }}"
+  when:
+    - node_baseline_ntp_servers | length > 0
+
+- name: Install extra Baseline packages
+  ansible.builtin.apt:
+    name: "{{ node_baseline_packages }}"
+    state: present
+    lock_timeout: 300
+  when: node_baseline_packages | length > 0
+
+- name: Install unattended upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+    lock_timeout: 300
+  when: provision_inputs.enable_unattended_upgrades | default(false) | bool
+
+- name: Enable unattended upgrades
+  ansible.builtin.copy:
+    content: "APT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"1\";\n"
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+  when: provision_inputs.enable_unattended_upgrades | default(false) | bool
+
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+    lock_timeout: 300
+  when: provision_inputs.enable_fail2ban | default(false) | bool
+
+- name: Enable fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    enabled: true
+    state: started
+  when: provision_inputs.enable_fail2ban | default(false) | bool
+
+- name: Check hardware detection script exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/rack-hardware-check
+  register: node_baseline_hardware_script
+  when: provision_inputs.enable_hardware_checks | default(false) | bool
+
+- name: Require hardware detection script
+  ansible.builtin.assert:
+    that:
+      - node_baseline_hardware_script.stat.exists
+      - node_baseline_hardware_script.stat.executable
+    fail_msg: "Hardware detection requires the executable /usr/local/bin/rack-hardware-check from SD provisioning."
+  when: provision_inputs.enable_hardware_checks | default(false) | bool
+
+- name: Run hardware detection
+  ansible.builtin.command: /usr/local/bin/rack-hardware-check
+  changed_when: true
+  when:
+    - provision_inputs.enable_hardware_checks | default(false) | bool
+    - not ansible_check_mode

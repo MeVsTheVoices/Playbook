@@ -20,6 +20,19 @@ import services.storage
 
 
 class NodeProvisioningTests(BaseCallbackSiteTest):
+    def test_tailscale_settings_can_run_without_saved_auth_credentials(self) -> None:
+        state = {"node_inputs": {"node": {"tailscale": {"hostname": "rack-node"}}}}
+        self.assertEqual(services.node_state._missing_required_inputs("node", ["tailscale"], state), [])
+
+    def test_empty_module_selection_does_not_restore_group_defaults(self) -> None:
+        node = {"name": "node", "group": "rpi5_active"}
+        self.assertEqual(services.node_state._effective_node_profiles(node, {"node_configs": {"node": []}}), [])
+        self.assertEqual(services.node_state._profiles_to_run(node, {"node_configs": {"node": []}}, None), [])
+        self.assertEqual(
+            services.node_state._effective_node_profiles(node, {"node_configs": {}}),
+            ["baseline", "tailscale", "telegraf", "docker"],
+        )
+
     def test_package_manager_applies_to_any_group_without_changing_node_defaults(self) -> None:
         state = {"node_configs": {"node": ["tailscale"]}}
         for group in ("rpi5_active", "manual", "ubuntu", "fedora", "openwrt"):

@@ -132,7 +132,7 @@ class RoleBootstrapRenderTests(unittest.TestCase):
         if not ANSIBLE.exists():
             self.skipTest("repo ansible-playbook not available")
 
-    def run_play(self, tasks: list[dict], variables: dict) -> tuple[int, str]:
+    def run_play(self, tasks: list[dict], variables: dict, check: bool = False) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as tmp:
             play_file = Path(tmp) / "play.yml"
             play_file.write_text(
@@ -140,10 +140,168 @@ class RoleBootstrapRenderTests(unittest.TestCase):
                 encoding="utf-8",
             )
             result = subprocess.run(
-                [str(ANSIBLE), "-i", "localhost,", "-c", "local", str(play_file)],
+                [str(ANSIBLE), "-i", "localhost,", "-c", "local", str(play_file)] + (["--check"] if check else []),
                 capture_output=True, text=True, timeout=180, cwd=str(REPO_ROOT),
             )
         return result.returncode, result.stdout + result.stderr
+
+    def test_tailscale_inputs_are_applied_on_connected_nodes(self) -> None:
+        for board, info in BOARDS.items():
+            role = info["role_dir"]
+            names = by_name(load_tasks(role))
+            resolve = copy.deepcopy(names["Resolve Tailscale provisioning inputs"])
+            apply = copy.deepcopy(names["Apply explicit Tailscale inputs on connected nodes"])
+            apply["ansible.builtin.command"]["argv"] = apply["ansible.builtin.command"]["argv"].replace(
+                "['tailscale', 'set']", "['/bin/echo', 'set']",
+            )
+            apply["register"] = "applied"
+            variables = {
+                "rack_manage_with_ansible": True,
+                "provision_profile": "tailscale",
+                "provision_inputs": {
+                    "hostname": "rack-custom", "enable_ssh": "true",
+                    "advertise_exit_node": "false", "advertise_tags": "tag:rpi5,tag:homelab",
+                },
+                f"{role}_tailscale_manage": True,
+                f"{role}_tailscale_tailnet": "example.ts.net",
+                f"{role}_tailscale_tags": ["tag:default"],
+                f"{role}_tailscale_hostname": "default-name",
+                f"{role}_tailscale_enable_ssh": False,
+                f"{role}_tailscale_advertise_exit_node": True,
+                f"{role}_tailscale_needs_up": False,
+                f"{role}_tailscale_force_reconfigure": False,
+            }
+            show = {"ansible.builtin.debug": {"var": "applied.stdout"}}
+            with self.subTest(board=board):
+                code, output = self.run_play([resolve, apply, show], variables)
+                self.assertEqual(code, 0, output[-1500:])
+                for arg in ("--hostname=rack-custom", "--ssh=true", "--advertise-exit-node=false", "--advertise-tags=tag:rpi5,tag:homelab"):
+                    self.assertIn(arg, output)
+
+    def test_tailscale_unspecified_preferences_are_not_reset(self) -> None:
+        role = BOARDS["pi5"]["role_dir"]
+        names = by_name(load_tasks(role))
+        resolve = copy.deepcopy(names["Resolve Tailscale provisioning inputs"])
+        apply = copy.deepcopy(names["Apply explicit Tailscale inputs on connected nodes"])
+        apply["ansible.builtin.command"]["argv"] = apply["ansible.builtin.command"]["argv"].replace(
+            "['tailscale', 'set']", "['/bin/echo', 'set']",
+        )
+        apply["register"] = "applied"
+        variables = {
+            "rack_manage_with_ansible": True, "provision_profile": "tailscale",
+            "provision_inputs": {"hostname": "only-hostname"},
+            f"{role}_tailscale_manage": True, f"{role}_tailscale_tailnet": "",
+            f"{role}_tailscale_tags": ["tag:default"], f"{role}_tailscale_hostname": "default",
+            f"{role}_tailscale_enable_ssh": False, f"{role}_tailscale_advertise_exit_node": False,
+            f"{role}_tailscale_needs_up": False, f"{role}_tailscale_force_reconfigure": False,
+        }
+        code, output = self.run_play([resolve, apply, {"ansible.builtin.debug": {"var": "applied.stdout"}}], variables)
+        self.assertEqual(code, 0, output[-1500:])
+        self.assertIn("set --hostname=only-hostname", output)
+        self.assertNotIn("--ssh=", output)
+        self.assertNotIn("--advertise-exit-node=", output)
+        self.assertNotIn("--advertise-tags=", output)
+
+    def test_new_tailscale_connection_uses_inputs_or_group_defaults(self) -> None:
+        role = BOARDS["pi5"]["role_dir"]
+        names = by_name(load_tasks(role))
+        resolve = copy.deepcopy(names["Resolve Tailscale provisioning inputs"])
+        up = copy.deepcopy(names["Bring node online with desired tailscale flags"])
+        up["ansible.builtin.command"] = up["ansible.builtin.command"].replace("tailscale up", "/bin/echo up", 1)
+        up["no_log"] = False
+        up["register"] = "applied"
+        variables = {
+            "rack_manage_with_ansible": True, f"{role}_tailscale_manage": True,
+            f"{role}_tailscale_tailnet": "", f"{role}_tailscale_tags": ["tag:default"],
+            f"{role}_tailscale_hostname": "default-name", f"{role}_tailscale_enable_ssh": True,
+            f"{role}_tailscale_advertise_exit_node": True, f"{role}_tailscale_auth_key_effective": "fake-key",
+            f"{role}_tailscale_accept_dns": True, f"{role}_tailscale_advertise_routes": [],
+            f"{role}_tailscale_needs_up": True, f"{role}_tailscale_force_reconfigure": False,
+        }
+        for inputs, expected, absent in (
+            (None, ("--hostname=default-name", "--ssh", "--advertise-exit-node"), ()),
+            ({"hostname": "custom", "enable_ssh": "false", "advertise_exit_node": "false", "auth_key": "secret-should-not-log"},
+             ("--hostname=custom",), ("--ssh", "--advertise-exit-node", "secret-should-not-log")),
+        ):
+            with self.subTest(inputs=inputs):
+                current = dict(variables)
+                if inputs is not None:
+                    current["provision_inputs"] = inputs
+                code, output = self.run_play([resolve, up, {"ansible.builtin.debug": {"var": "applied.stdout"}}], current)
+                self.assertEqual(code, 0, output[-1500:])
+                for value in expected:
+                    self.assertIn(value, output)
+                for value in absent:
+                    self.assertNotIn(value, output)
+
+    def test_connected_tailscale_does_not_require_new_credentials(self) -> None:
+        for board, info in BOARDS.items():
+            role = info["role_dir"]
+            names = by_name(load_tasks(role))
+            tasks = [copy.deepcopy(names[name]) for name in (
+                "Request OAuth access token for Tailscale API",
+                "Create short-lived auth key from OAuth token",
+                "Ensure auth key exists for tailscale up",
+            )]
+            variables = {
+                f"{role}_tailscale_manage": True, f"{role}_tailscale_needs_up": False,
+                f"{role}_tailscale_force_reconfigure": False, f"{role}_tailscale_oauth_enabled": True,
+                f"{role}_tailscale_auth_key": "", f"{role}_tailscale_auth_key_effective": "",
+            }
+            with self.subTest(board=board):
+                code, output = self.run_play(tasks, variables)
+                self.assertEqual(code, 0, output[-1500:])
+                self.assertNotIn("failed=1", output)
+
+    def test_tailscale_check_mode_reports_planned_preferences(self) -> None:
+        role = BOARDS["pi5"]["role_dir"]
+        names = by_name(load_tasks(role))
+        tasks = [copy.deepcopy(names["Report explicit Tailscale inputs in check mode"])]
+        variables = {
+            "provision_profile": "tailscale", "provision_inputs": {"enable_ssh": "false"},
+            f"{role}_tailscale_manage": True, f"{role}_tailscale_needs_up": False,
+            f"{role}_tailscale_force_reconfigure": False,
+        }
+        code, output = self.run_play(tasks, variables, check=True)
+        self.assertEqual(code, 0, output[-1500:])
+        self.assertIn("current values are not compared", output)
+        self.assertIn("changed=1", output)
+
+    def test_baseline_role_runs_without_optional_inputs(self) -> None:
+        task = {"ansible.builtin.include_role": {"name": str(REPO_ROOT / "roles" / "node_baseline")}}
+        code, output = self.run_play([task], {"provision_inputs": {}}, check=True)
+        self.assertEqual(code, 0, output[-1500:])
+
+    def test_baseline_inputs_validate_and_only_enable_checked_options(self) -> None:
+        names = by_name(load_tasks("node_baseline"))
+        base = [copy.deepcopy(names["Resolve Baseline module inputs"]), copy.deepcopy(names["Validate Baseline module inputs"])]
+        for enabled in (False, True):
+            tasks = copy.deepcopy(base)
+            for name in ("Install unattended upgrades", "Enable unattended upgrades", "Install fail2ban", "Enable fail2ban", "Run hardware detection"):
+                task = copy.deepcopy(names[name])
+                for key in list(task):
+                    if key.startswith("ansible.builtin."):
+                        del task[key]
+                task.pop("changed_when", None)
+                task["ansible.builtin.debug"] = {"msg": "executed " + name}
+                tasks.append(task)
+            inputs = {
+                "timezone": "Europe/London", "ntp_servers": "time.example.org, 192.0.2.1",
+                "packages": "git,curl", "enable_unattended_upgrades": str(enabled).lower(),
+                "enable_fail2ban": str(enabled).lower(), "enable_hardware_checks": str(enabled).lower(),
+            }
+            with self.subTest(enabled=enabled):
+                code, output = self.run_play(tasks, {"provision_inputs": inputs})
+                self.assertEqual(code, 0, output[-1500:])
+                self.assertEqual("executed Install fail2ban" in output, enabled)
+                self.assertEqual("executed Enable unattended upgrades" in output, enabled)
+                self.assertEqual("executed Run hardware detection" in output, enabled)
+
+        for inputs in ({"timezone": "../etc"}, {"ntp_servers": "good.example,bad\nNTP=evil"}, {"packages": "git,-o"}):
+            with self.subTest(inputs=inputs):
+                code, output = self.run_play(base, {"provision_inputs": inputs})
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("Invalid Baseline timezone, NTP server, or package name", output)
 
     def render_install(self, board: str, role: str, server_version: dict | None = None, pinned: str = "") -> dict:
         role_dir = BOARDS[board]["role_dir"]

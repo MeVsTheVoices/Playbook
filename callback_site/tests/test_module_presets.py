@@ -195,6 +195,8 @@ check(posts.every(p => !p.url.includes("provision")), "named save never applies"
                     "tailscale_enable": True,
                     "tailscale_ssh": True,
                     "tailscale_auth_key": SECRET,
+                    "tailscale_hostname": "sd-node",
+                    "tailscale_advertise_tags": ["tag:rpi5", "tag:homelab"],
                 },
             }
         })
@@ -210,7 +212,18 @@ check(posts.every(p => !p.url.includes("provision")), "named save never applies"
         self.assertEqual(by_id["k3s_allow_sd_etcd"]["value"], "true")
 
         tailscale = next(s for s in self.listing("tailscale", NODE_A)["sources"] if s["source"] == "sd:test-sd-control")
-        self.assertEqual({f["id"] for f in tailscale["fields"]}, {"auth_key", "enable_ssh"})
+        tailscale_fields = {f["id"]: f["value"] for f in tailscale["fields"]}
+        self.assertEqual(set(tailscale_fields), {"auth_key", "enable_ssh", "hostname", "advertise_tags"})
+        self.assertEqual(tailscale_fields["hostname"], "sd-node")
+        self.assertEqual(tailscale_fields["advertise_tags"], "tag:rpi5, tag:homelab")
+        loaded_tailscale = self.client.post(
+            "/api/nodes/module-presets/load",
+            json={"node": NODE_B, "module": "tailscale", "source": "sd:test-sd-control"},
+        )
+        self.assertEqual(loaded_tailscale.status_code, 200, loaded_tailscale.get_data(as_text=True))
+        tailscale_inputs = services.node_state._load_node_provisioning()["node_inputs"][NODE_B]["tailscale"]
+        self.assertEqual(tailscale_inputs["hostname"], "sd-node")
+        self.assertEqual(tailscale_inputs["advertise_tags"], "tag:rpi5, tag:homelab")
 
         loaded = self.client.post(
             "/api/nodes/module-presets/load",
@@ -220,6 +233,23 @@ check(posts.every(p => !p.url.includes("provision")), "named save never applies"
         state = services.node_state._load_node_provisioning()
         self.assertEqual(state["node_inputs"][NODE_B]["kubernetes"]["server_token"], "K10abc::server:tokensecret")
         self.assertIn("kubernetes", state["node_configs"][NODE_B], "loading activates the module on the node")
+
+    def test_toolkit_sd_profile_enables_tailscale_implicitly(self) -> None:
+        profile = {
+            "profile": "network-toolkit",
+            "options": {"tailscale_hostname": "toolkit", "tailscale_ssh": True},
+        }
+        self.assertEqual(
+            services.module_presets._sd_profile_inputs("tailscale", profile),
+            {"hostname": "toolkit", "enable_ssh": "true"},
+        )
+        self.assertEqual(services.module_presets._sd_profile_inputs("tailscale", {"options": profile["options"]}), {})
+
+    def test_legacy_tailscale_tags_fallback_to_canonical_tags(self) -> None:
+        options = {"tailscale_enable": True, "tailscale_tags": ["tag:legacy"]}
+        self.assertEqual(services.module_presets._sd_profile_inputs("tailscale", {"options": options})["advertise_tags"], "tag:legacy")
+        options["tailscale_advertise_tags"] = ["tag:current"]
+        self.assertEqual(services.module_presets._sd_profile_inputs("tailscale", {"options": options})["advertise_tags"], "tag:current")
 
     def test_sd_telegraf_settings_map_onto_the_telegraf_module(self) -> None:
         services.sd_profiles._save_sd_option_profiles({

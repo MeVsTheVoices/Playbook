@@ -274,7 +274,7 @@ Open:
 ## Longhorn Notes
 
 - Longhorn is intentionally wired as an optional Pi 5 profile for now. Nodes boot from SD card, but Longhorn data lives only on NVMe.
-- The Storage Disk input defaults to `auto`: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts the single blank NVMe disk at the storage path (`/var/lib/longhorn`) by UUID, or reuses one already labelled `longhorn`. Disks that already hold data are never touched. With `raspberry_pi_longhorn_nvme_only` (default `true`) a non-NVMe disk or `none` fails the run instead of putting data on the SD card.
+- The Storage Disk input defaults to `auto`: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts the single blank NVMe disk at the storage path (`/var/lib/longhorn`) by UUID, or reuses one already labelled `longhorn`. Disks that already hold data are never touched. With `rack_node_longhorn_nvme_only` (default `true`) a non-NVMe disk or `none` fails the run instead of putting data on the SD card.
 - Longhorn must run with `defaultSettings.createDefaultDiskLabeledNodes: true`, so only nodes labelled `node.longhorn.io/create-default-disk=true` get a disk. The profile adds that label from the node itself, through its kubelet credentials, only after the NVMe is mounted. Never label a node by hand before its NVMe is mounted, or Longhorn creates the disk on the SD card. Nodes without NVMe (for example an x86 control-plane node) still run Longhorn components but store no replicas.
 - The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
 - If the K3s server is not a Pi 5, install Longhorn separately through a saved Helm configuration on the Kubernetes dashboard; applying the Pi worker profile alone does not install it. Set `defaultSettings.createDefaultDiskLabeledNodes: true` in its values. Verify the [Longhorn node prerequisites](https://longhorn.io/docs/latest/deploy/install/) on every node running Longhorn workloads, including the control plane.
@@ -849,7 +849,8 @@ without the module.
 
 `K3S_API_ENDPOINT` sets the join address written into new nodes' K3s configs.
 In a multi-server cluster any server works; pick one that new nodes can reach
-over Tailscale. Nodes can still override it per profile.
+over Tailscale, or a [fixed address in front of every server](#api-high-availability).
+Nodes can still override it per profile.
 
 <a id="helm-chart"></a>
 ### ⎈ Running the portal on Kubernetes
@@ -911,6 +912,31 @@ docker compose -f compose.yaml -f compose.kubernetes.yaml exec -T callback-site 
 `Ready` workers do not become control-plane or etcd nodes merely by appearing
 in the cluster. See the [Linux K3s setup](#linux-k3s-and-the-kubernetes-dashboard)
 before changing a node's role.
+
+<a id="etcd-snapshots"></a>
+#### 💾 etcd snapshots
+
+K3s snapshots etcd on every server (every 12 hours, keeping 5) into
+`/var/lib/rancher/k3s/server/db/snapshots`, on the same disk as etcd itself.
+The Kubernetes module's control-plane inputs set the schedule, the retention and
+an optional S3-compatible target (AWS S3, Backblaze B2, Cloudflare R2, or MinIO on
+a NAS) that is not part of the cluster, so a lost node or SD card does not take
+the backups with it. Use the same settings on every server. The S3 secret key is
+redacted in run records. Restore with `k3s server --cluster-reset
+--cluster-reset-restore-path=<snapshot>` on one server (add the `--etcd-s3-*` flags
+to restore from S3), then rejoin the others.
+
+<a id="api-high-availability"></a>
+#### 🔗 One API address for every server
+
+Nodes join through `K3S_API_ENDPOINT` and the portal talks to the server in its
+kubeconfig. With several servers, either one is a single point of failure for
+new joins and for the dashboard, even though the cluster keeps running. Put a
+fixed address in front of every server (a kube-vip virtual IP, or an
+HAProxy/nginx TCP load balancer on port 6443), list it in every server's
+`tls-san`, and use it for both `K3S_API_ENDPOINT` and the kubeconfig. Running the
+portal in the cluster ([chart](#helm-chart)) avoids the
+kubeconfig entirely: it uses the in-cluster `kubernetes` Service.
 
 ### Helm configurations and Tailscale workloads
 

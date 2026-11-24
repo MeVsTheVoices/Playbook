@@ -1,0 +1,45 @@
+---
+# Board-specific constants live in vars/<rack_node_board>.yml; set rack_node_board (pi5, pi4, pi3bplus or x64) where the role is applied.
+rack_node_manage_system: true
+rack_node_upgrade_packages: false
+rack_node_tailscale_manage: true
+rack_node_tailscale_oauth_enabled: true
+
+# Set this directly if you already have a reusable/preauth auth key.
+rack_node_tailscale_auth_key: ""
+
+# OAuth client-credential flow inputs (recommended to source from vault).
+rack_node_tailscale_oauth_client_id: ""
+rack_node_tailscale_oauth_client_secret: ""
+rack_node_tailscale_tailnet: ""
+rack_node_tailscale_auth_key_ttl_seconds: 86400
+
+# Optional device tags. Must be allowed by your tailnet ACL policy.
+rack_node_tailscale_tags: "{{ rack_node_board_tailscale_tags }}"
+
+# Host behavior.
+rack_node_tailscale_hostname: "{{ inventory_hostname }}"
+rack_node_tailscale_accept_dns: true
+rack_node_tailscale_enable_ssh: false
+rack_node_tailscale_advertise_exit_node: "{{ rack_node_board_tailscale_advertise_exit_node }}"
+rack_node_tailscale_advertise_routes: []
+
+# Force re-running tailscale up even if device is already connected.
+rack_node_tailscale_force_reconfigure: false
+
+# K3s release the playbook installs on a node that does not run it yet. Blank matches the server it joins.
+rack_node_k3s_version: ""
+
+# Longhorn defaults (used when provision_profile=longhorn, on boards that support it: the Pi 5).
+# Longhorn data lives only on NVMe: storage_path is the NVMe mount point.
+rack_node_longhorn_storage_path: /var/lib/longhorn
+# "auto" formats and mounts the one blank NVMe disk (or reuses one labelled longhorn); or name an NVMe device.
+rack_node_longhorn_storage_disk: auto
+# Refuse any disk that is not NVMe, and refuse storage_disk none (data on the SD card).
+rack_node_longhorn_nvme_only: true
+# Which stable name rack_storage_disk reports for the disk: uuid or id.
+rack_node_longhorn_storage_identify_by: uuid
+rack_node_longhorn_default_replica_count: 2
+rack_node_longhorn_set_default_storage_class: true
+rack_node_longhorn_install_chart: true
+rack_node_longhorn_chart_version: ""

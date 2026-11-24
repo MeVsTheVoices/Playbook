@@ -70,7 +70,7 @@ class RepoConfigTests(BaseCallbackSiteTest):
 
     def test_pi_roles_tag_tasks_for_profile_scoped_runs(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        role = "raspberry_pi"
+        role = "rack_node"
         tasks_text = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
         self.assertIn("- tailscale", tasks_text, msg=f"{role} must tag tailscale tasks")
         self.assertIn("- baseline", tasks_text, msg=f"{role} must tag baseline tasks")

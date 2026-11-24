@@ -1,0 +1,17 @@
+---
+# Raspberry Pi 4 constants. Settings an operator may override belong in group_vars, not here.
+rack_node_board_label: Pi 4
+rack_node_board_tailscale_tags:
+  - tag:rpi4
+rack_node_board_tailscale_advertise_exit_node: false
+rack_node_worker_role: worker
+rack_node_worker_noun: worker
+rack_node_worker_taint: rack/dedicated=true:NoSchedule
+rack_node_role_fail_hint: ""
+rack_node_k3s_options_label: K3s server
+rack_node_k3s_disable_default: "false"
+rack_node_k3s_taint_default: "false"
+# Blank: no max-pods unless the operator sets one.
+rack_node_k3s_max_pods_default: ""
+rack_node_supports_docker: true
+rack_node_supports_longhorn: false

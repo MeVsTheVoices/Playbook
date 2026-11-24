@@ -1,5 +1,5 @@
 ---
 # Primary network egress node for the rack.
-raspberry_pi_tailscale_advertise_exit_node: true
-raspberry_pi_tailscale_advertise_routes:
+rack_node_tailscale_advertise_exit_node: true
+rack_node_tailscale_advertise_routes:
   - 192.168.174.0/24

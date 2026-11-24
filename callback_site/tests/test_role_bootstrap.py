@@ -15,11 +15,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE = REPO_ROOT / ".venv" / "bin" / "ansible-playbook"
 
-# One role serves every board; board constants come from roles/raspberry_pi/vars/<board>.yml.
+# One role serves every board; board constants come from roles/rack_node/vars/<board>.yml.
 BOARDS = {
-    "pi5": {"role_dir": "raspberry_pi", "worker": "worker", "docker": True},
-    "pi4": {"role_dir": "raspberry_pi", "worker": "worker", "docker": True},
-    "pi3bplus": {"role_dir": "raspberry_pi", "worker": "light-worker", "docker": False},
+    "pi5": {"role_dir": "rack_node", "worker": "worker", "docker": True},
+    "pi4": {"role_dir": "rack_node", "worker": "worker", "docker": True},
+    "pi3bplus": {"role_dir": "rack_node", "worker": "light-worker", "docker": False},
 }
 
 SHARED_TASKS = (
@@ -59,8 +59,8 @@ def load_tasks(role_dir: str) -> list[dict]:
 
 
 def board_vars(board: str) -> dict:
-    data = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "vars" / f"{board}.yml").read_text(encoding="utf-8"))
-    return {"raspberry_pi_board": board, **data}
+    data = yaml.safe_load((REPO_ROOT / "roles" / "rack_node" / "vars" / f"{board}.yml").read_text(encoding="utf-8"))
+    return {"rack_node_board": board, **data}
 
 
 def by_name(tasks: list[dict]) -> dict[str, dict]:
@@ -74,11 +74,11 @@ class RoleBootstrapStructureTests(unittest.TestCase):
             for task in SHARED_TASKS + (DOCKER_TASKS if info["docker"] else ()):
                 with self.subTest(board=board, task=task):
                     self.assertIn(task, names)
-            self.assertEqual(board_vars(board)["raspberry_pi_supports_docker"], info["docker"], board)
-            self.assertEqual(board_vars(board)["raspberry_pi_worker_role"], info["worker"], board)
-        names = by_name(load_tasks("raspberry_pi"))
+            self.assertEqual(board_vars(board)["rack_node_supports_docker"], info["docker"], board)
+            self.assertEqual(board_vars(board)["rack_node_worker_role"], info["worker"], board)
+        names = by_name(load_tasks("rack_node"))
         for task in DOCKER_TASKS:
-            self.assertEqual(names[task]["when"][0], "raspberry_pi_supports_docker | bool", "the Docker module does not target the 3B+")
+            self.assertEqual(names[task]["when"][0], "rack_node_supports_docker | bool", "the Docker module does not target the 3B+")
 
     def test_clock_and_apt_lock_come_before_any_download(self) -> None:
         for board, info in BOARDS.items():
@@ -356,7 +356,7 @@ class RoleBootstrapRenderTests(unittest.TestCase):
         name = "Wait for the joined K3s control-plane API and datastore"
         for stdout, exit_code, expected in (("ok", 0, True), ("not ready", 0, False), ("ok", 1, False)):
             with self.subTest(stdout=stdout, exit_code=exit_code):
-                task = copy.deepcopy(by_name(load_tasks("raspberry_pi"))[name])
+                task = copy.deepcopy(by_name(load_tasks("rack_node"))[name])
                 task["ansible.builtin.command"]["argv"] = [
                     "/bin/sh", "-c", f"printf '%s' '{stdout}'; exit {exit_code}",
                 ]
@@ -365,7 +365,7 @@ class RoleBootstrapRenderTests(unittest.TestCase):
                 code, output = self.run_play([task], {
                     "rack_manage_with_ansible": True,
                     "provision_profile": "kubernetes",
-                    "raspberry_pi_k3s_role": "control-plane",
+                    "rack_node_k3s_role": "control-plane",
                 })
                 self.assertEqual(code == 0, expected, output[-1000:])
 

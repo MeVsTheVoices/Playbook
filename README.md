@@ -139,7 +139,7 @@ Before committing deployment changes, install the
 | [callback_site/](callback_site/) | Web portal, services, templates, and tests. |
 | [docs/](docs/) | Project vision, rack operations, and functional reference. |
 | [scripts/](scripts/) | Bootstrap, SD preparation, validation, and local Kubernetes connection helpers. |
-| [roles/](roles/) | Ansible provisioning: one `raspberry_pi` role for every board, generic x86_64, OpenWrt and the network toolkit. |
+| [roles/](roles/) | Ansible provisioning: one `rack_node` role for every Pi board and x86_64 host, the generic x86_64 baseline, OpenWrt and the network toolkit. |
 | [inventory.yml](inventory.yml) · [site.yml](site.yml) | Device inventory and the main provisioning playbook. |
 | [compose.yaml](compose.yaml) · [compose.kubernetes.yaml](compose.kubernetes.yaml) | Portal runtime, plus the optional Kubernetes module and its kubeconfig mount. |
 | [charts/](charts/) | Helm charts: the portal itself, the flash helper, and bundled workloads (Dockerbot, Headlamp). |

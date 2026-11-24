@@ -1,0 +1,14 @@
+---
+# Keep real secrets in vault-backed variables. Falls back to the Pi 5 OAuth client so one tailnet client covers the rack.
+# x86 hosts may already run their own Tailscale; only touch it when the Tailscale module is applied.
+rack_node_tailscale_manage: "{{ provision_profile | default('') == 'tailscale' }}"
+rack_node_tailscale_oauth_enabled: true
+rack_node_tailscale_tailnet: tail00c2ce
+rack_node_tailscale_oauth_client_id: "{{ vault_linux_x64_tailscale_oauth_client_id | default(vault_rpi5_tailscale_oauth_client_id) }}"
+rack_node_tailscale_oauth_client_secret: "{{ vault_linux_x64_tailscale_oauth_client_secret | default(vault_rpi5_tailscale_oauth_client_secret) }}"
+
+rack_node_tailscale_advertise_exit_node: false
+rack_node_tailscale_advertise_routes: []
+rack_node_tailscale_tags:
+  - tag:linux-x64
+  - tag:homelab

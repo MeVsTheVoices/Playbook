@@ -168,11 +168,11 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
         if not ansible.exists():
             self.skipTest("repo ansible-playbook not available")
 
-        role = "raspberry_pi"
+        role = "rack_node"
         tasks = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
         for board, anchor in (
             ("pi3bplus", "- name: Write structured K3s control-plane config"),
-            ("pi5", "- name: Write structured K3s {{ raspberry_pi_worker_role }} config"),
+            ("pi5", "- name: Write structured K3s {{ rack_node_worker_role }} config"),
         ):
             self.assertIn(anchor, tasks)
             block = re.search(r"dest: /etc/rancher/k3s/config\.yaml\n(?:.*\n)*?    content: >-\n((?:      .*\n)+)", tasks[tasks.index(anchor):])
@@ -232,7 +232,7 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
             ("blank input uses tailscale", "''", ["100.9.9.9"], "100.9.9.9"),
             ("both missing is empty so the assert fires", "''", [], ""),
         )
-        for role in ("raspberry_pi",):
+        for role in ("rack_node",):
             tasks = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
             match = re.search(rf"    {role}_k3s_node_ip: >-\n((?:      .*\n)+)", tasks)
             self.assertIsNotNone(match, f"node_ip expression not found in {role}")

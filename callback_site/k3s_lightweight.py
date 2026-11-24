@@ -1,4 +1,4 @@
-"""K3s roles for the Pi 5, Pi 4 and Pi 3B+, and the settings that go with each. BOARDS is the board registry.
+"""K3s roles for the Pi 5, Pi 4, Pi 3B+ and x86_64 hosts, and the settings that go with each. BOARDS is the board registry; RACK_NODES adds x86_64.
 
 Every board can be a worker, run no Kubernetes ("utility"), or be a K3s server
 ("control-plane"). Defaults differ because the boards do:
@@ -71,6 +71,22 @@ BOARDS: Dict[str, Dict[str, Any]] = {
         "label": "Pi 4",
         "tailscale_tag": "tag:rpi4",
         "group": "rpi4_active",
+        "role": ROLE_WORKER,
+        "roles": (ROLE_WORKER, ROLE_CONTROL_PLANE),
+        "node_ops_roles": (ROLE_WORKER, ROLE_CONTROL_PLANE, ROLE_UTILITY),
+        "taint": False,
+        "max_pods": "",
+        "disable_defaults": False,
+    },
+}
+# Every node family the rack_node role manages. x86_64 hosts are installed, not flashed, so they
+# take Node Ops K3s roles and a Tailscale tag but stay out of BOARDS (the SD form and callback profiles).
+RACK_NODES: Dict[str, Dict[str, Any]] = {
+    **BOARDS,
+    "x64": {
+        "label": "x86_64 Linux",
+        "tailscale_tag": "tag:linux-x64",
+        "group": "linux_x64_active",
         "role": ROLE_WORKER,
         "roles": (ROLE_WORKER, ROLE_CONTROL_PLANE),
         "node_ops_roles": (ROLE_WORKER, ROLE_CONTROL_PLANE, ROLE_UTILITY),
@@ -190,7 +206,7 @@ def is_role_profile(profile: Any) -> bool:
 
 
 def _board(profile: Any) -> Dict[str, Any]:
-    return BOARDS[str(profile or "").strip().lower()]
+    return RACK_NODES[str(profile or "").strip().lower()]
 
 
 def _server_default(profile: str, opt: Dict[str, Any]) -> bool:
@@ -364,13 +380,13 @@ def ui_defaults() -> Dict[str, Any]:
 def node_role_spec_parts() -> Dict[str, Any]:
     """Per-board choices and defaults for the Node Ops `node_role` select."""
     return {
-        "options_by_group": {board["group"]: list(board["node_ops_roles"]) for board in BOARDS.values()},
-        "default_by_group": {board["group"]: board["role"] for board in BOARDS.values()},
+        "options_by_group": {board["group"]: list(board["node_ops_roles"]) for board in RACK_NODES.values()},
+        "default_by_group": {board["group"]: board["role"] for board in RACK_NODES.values()},
     }
 
 
 def _groups() -> List[str]:
-    return [board["group"] for board in BOARDS.values()]
+    return [board["group"] for board in RACK_NODES.values()]
 
 
 def _role_specs() -> List[Dict[str, Any]]:
@@ -381,7 +397,7 @@ def _role_specs() -> List[Dict[str, Any]]:
             "label": "Keep general workloads off this node (taint)",
             "input_type": "checkbox",
             "default": "false",
-            "default_by_group": {b["group"]: "true" if b["taint"] else "false" for b in BOARDS.values()},
+            "default_by_group": {b["group"]: "true" if b["taint"] else "false" for b in RACK_NODES.values()},
             "hint": (
                 f"Adds {ROLE_TAINTS[ROLE_WORKER]} on a worker, {ROLE_TAINTS[ROLE_LIGHT_WORKER]} on a light worker, "
                 f"or {ROLE_TAINTS[ROLE_CONTROL_PLANE]} on a control-plane node; only pods that tolerate it are scheduled here."
@@ -394,9 +410,9 @@ def _role_specs() -> List[Dict[str, Any]]:
             "label": "Max pods on this node",
             "input_type": "text",
             "default": "",
-            "default_by_group": {b["group"]: str(b["max_pods"]) for b in BOARDS.values()},
+            "default_by_group": {b["group"]: str(b["max_pods"]) for b in RACK_NODES.values()},
             "placeholder": "blank = board default",
-            "hint": f"Whole number from 1 to {MAX_PODS_LIMIT}. Blank uses the board default: 20 on a Pi 3B+ (it cannot carry 110), the K3s default of 110 on a Pi 5 or Pi 4.",
+            "hint": f"Whole number from 1 to {MAX_PODS_LIMIT}. Blank uses the board default: 20 on a Pi 3B+ (it cannot carry 110), the K3s default of 110 on a Pi 5, Pi 4 or x86_64 host.",
             "only_groups": _groups(),
             "only_roles": k3s_roles,
         },
@@ -415,7 +431,7 @@ def node_ops_specs() -> List[Dict[str, Any]]:
                 "default": "false",
                 "default_by_group": {
                     board["group"]: "true" if _server_default(profile, opt) else "false"
-                    for profile, board in BOARDS.items()
+                    for profile, board in RACK_NODES.items()
                 },
                 "hint": opt["hint"],
                 "only_groups": _groups(),

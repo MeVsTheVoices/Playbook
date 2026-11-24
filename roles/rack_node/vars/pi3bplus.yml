@@ -1,0 +1,18 @@
+---
+# Raspberry Pi 3B+ constants. Settings an operator may override belong in group_vars, not here.
+rack_node_board_label: Pi 3B+
+rack_node_board_tailscale_tags:
+  - tag:rpi-3bplus
+rack_node_board_tailscale_advertise_exit_node: false
+rack_node_worker_role: light-worker
+rack_node_worker_noun: light worker
+rack_node_worker_taint: rack/light=true:NoSchedule
+rack_node_role_fail_hint: "; 'worker' and other values are not valid for this board"
+rack_node_k3s_options_label: lightweight K3s
+rack_node_k3s_disable_default: "true"
+rack_node_k3s_taint_default: "true"
+# Always set: a blank max pods falls back to 20.
+rack_node_k3s_max_pods_default: "20"
+# The Docker module targets Pi 4 and Pi 5 only.
+rack_node_supports_docker: false
+rack_node_supports_longhorn: false

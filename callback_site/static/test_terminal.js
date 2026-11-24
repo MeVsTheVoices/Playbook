@@ -20,6 +20,8 @@ const taskCategoriesEl = document.getElementById("task-categories");
 const taskCardsEl = document.getElementById("task-cards");
 const routeEl = document.getElementById("terminal-route");
 const routesBtn = document.getElementById("terminal-routes");
+const parametersEl = document.getElementById("task-parameters");
+const kubernetesHintEl = document.getElementById("kubernetes-hint");
 
 let activeJobId = null;
 let pollTimer = null;
@@ -29,6 +31,10 @@ let activeCategory = "All tasks";
 let jobRunning = false;
 let routeRequestId = 0;
 let routeTimer = null;
+let previewRequestId = 0;
+let previewTimer = null;
+let previewValid = true;
+const parameterValues = {};
 const MANUAL_HOSTS_KEY = "terminal-manual-hosts";
 const LEGACY_MANUAL_HOSTS_KEY = "verifier-manual-hosts";
 
@@ -53,7 +59,7 @@ function resolveVerificationHost() {
 }
 
 function updateRunButton() {
-  startBtn.disabled = jobRunning || !resolveVerificationHost() || !checkIdEl.value || !keyNameEl.value;
+  startBtn.disabled = jobRunning || !previewValid || !resolveVerificationHost() || !checkIdEl.value || !keyNameEl.value;
   startBtn.textContent = jobRunning ? "Task running..." : "Run selected task";
 }
 
@@ -194,6 +200,12 @@ async function pollJob() {
 
 async function startCheck() {
   if (jobRunning) return;
+  for (const input of parametersEl.querySelectorAll("input, select")) {
+    if (!input.checkValidity()) {
+      input.reportValidity();
+      return;
+    }
+  }
   const host = resolveVerificationHost();
   if (!host) {
     jobStatusEl.textContent = "Host is required.";
@@ -228,6 +240,7 @@ async function startCheck() {
         key_name: keyNameEl.value,
         check_id: checkIdEl.value,
         port: Number(portEl.value || "22"),
+        parameters: readTaskParameters(),
       }),
     });
     const payload = await res.json();
@@ -498,10 +511,86 @@ function updateCheckDescription() {
   const selected = checksCatalog.find((c) => c.id === checkIdEl.value);
   checkDescriptionEl.textContent = selected?.description || "Choose a predefined task.";
   document.getElementById("check-command").textContent = selected?.command || "Select a task to preview its command.";
+  renderTaskParameters(selected);
   for (const card of taskCardsEl.children) {
     card.setAttribute("aria-pressed", String(card.dataset.taskId === checkIdEl.value));
   }
   updateRunButton();
+}
+
+function readTaskParameters() {
+  return Object.fromEntries(Array.from(parametersEl.querySelectorAll("[data-parameter]"), (input) =>
+    [input.dataset.parameter, input.type === "checkbox" ? input.checked : input.value]));
+}
+
+async function previewTaskCommand() {
+  const requestId = ++previewRequestId;
+  previewValid = false;
+  updateRunButton();
+  try {
+    const response = await fetch("/api/test-terminal/preview", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({check_id: checkIdEl.value, parameters: readTaskParameters()}),
+    });
+    const data = await response.json();
+    if (requestId !== previewRequestId) return;
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not preview command.");
+    document.getElementById("check-command").textContent = data.command;
+    previewValid = true;
+  } catch (error) {
+    if (requestId !== previewRequestId) return;
+    document.getElementById("check-command").textContent = `Cannot run: ${error.message}`;
+  }
+  updateRunButton();
+}
+
+function renderTaskParameters(selected) {
+  previewRequestId += 1;
+  clearTimeout(previewTimer);
+  parametersEl.replaceChildren();
+  const specs = selected?.parameters || [];
+  parametersEl.hidden = !specs.length;
+  kubernetesHintEl.hidden = !specs.length;
+  previewValid = !specs.length;
+  for (const spec of specs) {
+    const field = document.createElement("div");
+    field.className = "field";
+    const label = document.createElement("label");
+    label.htmlFor = `task-param-${spec.id}`;
+    label.textContent = spec.label;
+    const input = document.createElement(spec.choices ? "select" : "input");
+    input.id = label.htmlFor;
+    input.dataset.parameter = spec.id;
+    if (spec.choices) {
+      for (const choice of spec.choices) input.append(new Option(choice || "Default", choice));
+    } else {
+      input.type = spec.type || "text";
+      input.placeholder = spec.placeholder || "";
+      input.required = Boolean(spec.required);
+      if (spec.min !== undefined) input.min = String(spec.min);
+      if (spec.max !== undefined) input.max = String(spec.max);
+      if (input.type === "number") input.step = "1";
+    }
+    const value = parameterValues[spec.id] ?? spec.default ?? "";
+    if (input.type === "checkbox") input.checked = value === true;
+    else input.value = String(value);
+    input.addEventListener("input", () => {
+      parameterValues[spec.id] = input.type === "checkbox" ? input.checked : input.value;
+      previewRequestId += 1;
+      previewValid = false;
+      document.getElementById("check-command").textContent = "Updating command preview...";
+      updateRunButton();
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(previewTaskCommand, 180);
+    });
+    field.append(label, input);
+    parametersEl.append(field);
+  }
+  if (specs.length) {
+    document.getElementById("check-command").textContent = "Loading command preview...";
+    previewTaskCommand();
+  }
 }
 
 async function refreshChecks() {

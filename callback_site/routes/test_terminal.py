@@ -20,6 +20,7 @@ from services.terminal_checks import (
     _resolve_terminal_host,
     _run_test_terminal_job,
     _test_terminal_targets,
+    terminal_command,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,9 +38,22 @@ def register_test_terminal_routes(app: Any) -> None:
                     "description": item["description"],
                     "category": item["category"],
                     "command": item["command"],
+                    "parameters": item.get("parameters", []),
                 }
             )
         return jsonify({"ok": True, "checks": checks})
+
+    @app.post("/api/test-terminal/preview")
+    def test_terminal_preview() -> Any:
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict) or not isinstance(payload.get("check_id"), str) or payload["check_id"] not in TERMINAL_CHECKS:
+                raise ValueError("Select a valid task")
+            command = terminal_command(payload["check_id"], payload.get("parameters"))
+        except ValueError as exc:
+            logger.warning("Terminal preview rejected: %s", exc)
+            return jsonify(ok=False, error=str(exc)), 400
+        return jsonify(ok=True, command=command)
 
     @app.get("/api/test-terminal/targets")
     def test_terminal_targets() -> Any:
@@ -88,6 +102,12 @@ def register_test_terminal_routes(app: Any) -> None:
         if check_id not in TERMINAL_CHECKS:
             return jsonify({"ok": False, "error": "invalid check_id"}), 400
 
+        try:
+            remote_command = terminal_command(check_id, payload.get("parameters"))
+        except ValueError as exc:
+            logger.warning("Terminal task parameters rejected: %s", exc)
+            return jsonify(ok=False, error=str(exc)), 400
+
         key_path = KEYS_DIR / key_name
         if not key_path.exists():
             return jsonify({"ok": False, "error": f"key not found: {key_name}"}), 404
@@ -99,7 +119,6 @@ def register_test_terminal_routes(app: Any) -> None:
             return jsonify({"ok": False, "error": key_preflight_error}), 400
 
         selected_check = TERMINAL_CHECKS[check_id]
-        remote_command = selected_check["command"]
 
         cmd = [
             "ssh",

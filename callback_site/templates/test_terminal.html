@@ -80,6 +80,8 @@
           <label for="check-id">Selected task</label>
           <select id="check-id"></select>
           <p class="muted" id="check-description">Choose a predefined task.</p>
+          <div id="task-parameters" class="grid" hidden></div>
+          <p id="kubernetes-hint" class="muted" hidden>Kubernetes commands run on the selected SSH host using its kubeconfig. A worker needs an explicitly configured client; K3s admin credentials normally live on a server. These tasks do not change cluster resources.</p>
           <details class="command-preview"><summary>What will run?</summary><pre id="check-command">Select a task to preview its command.</pre></details>
         </div>
         <div class="actions">

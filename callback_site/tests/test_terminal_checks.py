@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 import sys
+import shlex
 
 try:
     from .test_support import BaseCallbackSiteTest, patch_in
@@ -68,8 +69,73 @@ class TerminalCheckTests(BaseCallbackSiteTest):
         self.assertIn("boot_log", check_ids)
         self.assertIn("block_devices", check_ids)
         for check in checks:
-            self.assertIn(check["category"], ("System", "Boot & logs", "Inventory"))
+            self.assertTrue(check["category"] in ("System", "Boot & logs", "Inventory") or check["category"].startswith("Kubernetes · "))
             self.assertEqual(check["command"], services.terminal_checks.TERMINAL_CHECKS[check["id"]]["command"])
+
+    def test_kubernetes_commands_scope_and_quote_parameters(self) -> None:
+        build = services.terminal_checks.terminal_command
+        args = shlex.split(build("kube_pods", {
+            "runner": "sudo -n k3s kubectl", "context": "rack",
+            "namespace": "longhorn-system", "selector": "app in (manager,engine)",
+            "output": "wide",
+        }))
+        self.assertEqual(args[:6], ["sudo", "-n", "k3s", "kubectl", "--request-timeout=20s", "get"])
+        self.assertIn("--namespace=longhorn-system", args)
+        self.assertIn("--context=rack", args)
+        self.assertIn("--selector=app in (manager,engine)", args)
+        self.assertIn("--output=wide", args)
+        all_args = shlex.split(build("kube_pods", {"namespace": "default", "all_namespaces": True}))
+        self.assertIn("--all-namespaces", all_args)
+        self.assertNotIn("--namespace=default", all_args)
+        quoted = shlex.split(build("kube_pods", {"selector": "app=test; $(printf ignored)"}))
+        self.assertIn("--selector=app=test; $(printf ignored)", quoted)
+
+    def test_kubernetes_logs_and_rollouts_require_named_resources(self) -> None:
+        build = services.terminal_checks.terminal_command
+        args = shlex.split(build("kube_logs", {
+            "pod": "app-123", "namespace": "apps", "container": "web", "tail": "50", "previous": True,
+        }))
+        for expected in ("app-123", "--namespace=apps", "--container=web", "--tail=50", "--previous"):
+            self.assertIn(expected, args)
+        self.assertIn("--tail=200", shlex.split(build("kube_logs", {"pod": "app-123"})))
+        self.assertIn("deployment/my-app", shlex.split(build("kube_rollout_status", {"resource": "deployment/my-app"})))
+        for check, parameters in (
+            ("kube_logs", {}), ("kube_logs", {"pod": "--all-pods"}),
+            ("kube_logs", {"pod": "app", "tail": "2001"}),
+            ("kube_logs", {"pod": "app", "tail": "0"}),
+            ("kube_pods", {"runner": "sh -c"}), ("kube_pods", {"output": "jsonpath={.data}"}),
+            ("kube_pods", {"all_namespaces": "true"}), ("kube_pods", {"context": "x\nwhoami"}),
+            ("kube_nodes", {"namespace": "apps"}), ("kube_describe", {"resource": "pod/foo;whoami"}),
+        ):
+            with self.subTest(check=check, parameters=parameters), self.assertRaises(ValueError):
+                build(check, parameters)
+
+    def test_kubernetes_preview_and_execution_use_the_same_validated_command(self) -> None:
+        parameters = {"runner": "sudo -n k3s kubectl", "namespace": "tailscale", "output": "wide"}
+        preview = self.client.post("/api/test-terminal/preview", json={"check_id": "kube_pods", "parameters": parameters})
+        self.assertEqual(preview.status_code, 200)
+        self.client.post("/api/ssh/generate", json={"key_name": "rack-bootstrap-ed25519", "mode": "generate"})
+        with patch("threading.Thread"), patch_in("_seed_known_host"), \
+             patch("routes.test_terminal._ssh_private_key_preflight", return_value=""):
+            response = self.client.post("/api/test-terminal/start", json={
+                "host": "192.0.2.10", "check_id": "kube_pods", "parameters": parameters,
+            })
+        self.assertEqual(response.status_code, 200)
+        job_id = response.json["job_id"]
+        self.addCleanup(services.terminal_checks.TEST_TERMINAL_JOBS.pop, job_id, None)
+        self.assertEqual(services.terminal_checks.TEST_TERMINAL_JOBS[job_id]["command"][-1], preview.json["command"])
+
+    def test_invalid_kubernetes_options_are_rejected_before_ssh(self) -> None:
+        with patch("threading.Thread") as thread, patch("routes.test_terminal._seed_known_host") as seed:
+            for parameters in ([], {"pod": "--help"}, {"pod": "app", "follow": True}):
+                response = self.client.post("/api/test-terminal/start", json={
+                    "host": "192.0.2.10", "check_id": "kube_logs", "parameters": parameters,
+                })
+                self.assertEqual(response.status_code, 400)
+            for payload in ([], {"check_id": "kube_logs"}, {"check_id": [], "parameters": {}}):
+                self.assertEqual(self.client.post("/api/test-terminal/preview", json=payload).status_code, 400)
+        thread.assert_not_called()
+        seed.assert_not_called()
 
     def test_terminal_page_has_task_browser_and_route_preview(self) -> None:
         html = self.client.get("/test-terminal").get_data(as_text=True)

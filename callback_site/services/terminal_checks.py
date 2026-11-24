@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 import logging
 import codecs
+import re
+import shlex
 import threading
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -25,7 +27,7 @@ TERMINAL_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
 
 
-TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
+TERMINAL_CHECKS: Dict[str, Dict[str, Any]] = {
     "identity": {
         "label": "Identity + Kernel",
         "category": "System",
@@ -81,6 +83,110 @@ TERMINAL_CHECKS: Dict[str, Dict[str, str]] = {
         ),
     },
 }
+
+KUBERNETES_PARAMETERS = {
+    "runner": {"label": "Kubectl client on the SSH host", "choices": ["kubectl", "sudo -n kubectl", "sudo -n k3s kubectl"], "default": "kubectl"},
+    "context": {"label": "Context (blank: client's current context)", "flag": "--context"},
+    "namespace": {"label": "Namespace (blank: context default)", "flag": "--namespace"},
+    "all_namespaces": {"label": "All namespaces (overrides Namespace)", "type": "checkbox", "flag": "--all-namespaces"},
+    "selector": {"label": "Label selector", "placeholder": "app=nginx,tier!=cache", "flag": "--selector"},
+    "output": {"label": "Output", "choices": ["", "wide", "yaml", "json", "name"], "flag": "--output"},
+    "resource": {"label": "Resource (kind/name)", "placeholder": "deployment/my-app", "required": True},
+    "pod": {"label": "Pod name", "placeholder": "my-app-abc123", "required": True},
+    "container": {"label": "Container (blank: pod default)", "flag": "--container"},
+    "tail": {"label": "Log lines (1–2000)", "type": "number", "min": 1, "max": 2000, "default": "200", "flag": "--tail"},
+    "previous": {"label": "Previous container instance", "type": "checkbox", "flag": "--previous"},
+}
+
+_KUBE_SCOPE = ("namespace", "all_namespaces", "selector", "output")
+_KUBE_TASKS = [
+    ("nodes", "🖥️ Nodes & roles", "Kubernetes · Cluster", "Node readiness, roles and addresses.", ("get", "nodes"), ("selector", "output")),
+    ("namespaces", "🗂️ Namespaces", "Kubernetes · Cluster", "Available namespaces and their status.", ("get", "namespaces"), ("selector", "output")),
+    ("version", "🏷️ Client & server versions", "Kubernetes · Cluster", "Compare kubectl and API server versions.", ("version",), ()),
+    ("health", "🩺 API readiness", "Kubernetes · Cluster", "Detailed API readiness, including etcd checks.", ("get", "--raw=/readyz?verbose"), ()),
+    ("api_resources", "🧭 API resources", "Kubernetes · Cluster", "Discover resource kinds, scope and supported verbs.", ("api-resources",), ()),
+    ("contexts", "🔀 Kubeconfig contexts", "Kubernetes · Cluster", "List configured contexts without exposing kubeconfig credentials.", ("config", "get-contexts"), ()),
+    ("permissions", "🔐 Allowed actions", "Kubernetes · Cluster", "List this client's permissions in the selected namespace.", ("auth", "can-i", "--list"), ("namespace",)),
+    ("pods", "📦 Pods", "Kubernetes · Workloads", "Pod status, placement and restarts.", ("get", "pods"), _KUBE_SCOPE),
+    ("deployments", "🚀 Deployments", "Kubernetes · Workloads", "Desired and available replicas.", ("get", "deployments"), _KUBE_SCOPE),
+    ("statefulsets", "💾 StatefulSets", "Kubernetes · Workloads", "Stateful workload replicas.", ("get", "statefulsets"), _KUBE_SCOPE),
+    ("daemonsets", "🌐 DaemonSets", "Kubernetes · Workloads", "Per-node workload coverage.", ("get", "daemonsets"), _KUBE_SCOPE),
+    ("jobs", "🏁 Jobs & CronJobs", "Kubernetes · Workloads", "Batch completion and scheduled workloads.", ("get", "jobs,cronjobs"), _KUBE_SCOPE),
+    ("replicasets", "🧬 ReplicaSets", "Kubernetes · Workloads", "Replica counts and deployment history.", ("get", "replicasets"), _KUBE_SCOPE),
+    ("events", "📣 Events", "Kubernetes · Workloads", "Events ordered by creation time.", ("get", "events", "--sort-by=.metadata.creationTimestamp"), _KUBE_SCOPE),
+    ("describe", "🔎 Describe resource", "Kubernetes · Workloads", "Resource details and related events; enter kind/name.", ("describe",), ("resource", "namespace")),
+    ("logs", "📜 Pod logs", "Kubernetes · Workloads", "Bounded logs from a pod or its previous container.", ("logs", "--timestamps=true"), ("pod", "namespace", "container", "tail", "previous")),
+    ("rollout_status", "🚦 Rollout status", "Kubernetes · Workloads", "Check a Deployment, StatefulSet or DaemonSet rollout (60s maximum).", ("rollout", "status", "--timeout=60s"), ("resource", "namespace")),
+    ("rollout_history", "🕰️ Rollout history", "Kubernetes · Workloads", "Inspect rollout revisions without changing them.", ("rollout", "history"), ("resource", "namespace")),
+    ("services", "🔌 Services", "Kubernetes · Network", "Service types, ports and addresses.", ("get", "services"), _KUBE_SCOPE),
+    ("endpoints", "🎯 EndpointSlices", "Kubernetes · Network", "Service backends and endpoint readiness.", ("get", "endpointslices"), _KUBE_SCOPE),
+    ("ingresses", "🌍 Ingresses", "Kubernetes · Network", "Ingress hosts, classes and addresses.", ("get", "ingresses"), _KUBE_SCOPE),
+    ("networkpolicies", "🛡️ Network policies", "Kubernetes · Network", "Namespaced network policy inventory.", ("get", "networkpolicies"), _KUBE_SCOPE),
+    ("pvc", "🗄️ Volume claims", "Kubernetes · Storage", "PVC binding, requested capacity and storage classes.", ("get", "persistentvolumeclaims"), _KUBE_SCOPE),
+    ("pv", "💽 Persistent volumes", "Kubernetes · Storage", "Cluster volume capacity, claims and reclaim policy.", ("get", "persistentvolumes"), ("selector", "output")),
+    ("storageclasses", "🏷️ Storage classes", "Kubernetes · Storage", "Provisioners, reclaim policy and expansion support.", ("get", "storageclasses"), ("output",)),
+    ("configmaps", "⚙️ ConfigMaps", "Kubernetes · Configuration", "ConfigMap inventory; YAML/JSON output includes their contents.", ("get", "configmaps"), _KUBE_SCOPE),
+    ("quotas", "📏 Quotas & limits", "Kubernetes · Configuration", "Resource quotas and default resource limits.", ("get", "resourcequotas,limitranges"), _KUBE_SCOPE),
+    ("top_nodes", "📊 Node usage", "Kubernetes · Metrics", "Node CPU and memory; requires metrics-server.", ("top", "nodes"), ("selector",)),
+    ("top_pods", "📈 Pod usage", "Kubernetes · Metrics", "Pod CPU and memory; requires metrics-server.", ("top", "pods"), ("namespace", "all_namespaces", "selector")),
+]
+
+for _id, _label, _category, _description, _arguments, _options in _KUBE_TASKS:
+    TERMINAL_CHECKS["kube_" + _id] = {
+        "label": _label, "category": _category, "description": _description,
+        "command": shlex.join(["kubectl", "--request-timeout=20s", *_arguments]),
+        "arguments": _arguments,
+        "parameters": [{"id": key, **KUBERNETES_PARAMETERS[key]} for key in ("runner", "context", *_options)],
+    }
+
+
+def terminal_command(check_id: str, parameters: Any = None) -> str:
+    """Build a named command; parameter values are shell-quoted, never shell fragments."""
+    check = TERMINAL_CHECKS[check_id]
+    if parameters is None:
+        parameters = {}
+    if not isinstance(parameters, dict):
+        raise ValueError("parameters must be an object")
+    specs = {spec["id"]: spec for spec in check.get("parameters", [])}
+    if parameters.keys() - specs.keys():
+        raise ValueError("Unsupported task parameters: " + ", ".join(sorted(parameters.keys() - specs.keys())))
+    if not specs:
+        return check["command"]
+
+    values = {}
+    for key, spec in specs.items():
+        value = parameters.get(key, spec.get("default", False if spec.get("type") == "checkbox" else ""))
+        if spec.get("type") == "checkbox":
+            if not isinstance(value, bool):
+                raise ValueError(spec["label"] + " must be true or false")
+        else:
+            if not isinstance(value, str):
+                raise ValueError(spec["label"] + " must be text")
+            value = value.strip()
+            if len(value) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in value):
+                raise ValueError("Invalid " + spec["label"])
+            if spec.get("required") and not value:
+                raise ValueError(spec["label"] + " is required")
+            if "choices" in spec and value not in spec["choices"]:
+                raise ValueError("Invalid " + spec["label"])
+            if key in ("resource", "pod") and not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)?", value):
+                raise ValueError("Use a resource name, not flags or a command")
+            if key == "pod" and "/" in value:
+                raise ValueError("Pod name must not include a resource kind")
+            if spec.get("type") == "number" and (not value.isascii() or not value.isdigit() or not spec["min"] <= int(value) <= spec["max"]):
+                raise ValueError(f'{spec["label"]} must be between {spec["min"]} and {spec["max"]}')
+        values[key] = value
+
+    args = shlex.split(values["runner"]) + ["--request-timeout=20s", *check["arguments"]]
+    for key, spec in specs.items():
+        value = values[key]
+        if key == "runner" or not value or (key == "namespace" and values.get("all_namespaces")):
+            continue
+        if spec.get("flag"):
+            args.append(spec["flag"] if spec.get("type") == "checkbox" else spec["flag"] + "=" + value)
+        else:
+            args.append(value)
+    return shlex.join(args)
 
 
 def _run_test_terminal_job(job_id: str, cmd: list[str]) -> None:

@@ -383,6 +383,14 @@ server: https://local-machine-ip:6443
                     <input id="opt_pciex1_gen3" data-option-key="pciex1_gen3" data-option-type="checkbox" type="checkbox">
                     <label for="opt_pciex1_gen3" style="margin: 0;">Enable PCIe Gen3 (dtparam=pciex1_gen=3) - higher throughput, can reduce stability on Pi 5</label>
                   </div>
+                  <div class="checkbox-row" style="margin-top: 0.2rem;" data-pi-option-wrapper="1" data-pi-model="pi5">
+                    <input id="opt_nvme_layout" data-option-key="nvme_layout" data-option-type="checkbox" type="checkbox">
+                    <label for="opt_nvme_layout" style="margin: 0;">💽 This is an NVMe boot disk: keep root to a fixed size and reserve the rest as a Longhorn partition</label>
+                  </div>
+                  <div data-pi-option-wrapper="1" data-pi-model="pi5">
+                    <label for="opt_nvme_root_gib">NVMe root size, GiB (with the option above)</label>
+                    <input id="opt_nvme_root_gib" data-option-key="nvme_root_gib" placeholder="64" inputmode="numeric" title="Root keeps this much; Longhorn gets the rest. Smaller disks keep the standard layout.">
+                  </div>
                 </div>
               </details>
 

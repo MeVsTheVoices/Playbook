@@ -337,11 +337,17 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
         "usb_max_current_enable": "CLOUD_INIT_USB_MAX_CURRENT_ENABLE",
         "pciex1_enable": "CLOUD_INIT_PCIEX1_ENABLE",
         "pciex1_gen3": "CLOUD_INIT_PCIEX1_GEN3",
+        "nvme_layout": "CLOUD_INIT_NVME_LAYOUT",
     }
     for option_key, env_key in bool_env_fields.items():
         if bool(cloud_init_options.get(option_key, False)):
             env[env_key] = "true"
             enabled_options.append(option_key)
+
+    nvme_root_gib = str(cloud_init_options.get("nvme_root_gib", "") or "").strip()
+    if env.get("CLOUD_INIT_NVME_LAYOUT") == "true" and nvme_root_gib:
+        env["CLOUD_INIT_NVME_ROOT_GIB"] = nvme_root_gib
+        enabled_options.append("nvme_root_gib")
 
     # This option defaults true in the script, so preserve explicit false from the UI.
     if "enable_power_restore_callback" in cloud_init_options:

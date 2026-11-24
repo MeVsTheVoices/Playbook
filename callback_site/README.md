@@ -274,7 +274,7 @@ Open:
 ## Longhorn Notes
 
 - Longhorn is intentionally wired as an optional Pi 5 profile for now. Longhorn data lives only on NVMe, whether the node boots from an SD card or from NVMe.
-- A Pi that boots from its only NVMe (see [Booting a Pi 5 from NVMe](#nvme-boot)) has no spare disk. `auto` then keeps the storage path as a plain directory on that boot NVMe and still labels the node for Longhorn. An SD card or USB root is never used. If a second NVMe is fitted later, it is formatted only while the directory is still empty; a directory already holding replicas is kept.
+- A Pi flashed with **This is an NVMe boot disk** has a partition labelled `longhorn` on the boot NVMe, which `auto` mounts. One flashed without it (see [Booting a Pi 5 from NVMe](#nvme-boot)) has no spare disk, so `auto` keeps the storage path as a plain directory on that boot NVMe and still labels the node for Longhorn. An SD card or USB root is never used. If a second NVMe is fitted later, it is formatted only while the directory is still empty; a directory already holding replicas is kept.
 - The Storage Disk input defaults to `auto`: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts the single blank NVMe disk at the storage path (`/var/lib/longhorn`) by UUID, or reuses one already labelled `longhorn`. Disks that already hold data are never touched. With `rack_node_longhorn_nvme_only` (default `true`) a non-NVMe disk or `none` fails the run instead of putting data on the SD card.
 - Longhorn must run with `defaultSettings.createDefaultDiskLabeledNodes: true`, so only nodes labelled `node.longhorn.io/create-default-disk=true` get a disk. The profile adds that label from the node itself, through its kubelet credentials, only after the NVMe is mounted. Never label a node by hand before its NVMe is mounted, or Longhorn creates the disk on the SD card. Nodes without NVMe (for example an x86 control-plane node) still run Longhorn components but store no replicas.
 - The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
@@ -733,19 +733,30 @@ The same cloud-init image boots from NVMe. Nothing in the provisioning assumes
 an SD card.
 
 1. **Flash the NVMe.** Put it in a USB enclosure and flash it like an SD card:
-   the host flasher lists USB-attached disks. On the SD form, tick the PCIe
-   options when the adapter is not a HAT+ (`dtparam=pciex1`), and optionally
-   `pciex1_gen=3`.
+   the host flasher lists USB-attached disks. On the SD form (Pi 5), tick
+   **This is an NVMe boot disk**. Also tick the PCIe options when the adapter is
+   not a HAT+ (`dtparam=pciex1`), and optionally `pciex1_gen=3`.
+   With the NVMe option, the flasher partitions the disk for Longhorn ahead of time:
+
+   ```text
+   [1 boot][3 longhorn ....................][2 root, NVMe root size (64 GiB)]
+   ```
+
+   Pi OS grows root to the end of the disk on first boot, so root is moved
+   there; the resize then has nothing to do. Root keeps partition number 2, so
+   `root=PARTUUID=…-02` still matches. Partition 3 is formatted ext4 and labelled
+   `longhorn`. A disk too small for root plus 16 GiB keeps the standard layout.
+   Leave the option off for SD cards; the flasher refuses `mmcblk` targets.
 2. **Let the firmware find it.** Run this once per Pi, from a booted OS:
    `sudo rpi-eeprom-update -a`, then `sudo rpi-eeprom-config --edit`. Set
    `BOOT_ORDER=0xf416` to try NVMe first, then SD, then USB; recent firmware's
    default `0xf461` tries SD first and still falls back to NVMe. A non-HAT+
    adapter also needs `PCIE_PROBE=1`. Reboot to apply.
 3. **Remove the SD card** (or leave it blank) so the old SD install does not boot first.
-4. **Boot.** Pi OS grows the root partition to fill the NVMe. The node then calls
-   home and is provisioned like any other. The etcd SD-card guard passes because
-   `/var/lib` is on NVMe, and Longhorn uses a directory on the boot NVMe (see
-   [Longhorn Notes](#longhorn-notes)).
+4. **Boot.** The node calls home and is provisioned like any other. The etcd
+   SD-card guard passes because `/var/lib` is on NVMe. With the NVMe option,
+   Longhorn's `auto` mounts the `longhorn` partition. Without it, Longhorn uses a
+   directory on the boot NVMe (see [Longhorn Notes](#longhorn-notes)).
 
 > 🧭 A Pi 4 can only boot "NVMe" through a USB adapter, where it shows up as
 > `/dev/sda`. Longhorn refuses it as not NVMe.

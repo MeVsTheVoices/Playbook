@@ -389,7 +389,7 @@ for (const profile of ["network-toolkit", "playbook-server", "pi5"]) {
         self.assertEqual(response.status_code, 200)
         text = self.page_text(response)
         self.assertIn('id="pi_model_select"', text)
-        self.assertEqual(text.count('data-pi-model="pi5"'), 3)
+        self.assertEqual(text.count('data-pi-model="pi5"'), 5)
         self.assertIn('wrapperModel === piModel', text)
 
     def test_home_page_embeds_cached_catalog_metadata(self) -> None:
@@ -722,6 +722,8 @@ for (const profile of ["network-toolkit", "playbook-server", "pi5"]) {
                 "usb_max_current_enable": True,
                 "pciex1_enable": True,
                 "pciex1_gen3": True,
+                "nvme_layout": True,
+                "nvme_root_gib": "96",
                 "ssh_port": "2222",
                 "ssh_allow_groups": ["sudo", "wheel"],
                 "extra_ssh_keys": [
@@ -761,6 +763,7 @@ for (const profile of ["network-toolkit", "playbook-server", "pi5"]) {
         self.assertEqual(env.get("CLOUD_INIT_USB_MAX_CURRENT_ENABLE"), "true")
         self.assertEqual(env.get("CLOUD_INIT_PCIEX1_ENABLE"), "true")
         self.assertEqual(env.get("CLOUD_INIT_PCIEX1_GEN3"), "true")
+        self.assertEqual((env.get("CLOUD_INIT_NVME_LAYOUT"), env.get("CLOUD_INIT_NVME_ROOT_GIB")), ("true", "96"))
         self.assertEqual(env.get("CLOUD_INIT_SSH_PORT"), "2222")
         self.assertEqual(env.get("CLOUD_INIT_SSH_ALLOW_GROUPS"), "sudo,wheel")
         self.assertEqual(

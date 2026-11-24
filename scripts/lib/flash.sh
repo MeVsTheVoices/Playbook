@@ -96,6 +96,11 @@ if ! partprobe "$DEVICE"; then
 fi
 udevadm settle
 
+if [[ "$PROFILE" == "pi5" && "${CLOUD_INIT_NVME_LAYOUT:-false}" == "true" ]]; then
+  # shellcheck source=nvme_layout.sh
+  source "$SCRIPT_DIR/lib/nvme_layout.sh"
+fi
+
 # The server image already carries its seed inside the root filesystem; there is no Pi boot partition to patch.
 if [[ "$PROFILE" == "playbook-server" ]]; then
   return 0

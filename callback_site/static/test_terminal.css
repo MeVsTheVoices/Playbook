@@ -61,6 +61,14 @@
   gap: 0.9rem;
 }
 
+#task-parameters[hidden] {
+  display: none;
+}
+
+#task-parameters input[type=checkbox] {
+  width: auto;
+}
+
 .field {
   background: #fbfdff;
   border: 1px solid #e3eaf2;

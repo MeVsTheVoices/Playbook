@@ -1,0 +1,156 @@
+{{- $name := include "playbook.fullname" . }}
+{{- $kubernetes := include "playbook.kubernetes" . }}
+{{- range .Values.modules }}
+{{- if not (has . (list "kubernetes")) }}{{ fail (printf "Unknown module %q; available: kubernetes." .) }}{{ end }}
+{{- end }}
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "playbook.serviceAccountName" . }}
+automountServiceAccountToken: {{ ternary "true" "false" (eq $kubernetes "true") }}
+---
+{{- end }}
+{{- if and $kubernetes .Values.rbac.clusterAdmin }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-%s" .Release.Namespace $name | trunc 63 | trimSuffix "-" }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "playbook.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+{{- if not .Values.persistence.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "playbook.selectorLabels" . | nindent 4 }}
+spec:
+  # App state lives in one ReadWriteOnce volume; never run two copies.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "playbook.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "playbook.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "playbook.serviceAccountName" . }}
+      automountServiceAccountToken: {{ ternary "true" "false" (eq $kubernetes "true") }}
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        runAsNonRoot: true
+      containers:
+        - name: portal
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: PLAYBOOK_MODULES
+              value: {{ join "," .Values.modules | quote }}
+            - name: CALLBACK_PUBLIC_URL
+              value: {{ .Values.callbackPublicUrl | quote }}
+            - name: K3S_API_ENDPOINT
+              value: {{ .Values.k3sApiEndpoint | quote }}
+            - name: CALLBACK_ADMIN_HOSTS
+              value: {{ join "," .Values.adminHosts | quote }}
+            - name: CALLBACK_ADMIN_PORT
+              value: {{ .Values.service.admin.port | quote }}
+            - name: SD_FLASHER_URL
+              value: ""
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: callback
+              containerPort: 8088
+            - name: admin
+              containerPort: 8089
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: callback
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: callback
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" $name) .Values.persistence.existingClaim }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-callback
+spec:
+  type: {{ .Values.service.callback.type }}
+  selector:
+    {{- include "playbook.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: callback
+      port: {{ .Values.service.callback.port }}
+      targetPort: callback
+      {{- if and .Values.service.callback.nodePort (ne .Values.service.callback.type "ClusterIP") }}
+      nodePort: {{ .Values.service.callback.nodePort }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-admin
+spec:
+  type: {{ .Values.service.admin.type }}
+  selector:
+    {{- include "playbook.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: admin
+      port: {{ .Values.service.admin.port }}
+      targetPort: admin

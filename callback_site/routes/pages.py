@@ -14,8 +14,7 @@ from services.events import _read_events
 from services.node_archive import active_nodes
 from services.image_catalog import _image_state_summary
 from services.images import _read_image_history
-from services.k3s_config import _default_k3s_config
-from services.kubernetes import _local_k3s_version
+from services.k3s_config import _default_k3s_config, _local_k3s_version
 from services.network import _default_callback_url
 from services.sd_profiles import _load_sd_option_profiles
 from services.sd_prepare import _redact_sd_secret_options
@@ -87,10 +86,6 @@ def register_page_routes(app: Any, *, catalog_entries_for_ui: Callable[[], List[
     @pages.get("/monitor")
     def monitor_page() -> str:
         return render_template("monitor.html")
-
-    @pages.get("/kubernetes")
-    def kubernetes_page() -> str:
-        return render_template("kubernetes.html")
 
     @pages.get("/test-terminal")
     def test_terminal_page() -> str:

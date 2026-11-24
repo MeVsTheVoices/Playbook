@@ -14,7 +14,9 @@
   become_method: sudo
   become_user: root
   roles:
-    - role: raspberry_pi5
+    - role: rack_node
+      vars:
+        rack_node_board: pi5
 
 - name: Configure active Raspberry Pi 4 hosts
   hosts: rpi4_active
@@ -22,7 +24,9 @@
   become_method: sudo
   become_user: root
   roles:
-    - role: raspberry_pi4
+    - role: rack_node
+      vars:
+        rack_node_board: pi4
 
 - name: Configure active Raspberry Pi 3B+ hosts
   hosts: rpi_3bplus_active
@@ -30,13 +34,17 @@
   become_method: sudo
   become_user: root
   roles:
-    - role: raspberry_pi_3bplus
+    - role: rack_node
+      vars:
+        rack_node_board: pi3bplus
 
 - name: Configure Network Toolkit Pi 3B+ appliances
   hosts: network_toolkit_active
   become: true
   roles:
-    - role: raspberry_pi_3bplus
+    - role: rack_node
+      vars:
+        rack_node_board: pi3bplus
     - role: network_toolkit
 
 - name: Configure self-hosted Playbook servers
@@ -50,3 +58,7 @@
   become: true
   roles:
     - role: generic_linux_x64
+    # Tailscale, K3s, Docker and Telegraf modules, shared with the Pis.
+    - role: rack_node
+      vars:
+        rack_node_board: x64

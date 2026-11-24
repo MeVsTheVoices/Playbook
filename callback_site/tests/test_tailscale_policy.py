@@ -21,9 +21,10 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # profile -> (group_vars directory, role variable prefix)
 GROUP_VARS = {
-    "pi5": ("rpi5", "raspberry_pi5"),
-    "pi4": ("rpi4", "raspberry_pi4"),
-    "pi3bplus": ("rpi_3bplus", "raspberry_pi_3bplus"),
+    "pi5": ("rpi5", "rack_node"),
+    "pi4": ("rpi4", "rack_node"),
+    "pi3bplus": ("rpi_3bplus", "rack_node"),
+    "x64": ("linux_x64", "rack_node"),
 }
 
 
@@ -53,7 +54,7 @@ class TailscalePolicyBuilderTests(BaseCallbackSiteTest):
     def test_default_policy_covers_every_board_and_the_homelab_tag(self) -> None:
         result = build()
         self.assertTrue(result["ok"], result["errors"])
-        expected = {board["tailscale_tag"] for board in lw.BOARDS.values()} | {"tag:homelab"}
+        expected = {board["tailscale_tag"] for board in lw.RACK_NODES.values()} | {"tag:homelab"}
         self.assertEqual(set(result["policy"]["tagOwners"]), expected)
         self.assertEqual(set(result["summary"]["tags"]), expected)
 
@@ -224,17 +225,17 @@ class TailscaleDefaultsMatchTheRackTests(BaseCallbackSiteTest):
     """The policy page, the SD script and the Ansible group_vars must agree on the tags."""
 
     def test_every_board_has_a_label_and_a_tag(self) -> None:
-        for profile, board in lw.BOARDS.items():
+        for profile, board in lw.RACK_NODES.items():
             self.assertTrue(board["label"], profile)
             self.assertRegex(board["tailscale_tag"], r"^tag:[a-z0-9-]+$")
-        self.assertEqual(len({b["tailscale_tag"] for b in lw.BOARDS.values()}), len(lw.BOARDS))
+        self.assertEqual(len({b["tailscale_tag"] for b in lw.RACK_NODES.values()}), len(lw.RACK_NODES))
 
     def test_group_vars_advertise_the_registry_tag_plus_homelab(self) -> None:
-        self.assertEqual(set(GROUP_VARS), set(lw.BOARDS), "every board needs a group_vars entry")
+        self.assertEqual(set(GROUP_VARS), set(lw.RACK_NODES), "every board needs a group_vars entry")
         for profile, (directory, prefix) in GROUP_VARS.items():
             data = yaml.safe_load((REPO_ROOT / "group_vars" / directory / "all.yml").read_text(encoding="utf-8"))
             self.assertEqual(
-                data[f"{prefix}_tailscale_tags"], [lw.BOARDS[profile]["tailscale_tag"], tp.HOMELAB_TAG], profile
+                data[f"{prefix}_tailscale_tags"], [lw.RACK_NODES[profile]["tailscale_tag"], tp.HOMELAB_TAG], profile
             )
 
     def test_sd_script_defaults_to_the_registry_tag_plus_homelab(self) -> None:
@@ -243,14 +244,16 @@ class TailscaleDefaultsMatchTheRackTests(BaseCallbackSiteTest):
             self.assertIn(f'CLOUD_INIT_TAILSCALE_TAGS="{board["tailscale_tag"]},{tp.HOMELAB_TAG}"', script, profile)
 
     def test_role_defaults_use_the_registry_tag(self) -> None:
-        for profile, role_dir in (("pi5", "raspberry_pi5"), ("pi4", "raspberry_pi4")):
-            data = yaml.safe_load((REPO_ROOT / "roles" / role_dir / "defaults" / "main.yml").read_text(encoding="utf-8"))
-            self.assertEqual(data[f"{role_dir}_tailscale_tags"], [lw.BOARDS[profile]["tailscale_tag"]])
+        defaults = yaml.safe_load((REPO_ROOT / "roles" / "rack_node" / "defaults" / "main.yml").read_text(encoding="utf-8"))
+        self.assertEqual(defaults["rack_node_tailscale_tags"], "{{ rack_node_board_tailscale_tags }}")
+        for profile in lw.RACK_NODES:
+            data = yaml.safe_load((REPO_ROOT / "roles" / "rack_node" / "vars" / f"{profile}.yml").read_text(encoding="utf-8"))
+            self.assertEqual(data["rack_node_board_tailscale_tags"], [lw.RACK_NODES[profile]["tailscale_tag"]])
 
     def test_inventory_and_site_cover_every_board_group(self) -> None:
         inventory = (REPO_ROOT / "inventory.yml").read_text(encoding="utf-8")
         site = (REPO_ROOT / "site.yml").read_text(encoding="utf-8")
-        for board in lw.BOARDS.values():
+        for board in lw.RACK_NODES.values():
             self.assertIn(f"{board['group']}:", inventory)
             self.assertIn(f"hosts: {board['group']}", site)
 
@@ -276,7 +279,7 @@ class TailscalePolicyApiAndPageTests(BaseCallbackSiteTest):
 
     def test_inputs_fragment_has_a_tag_field_per_board_and_no_dead_api_key_field(self) -> None:
         html = self.client.get("/fragments/tailscale-acl/inputs").get_data(as_text=True)
-        for profile, board in lw.BOARDS.items():
+        for profile, board in lw.RACK_NODES.items():
             self.assertIn(f'data-board-tag="{profile}"', html)
             self.assertIn(f'value="{board["tailscale_tag"]}"', html)
         self.assertNotIn("tailscale_api_key", html)

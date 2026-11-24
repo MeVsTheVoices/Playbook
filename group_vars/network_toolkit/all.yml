@@ -1,9 +1,9 @@
 ---
-raspberry_pi_3bplus_tailscale_oauth_enabled: false
-raspberry_pi_3bplus_tailscale_tags:
+rack_node_tailscale_oauth_enabled: false
+rack_node_tailscale_tags:
   - tag:network-toolkit
-raspberry_pi_3bplus_tailscale_advertise_exit_node: false
-raspberry_pi_3bplus_tailscale_advertise_routes: []
+rack_node_tailscale_advertise_exit_node: false
+rack_node_tailscale_advertise_routes: []
 common_packages:
   - ca-certificates
   - curl

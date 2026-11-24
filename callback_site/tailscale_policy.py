@@ -2,7 +2,7 @@
 
 The Tailscale page posts its inputs here and shows the result. Doing it in
 Python (not in the browser) keeps the rack facts in one place and testable:
-board tags come from the BOARDS registry in k3s_lightweight.py, and the K3s
+node tags come from the RACK_NODES registry in k3s_lightweight.py, and the K3s
 ports come from the K3s networking docs.
 
 Facts this encodes (Tailscale policy syntax and K3s requirements docs):
@@ -32,12 +32,12 @@ import json
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from k3s_lightweight import BOARDS
+from k3s_lightweight import RACK_NODES
 
 HOMELAB_TAG = "tag:homelab"
 DEFAULT_ADMIN = "group:admins"
 DEFAULT_SUBNETS = ("192.168.174.0/24", "192.168.175.0/24")
-# The callback site listens here; Pis that report over Tailscale need to reach the NucBox on it.
+# The portal's callback listener; nodes that report over Tailscale need to reach it.
 DEFAULT_EXTRA_PORTS = ("tcp:8088",)
 
 TRAFFIC_K3S = "k3s"
@@ -67,13 +67,13 @@ _DENY_PROBE_PORTS = (23, 3389, 5900)
 
 
 def board_tags() -> Dict[str, str]:
-    return {profile: board["tailscale_tag"] for profile, board in BOARDS.items()}
+    return {profile: board["tailscale_tag"] for profile, board in RACK_NODES.items()}
 
 
 def board_info() -> List[Dict[str, str]]:
     return [
         {"profile": profile, "label": board["label"], "tag": board["tailscale_tag"], "group": board["group"]}
-        for profile, board in BOARDS.items()
+        for profile, board in RACK_NODES.items()
     ]
 
 
@@ -192,7 +192,7 @@ def build_policy(options: Mapping[str, Any]) -> Dict[str, Any]:
 
     raw_board_tags = options.get("board_tags") if isinstance(options.get("board_tags"), Mapping) else {}
     used_board_tags: Dict[str, str] = {}
-    for profile, board in BOARDS.items():
+    for profile, board in RACK_NODES.items():
         raw = raw_board_tags.get(profile)
         tag = (board["tailscale_tag"] if raw is None else str(raw)).strip()
         if not tag:

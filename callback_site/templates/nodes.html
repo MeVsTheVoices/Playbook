@@ -42,7 +42,7 @@
             <details class="access-card" id="access-defaults">
               <summary>
                 <div class="access-card-head">
-                  <h3>Defaults</h3>
+                  <h3>⚙️ Defaults</h3>
                   <p class="module-desc">Fallback SSH username for checks and Ansible runs on nodes that have none of their own, plus the webhook that receives the node monitor summary. Connections use SSH keys, not a password.</p>
                 </div>
                 <span class="collapsible-indicator" aria-hidden="true">›</span>
@@ -80,7 +80,7 @@
             <details class="access-card" id="access-manual-node">
               <summary>
                 <div class="access-card-head">
-                  <h3>Add / Edit Node Manually</h3>
+                  <h3>✍️ Add / Edit Node Manually</h3>
                   <p class="module-desc">Enroll a node the callback flow has not seen, or fix the identity of one it has.</p>
                 </div>
                 <span class="collapsible-indicator" aria-hidden="true">›</span>
@@ -177,7 +177,7 @@
             </div>
             <div id="node-network-slot" hidden>
               <details class="profile-specific" id="node-network">
-                <summary>Live network facts</summary>
+                <summary>🌐 Live network facts</summary>
                 <p class="module-hint">Read basic live Ansible network facts from the selected Linux node. This does not change networking or read Wi-Fi passwords.</p>
                 <button id="node-network-read" type="button" class="secondary">Read network facts</button>
                 <p id="node-network-status" class="module-hint" role="status">Select a node and read its network facts.</p>
@@ -342,7 +342,7 @@
         </div>
 
         <div class="panel" id="boot-log-panel">
-          <h2>Boot Logs</h2>
+          <h2>Boot Logs 📜</h2>
           <p class="note">Select a node to collect fresh journal, cloud-init and dmesg logs over its preferred route. Select another route to try it instead. Stored-log selection only reads history; archived nodes never trigger collection.</p>
           <div class="grid">
             <div><label for="boot-log-host">Node</label><select id="boot-log-host"><option value="">Select a node...</option></select></div>

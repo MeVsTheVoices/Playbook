@@ -20,24 +20,24 @@
         <section class="panel kube-hero">
           <div class="kube-hero-copy">
             <div class="kube-hero-title">
-              <h1>Kubernetes</h1>
+              <h1>Kubernetes ☸️</h1>
               <span class="kube-badge"><strong id="kube-runtime-service">waiting</strong> runtime</span>
               <span class="kube-badge">Observed <strong id="kube-observed-at">--</strong></span>
             </div>
-            <p class="note">Dense live snapshot of the local cluster, tuned to occupy the first desktop screen with useful state instead of empty chrome.</p>
+            <p class="note">Live snapshot of the connected cluster: every server and worker, its pods, jobs and storage. Ship it, scale it, sail it ⛵</p>
             <div class="kube-hero-badges">
-              <span class="kube-badge">Nodes <strong id="kube-nodes-total-hero">0</strong></span>
-              <span class="kube-badge">Ready <strong id="kube-nodes-ready-hero">0</strong></span>
-              <span class="kube-badge">Control-plane <strong id="kube-control-plane-hero">0</strong></span>
-              <span class="kube-badge">Pods <strong id="kube-pods-hero">0 / 0</strong></span>
-              <span class="kube-badge">Namespaces <strong id="kube-namespaces-hero">0</strong></span>
-              <span class="kube-badge">Jobs <strong id="kube-jobs-hero">0 / 0</strong></span>
-              <span class="kube-badge">Longhorn <strong id="kube-longhorn-hero">--</strong></span>
+              <span class="kube-badge">🧠 Nodes <strong id="kube-nodes-total-hero">0</strong></span>
+              <span class="kube-badge">🟢 Ready <strong id="kube-nodes-ready-hero">0</strong></span>
+              <span class="kube-badge">🎛️ Control-plane <strong id="kube-control-plane-hero">0</strong></span>
+              <span class="kube-badge">🫛 Pods <strong id="kube-pods-hero">0 / 0</strong></span>
+              <span class="kube-badge">🗂️ Namespaces <strong id="kube-namespaces-hero">0</strong></span>
+              <span class="kube-badge">⚙️ Jobs <strong id="kube-jobs-hero">0 / 0</strong></span>
+              <span class="kube-badge">🐂 Longhorn <strong id="kube-longhorn-hero">--</strong></span>
             </div>
             <div id="kube-status" class="status kube-status">⏳ Loading Kubernetes status...</div>
           </div>
           <div class="kube-hero-panel panel" style="margin: 0;">
-            <h2 style="margin-top: 0;">Runtime Details</h2>
+            <h2 style="margin-top: 0;">Runtime Details 🔧</h2>
             <div class="mini-grid">
               <div class="kube-mini">
                 <div class="k">Service</div>
@@ -64,11 +64,11 @@
         </section>
 
         <section class="panel kube-section" id="tailnet-api">
-          <h2>Kubernetes API over Tailscale</h2>
+          <h2>Kubernetes API over Tailscale 🛰️</h2>
           <p class="kube-subtle">Installs the Tailscale Kubernetes operator with its in-process API server proxy. kubectl then reaches the cluster at <code>https://&lt;hostname&gt;.&lt;tailnet&gt;</code> from any tailnet device, without exposing port 6443. In auth mode the proxy acts as your Tailscale identity, so Kubernetes RBAC decides what you can do.</p>
           <dl class="tailnet-api-status" id="tailnet-api-status"><dt>Status</dt><dd>Checking...</dd></dl>
           <details class="tailnet-api-panel" id="tailnet-api-live" name="tailnet-api-panels">
-            <summary>Live checks <small class="kube-subtle" id="tailnet-api-checked"></small></summary>
+            <summary>📡 Live checks <small class="kube-subtle" id="tailnet-api-checked"></small></summary>
             <p class="tailnet-api-verdict" id="tailnet-api-verdict">No live data yet.</p>
             <ul class="tailnet-api-checks" id="tailnet-api-checks"></ul>
             <div class="tailnet-api-confirm">
@@ -79,15 +79,16 @@
           <details class="tailnet-api-panel" id="tailnet-api-setup" name="tailnet-api-panels">
             <summary id="tailnet-api-setup-title">Install operator</summary>
             <details class="tailnet-api-prereqs">
-              <summary>Before the first install</summary>
+              <summary>📝 Before the first install</summary>
               <ol>
                 <li>On the <a href="/tailscale-acl">Tailscale policy page</a>, tick <strong>Tailscale Kubernetes operator</strong>, pick the admin's access, and save the policy in the Tailscale admin console. This defines <code>tag:k8s-operator</code> and <code>tag:k8s</code> and grants tcp 443.</li>
+                <li>🧭 One operator per cluster. Several clusters can share the tailnet, the tags and the OAuth client, but give each operator its own hostname, and give Tailscale Services/Ingresses distinct names across clusters unless you want them load-balanced together.</li>
                 <li>Enable <a href="https://tailscale.com/docs/how-to/set-up-https-certificates" target="_blank" rel="noopener noreferrer">HTTPS certificates</a> for the tailnet.</li>
                 <li>Create an <a href="https://login.tailscale.com/admin/settings/trust-credentials" target="_blank" rel="noopener noreferrer">OAuth client</a> with <em>Devices Core</em>, <em>Auth Keys</em> and <em>Services</em> write scopes, tagged <code>tag:k8s-operator</code>.</li>
               </ol>
             </details>
             <form id="tailnet-api-form" class="helm-fields tailnet-api-form" autocomplete="off">
-              <label>Proxy hostname <input id="tailnet-api-hostname" value="tailscale-operator" maxlength="63" required></label>
+              <label>Proxy hostname <input id="tailnet-api-hostname" value="tailscale-operator" maxlength="63" required title="One operator per cluster. With several clusters on one tailnet, give each operator its own hostname, e.g. rack-operator and lab-operator."></label>
               <label>Proxy mode
                 <select id="tailnet-api-mode">
                   <option value="auth" selected>auth: Tailscale identity + RBAC</option>
@@ -96,20 +97,20 @@
               </label>
               <label>OAuth client ID <input id="tailnet-api-client-id" placeholder="blank keeps the installed one" spellcheck="false"></label>
               <label>OAuth client secret <input id="tailnet-api-client-secret" type="password" placeholder="tskey-client-… (not saved)" autocomplete="new-password"></label>
-              <label class="tailnet-api-check"><input id="tailnet-api-readers" type="checkbox"> Bind <code>tailnet-readers</code> to the read-only <code>view</code> role</label>
+              <label class="tailnet-api-check"><input id="tailnet-api-readers" type="checkbox"> <span>👀 Bind <code>tailnet-readers</code> to the read-only <code>view</code> role</span></label>
             </form>
             <div class="kube-actions">
               <button type="button" class="kube-btn" id="tailnet-api-install">Install / upgrade operator</button>
             </div>
           </details>
-          <div class="kube-actions">
-            <button type="button" class="kube-btn" id="tailnet-api-refresh">Refresh</button>
+          <div class="tailnet-api-footer">
+            <button type="button" class="kube-btn" id="tailnet-api-refresh">🔄 Refresh</button>
+            <div class="status" id="tailnet-api-message" role="status" aria-live="polite"></div>
           </div>
-          <div class="status" id="tailnet-api-message" role="status" aria-live="polite"></div>
         </section>
 
         <section class="panel kube-section" id="rbac-bindings">
-          <h2>Tailnet RBAC bindings</h2>
+          <h2>Tailnet RBAC bindings 🪪</h2>
           <p class="kube-subtle">Grant Tailscale identities a built-in ClusterRole through the API server proxy (auth mode). Use a <code>Group</code> for tags such as <code>tag:homelab-controller</code> or tailnet groups, and a <code>User</code> for a login such as <code>alice@example.com</code>. Only bindings created here (labelled <code>app.kubernetes.io/managed-by=playbook</code>) can be edited or deleted. <strong>cluster-admin</strong> grants full control of the cluster.</p>
           <div style="max-height: 18rem; overflow: auto;">
             <table class="kube-table">
@@ -140,7 +141,7 @@
         </section>
 
         <section class="panel kube-section" id="helm-workspace">
-          <h2>Helm configurations</h2>
+          <h2>Helm configurations ⎈</h2>
           <p class="kube-subtle">Choose an included chart or import a public GitHub chart. Save, preview, and explicitly deploy it to the configured cluster. Only import charts you trust.</p>
           <form id="helm-form">
             <div class="helm-fields">
@@ -221,7 +222,7 @@
         </section>
 
         <section class="panel kube-section">
-          <h2>Cluster Snapshot</h2>
+          <h2>Cluster Snapshot 📸</h2>
           <div class="kube-grid">
             <div class="kube-card"><div class="k">Nodes Total</div><div class="v" id="kube-nodes-total">0</div></div>
             <div class="kube-card"><div class="k">Nodes Ready</div><div class="v" id="kube-nodes-ready">0</div></div>
@@ -239,7 +240,7 @@
 
         <section class="kube-layout kube-section">
           <div class="panel kube-table-wrap">
-            <h2>Nodes <span class="kube-badge">live inventory</span></h2>
+            <h2>Nodes 🧠 <span class="kube-badge">live inventory</span></h2>
             <p class="kube-subtle">Ready state, role, addresses, and runtime details for each node currently visible to the cluster.</p>
             <div class="kube-actions">
               <button type="button" class="kube-btn" id="kube-clear-old-nodes">Clear old nodes</button>
@@ -269,7 +270,7 @@
           </div>
 
           <div class="panel kube-table-wrap">
-            <h2>Namespaces <span class="kube-badge">workload map</span></h2>
+            <h2>Namespaces 🗂️ <span class="kube-badge">workload map</span></h2>
             <p class="kube-subtle">Namespace inventory with pod counts so the dashboard shows workload density at a glance.</p>
             <div style="max-height: 22rem; overflow: auto;">
               <table class="kube-table">
@@ -291,7 +292,7 @@
 
         <section class="kube-layout kube-section">
           <div class="panel kube-table-wrap">
-            <h2>Pods <span class="kube-badge">current phase</span></h2>
+            <h2>Pods 🫛 <span class="kube-badge">current phase</span></h2>
             <p class="kube-subtle">A live workload view with phase, node placement, readiness, and restart pressure.</p>
             <div class="kube-actions">
               <button type="button" class="kube-btn" id="kube-clear-old-pods">Clear old pods</button>
@@ -319,7 +320,7 @@
           </div>
 
           <div class="panel kube-table-wrap">
-            <h2>Active Jobs <span class="kube-badge">work in flight</span></h2>
+            <h2>Active Jobs ⚙️ <span class="kube-badge">work in flight</span></h2>
             <p class="kube-subtle">Jobs currently active or recently finished, with their namespace and completion signal so you can tell what is still running.</p>
             <div style="max-height: 24rem; overflow: auto;">
               <table class="kube-table">
@@ -343,7 +344,7 @@
 
         <section class="kube-section">
           <div class="panel">
-            <h2>Snapshot Notes <span class="kube-badge">raw feed</span></h2>
+            <h2>Snapshot Notes 📝 <span class="kube-badge">raw feed</span></h2>
             <div class="kube-detail-columns">
               <div class="kube-note-block">
                 <p class="kube-subtle">Quick facts from the current fetch</p>

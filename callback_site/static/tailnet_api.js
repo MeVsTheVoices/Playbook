@@ -158,6 +158,9 @@
       rows.push(row("Status", `${status.helm_status} · ${ready}`));
       rows.push(row("Version", `chart ${status.chart_version || "?"} · operator ${status.app_version || "?"}`));
       rows.push(row("API proxy", status.proxy_mode === "off" ? "off" : `${status.proxy_mode} mode`));
+      if (status.hostname_taken) {
+        rows.push(row("⚠️ Hostname", `${status.hostname} was taken on the tailnet (another cluster's operator?), so this one joined as ${status.tailnet_hostname}. Pick a unique hostname per cluster and upgrade.`));
+      }
       if (status.proxy_url) rows.push(row("Proxy URL", code(status.proxy_url)));
       if (status.kubeconfig_command) rows.push(row("Connect", code(status.kubeconfig_command)));
       element("hostname").value = status.hostname || element("hostname").value;
@@ -166,7 +169,7 @@
     rows.push(row("Read-only binding", status.readers_binding ? "tailnet-readers → view" : "not created"));
     statusList.replaceChildren(...rows.flat());
     const reason = status.error ? "Cluster unavailable, so there is nothing to check." : "Operator not installed. Install it below.";
-    renderLive(status.installed && !status.error ? status.live : null, status.hostname, reason);
+    renderLive(status.installed && !status.error ? status.live : null, status.tailnet_hostname || status.hostname, reason);
     element("setup-title").textContent = installed ? "Reconfigure / upgrade operator" : "Install operator";
     element("readers").checked = element("readers").checked || !!status.readers_binding;
     element("install").textContent = installed ? "Upgrade operator" : "Install operator";

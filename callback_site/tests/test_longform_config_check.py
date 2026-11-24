@@ -168,12 +168,16 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
         if not ansible.exists():
             self.skipTest("repo ansible-playbook not available")
 
-        for role in ("raspberry_pi_3bplus", "raspberry_pi5"):
-            tasks = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
-            anchor = "- name: Write structured K3s control-plane config" if role == "raspberry_pi_3bplus" else "- name: Write structured K3s worker config"
+        role = "rack_node"
+        tasks = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
+        for board, anchor in (
+            ("pi3bplus", "- name: Write structured K3s control-plane config"),
+            ("pi5", "- name: Write structured K3s {{ rack_node_worker_role }} config"),
+        ):
             self.assertIn(anchor, tasks)
             block = re.search(r"dest: /etc/rancher/k3s/config\.yaml\n(?:.*\n)*?    content: >-\n((?:      .*\n)+)", tasks[tasks.index(anchor):])
-            self.assertIsNotNone(block, f"config content block not found in {role}")
+            self.assertIsNotNone(block, f"config content block not found for {board}")
+            board_vars = yaml.safe_load((repo_root / "roles" / role / "vars" / f"{board}.yml").read_text(encoding="utf-8"))
 
             with tempfile.TemporaryDirectory() as tmp:
                 out = Path(tmp) / "config.yaml"
@@ -182,7 +186,8 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
                 play.write_text(
                     "- hosts: localhost\n  gather_facts: false\n  vars:\n"
                     "    inventory_hostname: test-node\n"
-                    f"    {role}_k3s_config_override: ''\n"
+                    + "".join(f"    {key}: {json.dumps(value)}\n" for key, value in board_vars.items())
+                    + f"    {role}_k3s_config_override: ''\n"
                     f"    {role}_k3s_endpoint: 'https://100.65.24.76:6443'\n"
                     f"    {role}_k3s_token: 'K10abc:def::server:1e81'\n"
                     f"    {role}_k3s_node_ip: '100.70.57.110'\n"
@@ -204,8 +209,8 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
                 self.assertEqual(result.returncode, 0, msg=result.stdout[-800:] + result.stderr[-400:])
                 text = out.read_text(encoding="utf-8")
 
-            self.assertNotIn("\\n", text, f"{role} wrote a literal backslash-n")
-            self.assertGreater(len(text.splitlines()), 4, f"{role} config is not multi-line")
+            self.assertNotIn("\\n", text, f"{board} wrote a literal backslash-n")
+            self.assertGreater(len(text.splitlines()), 4, f"{board} config is not multi-line")
             data = yaml.safe_load(text)
             self.assertEqual(data["token"], "K10abc:def::server:1e81")
             self.assertEqual(data["node-ip"], "100.70.57.110")
@@ -227,7 +232,7 @@ class LongformConfigCheckTests(BaseCallbackSiteTest):
             ("blank input uses tailscale", "''", ["100.9.9.9"], "100.9.9.9"),
             ("both missing is empty so the assert fires", "''", [], ""),
         )
-        for role in ("raspberry_pi_3bplus", "raspberry_pi5"):
+        for role in ("rack_node",):
             tasks = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
             match = re.search(rf"    {role}_k3s_node_ip: >-\n((?:      .*\n)+)", tasks)
             self.assertIsNotNone(match, f"node_ip expression not found in {role}")

@@ -15,10 +15,10 @@ function renderCloudInitCoverage() {
 
   if (cloudInitCoverageKpisEl) {
     const cards = [
-      ["Nodes With Assignments", assignedNodes],
-      ["Nodes Without Assignments", Math.max(0, rows.length - assignedNodes)],
-      ["Cataloged Options", optionCatalog.length],
-      ["Total Active Assignments", totalAssignments],
+      ["🧷 Nodes With Assignments", assignedNodes],
+      ["🪹 Nodes Without Assignments", Math.max(0, rows.length - assignedNodes)],
+      ["📖 Cataloged Options", optionCatalog.length],
+      ["🔢 Total Active Assignments", totalAssignments],
     ];
     cloudInitCoverageKpisEl.innerHTML = "";
     for (const [label, value] of cards) {
@@ -118,10 +118,10 @@ function renderLatestChecks() {
     const healthy = nodes.filter((node) => latestCheckSummary(node).tone === "ok").length;
     const failing = nodes.filter((node) => latestCheckSummary(node).tone === "failed").length;
     const cards = [
-      ["Nodes With Checks", `${nodesWithChecks}/${nodes.length || 0}`],
-      ["Healthy", healthy],
-      ["Needs Attention", failing],
-      ["Step Results Shown", rows.length],
+      ["🩺 Nodes With Checks", `${nodesWithChecks}/${nodes.length || 0}`],
+      ["🟢 Healthy", healthy],
+      ["🟠 Needs Attention", failing],
+      ["🧾 Step Results Shown", rows.length],
     ];
     latestCheckKpisEl.innerHTML = "";
     for (const [label, value] of cards) {

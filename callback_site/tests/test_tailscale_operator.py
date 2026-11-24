@@ -36,6 +36,7 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
         self.installed = False
         self.flannel = {"nuc": "100.65.24.76", "pi": "100.107.115.85"}
         self.logged_in = True
+        self.tailnet_name = "rack-k8s.example.ts.net"
         self.logs = '{"level":"info","msg":"API server proxy in auth mode is listening on :443"}\n{"level":"info","msg":"Startup complete, operator running"}\n'
         for name, value in (("_command", self.command), ("_helm_connection", lambda: [])):
             patcher = patch.object(helm, name, side_effect=value)
@@ -59,7 +60,7 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
             data = {"_machinekey": _b64(MACHINE_KEY)}
             if self.logged_in:
                 data.update({"_current-profile": _b64("profile-8215"), "rack-k8s.example.ts.net.crt": _b64("cert"),
-                             "_profiles": _b64({"8215": {"Name": "rack-k8s.example.ts.net", "NodeID": "nTEST", "PrivateNodeKey": MACHINE_KEY}})})
+                             "_profiles": _b64({"8215": {"Name": self.tailnet_name, "NodeID": "nTEST", "PrivateNodeKey": MACHINE_KEY}})})
             return json.dumps({"data": data})
         if "logs" in args:
             return self.logs
@@ -90,6 +91,16 @@ class TailscaleOperatorTests(BaseCallbackSiteTest):
         self.assertTrue(status["proxy_url"].startswith("https://rack-k8s."))
         self.assertFalse(status["readers_binding"])
         self.assertNotIn(SECRET, response.get_data(as_text=True))
+
+    def test_status_connects_by_the_suffixed_name_when_another_cluster_holds_the_hostname(self) -> None:
+        self.installed = True
+        status = tailscale_operator.operator_status()
+        self.assertFalse(status["hostname_taken"])
+        self.tailnet_name = "rack-k8s-1.example.ts.net"
+        status = tailscale_operator.operator_status()
+        self.assertTrue(status["hostname_taken"])
+        self.assertEqual(status["tailnet_hostname"], "rack-k8s-1")
+        self.assertEqual(status["kubeconfig_command"], "tailscale configure kubeconfig rack-k8s-1")
 
     def test_live_checks_report_a_working_operator_without_keys(self) -> None:
         self.installed = True

@@ -3,6 +3,7 @@ let longhornDiskRequestId = 0;
 function longhornPlanText(plan, path) {
   if (!plan) return "No plan reported.";
   if (plan.error) return `Applying Longhorn would stop: ${plan.error}`;
+  if (plan.action === "root") return `Applying Longhorn would keep ${path} as a directory on ${plan.disk}, the NVMe this node boots from.`;
   const verb = {present: "keep using", mount: "mount", format: "partition and format"}[plan.action] || plan.action;
   return `Applying Longhorn would ${verb} ${plan.disk} at ${path}.`;
 }

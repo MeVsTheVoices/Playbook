@@ -66,8 +66,23 @@ another card.
 | 🩺 **Operate** | Callback history, Hardware Monitor, Node Ops, SSH diagnostics, boot logs. |
 | 🧩 **Configure** | Reusable node modules backed by Ansible roles. Profile-specific options show up only where they apply. |
 | 📡 **Routers** | OpenWrt SSH onboarding, key push, and an organized UCI readout: LAN, WAN, DHCP, Wi-Fi. |
-| ☸️ **Kubernetes** | K3s over Tailscale, Helm workflows, and the Tailscale operator's API proxy, with live health checks. |
+| ☸️ **Kubernetes** *(optional module)* | Cluster page, Helm workflows, and the Tailscale operator's API proxy, with live health checks. K3s provisioning itself is always available in Node Ops. |
 | 🔐 **Access** | A Tailscale policy builder for tags, grants and operator access, so the ACL file isn't hand-written. |
+
+<a id="modules"></a>
+### 🧩 Modules
+
+The portal's core (imaging, callbacks, Node Ops, routers, Tailscale policy) is
+always on. Everything else is opt-in, so a single Pi or a media box doesn't
+carry a cluster dashboard it will never use.
+
+| Module | Turn it on with | What it adds |
+| --- | --- | --- |
+| `kubernetes` | `compose.kubernetes.yaml` overlay, or `PLAYBOOK_MODULES=kubernetes` | `/kubernetes`: cluster status, node/pod cleanup, Helm configurations, Tailscale operator and RBAC. Needs a kubeconfig or in-cluster credentials. |
+| Flash helper | [charts/flash-helper](charts/flash-helper/) (`flashHelper.enabled` in the portal chart) | A cluster-run SD/USB writer on the machine with the reader. |
+
+The portal itself runs from Docker Compose (below) or, once you have a cluster,
+from the [Playbook Helm chart](charts/playbook/).
 
 **Honest limits:** this is a growing homelab toolkit, not a turnkey router
 installer or a production HA platform. It automates what it knows about and
@@ -124,9 +139,10 @@ Before committing deployment changes, install the
 | [callback_site/](callback_site/) | Web portal, services, templates, and tests. |
 | [docs/](docs/) | Project vision, rack operations, and functional reference. |
 | [scripts/](scripts/) | Bootstrap, SD preparation, validation, and local Kubernetes connection helpers. |
-| [roles/](roles/) | Ansible provisioning for rack devices and the network toolkit. |
+| [roles/](roles/) | Ansible provisioning: one `rack_node` role for every Pi board and x86_64 host, the generic x86_64 baseline, OpenWrt and the network toolkit. |
 | [inventory.yml](inventory.yml) · [site.yml](site.yml) | Device inventory and the main provisioning playbook. |
-| [compose.yaml](compose.yaml) · [compose.kubernetes.yaml](compose.kubernetes.yaml) | Portal runtime and optional kubeconfig mount. |
+| [compose.yaml](compose.yaml) · [compose.kubernetes.yaml](compose.kubernetes.yaml) | Portal runtime, plus the optional Kubernetes module and its kubeconfig mount. |
+| [charts/](charts/) | Helm charts: the portal itself, the flash helper, and bundled workloads (Dockerbot, Headlamp). |
 | [tower-2-compose/](tower-2-compose/README.md) | Recovered, credential-free legacy Compose projects; separate from the portal. |
 
 ---

@@ -8,6 +8,20 @@ metadata, install the configured package baseline, and optionally set timezone
 and upgrade packages. Upgrades default off. No Kubernetes role, cluster
 endpoint, Tailscale identity, or network settings are assumed.
 
+## 🧩 Optional modules
+
+The same `rack_node` role that provisions the Pis also runs on this group
+(`rack_node_board: x64`), so an x86_64 host can opt into **Tailscale**,
+**Kubernetes** (worker, control-plane or utility), **Docker** and **Telegraf**
+from Node Ops. Nothing extra runs until a module is selected: a new x86_64 node
+starts with only **Generic Linux x86_64**, and Tailscale is installed only when
+its module is applied, so hosts that already run their own Tailscale are left
+alone. The default tags are `tag:linux-x64` and `tag:homelab`
+(`group_vars/linux_x64/all.yml`); the Tailscale policy builder lists the x86_64
+tag beside the Pi tags. OAuth uses `vault_linux_x64_tailscale_oauth_client_*`,
+falling back to the Pi 5 client. Longhorn stays Pi 5-only because its disk
+preparation is NVMe-specific.
+
 The role is limited to Debian-family x86_64. Group-level `common_packages` and
 `timezone` can be reused or overridden; the Node Ops inputs override those
 defaults when provided. Keep credentials and host-specific values in Ansible
@@ -24,7 +38,7 @@ target's sole eligible internal disk. This is a separate, explicit
 authorization from writing the USB; the installer stops if it cannot identify
 exactly one eligible internal disk. Keep the created USB physically
 controlled. The installed OS is standard Ubuntu; it does not install K3s or
-join a cluster.
+join a cluster until the Kubernetes module is applied from Node Ops.
 
 After installation, use the resulting callback entry in Node Ops to apply
 **Generic Linux x86_64** settings. This repository change was validated without

@@ -13,7 +13,6 @@ try:
     from .test_support import BaseCallbackSiteTest
 except ImportError:
     from test_support import BaseCallbackSiteTest
-import routes.monitor
 import services.kubernetes
 try:
     from .test_support import patch_in
@@ -344,35 +343,8 @@ try {
         self.assertFalse(snapshots[10]["options"]["toolkit_enable_funnel"])
         self.assertNotIn("toolkit_extra_packages", snapshots[10]["options"])
 
-    def test_sidebar_shows_kubernetes_link_when_runtime_unavailable(self) -> None:
-        with patch_in("_detect_kubernetes_runtime",
-            return_value={"available": False, "active_service": "", "reason": "inactive"},
-        ):
-            response = self.client.get("/settings")
-        self.assertEqual(response.status_code, 200)
-        text = response.get_data(as_text=True)
-        self.assertIn('href="/kubernetes"', text)
-
-    def test_sidebar_shows_kubernetes_link_when_runtime_available(self) -> None:
-        with patch_in("_detect_kubernetes_runtime",
-            return_value={"available": True, "active_service": "k3s", "reason": "active"},
-        ):
-            response = self.client.get("/settings")
-        self.assertEqual(response.status_code, 200)
-        text = response.get_data(as_text=True)
-        self.assertIn('href="/kubernetes"', text)
-
-    def test_sidebar_shows_kubernetes_link_when_installed_but_inactive(self) -> None:
-        with patch_in("_detect_kubernetes_runtime",
-            return_value={
-                "available": False,
-                "active_service": "",
-                "k3s_binary": "/usr/local/bin/k3s",
-                "has_kubeconfig": True,
-                "reason": "k3s binary found but service is inactive",
-            },
-        ):
-            response = self.client.get("/settings")
+    def test_sidebar_links_the_enabled_kubernetes_module(self) -> None:
+        response = self.client.get("/settings")
         self.assertEqual(response.status_code, 200)
         self.assertIn('href="/kubernetes"', response.get_data(as_text=True))
 

@@ -29,8 +29,7 @@ from services.images import _record_image_history
 from services.node_archive import set_archived
 from services.image_catalog import _catalog_entry_with_availability
 from domain_defaults import IMAGE_CATALOG
-from services.k3s_config import _default_k3s_config, _normalize_k3s_node_name
-from services.kubernetes import _local_k3s_version
+from services.k3s_config import _default_k3s_config, _local_k3s_version, _normalize_k3s_node_name
 from services.ssh_keys import _archive_ssh_public_key
 from services.storage import IMAGE_CACHE_DIR, INVENTORY_FILE, SCRIPT_PATH
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options
@@ -338,11 +337,17 @@ def _map_cloud_init_options_to_env(env: Dict[str, str], distribution: str, cloud
         "usb_max_current_enable": "CLOUD_INIT_USB_MAX_CURRENT_ENABLE",
         "pciex1_enable": "CLOUD_INIT_PCIEX1_ENABLE",
         "pciex1_gen3": "CLOUD_INIT_PCIEX1_GEN3",
+        "nvme_layout": "CLOUD_INIT_NVME_LAYOUT",
     }
     for option_key, env_key in bool_env_fields.items():
         if bool(cloud_init_options.get(option_key, False)):
             env[env_key] = "true"
             enabled_options.append(option_key)
+
+    nvme_root_gib = str(cloud_init_options.get("nvme_root_gib", "") or "").strip()
+    if env.get("CLOUD_INIT_NVME_LAYOUT") == "true" and nvme_root_gib:
+        env["CLOUD_INIT_NVME_ROOT_GIB"] = nvme_root_gib
+        enabled_options.append("nvme_root_gib")
 
     # This option defaults true in the script, so preserve explicit false from the UI.
     if "enable_power_restore_callback" in cloud_init_options:

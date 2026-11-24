@@ -149,8 +149,89 @@ def _parse_image_catalog_yaml(text: str) -> Dict[str, Any]:
         data["image_catalog"].append(current_item)
     return data
 
-# NucBox over Tailscale; etcd peer TLS is IP-sensitive, so never the NATed LAN address.
-K3S_API_ENDPOINT_DEFAULT = "https://100.65.24.76:6443"
+# Join address for new K3s nodes. Any server works: agents learn every server once joined.
+# Use a Tailscale address; etcd peer TLS is IP-sensitive, so never a NATed LAN address.
+K3S_API_ENDPOINT_DEFAULT = os.getenv("K3S_API_ENDPOINT", "").strip() or "https://100.65.24.76:6443"
+
+# K3s takes etcd snapshots on every server (default: every 12 hours, keep 5) into
+# /var/lib/rancher/k3s/server/db/snapshots on that same disk. These inputs set the schedule and can
+# copy each snapshot to S3-compatible storage off the cluster, so losing the node does not lose the backups.
+ETCD_SNAPSHOT_SPECS = [
+    {
+        "id": "etcd_snapshot_schedule",
+        "label": "etcd snapshot schedule (cron)",
+        "placeholder": "0 */12 * * *",
+        "input_type": "text",
+        "hint": "Blank keeps the K3s default of every 12 hours. Use the same schedule on every server.",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_snapshot_retention",
+        "label": "Snapshots to keep",
+        "placeholder": "5",
+        "input_type": "text",
+        "hint": "Blank keeps the K3s default of 5, per server and in S3.",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_s3_endpoint",
+        "label": "S3 endpoint for snapshots (blank = keep them on the node only)",
+        "placeholder": "s3.amazonaws.com or nas.tail00c2ce.ts.net:9000",
+        "input_type": "text",
+        "hint": "Any S3-compatible store that is not on this cluster: AWS S3, Backblaze B2, Cloudflare R2, or the S3 backup target module on a spare node.",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_s3_insecure",
+        "label": "Plain HTTP endpoint (no TLS)",
+        "input_type": "checkbox",
+        "hint": "Tick for the S3 backup target module or another HTTP-only store. Use it only over Tailscale or a trusted LAN.",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_s3_bucket",
+        "label": "S3 bucket",
+        "placeholder": "k3s-etcd-snapshots",
+        "input_type": "text",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_s3_folder",
+        "label": "S3 folder",
+        "placeholder": "rack",
+        "input_type": "text",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_s3_region",
+        "label": "S3 region",
+        "placeholder": "us-east-1 (garage for the S3 backup target)",
+        "input_type": "text",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_s3_access_key",
+        "label": "S3 access key",
+        "input_type": "text",
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+    {
+        "id": "etcd_s3_secret_key",
+        "label": "S3 secret key",
+        "input_type": "text",
+        "sensitive": True,
+        "required": False,
+        "only_roles": ["control-plane"],
+    },
+]
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
@@ -270,7 +351,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Tailscale",
         "description": "Tailnet agent and related ACL tag setup.",
         "tags": ["tailscale"],
-        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", TOOLKIT_GROUP],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", "linux_x64_active", TOOLKIT_GROUP],
         "input_specs": [
             {
                 "id": "auth_key",
@@ -329,7 +410,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Docker",
         "description": "Container runtime provisioning and Docker defaults.",
         "tags": ["docker"],
-        "groups": ["rpi5_active", "rpi4_active"],
+        "groups": ["rpi5_active", "rpi4_active", "linux_x64_active"],
         "input_specs": [
             {
                 "id": "docker_data_root",
@@ -348,11 +429,59 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         ],
     },
     {
+        "id": "backup-target",
+        "label": "S3 Backup Target (Garage)",
+        "description": "A small S3-compatible store (Garage under Docker) for off-cluster backups such as K3s etcd snapshots. Put it on a node that is not a K3s server, ideally with its own disk.",
+        "tags": ["backup-target"],
+        "groups": ["rpi5_active", "rpi4_active", "linux_x64_active"],
+        "input_specs": [
+            {
+                "id": "garage_access_key",
+                "label": "Access key ID",
+                "placeholder": "GK followed by 32 hex characters",
+                "input_type": "text",
+                "hint": "Make one with: echo GK$(openssl rand -hex 16). Fixed after the first apply.",
+                "required": True,
+            },
+            {
+                "id": "garage_secret_key",
+                "label": "Secret key",
+                "input_type": "text",
+                "hint": "Make one with: openssl rand -hex 32. Fixed after the first apply: Garage will not start with a changed secret.",
+                "sensitive": True,
+                "required": True,
+            },
+            {
+                "id": "garage_bucket",
+                "label": "Bucket",
+                "placeholder": "k3s-etcd-snapshots",
+                "input_type": "text",
+                "required": False,
+            },
+            {
+                "id": "garage_data_path",
+                "label": "Data path",
+                "placeholder": "/srv/garage",
+                "input_type": "text",
+                "hint": "Point this at a separate disk if the node has one.",
+                "required": False,
+            },
+            {
+                "id": "garage_listen_address",
+                "label": "Listen address (blank = this node's Tailscale IP)",
+                "placeholder": "100.x.y.z",
+                "input_type": "text",
+                "hint": "S3 is served over plain HTTP on port 3900, so keep it on Tailscale or a trusted LAN.",
+                "required": False,
+            },
+        ],
+    },
+    {
         "id": "kubernetes",
         "label": "Kubernetes",
-        "description": "Kubernetes role and join settings. Pi 5 and Pi 4: worker, control-plane or utility (no Kubernetes). Pi 3B+: light-worker, utility, or (not recommended) control-plane.",
+        "description": "Kubernetes role and join settings. Pi 5, Pi 4 and x86_64: worker, control-plane or utility (no Kubernetes). Pi 3B+: light-worker, utility, or (not recommended) control-plane.",
         "tags": ["kubernetes"],
-        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", "linux_x64_active"],
         "input_specs": [
             {
                 "id": "node_role",
@@ -361,7 +490,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "options": ["worker"],
                 **node_role_spec_parts(),
                 "default": "worker",
-                "hint": "Pi 5 and Pi 4: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). A Pi 4 control-plane needs an SSD: K3s says SD cards cannot handle etcd. Keep the number of K3s servers odd: the NucBox plus two control-plane Pis makes three.",
+                "hint": "Pi 5, Pi 4 and x86_64: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). A Pi 4 control-plane needs an SSD: K3s says SD cards cannot handle etcd. Keep the number of K3s servers (control-plane nodes, wherever they run) odd: three tolerates one failure.",
                 "required": True,
             },
             {
@@ -404,8 +533,18 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "input_type": "checkbox",
                 "required": False,
             },
-            # Role options, each shown only for the roles it applies to (only_roles) on both boards.
+            {
+                "id": "k3s_tls_san",
+                "label": "Extra API addresses (tls-san, comma-separated)",
+                "placeholder": "100.65.24.76,k3s-api.tail00c2ce.ts.net",
+                "input_type": "csv",
+                "hint": "Adds these to the server certificate so one fixed address (the k3s-api load balancer) can front every server. Set the same list on every server.",
+                "required": False,
+                "only_roles": ["control-plane"],
+            },
+            # Role options, each shown only for the roles it applies to (only_roles) on every node family.
             *lightweight_node_ops_specs(),
+            *ETCD_SNAPSHOT_SPECS,
         ],
     },
     {
@@ -428,7 +567,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "placeholder": "auto",
                 "input_type": "text",
                 "default": "auto",
-                "warning": "auto partitions, formats and mounts the single blank NVMe disk (a disk labelled longhorn is reused). Non-NVMe disks and none are refused.",
+                "warning": "auto partitions, formats and mounts the single blank NVMe disk (a disk labelled longhorn is reused). On a Pi that boots from its only NVMe, auto uses a directory on that NVMe instead. Non-NVMe disks and none are refused.",
                 "required": False,
             },
             {
@@ -459,7 +598,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
         "label": "Telegraf",
         "description": "Telegraf provisioning with InfluxDB bucket credentials.",
         "tags": ["monitoring", "telegraf"],
-        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active"],
+        "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", "linux_x64_active"],
         "input_specs": [
             {
                 "id": "influx_endpoint",

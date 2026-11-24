@@ -51,11 +51,28 @@ check(visible(".sidebar-collapse-label") && visible(".sidebar-collapse-icon"),
         )
         self.assertEqual(len(checks), 9)
 
+    def test_checkbox_rows_take_a_whole_grid_row(self) -> None:
+        probe = """
+document.querySelectorAll("details").forEach(d => { d.open = true; });
+document.querySelectorAll("[hidden]").forEach(el => { el.hidden = false; });
+document.querySelectorAll(".tab-panel, [role=tabpanel]").forEach(el => { el.style.display = "block"; });
+const rows = [...document.querySelectorAll(
+  ".form-grid > .checkbox-row, .form-grid > :has(> .checkbox-row), .helm-fields > .tailnet-api-check")]
+  .filter(row => row.getClientRects().length);
+check(rows.length > 0, "page has checkbox rows in a grid");
+// Wide enough for several columns, so a checkbox left in one cell would show.
+rows.forEach(row => { row.parentElement.style.width = "1000px"; });
+for (const row of rows) {
+  check(Math.abs(row.offsetWidth - row.parentElement.clientWidth) <= 2, "checkbox row spans its grid: " + (row.querySelector("input") || {}).id);
+}
+"""
+        for path in ("/", "/kubernetes"):
+            with self.subTest(path=path):
+                self.browser_probe(path, [], "", probe)
+
     def test_every_page_uses_shared_styles_and_navigation(self) -> None:
         for path in PAGES:
-            with self.subTest(path=path), patch_in("_detect_kubernetes_runtime", return_value={
-                "available": True, "k3s_binary": "/usr/local/bin/k3s",
-            }):
+            with self.subTest(path=path):
                 with self.client.get(path) as response:
                     text = response.get_data(as_text=True)
                 self.assertEqual(response.status_code, 200)

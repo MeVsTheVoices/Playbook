@@ -1,0 +1,12 @@
+apiVersion: v2
+name: playbook
+description: Playbook provisioning portal (cloud-init callbacks, SD/Node Ops, optional modules)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: flash-helper
+    version: 0.1.0
+    repository: file://../flash-helper
+    alias: flashHelper
+    condition: flashHelper.enabled

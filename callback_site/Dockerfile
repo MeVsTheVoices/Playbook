@@ -27,7 +27,9 @@ RUN apt-get update \
 WORKDIR /app
 
 ARG TARGETARCH
-RUN curl -fsSL "https://dl.k8s.io/release/v1.36.1/bin/linux/${TARGETARCH}/kubectl" -o /tmp/kubectl \
+# kubectl + helm serve the optional kubernetes module; build with KUBERNETES_TOOLS=false for a core-only image.
+ARG KUBERNETES_TOOLS=true
+RUN [ "$KUBERNETES_TOOLS" != "true" ] || { curl -fsSL "https://dl.k8s.io/release/v1.36.1/bin/linux/${TARGETARCH}/kubectl" -o /tmp/kubectl \
     && curl -fsSL "https://dl.k8s.io/release/v1.36.1/bin/linux/${TARGETARCH}/kubectl.sha256" -o /tmp/kubectl.sha256 \
     && echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c - \
     && install -m 0755 /tmp/kubectl /usr/local/bin/kubectl \
@@ -36,7 +38,7 @@ RUN curl -fsSL "https://dl.k8s.io/release/v1.36.1/bin/linux/${TARGETARCH}/kubect
     && echo "$(cut -d ' ' -f 1 /tmp/helm.sha256)  /tmp/helm.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/helm.tar.gz -C /tmp \
     && install -m 0755 "/tmp/linux-${TARGETARCH}/helm" /usr/local/bin/helm \
-    && rm -rf /tmp/kubectl /tmp/kubectl.sha256 /tmp/helm.tar.gz /tmp/helm.sha256 "/tmp/linux-${TARGETARCH}"
+    && rm -rf /tmp/kubectl /tmp/kubectl.sha256 /tmp/helm.tar.gz /tmp/helm.sha256 "/tmp/linux-${TARGETARCH}"; }
 
 COPY requirements-ansible.txt /tmp/requirements-ansible.txt
 COPY callback_site/requirements.txt /tmp/requirements-callback.txt

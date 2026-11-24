@@ -425,6 +425,7 @@ check(detail.includes("install the chart separately using a Helm configuration")
                 "rpi5_active": ["worker", "control-plane", "utility"],
                 "rpi4_active": ["worker", "control-plane", "utility"],
                 "rpi_3bplus_active": ["light-worker", "utility", "control-plane"],
+                "linux_x64_active": ["worker", "control-plane", "utility"],
             },
         )
 

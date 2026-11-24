@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 import yaml
 
+from services.kubernetes import _has_client_kubeconfig
 from services.storage import APPDATA_DIR, _atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -319,7 +320,7 @@ def save_configuration(record_id: str, payload: dict[str, Any]) -> dict[str, Any
 
 
 def _helm_connection() -> list[str]:
-    if os.getenv("KUBECONFIG") or (Path.home() / ".kube" / "config").is_file():
+    if _has_client_kubeconfig():
         return []
     path = Path("/etc/rancher/k3s/k3s.yaml")
     if path.is_file():

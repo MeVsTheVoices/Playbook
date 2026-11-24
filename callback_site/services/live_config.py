@@ -143,6 +143,7 @@ if [ -n "$CFG" ]; then
   emit node_ip "$(key node-ip)"
   emit k3s_taint "$(yesno has '^node-taint:')"
   emit k3s_max_pods "$(printf '%s\n' "$CFG" | sed -n 's/.*max-pods=\([0-9]*\).*/\1/p' | head -n1)"
+  emit k3s_tls_san "$(printf '%s\n' "$CFG" | awk '/^tls-san:/{f=1;next} f&&/^- /{print $2;next} {f=0}' | tr -d "'\"" | paste -sd, -)"
   if [ "$ROLE" = control-plane ]; then
     DISABLED="$(printf '%s\n' "$CFG" | awk '/^disable:/{f=1;next} f&&/^- /{print $2;next} {f=0}')"
     listed() { printf '%s\n' "$DISABLED" | grep -qx "$1" && echo true || echo false; }
@@ -166,6 +167,17 @@ if [ -n "$MNT" ]; then
   emit storage_disk "${PARENT:+/dev/$PARENT}"
 elif [ -d /var/lib/longhorn ]; then
   emit storage_path /var/lib/longhorn
+fi
+''',
+    "backup-target": r'''
+UNIT="$(cat /etc/systemd/system/garage.service 2>/dev/null)"
+if [ -n "$UNIT" ]; then
+  emit garage_data_path "$(printf '%s\n' "$UNIT" | sed -n 's#^ *-v \(/[^ ]*\)/meta:/var/lib/garage/meta.*#\1#p' | head -n1)"
+  emit garage_listen_address "$(sed -n 's/^api_bind_addr *= *"\[\{0,1\}\([^]"]*\)\]\{0,1\}:[0-9]*"/\1/p' /etc/garage/garage.toml 2>/dev/null | head -n1)"
+  # Only the key ID and bucket lines; the secret line is never printed.
+  ENV="$($S grep -E '^GARAGE_DEFAULT_(ACCESS_KEY|BUCKET)=' /etc/garage/garage.env 2>/dev/null)"
+  emit garage_access_key "$(printf '%s\n' "$ENV" | sed -n 's/^GARAGE_DEFAULT_ACCESS_KEY=//p')"
+  emit garage_bucket "$(printf '%s\n' "$ENV" | sed -n 's/^GARAGE_DEFAULT_BUCKET=//p')"
 fi
 ''',
     "telegraf": r'''

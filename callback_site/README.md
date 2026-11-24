@@ -273,7 +273,8 @@ Open:
 
 ## Longhorn Notes
 
-- Longhorn is intentionally wired as an optional Pi 5 profile for now. Nodes boot from SD card, but Longhorn data lives only on NVMe.
+- Longhorn is intentionally wired as an optional Pi 5 profile for now. Longhorn data lives only on NVMe, whether the node boots from an SD card or from NVMe.
+- A Pi that boots from its only NVMe (see [Booting a Pi 5 from NVMe](#nvme-boot)) has no spare disk. `auto` then keeps the storage path as a plain directory on that boot NVMe and still labels the node for Longhorn. An SD card or USB root is never used. If a second NVMe is fitted later, it is formatted only while the directory is still empty; a directory already holding replicas is kept.
 - The Storage Disk input defaults to `auto`: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts the single blank NVMe disk at the storage path (`/var/lib/longhorn`) by UUID, or reuses one already labelled `longhorn`. Disks that already hold data are never touched. With `rack_node_longhorn_nvme_only` (default `true`) a non-NVMe disk or `none` fails the run instead of putting data on the SD card.
 - Longhorn must run with `defaultSettings.createDefaultDiskLabeledNodes: true`, so only nodes labelled `node.longhorn.io/create-default-disk=true` get a disk. The profile adds that label from the node itself, through its kubelet credentials, only after the NVMe is mounted. Never label a node by hand before its NVMe is mounted, or Longhorn creates the disk on the SD card. Nodes without NVMe (for example an x86 control-plane node) still run Longhorn components but store no replicas.
 - The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
@@ -725,6 +726,30 @@ setup (below); host-tailnet discovery also needs the relevant service available
 inside the container. Keep the site on a trusted network; it is not intended for direct
 public-internet exposure.
 
+<a id="nvme-boot"></a>
+### 🚀 Booting a Pi 5 from NVMe
+
+The same cloud-init image boots from NVMe. Nothing in the provisioning assumes
+an SD card.
+
+1. **Flash the NVMe.** Put it in a USB enclosure and flash it like an SD card:
+   the host flasher lists USB-attached disks. On the SD form, tick the PCIe
+   options when the adapter is not a HAT+ (`dtparam=pciex1`), and optionally
+   `pciex1_gen=3`.
+2. **Let the firmware find it.** Run this once per Pi, from a booted OS:
+   `sudo rpi-eeprom-update -a`, then `sudo rpi-eeprom-config --edit`. Set
+   `BOOT_ORDER=0xf416` to try NVMe first, then SD, then USB; recent firmware's
+   default `0xf461` tries SD first and still falls back to NVMe. A non-HAT+
+   adapter also needs `PCIE_PROBE=1`. Reboot to apply.
+3. **Remove the SD card** (or leave it blank) so the old SD install does not boot first.
+4. **Boot.** Pi OS grows the root partition to fill the NVMe. The node then calls
+   home and is provisioned like any other. The etcd SD-card guard passes because
+   `/var/lib` is on NVMe, and Longhorn uses a directory on the boot NVMe (see
+   [Longhorn Notes](#longhorn-notes)).
+
+> 🧭 A Pi 4 can only boot "NVMe" through a USB adapter, where it shows up as
+> `/dev/sda`. Longhorn refuses it as not NVMe.
+
 ### SD/USB flashing from Docker (host flasher)
 
 Select the intended removable device and confirm the overwrite. The dashboard
@@ -919,24 +944,62 @@ before changing a node's role.
 K3s snapshots etcd on every server (every 12 hours, keeping 5) into
 `/var/lib/rancher/k3s/server/db/snapshots`, on the same disk as etcd itself.
 The Kubernetes module's control-plane inputs set the schedule, the retention and
-an optional S3-compatible target (AWS S3, Backblaze B2, Cloudflare R2, or MinIO on
-a NAS) that is not part of the cluster, so a lost node or SD card does not take
-the backups with it. Use the same settings on every server. The S3 secret key is
-redacted in run records. Restore with `k3s server --cluster-reset
---cluster-reset-restore-path=<snapshot>` on one server (add the `--etcd-s3-*` flags
-to restore from S3), then rejoin the others.
+an optional S3-compatible target that is not part of the cluster (AWS S3,
+Backblaze B2, Cloudflare R2, or the [S3 backup target](#backup-target) module),
+so a lost node or SD card does not take the backups with it. Use the same
+settings on every server. The S3 secret key is redacted in run records. Restore
+with `k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one
+server (add the `--etcd-s3-*` flags to restore from S3), then rejoin the others.
+
+<a id="backup-target"></a>
+#### 🗄️ S3 backup target (small office)
+
+The **S3 Backup Target (Garage)** Node Ops module turns a Pi 5, Pi 4 or x86_64
+node into a single-node [Garage](https://garagehq.deuxfleurs.fr/) S3 store under
+Docker (`garage.service`, data in `/srv/garage` by default). Put it on a node
+that is not a K3s server (a worker such as charlie, or a NAS-like box), ideally
+on its own disk. It listens on the node's Tailscale IP, port 3900, over plain
+HTTP; WireGuard encrypts the traffic.
+
+1. Make keys: `echo GK$(openssl rand -hex 16)` (access key ID) and
+   `openssl rand -hex 32` (secret). Garage will not start if the secret of an
+   existing key changes, so the role refuses to swap keys; keep them safe.
+2. Apply the module to the backup node. It creates the bucket
+   (`k3s-etcd-snapshots` by default).
+3. On every K3s server, set the Kubernetes module's etcd inputs: endpoint
+   `<backup-node-tailscale-ip>:3900`, the bucket, region `garage`, **Plain HTTP
+   endpoint** ticked, and the two keys. Apply servers one at a time: each one
+   restarts K3s.
+4. Check with `sudo k3s etcd-snapshot save` then `sudo k3s etcd-snapshot ls` on a
+   server; the S3 copy is listed with its `s3://` location.
 
 <a id="api-high-availability"></a>
 #### 🔗 One API address for every server
 
 Nodes join through `K3S_API_ENDPOINT` and the portal talks to the server in its
 kubeconfig. With several servers, either one is a single point of failure for
-new joins and for the dashboard, even though the cluster keeps running. Put a
-fixed address in front of every server (a kube-vip virtual IP, or an
-HAProxy/nginx TCP load balancer on port 6443), list it in every server's
-`tls-san`, and use it for both `K3S_API_ENDPOINT` and the kubeconfig. Running the
-portal in the cluster ([chart](#helm-chart)) avoids the
-kubeconfig entirely: it uses the in-cluster `kubernetes` Service.
+new joins and for the dashboard, even though the cluster keeps running (agents
+balance across every server once joined). `compose.k3s-api.yaml` adds a
+`k3s-api` HAProxy TCP load balancer in front of every server:
+
+```bash
+K3S_API_SERVERS=auto scripts/connect_k3s_kubeconfig.sh
+```
+
+`auto` lists the control-plane nodes' addresses (or give
+`host:port,host:port,...`). The helper points the dashboard's kubeconfig at
+`https://k3s-api:6443` with `tls-server-name: kubernetes.default`, a name every
+K3s serving certificate already carries, and records `K3S_API_SERVERS` and the
+overlay in `.env`. The balancer is published on `127.0.0.1:7443`
+(`K3S_API_BIND`, `K3S_API_PORT`).
+
+To join new nodes through it too, publish it on this host's Tailscale IP
+(`K3S_API_BIND=100.x.y.z`), add that address to every server's **Extra API
+addresses (tls-san)** in the Kubernetes module (each server restarts K3s), then
+set `K3S_API_ENDPOINT=https://100.x.y.z:7443`. The balancer lives with the
+dashboard, so it removes the dependency on any one K3s server, not on this host.
+Running the portal in the cluster ([chart](#helm-chart)) avoids the kubeconfig
+entirely: it uses the in-cluster `kubernetes` Service.
 
 ### Helm configurations and Tailscale workloads
 
@@ -1060,6 +1123,16 @@ and recreates the binding.
 
 The tag also needs a tailnet grant to `tag:k8s-operator:443` before its
 requests reach the proxy.
+
+#### 🧩 More than one cluster
+
+Run one operator per cluster. All of them can share the same OAuth client and
+the same `tag:k8s-operator` / `tag:k8s` grants, because the policy is tag-based.
+Give each operator a unique **Hostname**. If a name is already taken on the
+tailnet, Tailscale adds a suffix (`rack-operator-1`). The card then shows a
+⚠️ row and uses the real name in its `tailscale configure kubeconfig` hint.
+Exposed Services and Ingresses join as devices too, so their names must be
+unique across clusters as well.
 
 #### 🧯 When it isn't working
 

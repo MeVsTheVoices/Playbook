@@ -82,12 +82,13 @@
               <summary>📝 Before the first install</summary>
               <ol>
                 <li>On the <a href="/tailscale-acl">Tailscale policy page</a>, tick <strong>Tailscale Kubernetes operator</strong>, pick the admin's access, and save the policy in the Tailscale admin console. This defines <code>tag:k8s-operator</code> and <code>tag:k8s</code> and grants tcp 443.</li>
+                <li>🧭 One operator per cluster. Several clusters can share the tailnet, the tags and the OAuth client, but give each operator its own hostname, and give Tailscale Services/Ingresses distinct names across clusters unless you want them load-balanced together.</li>
                 <li>Enable <a href="https://tailscale.com/docs/how-to/set-up-https-certificates" target="_blank" rel="noopener noreferrer">HTTPS certificates</a> for the tailnet.</li>
                 <li>Create an <a href="https://login.tailscale.com/admin/settings/trust-credentials" target="_blank" rel="noopener noreferrer">OAuth client</a> with <em>Devices Core</em>, <em>Auth Keys</em> and <em>Services</em> write scopes, tagged <code>tag:k8s-operator</code>.</li>
               </ol>
             </details>
             <form id="tailnet-api-form" class="helm-fields tailnet-api-form" autocomplete="off">
-              <label>Proxy hostname <input id="tailnet-api-hostname" value="tailscale-operator" maxlength="63" required></label>
+              <label>Proxy hostname <input id="tailnet-api-hostname" value="tailscale-operator" maxlength="63" required title="One operator per cluster. With several clusters on one tailnet, give each operator its own hostname, e.g. rack-operator and lab-operator."></label>
               <label>Proxy mode
                 <select id="tailnet-api-mode">
                   <option value="auth" selected>auth: Tailscale identity + RBAC</option>

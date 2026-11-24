@@ -108,6 +108,29 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(disk.PlanError, "not an NVMe disk"):
             disk.make_plan([sd_card(), on_sda], "auto", PATH, "longhorn", nvme_only=True)
 
+    def test_nvme_boot_disk_is_a_directory_fallback_never_the_sd_card(self) -> None:
+        boot_nvme = {
+            "name": "/dev/nvme0n1", "type": "disk", "size": 256 * GIB, "rm": False, "ro": False,
+            "children": [
+                {"name": "/dev/nvme0n1p1", "type": "part", "fstype": "vfat", "mountpoints": ["/boot/firmware"]},
+                {"name": "/dev/nvme0n1p2", "type": "part", "fstype": "ext4", "uuid": "root-uuid", "mountpoints": ["/"]},
+            ],
+        }
+        plan = disk.make_plan([boot_nvme], "auto", PATH, "longhorn", nvme_only=True, root_fallback=True)
+        self.assertEqual((plan["action"], plan["node"]["name"]), ("root", "/dev/nvme0n1p2"))
+        self.assertEqual(disk.make_plan([boot_nvme, blank_nvme("/dev/nvme1n1")], "auto", PATH, "longhorn", nvme_only=True, root_fallback=True)["action"], "format")
+        kept = disk.make_plan([boot_nvme, blank_nvme("/dev/nvme1n1")], "auto", PATH, "longhorn", nvme_only=True, root_fallback=True, path_has_data=True)
+        self.assertEqual(kept["action"], "root", "a new disk must not be mounted over existing data")
+        with self.assertRaisesRegex(disk.PlanError, "no blank NVMe disk"):
+            disk.make_plan([boot_nvme], "auto", PATH, "longhorn", nvme_only=True)
+        with self.assertRaisesRegex(disk.PlanError, "no blank NVMe disk"):
+            disk.make_plan([sd_card()], "auto", PATH, "longhorn", nvme_only=True, root_fallback=True)
+        on_usb = {**boot_nvme, "name": "/dev/sda"}
+        with self.assertRaisesRegex(disk.PlanError, "no blank NVMe disk"):
+            disk.make_plan([on_usb], "auto", PATH, "longhorn", nvme_only=True, root_fallback=True)
+        row = disk.disk_report([boot_nvme], PATH, "longhorn", nvme_only=True, root_fallback=True)[0]
+        self.assertEqual((row["status"], row["usable"]), ("os-disk", True))
+
     def test_report_explains_every_real_disk_against_the_nvme_only_rules(self) -> None:
         usb = {**blank_nvme("/dev/sda"), "tran": "usb"}
         rows = {r["name"]: r for r in disk.disk_report([LOOP, sd_card(), usb, prepared_nvme()], PATH, "longhorn", nvme_only=True)}

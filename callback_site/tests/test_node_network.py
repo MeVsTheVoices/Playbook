@@ -95,7 +95,7 @@ class NodeNetworkTests(BaseCallbackSiteTest):
             self.assertEqual(cmd[cmd.index("-m") + 1], "rack_storage_disk")
             self.assertTrue(cmd[cmd.index("-M") + 1].endswith("/library"))
             args = json.loads(cmd[cmd.index("-a") + 1])
-            self.assertEqual(args, {"path": "/mnt/lh", "device": "auto", "label": "longhorn", "nvme_only": True, "report_only": True})
+            self.assertEqual(args, {"path": "/mnt/lh", "device": "auto", "label": "longhorn", "nvme_only": True, "root_fallback": True, "report_only": True})
             self.assertFalse(json.loads(Path(cmd[2]).read_text())["all"]["hosts"]["storage_target"]["ansible_become"])
             return SimpleNamespace(returncode=0, stdout="storage_target | SUCCESS => " + json.dumps(report), stderr="")
 

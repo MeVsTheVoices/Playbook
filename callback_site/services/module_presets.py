@@ -82,6 +82,7 @@ _NAME_PARTS: Dict[str, List[Tuple[str, str]]] = {
     "docker": [("docker_data_root", "data root {}"), ("registry_mirror", "mirror {}")],
     "kubernetes": [("node_role", "{}")],
     "longhorn": [("storage_path", "storage {}")],
+    "backup-target": [("garage_bucket", "bucket {}")],
     "telegraf": [("influx_bucket", "{} bucket"), ("influx_org", "org {}")],
 }
 

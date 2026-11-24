@@ -50,6 +50,13 @@ options:
         NVMe is an error, so the data can never land on the SD card or a USB drive.
     type: bool
     default: false
+  root_fallback:
+    description:
+      - With V(auto), when no labelled or blank disk is found and the root filesystem is on an allowed disk
+        (with I(nvme_only), an NVMe the node boots from), use I(path) as a plain directory on the root filesystem.
+        A directory already holding data there is kept in preference to formatting a newly added disk.
+    type: bool
+    default: false
   report_only:
     description:
       - Change nothing. Return RV(disks), every disk with whether it can hold the data and why, and RV(plan),
@@ -100,7 +107,7 @@ disks:
   returned: when report_only
   type: list
 plan:
-  description: C(action) and C(disk) the module would use (present, mount or format), or C(error) when it would refuse.
+  description: C(action) and C(disk) the module would use (present, mount, format or root), or C(error) when it would refuse.
   returned: when report_only
   type: dict
 """
@@ -162,8 +169,16 @@ def is_nvme(disk):
     return os.path.basename(disk["name"]).startswith("nvme")
 
 
-def make_plan(devices, device, path, label, nvme_only=False):
-    """Decide whether to reuse a mount, mount a labelled filesystem, or format a blank disk."""
+def root_of(nodes):
+    return next(((n, d) for n, d in nodes if "/" in mounts_of(n)), None)
+
+
+def can_use_root(root, nvme_only):
+    return bool(root) and not os.path.basename(root[1]["name"]).startswith("mmcblk") and (is_nvme(root[1]) or not nvme_only)
+
+
+def make_plan(devices, device, path, label, nvme_only=False, root_fallback=False, path_has_data=False):
+    """Decide whether to reuse a mount, mount a labelled filesystem, format a blank disk, or use the root disk."""
     allowed = is_nvme if nvme_only else (lambda _disk: True)
     nodes = list(walk(devices))
     by_name = {node["name"]: (node, disk) for node, disk in nodes}
@@ -207,7 +222,15 @@ def make_plan(devices, device, path, label, nvme_only=False):
     if hit:
         return {"action": "mount", "node": hit[0], "disk": hit[1]}
 
+    root = root_of(nodes) if root_fallback else None
+    use_root = can_use_root(root, nvme_only)
+    if use_root and path_has_data:
+        # Formatting a newly added disk and mounting it here would hide the data already in the directory.
+        return {"action": "root", "node": root[0], "disk": root[1]}
+
     spare = [d for d in devices if is_spare(d) and allowed(d)]
+    if not spare and use_root:
+        return {"action": "root", "node": root[0], "disk": root[1]}
     if not spare:
         raise PlanError("no blank NVMe disk found" if nvme_only else "no blank disk found")
     if len(spare) > 1:
@@ -215,9 +238,11 @@ def make_plan(devices, device, path, label, nvme_only=False):
     return {"action": "format", "node": None, "disk": spare[0]}
 
 
-def disk_report(devices, path, label, nvme_only=False):
+def disk_report(devices, path, label, nvme_only=False, root_fallback=False):
     """Every real disk, whether this module could use it for path, and why."""
     rows = []
+    root = root_of(list(walk(devices))) if root_fallback else None
+    root_disk = root[1]["name"] if can_use_root(root, nvme_only) else None
     for top in devices:
         name = os.path.basename(top["name"])
         if top.get("type") != "disk" or name.startswith(("loop", "ram", "zram")):
@@ -237,6 +262,8 @@ def disk_report(devices, path, label, nvme_only=False):
             status, reason = "excluded", "removable"
         elif truthy(top.get("ro")):
             status, reason = "excluded", "read-only"
+        elif top["name"] == root_disk:
+            status, reason = "os-disk", "the disk this node boots from; used as a directory when no spare disk is found"
         elif prepared:
             status, reason = "prepared", "has a filesystem labelled '%s'; would be mounted, not formatted" % label
         elif not is_blank(top):
@@ -252,7 +279,7 @@ def disk_report(devices, path, label, nvme_only=False):
             "mounts": mounts,
             "fstypes": sorted({n["fstype"] for n in parts if n.get("fstype")}),
             "labels": sorted({n["label"] for n in parts if n.get("label")}),
-            "usable": status in ("in-use", "prepared", "blank"),
+            "usable": status in ("in-use", "prepared", "blank", "os-disk"),
             "status": status,
             "reason": reason,
         })
@@ -375,6 +402,7 @@ def main():
             identify_by=dict(type="str", default="uuid", choices=["uuid", "id"]),
             fstab=dict(type="path", default="/etc/fstab"),
             nvme_only=dict(type="bool", default=False),
+            root_fallback=dict(type="bool", default=False),
             report_only=dict(type="bool", default=False),
         ),
         supports_check_mode=True,
@@ -387,16 +415,22 @@ def main():
         module.fail_json(msg="label must be 1 to 12 characters")
 
     devices = read_blockdevices(module)
+    plan_options = dict(
+        nvme_only=module.params["nvme_only"],
+        root_fallback=module.params["root_fallback"],
+        path_has_data=os.path.isdir(path) and not os.path.ismount(path) and bool(os.listdir(path)),
+    )
     if module.params["report_only"]:
         try:
-            found = make_plan(devices, module.params["device"], path, label, module.params["nvme_only"])
+            found = make_plan(devices, module.params["device"], path, label, **plan_options)
             plan = {"action": found["action"], "disk": found["disk"]["name"]}
         except PlanError as exc:
             plan = {"error": str(exc)}
-        module.exit_json(changed=False, path=path, disks=disk_report(devices, path, label, module.params["nvme_only"]), plan=plan)
+        module.exit_json(changed=False, path=path, plan=plan,
+                         disks=disk_report(devices, path, label, module.params["nvme_only"], module.params["root_fallback"]))
 
     try:
-        plan = make_plan(devices, module.params["device"], path, label, module.params["nvme_only"])
+        plan = make_plan(devices, module.params["device"], path, label, **plan_options)
     except PlanError as exc:
         disks = [describe(d) for d in devices if d.get("type") == "disk"]
         module.fail_json(msg=str(exc), disks=disks)
@@ -416,10 +450,15 @@ def main():
 
     uuid = node["uuid"]
     fstype = node["fstype"]
-    if write_fstab(module, module.params["fstab"], uuid, path, fstype, module.params["mount_options"]):
+    if plan["action"] == "root":
+        if not os.path.isdir(path):
+            changed = True
+            if not module.check_mode:
+                os.makedirs(path, exist_ok=True)
+    elif write_fstab(module, module.params["fstab"], uuid, path, fstype, module.params["mount_options"]):
         changed = True
 
-    if path not in mounts_of(node):
+    if plan["action"] != "root" and path not in mounts_of(node):
         changed = True
         if not module.check_mode:
             if os.path.isdir(path) and os.listdir(path):

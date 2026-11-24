@@ -582,7 +582,8 @@ class LightweightAnsibleRoleTests(BaseCallbackSiteTest):
         snapshot = {
             "etcd_snapshot_schedule": "0 */6 * * *", "etcd_snapshot_retention": "10",
             "etcd_s3_endpoint": "nas.example:9000", "etcd_s3_bucket": "k3s", "etcd_s3_folder": "",
-            "etcd_s3_access_key": "AKID", "etcd_s3_secret_key": "SECRET",
+            "etcd_s3_access_key": "AKID", "etcd_s3_secret_key": "SECRET", "etcd_s3_insecure": True,
+            "k3s_tls_san": "100.65.24.76, k3s-api.example ,",
         }
         code, output, data = self.render_role({"node_role": "control-plane", **snapshot}, "x64")
         self.assertEqual(code, 0, output[-800:])
@@ -592,12 +593,14 @@ class LightweightAnsibleRoleTests(BaseCallbackSiteTest):
         self.assertEqual((data["etcd-s3-endpoint"], data["etcd-s3-bucket"]), ("nas.example:9000", "k3s"))
         self.assertEqual((data["etcd-s3-access-key"], data["etcd-s3-secret-key"]), ("AKID", "SECRET"))
         self.assertNotIn("etcd-s3-folder", data, "blank inputs keep the K3s default")
+        self.assertIs(data["etcd-s3-insecure"], True)
+        self.assertEqual(data["tls-san"], ["100.65.24.76", "k3s-api.example"])
         self.assertNotIn("SECRET", output)
 
         code, _output, data = self.render_role({"node_role": "worker", **snapshot}, "x64")
         self.assertEqual(code, 0)
-        self.assertFalse([key for key in data if key.startswith("etcd")])
-        self.assertFalse([key for key in self.render_role({"node_role": "control-plane"}, "pi5")[2] if key.startswith("etcd")])
+        self.assertFalse([key for key in data if key.startswith("etcd") or key == "tls-san"])
+        self.assertFalse([key for key in self.render_role({"node_role": "control-plane"}, "pi5")[2] if key.startswith("etcd") or key == "tls-san"])
 
         code, output, _data = self.render_role({"node_role": "control-plane", "etcd_s3_endpoint": "nas.example:9000"}, "x64")
         self.assertNotEqual(code, 0)

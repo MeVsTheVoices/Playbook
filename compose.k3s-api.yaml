@@ -1,0 +1,34 @@
+# K3s API load balancer: one fixed address in front of every K3s server, so the dashboard's kubeconfig and the
+# join address for new nodes keep working when any one server is down. Health checks are plain TCP connects.
+#   K3S_API_SERVERS=auto scripts/connect_k3s_kubeconfig.sh   (or a list: 100.118.79.56:6443,100.107.115.85:6443,...)
+# Publish it beyond this machine with K3S_API_BIND (e.g. this host's Tailscale IP) and add that address to every
+# server's tls-san (Node Ops > Kubernetes > Extra API addresses) before using it as K3S_API_ENDPOINT.
+services:
+  k3s-api:
+    image: haproxy:lts-alpine
+    restart: unless-stopped
+    environment:
+      K3S_API_SERVERS: ${K3S_API_SERVERS:?set K3S_API_SERVERS to the K3s servers as host:port pairs, comma separated}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        cfg=/tmp/haproxy.cfg
+        {
+          printf 'global\n  log stdout format raw local0\n\n'
+          printf 'defaults\n  mode tcp\n  log global\n  option tcplog\n  timeout connect 5s\n  timeout client 1h\n  timeout server 1h\n\n'
+          printf 'frontend k3s_api\n  bind :6443\n  default_backend k3s_servers\n\n'
+          printf 'backend k3s_servers\n  balance roundrobin\n  default-server check inter 2s fall 2 rise 2\n'
+          i=0
+          for server in $$(printf '%s' "$$K3S_API_SERVERS" | tr ',' ' '); do
+            i=$$((i + 1))
+            printf '  server k3s%s %s\n' "$$i" "$$server"
+          done
+        } > "$$cfg"
+        exec haproxy -W -db -f "$$cfg"
+    ports:
+      - "${K3S_API_BIND:-127.0.0.1}:${K3S_API_PORT:-7443}:6443"
+
+  callback-site:
+    depends_on:
+      - k3s-api

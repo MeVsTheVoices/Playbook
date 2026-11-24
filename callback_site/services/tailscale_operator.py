@@ -117,7 +117,20 @@ def operator_status() -> Dict[str, Any]:
     status["readers_binding"] = bool(binding)
     if entry:
         status["live"] = live_checks(connection)
+        _use_tailnet_hostname(status, tailnet)
     return status
+
+
+def _use_tailnet_hostname(status: Dict[str, Any], tailnet: str) -> None:
+    """Several clusters can share a tailnet, each with its own operator. If another device already had the
+    requested hostname, the tailnet gave this one a suffix (tailscale-operator-1), so connect by the real name."""
+    actual = str(((status.get("live") or {}).get("tailnet") or {}).get("name", "")).split(".")[0].strip().lower()
+    status["tailnet_hostname"] = actual
+    status["hostname_taken"] = bool(actual) and actual != status["hostname"]
+    if actual and status["proxy_mode"] != "off":
+        status["kubeconfig_command"] = _kubeconfig_command(actual)
+        if tailnet:
+            status["proxy_url"] = f"https://{actual}.{tailnet}"
 
 
 def _text_or_empty(args: list[str]) -> str:

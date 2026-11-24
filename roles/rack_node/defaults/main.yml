@@ -43,3 +43,10 @@ rack_node_longhorn_default_replica_count: 2
 rack_node_longhorn_set_default_storage_class: true
 rack_node_longhorn_install_chart: true
 rack_node_longhorn_chart_version: ""
+
+# S3 backup target (provision_profile=backup-target): a single-node Garage store for off-cluster backups such as etcd snapshots.
+rack_node_garage_image: dxflrs/garage:v2.5.0
+rack_node_garage_data_path: /srv/garage
+rack_node_garage_bucket: k3s-etcd-snapshots
+rack_node_garage_region: garage
+rack_node_garage_port: 3900

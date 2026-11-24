@@ -37,6 +37,7 @@
     - docker
     - telegraf
     - monitoring
+    - backup-target
 
 # First boot runs cloud-init's own apt at the same time as the installers below.
 - name: Let apt wait for the dpkg lock
@@ -58,6 +59,7 @@
     - docker
     - telegraf
     - monitoring
+    - backup-target
 
 - name: Update apt cache
   ansible.builtin.apt:
@@ -416,6 +418,9 @@
     rack_node_taint: "{{ (provision_inputs.k3s_taint | default(rack_node_k3s_taint_default) | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
     rack_node_max_pods: "{{ provision_inputs.k3s_max_pods | default(rack_node_k3s_max_pods_default) | string | trim or rack_node_k3s_max_pods_default }}"
     rack_node_k3s_allow_sd_etcd: "{{ (provision_inputs.k3s_allow_sd_etcd | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] }}"
+    rack_node_k3s_tls_san: >-
+      {{ (provision_inputs.k3s_tls_san | default('') | join(',') if provision_inputs.k3s_tls_san | default('') is not string
+          else provision_inputs.k3s_tls_san | default('')).split(',') | map('trim') | select('truthy') | list }}
   when:
     - rack_manage_with_ansible | bool
     - provision_profile | default('') == 'kubernetes'
@@ -442,6 +447,8 @@
             if (provision_inputs.etcd_s3_folder | default('') | string | trim) | length > 0 else {})
           | combine({'etcd-s3-region': provision_inputs.etcd_s3_region | string | trim}
             if (provision_inputs.etcd_s3_region | default('') | string | trim) | length > 0 else {})
+          | combine({'etcd-s3-insecure': true}
+            if (provision_inputs.etcd_s3_insecure | default('false') | string | lower | trim) in ['true', '1', 'yes', 'on'] else {})
           | combine({'etcd-s3-access-key': provision_inputs.etcd_s3_access_key | string | trim,
                      'etcd-s3-secret-key': provision_inputs.etcd_s3_secret_key | default('') | string | trim}
             if (provision_inputs.etcd_s3_access_key | default('') | string | trim) | length > 0 else {})
@@ -687,6 +694,7 @@
         | combine({'disable-network-policy': true} if rack_node_lw_netpol | bool else {})
         | combine({'disable-cloud-controller': true} if rack_node_lw_cloud | bool else {})
         | combine({'disable-helm-controller': true} if rack_node_lw_helm | bool else {})
+        | combine({'tls-san': rack_node_k3s_tls_san} if rack_node_k3s_tls_san | default([]) | length > 0 else {})
         | combine(rack_node_k3s_etcd_snapshot | default({}))
         | to_nice_yaml(sort_keys=false))
       }}
@@ -940,6 +948,250 @@
     - not ansible_check_mode
   tags:
     - docker
+
+- name: Read this node's Tailscale address for the backup target
+  ansible.builtin.command: tailscale ip -4
+  register: rack_node_garage_tailscale_ip
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Resolve backup target inputs
+  ansible.builtin.set_fact:
+    rack_node_garage_data: "{{ provision_inputs.garage_data_path | default('', true) | string | trim or rack_node_garage_data_path }}"
+    rack_node_garage_bucket_name: "{{ provision_inputs.garage_bucket | default('', true) | string | trim or rack_node_garage_bucket }}"
+    rack_node_garage_access_key: "{{ provision_inputs.garage_access_key | default('') | string | trim }}"
+    rack_node_garage_secret_key: "{{ provision_inputs.garage_secret_key | default('') | string | trim }}"
+    rack_node_garage_listen: >-
+      {{ provision_inputs.garage_listen_address | default('', true) | string | trim
+         or (rack_node_garage_tailscale_ip.stdout_lines | default([]) | first | default('') | trim)
+         or '0.0.0.0' }}
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+    - (provision_inputs | default({})) is mapping
+  no_log: true
+  tags:
+    - backup-target
+
+- name: Validate backup target inputs
+  ansible.builtin.assert:
+    that:
+      - rack_node_supports_docker | bool
+      - rack_node_garage_data is match('^/[A-Za-z0-9._/-]+$')
+      - rack_node_garage_bucket_name is match('^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$')
+      - rack_node_garage_access_key is match('^GK[0-9a-f]{24,32}$')
+      - rack_node_garage_secret_key is match('^[0-9a-f]{64}$')
+      - rack_node_garage_listen is match('^[0-9a-fA-F.:]+$')
+    fail_msg: >-
+      The backup target needs Docker (Pi 5, Pi 4 or x86_64), an absolute data path, a lowercase bucket name,
+      an access key like GK followed by 32 hex characters (echo GK$(openssl rand -hex 16)),
+      a 64-character hex secret (openssl rand -hex 32) and an IP listen address.
+    quiet: true
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+# Garage refuses to start once its key has a different secret, so never silently swap the keys.
+- name: Read the existing backup target keys
+  ansible.builtin.slurp:
+    src: /etc/garage/garage.env
+  register: rack_node_garage_existing_env
+  failed_when: false
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Refuse to change the backup target keys
+  ansible.builtin.assert:
+    that:
+      - >-
+        rack_node_garage_existing_env.content is not defined
+        or (('GARAGE_DEFAULT_ACCESS_KEY=' ~ rack_node_garage_access_key) in (rack_node_garage_existing_env.content | b64decode)
+            and ('GARAGE_DEFAULT_SECRET_KEY=' ~ rack_node_garage_secret_key) in (rack_node_garage_existing_env.content | b64decode))
+    fail_msg: >-
+      This backup target already has a different access key or secret, and Garage will not start with a changed secret.
+      Enter the original keys, or delete /etc/garage/garage.env and {{ rack_node_garage_data }} on the node to start an empty store.
+    quiet: true
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Install Docker engine for the backup target
+  ansible.builtin.apt:
+    name: [docker.io, openssl]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    lock_timeout: 300
+  when:
+    - rack_manage_with_ansible | bool
+    - rack_node_manage_system | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Ensure the backup target directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - /etc/garage
+    - "{{ rack_node_garage_data }}/meta"
+    - "{{ rack_node_garage_data }}/data"
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Create the backup target RPC secret once
+  ansible.builtin.shell: umask 077 && openssl rand -hex 32 > /etc/garage/rpc_secret
+  args:
+    creates: /etc/garage/rpc_secret
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Write the backup target settings
+  ansible.builtin.copy:
+    dest: /etc/garage/garage.toml
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by the rack_node role (backup-target module).
+      metadata_dir = "/var/lib/garage/meta"
+      data_dir = "/var/lib/garage/data"
+      db_engine = "sqlite"
+      replication_factor = 1
+      rpc_bind_addr = "127.0.0.1:3901"
+      rpc_public_addr = "127.0.0.1:3901"
+      rpc_secret_file = "/etc/garage/rpc_secret"
+
+      [s3_api]
+      s3_region = "{{ rack_node_garage_region }}"
+      api_bind_addr = "{{ ('[' ~ rack_node_garage_listen ~ ']') if ':' in rack_node_garage_listen else rack_node_garage_listen }}:{{ rack_node_garage_port }}"
+  register: rack_node_garage_config
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Write the backup target keys
+  ansible.builtin.copy:
+    dest: /etc/garage/garage.env
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      GARAGE_DEFAULT_ACCESS_KEY={{ rack_node_garage_access_key }}
+      GARAGE_DEFAULT_SECRET_KEY={{ rack_node_garage_secret_key }}
+      GARAGE_DEFAULT_BUCKET={{ rack_node_garage_bucket_name }}
+  register: rack_node_garage_env
+  no_log: true
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+# The keys reach the container from the env file, so they never appear in the unit or in ps.
+- name: Write the backup target service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/garage.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Garage S3 backup target
+      Requires=docker.service
+      After=docker.service network-online.target tailscaled.service
+      Wants=network-online.target
+
+      [Service]
+      EnvironmentFile=/etc/garage/garage.env
+      ExecStartPre=-/usr/bin/docker rm -f garage
+      ExecStart=/usr/bin/docker run --rm --name garage --network host \
+        -v /etc/garage/garage.toml:/etc/garage.toml:ro \
+        -v /etc/garage/rpc_secret:/etc/garage/rpc_secret:ro \
+        -v {{ rack_node_garage_data }}/meta:/var/lib/garage/meta \
+        -v {{ rack_node_garage_data }}/data:/var/lib/garage/data \
+        -e GARAGE_DEFAULT_ACCESS_KEY -e GARAGE_DEFAULT_SECRET_KEY -e GARAGE_DEFAULT_BUCKET \
+        {{ rack_node_garage_image }} /garage server --single-node --default-bucket
+      ExecStop=/usr/bin/docker stop garage
+      Restart=always
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+  register: rack_node_garage_unit
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+  tags:
+    - backup-target
+
+- name: Pull the backup target image
+  ansible.builtin.command: docker pull {{ rack_node_garage_image }}
+  register: rack_node_garage_pull
+  changed_when: "'Downloaded newer image' in rack_node_garage_pull.stdout"
+  retries: 3
+  delay: 10
+  until: rack_node_garage_pull.rc == 0
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+    - not ansible_check_mode
+  tags:
+    - backup-target
+
+- name: Start the backup target
+  ansible.builtin.systemd:
+    name: garage
+    enabled: true
+    daemon_reload: true
+    state: >-
+      {{ 'restarted' if (rack_node_garage_config.changed or rack_node_garage_env.changed or rack_node_garage_unit.changed) else 'started' }}
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+    - not ansible_check_mode
+  tags:
+    - backup-target
+
+- name: Wait for the backup target to answer
+  ansible.builtin.wait_for:
+    host: "{{ '127.0.0.1' if rack_node_garage_listen in ['0.0.0.0', '::'] else rack_node_garage_listen }}"
+    port: "{{ rack_node_garage_port }}"
+    timeout: 180
+  when:
+    - rack_manage_with_ansible | bool
+    - provision_profile | default('') == 'backup-target'
+    - not ansible_check_mode
+  tags:
+    - backup-target
 
 - name: Resolve Telegraf inputs
   ansible.builtin.set_fact:
@@ -1219,7 +1471,8 @@
     msg: >-
       Longhorn stores data only on NVMe. Storage Disk is
       '{{ rack_node_longhorn_storage_disk_effective }}', which would leave
-      {{ rack_node_longhorn_storage_path_effective }} on the SD card. Use auto or an NVMe device.
+      {{ rack_node_longhorn_storage_path_effective }} on the OS disk unchecked. Use auto (on a node that boots
+      from NVMe it uses the boot NVMe when no spare NVMe is fitted) or an NVMe device.
   when:
     - rack_node_supports_longhorn | bool
     - rack_manage_with_ansible | bool
@@ -1236,6 +1489,8 @@
     label: longhorn
     identify_by: "{{ rack_node_longhorn_storage_identify_by }}"
     nvme_only: "{{ rack_node_longhorn_nvme_only | bool }}"
+    # A Pi 5 booting from its only NVMe keeps Longhorn in a directory on that NVMe.
+    root_fallback: true
   register: rack_node_longhorn_disk
   when:
     - rack_node_supports_longhorn | bool
@@ -1252,7 +1507,8 @@
       {{ rack_node_longhorn_disk.device_ref }}
       (UUID {{ rack_node_longhorn_disk.uuid | default('unknown until formatted') }},
       by-id {{ rack_node_longhorn_disk.by_id | default('none') }},
-      {{ rack_node_longhorn_disk.formatted | ternary('formatted now', 'already prepared') }})
+      {{ 'a directory on the NVMe this node boots from' if rack_node_longhorn_disk.action | default('') == 'root'
+         else (rack_node_longhorn_disk.formatted | ternary('formatted now', 'already prepared')) }})
   when:
     - rack_node_supports_longhorn | bool
     - rack_node_longhorn_disk is defined

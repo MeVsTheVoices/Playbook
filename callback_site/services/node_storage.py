@@ -20,7 +20,7 @@ def read_longhorn_disks(node_name: str, path: str = "", device: str = "") -> dic
         return {"ok": False, "node": node_name, "error": "Storage path must be an absolute path."}
     if not _SAFE_DEVICE.fullmatch(device):
         return {"ok": False, "node": node_name, "error": "Storage disk must be auto or a /dev path (Longhorn never uses none)."}
-    args = json.dumps({"path": path, "device": device, "label": "longhorn", "nvme_only": True, "report_only": True})
+    args = json.dumps({"path": path, "device": device, "label": "longhorn", "nvme_only": True, "root_fallback": True, "report_only": True})
     result, response = run_ansible_module(node_name, "rack_storage_disk", args, alias="storage_target", library=True)
     if response is None:
         return result

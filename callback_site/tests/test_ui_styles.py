@@ -53,9 +53,7 @@ check(visible(".sidebar-collapse-label") && visible(".sidebar-collapse-icon"),
 
     def test_every_page_uses_shared_styles_and_navigation(self) -> None:
         for path in PAGES:
-            with self.subTest(path=path), patch_in("_detect_kubernetes_runtime", return_value={
-                "available": True, "k3s_binary": "/usr/local/bin/k3s",
-            }):
+            with self.subTest(path=path):
                 with self.client.get(path) as response:
                     text = response.get_data(as_text=True)
                 self.assertEqual(response.status_code, 200)

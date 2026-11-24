@@ -429,7 +429,7 @@ function renderModuleSection() {
     const roleHint = document.createElement("p");
     roleHint.className = "module-callout";
     const boardName = selectedNode.group === "rpi_3bplus_active" ? "Pi 3B+" : (selectedNode.group === "rpi4_active" ? "Pi 4" : "Pi 5");
-    roleHint.textContent = `Rack layout: the NucBox is the K3s server. This ${selectedNode.group === "rpi_3bplus_active" ? "Pi 3B+ defaults to 'light-worker' (a tainted K3s agent; it is too small to carry etcd)" : boardName + " defaults to 'worker'"}. Any Pi can instead be 'utility' (no Kubernetes) or 'control-plane' (a K3s server and etcd voter; keep the number of servers odd${selectedNode.group === "rpi4_active" ? "; boot a Pi 4 control-plane from an SSD, not an SD card" : ""}).`;
+    roleHint.textContent = `Rack layout: new nodes join any existing K3s server. This ${selectedNode.group === "rpi_3bplus_active" ? "Pi 3B+ defaults to 'light-worker' (a tainted K3s agent; it is too small to carry etcd)" : boardName + " defaults to 'worker'"}. Any Pi can instead be 'utility' (no Kubernetes) or 'control-plane' (a K3s server and etcd voter; keep the number of servers odd${selectedNode.group === "rpi4_active" ? "; boot a Pi 4 control-plane from an SSD, not an SD card" : ""}).`;
     moduleDetailEl.appendChild(roleHint);
   }
   if (profile.id === "longhorn") {

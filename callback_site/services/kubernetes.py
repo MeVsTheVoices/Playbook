@@ -30,29 +30,6 @@ KUBERNETES_STATUS_CACHE: Dict[str, Any] = {
 }
 
 
-_K3S_VERSION_TTL_SECONDS = 600
-_K3S_VERSION_CACHE: Dict[str, Any] = {"checked_at": 0.0, "version": ""}
-
-
-def _local_k3s_version() -> str:
-    """The K3s version installed on this machine (e.g. v1.36.4+k3s1), or '' when K3s is not installed."""
-    now = time.time()
-    with KUBERNETES_STATUS_LOCK:
-        if now - float(_K3S_VERSION_CACHE["checked_at"]) < _K3S_VERSION_TTL_SECONDS:
-            return str(_K3S_VERSION_CACHE["version"])
-    binary = shutil.which("k3s") or "/usr/local/bin/k3s"
-    version = ""
-    try:
-        proc = subprocess.run([binary, "--version"], capture_output=True, text=True, check=False, timeout=5)
-        found = re.search(r"v\d+\.\d+\.\d+\+k3s\d+", str(proc.stdout or ""))
-        version = found.group(0) if found else ""
-    except Exception:
-        version = ""
-    with KUBERNETES_STATUS_LOCK:
-        _K3S_VERSION_CACHE.update({"checked_at": now, "version": version})
-    return version
-
-
 def _service_is_active(service_name: str) -> bool:
     try:
         proc = subprocess.run(
@@ -68,7 +45,12 @@ def _service_is_active(service_name: str) -> bool:
 
 
 def _has_client_kubeconfig() -> bool:
-    return bool(os.getenv("KUBECONFIG", "").strip()) or (Path.home() / ".kube" / "config").is_file()
+    """True when kubectl/helm can reach a cluster without the local k3s.yaml (kubeconfig or in-cluster pod)."""
+    return (
+        bool(os.getenv("KUBECONFIG", "").strip())
+        or bool(os.getenv("KUBERNETES_SERVICE_HOST", "").strip())
+        or (Path.home() / ".kube" / "config").is_file()
+    )
 
 
 def _detect_kubernetes_runtime(force_refresh: bool = False) -> Dict[str, Any]:

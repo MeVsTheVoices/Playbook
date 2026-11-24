@@ -149,8 +149,9 @@ def _parse_image_catalog_yaml(text: str) -> Dict[str, Any]:
         data["image_catalog"].append(current_item)
     return data
 
-# NucBox over Tailscale; etcd peer TLS is IP-sensitive, so never the NATed LAN address.
-K3S_API_ENDPOINT_DEFAULT = "https://100.65.24.76:6443"
+# Join address for new K3s nodes. Any server works: agents learn every server once joined.
+# Use a Tailscale address; etcd peer TLS is IP-sensitive, so never a NATed LAN address.
+K3S_API_ENDPOINT_DEFAULT = os.getenv("K3S_API_ENDPOINT", "").strip() or "https://100.65.24.76:6443"
 
 NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
@@ -361,7 +362,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "options": ["worker"],
                 **node_role_spec_parts(),
                 "default": "worker",
-                "hint": "Pi 5 and Pi 4: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). A Pi 4 control-plane needs an SSD: K3s says SD cards cannot handle etcd. Keep the number of K3s servers odd: the NucBox plus two control-plane Pis makes three.",
+                "hint": "Pi 5 and Pi 4: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). A Pi 4 control-plane needs an SSD: K3s says SD cards cannot handle etcd. Keep the number of K3s servers (control-plane nodes, wherever they run) odd: three tolerates one failure.",
                 "required": True,
             },
             {

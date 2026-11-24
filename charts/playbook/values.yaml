@@ -1,0 +1,57 @@
+image:
+  # Build with `docker compose build` and import into K3s, or push to a registry.
+  repository: playbook-callback-site
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Optional portal modules. "kubernetes" adds the cluster page, Helm deployments and node/pod cleanup.
+modules: []
+
+# Address nodes use to report back, e.g. http://10.255.45.164:30088/api/cloud-init/callback.
+callbackPublicUrl: ""
+# K3s join address written into new nodes' configs; any server works.
+k3sApiEndpoint: ""
+# Extra hostnames allowed to open the dashboard (IPs always work).
+adminHosts: []
+extraEnv: []
+
+service:
+  # Node callbacks only; nodes on the LAN must reach this.
+  callback:
+    type: NodePort
+    port: 8088
+    nodePort: null
+  # Dashboard (login required). Keep ClusterIP and use port-forward or an ingress.
+  admin:
+    type: ClusterIP
+    port: 8089
+
+persistence:
+  existingClaim: ""
+  storageClassName: ""
+  size: 2Gi
+
+serviceAccount:
+  create: true
+  name: ""
+
+# With the kubernetes module the portal deletes nodes/pods and installs Helm charts,
+# which needs cluster-admin. Set false to bind your own Role instead.
+rbac:
+  clusterAdmin: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 192Mi
+  limits:
+    memory: 1Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Optional chart dependency; see charts/flash-helper/values.yaml.
+# Set flashHelper.portal.serviceAccount to this release's ServiceAccount and namespace.
+flashHelper:
+  enabled: false

@@ -1,6 +1,6 @@
 const K3S_ROLE_HINTS = {
   pi3bplus: "A Pi 3B+ has about 900 MB of RAM, below the 2 GB K3s documents for a server. light-worker joins as a K3s agent (no etcd, no API server). For a utility node that runs no Kubernetes, set Distribution to Standard instead.",
-  pi5: "worker joins as a K3s agent. control-plane makes this Pi a K3s server and an etcd voter: keep the number of servers odd (the NucBox plus two Pi 5 makes three). For a utility node that runs no Kubernetes, set Distribution to Standard instead.",
+  pi5: "worker joins as a K3s agent. control-plane makes this Pi a K3s server and an etcd voter: keep the number of servers odd (three tolerates one failure). For a utility node that runs no Kubernetes, set Distribution to Standard instead.",
   pi4: "worker joins as a K3s agent. control-plane makes this Pi a K3s server and an etcd voter: K3s says SD cards cannot handle etcd IO, so boot it from a USB SSD, and keep the number of servers odd. On a 1 to 2 GB Pi 4 consider turning on the lightweight server options. For a utility node that runs no Kubernetes, set Distribution to Standard instead.",
 };
 

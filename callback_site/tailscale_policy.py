@@ -37,7 +37,7 @@ from k3s_lightweight import BOARDS
 HOMELAB_TAG = "tag:homelab"
 DEFAULT_ADMIN = "group:admins"
 DEFAULT_SUBNETS = ("192.168.174.0/24", "192.168.175.0/24")
-# The callback site listens here; Pis that report over Tailscale need to reach the NucBox on it.
+# The portal's callback listener; nodes that report over Tailscale need to reach it.
 DEFAULT_EXTRA_PORTS = ("tcp:8088",)
 
 TRAFFIC_K3S = "k3s"

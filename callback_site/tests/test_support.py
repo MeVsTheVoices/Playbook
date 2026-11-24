@@ -21,6 +21,8 @@ TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="callback-site-tests-"))
 os.environ["CALLBACK_APPDATA_DIR"] = str(TEST_DATA_DIR)
 # Tests post callbacks constantly; a background SSH pull per node would only add noise.
 os.environ["CALLBACK_AUTO_BOOT_LOGS"] = "0"
+# The shared app carries every optional module; test_modules covers the default (none).
+os.environ["PLAYBOOK_MODULES"] = "kubernetes"
 
 APP_DIR = Path(__file__).resolve().parents[1]
 if str(APP_DIR) not in sys.path:

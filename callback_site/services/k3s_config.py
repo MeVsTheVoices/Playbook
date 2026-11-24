@@ -5,15 +5,42 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
+import shutil
 import socket
+import subprocess
+import threading
+import time
 from typing import Any, Callable, Dict, List
-from urllib import parse as urlparse
 
 import yaml
 
 from domain_defaults import K3S_API_ENDPOINT_DEFAULT
 
 from services.node_state import _profile_input_spec_map
+
+
+_K3S_VERSION_LOCK = threading.Lock()
+_K3S_VERSION_TTL_SECONDS = 600
+_K3S_VERSION_CACHE: Dict[str, Any] = {"checked_at": 0.0, "version": ""}
+
+
+def _local_k3s_version() -> str:
+    """The K3s version installed on this machine (e.g. v1.36.4+k3s1), or '' when K3s is not installed."""
+    now = time.time()
+    with _K3S_VERSION_LOCK:
+        if now - float(_K3S_VERSION_CACHE["checked_at"]) < _K3S_VERSION_TTL_SECONDS:
+            return str(_K3S_VERSION_CACHE["version"])
+    binary = shutil.which("k3s") or "/usr/local/bin/k3s"
+    version = ""
+    try:
+        proc = subprocess.run([binary, "--version"], capture_output=True, text=True, check=False, timeout=5)
+        found = re.search(r"v\d+\.\d+\.\d+\+k3s\d+", str(proc.stdout or ""))
+        version = found.group(0) if found else ""
+    except Exception:
+        version = ""
+    with _K3S_VERSION_LOCK:
+        _K3S_VERSION_CACHE.update({"checked_at": now, "version": version})
+    return version
 
 
 def _normalize_k3s_node_name(node_name: str | None) -> str:
@@ -31,9 +58,9 @@ def _normalize_k3s_node_name(node_name: str | None) -> str:
 
 
 def _default_k3s_config(node_name: str | None = None) -> str:
-    host = os.getenv("K3S_SERVER_HOST", "").strip() or urlparse.urlparse(K3S_API_ENDPOINT_DEFAULT).hostname
-    node_name = _normalize_k3s_node_name(node_name)
-    return f"# pragma: k3s-config-v1\nserver: https://{host}:6443\nnode-name: {node_name}\n"
+    host = os.getenv("K3S_SERVER_HOST", "").strip()
+    server = f"https://{host}:6443" if host else K3S_API_ENDPOINT_DEFAULT
+    return f"# pragma: k3s-config-v1\nserver: {server}\nnode-name: {_normalize_k3s_node_name(node_name)}\n"
 
 
 LONGFORM_CHECK_MAX_CHARS = 65536

@@ -1,0 +1,6 @@
+dependencies:
+- name: flash-helper
+  repository: file://../flash-helper
+  version: 0.1.0
+digest: sha256:f8c85287cad9ca873c3fd03c471017771489e9ecc0f1693deb38542d951d5226
+generated: "2026-11-24T04:54:40.678337737-08:00"

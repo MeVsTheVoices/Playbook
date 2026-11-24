@@ -3,7 +3,7 @@
 Every board can be a worker, run no Kubernetes ("utility"), or be a K3s server
 ("control-plane"). Defaults differ because the boards do:
 - Pi 5 (NVMe, plenty of RAM): default "worker"; as a control-plane it keeps every
-  packaged component on, so it matches the NucBox server without extra flags.
+  packaged component on, so it matches a default K3s server without extra flags.
 - Pi 4 (1-8 GB, usually SD or USB): same shape as the Pi 5. As a control-plane it needs an SSD,
   because K3s documents that SD cards and eMMC cannot handle etcd's IO load.
 - Pi 3B+ (about 900 MB RAM, SD card, below K3s's 2 GB server floor): default
@@ -24,7 +24,7 @@ Facts this encodes (K3s docs, "Packaged Components" and "server" CLI):
   only be disabled when ingress is "none".
 - ingress-nginx is deliberately not offered: the Kubernetes project retired it
   in March 2026 (no releases, no security fixes).
-- etcd wants an odd number of servers: the NucBox plus two Pi 5 makes three.
+- etcd wants an odd number of servers: three tolerates one failure.
 """
 
 from __future__ import annotations

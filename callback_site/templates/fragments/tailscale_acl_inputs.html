@@ -45,7 +45,7 @@
   <div class="field-card">
     <label for="homelab_tag">Homelab Tag</label>
     <input id="homelab_tag" value="{{ defaults.homelab_tag }}">
-    <p class="field-hint">On every rack node, the NucBox included.</p>
+    <p class="field-hint">On every rack node, K3s servers included.</p>
   </div>
 </div>
 
@@ -62,11 +62,11 @@
   <div class="field-card">
     <label for="extra_ports">Extra Ports</label>
     <input id="extra_ports" value="{{ defaults.extra_ports | join(', ') }}" placeholder="tcp:8088, udp:5000-5010">
-    <p class="field-hint">Comma separated. <code>tcp:8088</code> is the callback site on the NucBox.</p>
+    <p class="field-hint">Comma separated. <code>tcp:8088</code> is the portal's callback listener.</p>
   </div>
   <div class="field-card check-card">
     <label class="check-row"><input id="pi_servers" type="checkbox" checked> Pis may be K3s servers</label>
-    <p class="field-hint">Opens tcp 2379-2380 (etcd) between nodes. Needed while any Pi is a control-plane node (NucBox plus two Pis is three servers); untick it if the NucBox is the only server.</p>
+    <p class="field-hint">Opens tcp 2379-2380 (etcd) between nodes. Needed whenever the cluster has more than one K3s server; untick it only for a single-server cluster.</p>
   </div>
 </div>
 

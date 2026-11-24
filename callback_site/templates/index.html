@@ -331,7 +331,7 @@ server: https://local-machine-ip:6443
                     <select id="opt_k3s_ingress" data-option-key="k3s_ingress" data-option-default="{{ k3s_ingress_default }}" data-option-distribution="k3s" data-option-profile="{{ k3s_lightweight_profiles }}" data-option-role="control-plane">
                       {% for choice in k3s_ingress_choices %}<option value="{{ choice }}"{% if choice == k3s_ingress_default %} selected{% endif %}>{{ choice }}</option>{% endfor %}
                     </select>
-                    <p class="segment-hint">'none' also disables Traefik. ingress-nginx is not offered: the Kubernetes project retired it in March 2026 (no security fixes). The options below are cluster-wide: the ones marked 'must match' have to be identical on every K3s server, including the NucBox. The Pi 5 and Pi 4 start with all of them off so they match the NucBox as-is; the Pi 3B+ starts with the lightweight set on.</p>
+                    <p class="segment-hint">'none' also disables Traefik. ingress-nginx is not offered: the Kubernetes project retired it in March 2026 (no security fixes). The options below are cluster-wide: the ones marked 'must match' have to be identical on every K3s server. The Pi 5 and Pi 4 start with all of them off so they match a default K3s server; the Pi 3B+ starts with the lightweight set on.</p>
                   </div>
                   {% for opt in k3s_lightweight_options %}
                   <div data-os-option-wrapper="1">

@@ -1,6 +1,9 @@
+# Kubernetes module: the cluster page, Helm and the Tailscale operator, through a mounted kubeconfig.
+# scripts/connect_k3s_kubeconfig.sh (Linux K3s) or scripts/connect_docker_kubernetes.ps1 writes .local/kubeconfig.
 services:
   callback-site:
     environment:
+      PLAYBOOK_MODULES: ${PLAYBOOK_MODULES:-kubernetes}
       KUBECONFIG: /run/kubeconfig
     volumes:
       - type: bind
@@ -9,5 +12,3 @@ services:
         read_only: true
         bind:
           create_host_path: false
-    extra_hosts:
-      - "host.docker.internal:host-gateway"

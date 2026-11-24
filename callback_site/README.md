@@ -256,9 +256,9 @@ Open:
   The fleet table keeps its action controls inside their column and scrolls
   horizontally within the panel at narrow widths. The sidebar uses a compact
   icon toggle; collapsed navigation retains labeled icons and hover titles.
-- `/kubernetes` — cluster status, Kubernetes API over Tailscale, and Helm
-  configurations, also available from the shared sidebar. A connected
-  Kubernetes context is required for live cluster data.
+- `/kubernetes` — *(kubernetes module)* cluster status, Kubernetes API over
+  Tailscale, and Helm configurations. Shown in the sidebar only when the module
+  is enabled; see [Optional modules](#optional-modules).
 - `/settings` — restore archived nodes without deleting callbacks, saved inputs,
   or historical boot logs. Age-based pruning is retired; archive active nodes
   explicitly from the callback dashboard.
@@ -274,8 +274,8 @@ Open:
 ## Longhorn Notes
 
 - Longhorn is intentionally wired as an optional Pi 5 profile for now. Nodes boot from SD card, but Longhorn data lives only on NVMe.
-- The Storage Disk input defaults to `auto`: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts the single blank NVMe disk at the storage path (`/var/lib/longhorn`) by UUID, or reuses one already labelled `longhorn`. Disks that already hold data are never touched. With `raspberry_pi5_longhorn_nvme_only` (default `true`) a non-NVMe disk or `none` fails the run instead of putting data on the SD card.
-- Longhorn must run with `defaultSettings.createDefaultDiskLabeledNodes: true`, so only nodes labelled `node.longhorn.io/create-default-disk=true` get a disk. The profile adds that label from the node itself, through its kubelet credentials, only after the NVMe is mounted. Never label a node by hand before its NVMe is mounted, or Longhorn creates the disk on the SD card. Nodes without NVMe (for example the NucBox control plane) still run Longhorn components but store no replicas.
+- The Storage Disk input defaults to `auto`: the `rack_storage_disk` Ansible module (`library/`) partitions, formats and mounts the single blank NVMe disk at the storage path (`/var/lib/longhorn`) by UUID, or reuses one already labelled `longhorn`. Disks that already hold data are never touched. With `raspberry_pi_longhorn_nvme_only` (default `true`) a non-NVMe disk or `none` fails the run instead of putting data on the SD card.
+- Longhorn must run with `defaultSettings.createDefaultDiskLabeledNodes: true`, so only nodes labelled `node.longhorn.io/create-default-disk=true` get a disk. The profile adds that label from the node itself, through its kubelet credentials, only after the NVMe is mounted. Never label a node by hand before its NVMe is mounted, or Longhorn creates the disk on the SD card. Nodes without NVMe (for example an x86 control-plane node) still run Longhorn components but store no replicas.
 - The chart is written only on a K3s server node, so on a worker the module prepares the node (iSCSI, storage path) and skips the chart.
 - If the K3s server is not a Pi 5, install Longhorn separately through a saved Helm configuration on the Kubernetes dashboard; applying the Pi worker profile alone does not install it. Set `defaultSettings.createDefaultDiskLabeledNodes: true` in its values. Verify the [Longhorn node prerequisites](https://longhorn.io/docs/latest/deploy/install/) on every node running Longhorn workloads, including the control plane.
 - Before applying the Longhorn profile, confirm the K3s API server and every kubelet are on compatible versions; a kubelet must not be newer than the API server. Then select the Longhorn profile for the Pi 5 nodes in Node Ops and apply it. Longhorn is not installed by `site.yml` unless the profile is explicitly selected.
@@ -628,6 +628,8 @@ is not replaced with an unauthenticated fallback.
 - `POST /api/ssh/generate`
 - `GET /api/ssh/keys`
 - `GET /api/ssh/public/<key_name>` — plain-text public key for verified first-boot SSH setup
+- `/api/kubernetes/*` and `/api/helm/*` exist only with the kubernetes module:
+- `GET /api/kubernetes/summary` — nodes, pods and Longhorn readiness
 - `GET /api/kubernetes/tailscale-operator` — Tailscale operator release, readiness, API proxy mode/URL and the `tailscale configure kubeconfig` command (never OAuth values)
 - `POST /api/kubernetes/tailscale-operator` — `{"confirm": true, "hostname", "proxy_mode": "auth"|"noauth", "client_id", "client_secret", "readers_binding"}` installs or upgrades the operator; credentials are optional on upgrade
 - `GET /api/helm/configurations` — saved Helm configurations and the included example
@@ -830,6 +832,52 @@ host flasher above rather than making the web app
 privileged. Unmount the intended card on the host, verify size/model/serial,
 and never expose a system disk or mount the host's entire `/dev` into the app.
 
+<a id="optional-modules"></a>
+### 🧩 Optional modules
+
+`PLAYBOOK_MODULES` (comma separated) turns on optional parts of the portal;
+an unknown name stops startup rather than being ignored. Today there is one:
+
+| Module | Adds | Needs |
+| --- | --- | --- |
+| `kubernetes` | `/kubernetes`, `/api/kubernetes/*`, `/api/helm/*` | A kubeconfig (`KUBECONFIG`, `~/.kube/config`, the local K3s file) or in-cluster ServiceAccount credentials. |
+
+With Compose, `compose.kubernetes.yaml` enables it together with the kubeconfig
+mount; `scripts/connect_k3s_kubeconfig.sh` records that overlay in `.env`.
+K3s provisioning (SD prep, Node Ops roles, join tokens) is core and works
+without the module.
+
+`K3S_API_ENDPOINT` sets the join address written into new nodes' K3s configs.
+In a multi-server cluster any server works; pick one that new nodes can reach
+over Tailscale. Nodes can still override it per profile.
+
+<a id="helm-chart"></a>
+### ⎈ Running the portal on Kubernetes
+
+Once a cluster exists, the portal can run in it from [charts/playbook](../charts/playbook/):
+
+```bash
+docker compose build                       # or push the image to a registry
+docker save playbook-callback-site | sudo k3s ctr images import -   # on the node that will run it
+helm dependency build charts/playbook
+helm upgrade --install playbook charts/playbook -n playbook --create-namespace \
+  --set callbackPublicUrl=http://<node-ip>:<nodePort>/api/cloud-init/callback \
+  --set modules={kubernetes}               # omit for a core-only install
+kubectl -n playbook port-forward svc/playbook-admin 8091:8089
+```
+
+The chart runs one replica (state lives on one ReadWriteOnce volume, kept on
+uninstall), exposes node callbacks through a NodePort and keeps the dashboard
+on ClusterIP. With the kubernetes module it binds the portal's ServiceAccount to
+`cluster-admin` (it deletes nodes and installs charts); set
+`rbac.clusterAdmin=false` to bind your own role. Without the module, no token
+is mounted. `flashHelper.enabled=true` adds the [flash helper](../charts/flash-helper/).
+Build `KUBERNETES_TOOLS=false` (`docker compose build --build-arg KUBERNETES_TOOLS=false`)
+for a smaller core-only image without kubectl and Helm.
+
+The chart does not copy existing Compose data; move `/data` from the
+`playbook_callback-site-data` volume yourself, as for a host migration.
+
 ### Linux K3s and the Kubernetes dashboard
 
 The sidebar's **Kubernetes** page uses the kubeconfig mounted into the portal;
@@ -989,14 +1037,14 @@ requests reach the proxy.
 
 #### 🧯 When it isn't working
 
-- **"Forbidden" or no route from the NUC.** Tagged machines (like the NucBox)
-  don't match the `group:admins` grant. Run kubectl from an untagged device
+- **"Forbidden" or no route from the portal host.** Tagged machines (like a
+  server node) don't match the `group:admins` grant. Run kubectl from an untagged device
   that belongs to the admin.
 - **Pod is Running but the operator never shows up on the tailnet.** Check
   **Pod network**. If any node isn't on a 100.x address, set
   `flannel-iface: tailscale0` everywhere (see the
   [Linux K3s setup](#linux-k3s-and-the-kubernetes-dashboard)).
-  Without it, a pod on a Pi can't reach CoreDNS on the NucBox, so it can't
+  Without it, a pod on a Pi can't reach CoreDNS on another node, so it can't
   log in.
 
 **Modes:** `auth` (the default) impersonates your Tailscale identity, so

@@ -29,8 +29,7 @@ from services.images import _record_image_history
 from services.node_archive import set_archived
 from services.image_catalog import _catalog_entry_with_availability
 from domain_defaults import IMAGE_CATALOG
-from services.k3s_config import _default_k3s_config, _normalize_k3s_node_name
-from services.kubernetes import _local_k3s_version
+from services.k3s_config import _default_k3s_config, _local_k3s_version, _normalize_k3s_node_name
 from services.ssh_keys import _archive_ssh_public_key
 from services.storage import IMAGE_CACHE_DIR, INVENTORY_FILE, SCRIPT_PATH
 from network_toolkit import BOOT_INPUT_SPECS as TOOLKIT_SPECS, PROFILE as TOOLKIT_PROFILE, SECRET_OPTIONS as TOOLKIT_SECRETS, validate_options as validate_toolkit_options

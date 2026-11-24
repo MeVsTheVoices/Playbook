@@ -41,6 +41,7 @@ callback_site/data/connection_profiles.json
 callback_site/data/ssh_key_archive.jsonl
 callback_site/data/ssh_key_archive/
 callback_site/data/known_hosts
+callback_site/data/known_hosts.old
 callback_site/data/ssh_keys/*
 !callback_site/data/ssh_keys/.gitkeep
 callback_site/.venv/
@@ -55,3 +56,6 @@ callback_site/data/.admin_*
 callback_site/data/sd_profile_sessions/
 /dist/
 docs/rack-cluster-runbook.md
+
+# Vendored by `helm dependency update charts/playbook`.
+charts/playbook/charts/

@@ -169,20 +169,20 @@ class ByIdTests(unittest.TestCase):
 
 
 class RoleUsageTests(unittest.TestCase):
-    def test_the_pi5_role_only_passes_parameters_the_module_accepts(self) -> None:
-        tasks = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi5" / "tasks" / "main.yml").read_text(encoding="utf-8"))
+    def test_the_pi_role_only_passes_parameters_the_module_accepts(self) -> None:
+        tasks = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "tasks" / "main.yml").read_text(encoding="utf-8"))
         task = next(t for t in tasks if t.get("name") == "Prepare the Longhorn storage disk")
         documented = set(yaml.safe_load(disk.DOCUMENTATION)["options"])
         self.assertLessEqual(set(task["rack_storage_disk"]), documented)
 
     def test_the_node_is_labelled_for_longhorn_only_after_its_nvme_is_prepared(self) -> None:
-        tasks = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi5" / "tasks" / "main.yml").read_text(encoding="utf-8"))
+        tasks = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "tasks" / "main.yml").read_text(encoding="utf-8"))
         names = [t.get("name") for t in tasks]
         prepare = names.index("Prepare the Longhorn storage disk")
         label = names.index("Label this node for a Longhorn default disk")
         self.assertLess(names.index("Refuse Longhorn data on the OS disk"), prepare)
         self.assertLess(prepare, label)
-        self.assertIn("raspberry_pi5_longhorn_disk is not skipped", tasks[label]["when"])
+        self.assertIn("raspberry_pi_longhorn_disk is not skipped", tasks[label]["when"])
         self.assertTrue(tasks[prepare]["rack_storage_disk"]["nvme_only"])
 
 

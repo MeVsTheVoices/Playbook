@@ -1,0 +1,45 @@
+---
+# Board-specific constants live in vars/<raspberry_pi_board>.yml; set raspberry_pi_board (pi5, pi4 or pi3bplus) where the role is applied.
+raspberry_pi_manage_system: true
+raspberry_pi_upgrade_packages: false
+raspberry_pi_tailscale_manage: true
+raspberry_pi_tailscale_oauth_enabled: true
+
+# Set this directly if you already have a reusable/preauth auth key.
+raspberry_pi_tailscale_auth_key: ""
+
+# OAuth client-credential flow inputs (recommended to source from vault).
+raspberry_pi_tailscale_oauth_client_id: ""
+raspberry_pi_tailscale_oauth_client_secret: ""
+raspberry_pi_tailscale_tailnet: ""
+raspberry_pi_tailscale_auth_key_ttl_seconds: 86400
+
+# Optional device tags. Must be allowed by your tailnet ACL policy.
+raspberry_pi_tailscale_tags: "{{ raspberry_pi_board_tailscale_tags }}"
+
+# Host behavior.
+raspberry_pi_tailscale_hostname: "{{ inventory_hostname }}"
+raspberry_pi_tailscale_accept_dns: true
+raspberry_pi_tailscale_enable_ssh: false
+raspberry_pi_tailscale_advertise_exit_node: "{{ raspberry_pi_board_tailscale_advertise_exit_node }}"
+raspberry_pi_tailscale_advertise_routes: []
+
+# Force re-running tailscale up even if device is already connected.
+raspberry_pi_tailscale_force_reconfigure: false
+
+# K3s release the playbook installs on a node that does not run it yet. Blank matches the server it joins.
+raspberry_pi_k3s_version: ""
+
+# Longhorn defaults (used when provision_profile=longhorn, on boards that support it: the Pi 5).
+# Longhorn data lives only on NVMe: storage_path is the NVMe mount point.
+raspberry_pi_longhorn_storage_path: /var/lib/longhorn
+# "auto" formats and mounts the one blank NVMe disk (or reuses one labelled longhorn); or name an NVMe device.
+raspberry_pi_longhorn_storage_disk: auto
+# Refuse any disk that is not NVMe, and refuse storage_disk none (data on the SD card).
+raspberry_pi_longhorn_nvme_only: true
+# Which stable name rack_storage_disk reports for the disk: uuid or id.
+raspberry_pi_longhorn_storage_identify_by: uuid
+raspberry_pi_longhorn_default_replica_count: 2
+raspberry_pi_longhorn_set_default_storage_class: true
+raspberry_pi_longhorn_install_chart: true
+raspberry_pi_longhorn_chart_version: ""

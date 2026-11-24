@@ -15,10 +15,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE = REPO_ROOT / ".venv" / "bin" / "ansible-playbook"
 
+# One role serves every board; board constants come from roles/raspberry_pi/vars/<board>.yml.
 BOARDS = {
-    "pi5": {"role_dir": "raspberry_pi5", "worker": "worker", "docker": True},
-    "pi4": {"role_dir": "raspberry_pi4", "worker": "worker", "docker": True},
-    "pi3bplus": {"role_dir": "raspberry_pi_3bplus", "worker": "light-worker", "docker": False},
+    "pi5": {"role_dir": "raspberry_pi", "worker": "worker", "docker": True},
+    "pi4": {"role_dir": "raspberry_pi", "worker": "worker", "docker": True},
+    "pi3bplus": {"role_dir": "raspberry_pi", "worker": "light-worker", "docker": False},
 }
 
 SHARED_TASKS = (
@@ -57,6 +58,11 @@ def load_tasks(role_dir: str) -> list[dict]:
     return yaml.safe_load((REPO_ROOT / "roles" / role_dir / "tasks" / "main.yml").read_text(encoding="utf-8"))
 
 
+def board_vars(board: str) -> dict:
+    data = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "vars" / f"{board}.yml").read_text(encoding="utf-8"))
+    return {"raspberry_pi_board": board, **data}
+
+
 def by_name(tasks: list[dict]) -> dict[str, dict]:
     return {t["name"]: t for t in tasks if isinstance(t, dict) and "name" in t}
 
@@ -68,8 +74,11 @@ class RoleBootstrapStructureTests(unittest.TestCase):
             for task in SHARED_TASKS + (DOCKER_TASKS if info["docker"] else ()):
                 with self.subTest(board=board, task=task):
                     self.assertIn(task, names)
-            if not info["docker"]:
-                self.assertNotIn("Install Docker engine", names, "the Docker module does not target the 3B+")
+            self.assertEqual(board_vars(board)["raspberry_pi_supports_docker"], info["docker"], board)
+            self.assertEqual(board_vars(board)["raspberry_pi_worker_role"], info["worker"], board)
+        names = by_name(load_tasks("raspberry_pi"))
+        for task in DOCKER_TASKS:
+            self.assertEqual(names[task]["when"][0], "raspberry_pi_supports_docker | bool", "the Docker module does not target the 3B+")
 
     def test_clock_and_apt_lock_come_before_any_download(self) -> None:
         for board, info in BOARDS.items():
@@ -347,7 +356,7 @@ class RoleBootstrapRenderTests(unittest.TestCase):
         name = "Wait for the joined K3s control-plane API and datastore"
         for stdout, exit_code, expected in (("ok", 0, True), ("not ready", 0, False), ("ok", 1, False)):
             with self.subTest(stdout=stdout, exit_code=exit_code):
-                task = copy.deepcopy(by_name(load_tasks("raspberry_pi5"))[name])
+                task = copy.deepcopy(by_name(load_tasks("raspberry_pi"))[name])
                 task["ansible.builtin.command"]["argv"] = [
                     "/bin/sh", "-c", f"printf '%s' '{stdout}'; exit {exit_code}",
                 ]
@@ -356,7 +365,7 @@ class RoleBootstrapRenderTests(unittest.TestCase):
                 code, output = self.run_play([task], {
                     "rack_manage_with_ansible": True,
                     "provision_profile": "kubernetes",
-                    "raspberry_pi5_k3s_role": "control-plane",
+                    "raspberry_pi_k3s_role": "control-plane",
                 })
                 self.assertEqual(code == 0, expected, output[-1000:])
 
@@ -372,7 +381,9 @@ class RoleBootstrapRenderTests(unittest.TestCase):
             tasks = [copy.deepcopy(names["Resolve Docker inputs"]), write]
             for task in tasks:
                 task.pop("tags", None)
-            code, output = self.run_play(tasks, {"rack_manage_with_ansible": True, "provision_profile": "docker", "provision_inputs": inputs})
+            code, output = self.run_play(tasks, {
+                **board_vars(board), "rack_manage_with_ansible": True, "provision_profile": "docker", "provision_inputs": inputs,
+            })
             self.assertEqual(code, 0, output[-800:])
             return json.loads(out.read_text(encoding="utf-8")) if out.exists() else None
 
@@ -384,6 +395,10 @@ class RoleBootstrapRenderTests(unittest.TestCase):
                 mirror_only = self.render_docker_daemon(board, {"docker_data_root": "", "registry_mirror": "https://mirror.lab:5000"})
                 self.assertEqual(mirror_only, {"registry-mirrors": ["https://mirror.lab:5000"]})
                 self.assertIsNone(self.render_docker_daemon(board, {"docker_data_root": "", "registry_mirror": ""}), "blank inputs must not overwrite a hand-edited daemon.json")
+        self.assertIsNone(
+            self.render_docker_daemon("pi3bplus", {"docker_data_root": "/srv/docker", "registry_mirror": ""}),
+            "the Docker module does not target the 3B+",
+        )
 
     TELEGRAF_BASE = {"influx_endpoint": "https://influx.example:8086/", "influx_bucket": "telegraf", "influx_org": "homelab", "influx_access_key": "access"}
 

@@ -21,9 +21,9 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # profile -> (group_vars directory, role variable prefix)
 GROUP_VARS = {
-    "pi5": ("rpi5", "raspberry_pi5"),
-    "pi4": ("rpi4", "raspberry_pi4"),
-    "pi3bplus": ("rpi_3bplus", "raspberry_pi_3bplus"),
+    "pi5": ("rpi5", "raspberry_pi"),
+    "pi4": ("rpi4", "raspberry_pi"),
+    "pi3bplus": ("rpi_3bplus", "raspberry_pi"),
 }
 
 
@@ -243,9 +243,11 @@ class TailscaleDefaultsMatchTheRackTests(BaseCallbackSiteTest):
             self.assertIn(f'CLOUD_INIT_TAILSCALE_TAGS="{board["tailscale_tag"]},{tp.HOMELAB_TAG}"', script, profile)
 
     def test_role_defaults_use_the_registry_tag(self) -> None:
-        for profile, role_dir in (("pi5", "raspberry_pi5"), ("pi4", "raspberry_pi4")):
-            data = yaml.safe_load((REPO_ROOT / "roles" / role_dir / "defaults" / "main.yml").read_text(encoding="utf-8"))
-            self.assertEqual(data[f"{role_dir}_tailscale_tags"], [lw.BOARDS[profile]["tailscale_tag"]])
+        defaults = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "defaults" / "main.yml").read_text(encoding="utf-8"))
+        self.assertEqual(defaults["raspberry_pi_tailscale_tags"], "{{ raspberry_pi_board_tailscale_tags }}")
+        for profile in lw.BOARDS:
+            data = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "vars" / f"{profile}.yml").read_text(encoding="utf-8"))
+            self.assertEqual(data["raspberry_pi_board_tailscale_tags"], [lw.BOARDS[profile]["tailscale_tag"]])
 
     def test_inventory_and_site_cover_every_board_group(self) -> None:
         inventory = (REPO_ROOT / "inventory.yml").read_text(encoding="utf-8")

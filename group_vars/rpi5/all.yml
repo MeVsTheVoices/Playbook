@@ -1,16 +1,16 @@
 ---
 # Keep real secrets in vault-backed variables.
-raspberry_pi5_tailscale_oauth_enabled: true
-raspberry_pi5_tailscale_tailnet: tail00c2ce
-raspberry_pi5_tailscale_oauth_client_id: "{{ vault_rpi5_tailscale_oauth_client_id }}"
-raspberry_pi5_tailscale_oauth_client_secret: "{{ vault_rpi5_tailscale_oauth_client_secret }}"
+raspberry_pi_tailscale_oauth_enabled: true
+raspberry_pi_tailscale_tailnet: tail00c2ce
+raspberry_pi_tailscale_oauth_client_id: "{{ vault_rpi5_tailscale_oauth_client_id }}"
+raspberry_pi_tailscale_oauth_client_secret: "{{ vault_rpi5_tailscale_oauth_client_secret }}"
 
-raspberry_pi5_tailscale_advertise_exit_node: false
-raspberry_pi5_tailscale_advertise_routes: []
-raspberry_pi5_tailscale_tags:
+raspberry_pi_tailscale_advertise_exit_node: false
+raspberry_pi_tailscale_advertise_routes: []
+raspberry_pi_tailscale_tags:
   - tag:rpi5
   - tag:homelab
 
 # Longhorn data goes only on the Pi's NVMe, mounted at the storage path.
-raspberry_pi5_longhorn_storage_path: /var/lib/longhorn
-raspberry_pi5_longhorn_storage_disk: auto
+raspberry_pi_longhorn_storage_path: /var/lib/longhorn
+raspberry_pi_longhorn_storage_disk: auto

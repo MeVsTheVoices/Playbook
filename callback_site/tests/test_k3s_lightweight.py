@@ -401,7 +401,7 @@ class LightweightUiAndSpecTests(BaseCallbackSiteTest):
 
     def test_old_option_names_are_gone_everywhere(self) -> None:
         sources = [
-            "roles/raspberry_pi5/tasks/main.yml", "roles/raspberry_pi_3bplus/tasks/main.yml", "roles/raspberry_pi4/tasks/main.yml",
+            "roles/raspberry_pi/tasks/main.yml", "roles/raspberry_pi/vars/pi5.yml", "roles/raspberry_pi/vars/pi4.yml", "roles/raspberry_pi/vars/pi3bplus.yml",
             "callback_site/templates/index.html", "callback_site/templates/nodes.html", "callback_site/k3s_lightweight.py",
         ]
         sources += [str(p.relative_to(REPO_ROOT)) for folder in ("home", "nodes") for p in (REPO_ROOT / "callback_site" / "static" / folder).glob("*.js")]
@@ -446,73 +446,40 @@ class NodeOpsFalseOkTests(BaseCallbackSiteTest):
 
 
 class LightweightAnsibleRoleTests(BaseCallbackSiteTest):
-    # Task names differ per board; the harness runs the real role tasks, not a copy of their logic.
+    # One role serves every board; the harness runs the real role tasks with the board's vars file, not a copy of their logic.
+    ROLE_TASKS = (
+        "Resolve structured K3s settings",
+        "Validate {{ raspberry_pi_board_label }} role",
+        "Resolve lightweight K3s component list",
+        "Validate lightweight K3s options",
+        "Validate {{ raspberry_pi_board_label }} control-plane settings",
+        "Refuse etcd on an SD card",
+        "Validate {{ raspberry_pi_board_label }} {{ raspberry_pi_worker_role }} settings",
+        "Validate {{ raspberry_pi_board_label }} max pods",
+        "Write structured K3s control-plane config",
+        "Write structured K3s {{ raspberry_pi_worker_role }} config",
+    )
     BOARDS = {
-        "pi3bplus": {
-            "role_dir": "raspberry_pi_3bplus",
-            "prefix": "raspberry_pi_3bplus",
-            "k3s_roles": ("light-worker", "control-plane"),
-            "tasks": (
-                "Resolve structured K3s settings",
-                "Validate 3B+ role",
-                "Resolve lightweight K3s component list",
-                "Validate lightweight K3s options",
-                "Validate 3B+ control-plane settings",
-                "Refuse etcd on an SD card",
-                "Validate 3B+ light-worker settings",
-                "Validate 3B+ max pods",
-                "Write structured K3s control-plane config",
-                "Write structured K3s light-worker config",
-            ),
-        },
-        "pi5": {
-            "role_dir": "raspberry_pi5",
-            "prefix": "raspberry_pi5",
-            "k3s_roles": ("worker", "control-plane"),
-            "tasks": (
-                "Resolve structured K3s settings",
-                "Validate Pi 5 role",
-                "Resolve lightweight K3s component list",
-                "Validate lightweight K3s options",
-                "Validate Pi 5 control-plane settings",
-                "Refuse etcd on an SD card",
-                "Validate Pi 5 worker settings",
-                "Validate Pi 5 max pods",
-                "Write structured K3s control-plane config",
-                "Write structured K3s worker config",
-            ),
-        },
-        "pi4": {
-            "role_dir": "raspberry_pi4",
-            "prefix": "raspberry_pi4",
-            "k3s_roles": ("worker", "control-plane"),
-            "tasks": (
-                "Resolve structured K3s settings",
-                "Validate Pi 4 role",
-                "Resolve lightweight K3s component list",
-                "Validate lightweight K3s options",
-                "Validate Pi 4 control-plane settings",
-                "Refuse etcd on an SD card",
-                "Validate Pi 4 worker settings",
-                "Validate Pi 4 max pods",
-                "Write structured K3s control-plane config",
-                "Write structured K3s worker config",
-            ),
-        },
+        "pi3bplus": {"k3s_roles": ("light-worker", "control-plane")},
+        "pi5": {"k3s_roles": ("worker", "control-plane")},
+        "pi4": {"k3s_roles": ("worker", "control-plane")},
     }
 
+    @staticmethod
+    def board_vars(profile: str) -> dict:
+        return yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "vars" / f"{profile}.yml").read_text(encoding="utf-8"))
+
     def render_role(self, extra_inputs: dict, profile: str = "pi3bplus", data_device: str = "/dev/nvme0n1p2") -> tuple[int, str, dict]:
-        board = self.BOARDS[profile]
-        prefix = board["prefix"]
+        prefix = "raspberry_pi"
         ansible = REPO_ROOT / ".venv" / "bin" / "ansible-playbook"
         if not ansible.exists():
             self.skipTest("repo ansible-playbook not available")
-        role_tasks = yaml.safe_load((REPO_ROOT / "roles" / board["role_dir"] / "tasks" / "main.yml").read_text(encoding="utf-8"))
+        role_tasks = yaml.safe_load((REPO_ROOT / "roles" / "raspberry_pi" / "tasks" / "main.yml").read_text(encoding="utf-8"))
         by_name = {t["name"]: t for t in role_tasks if isinstance(t, dict) and "name" in t}
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "config.yaml"
             selected = []
-            for name in board["tasks"]:
+            for name in self.ROLE_TASKS:
                 task = copy.deepcopy(by_name[name])
                 task.pop("tags", None)
                 task.pop("no_log", None)
@@ -525,6 +492,8 @@ class LightweightAnsibleRoleTests(BaseCallbackSiteTest):
                     "hosts": "localhost",
                     "gather_facts": False,
                     "vars": {
+                        **self.board_vars(profile),
+                        "raspberry_pi_board": profile,
                         "rack_manage_with_ansible": True,
                         "provision_profile": "kubernetes",
                         "inventory_hostname": "test-node",
@@ -656,11 +625,17 @@ class LightweightAnsibleRoleTests(BaseCallbackSiteTest):
             self.assertNotIn("disable-helm-controller", data)
 
     def test_labels_and_taints_in_the_roles_match_the_python_constants(self) -> None:
-        for relative, roles in (("raspberry_pi_3bplus", ("light-worker", "control-plane")), ("raspberry_pi5", ("worker", "control-plane")), ("raspberry_pi4", ("worker", "control-plane"))):
-            text = (REPO_ROOT / "roles" / relative / "tasks" / "main.yml").read_text(encoding="utf-8")
-            for role in roles:
-                self.assertIn(f"'{lw.ROLE_LABELS[role]}'", text, f"{relative}: {role} label")
-                self.assertIn(f"'{lw.ROLE_TAINTS[role]}'", text, f"{relative}: {role} taint")
+        text = (REPO_ROOT / "roles" / "raspberry_pi" / "tasks" / "main.yml").read_text(encoding="utf-8")
+        self.assertIn(f"'{lw.ROLE_LABELS['control-plane']}'", text, "control-plane label")
+        self.assertIn(f"'{lw.ROLE_TAINTS['control-plane']}'", text, "control-plane taint")
+        self.assertIn("'node-label': ['role=' ~ raspberry_pi_worker_role]", text)
+        self.assertIn("'node-taint': [raspberry_pi_worker_taint]", text)
+        for profile, board in self.BOARDS.items():
+            worker = board["k3s_roles"][0]
+            data = self.board_vars(profile)
+            self.assertEqual(data["raspberry_pi_worker_role"], worker, profile)
+            self.assertEqual("role=" + data["raspberry_pi_worker_role"], lw.ROLE_LABELS[worker], f"{profile}: {worker} label")
+            self.assertEqual(data["raspberry_pi_worker_taint"], lw.ROLE_TAINTS[worker], f"{profile}: {worker} taint")
 
     def test_control_plane_refuses_etcd_on_an_sd_card_unless_allowed(self) -> None:
         for profile in self.BOARDS:

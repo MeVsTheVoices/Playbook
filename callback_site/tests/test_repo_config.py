@@ -70,22 +70,19 @@ class RepoConfigTests(BaseCallbackSiteTest):
 
     def test_pi_roles_tag_tasks_for_profile_scoped_runs(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        for role in ("raspberry_pi5", "raspberry_pi_3bplus"):
-            tasks_text = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
-            self.assertIn("- tailscale", tasks_text, msg=f"{role} must tag tailscale tasks")
-            self.assertIn("- baseline", tasks_text, msg=f"{role} must tag baseline tasks")
-            self.assertIn("- kubernetes", tasks_text, msg=f"{role} must tag kubernetes tasks")
-            self.assertIn("Resolve Tailscale provisioning inputs", tasks_text, msg=f"{role} must consume provision_inputs")
-            if role == "raspberry_pi5":
-                self.assertIn("provision_inputs.k3s_config", tasks_text, msg="raspberry_pi5 must apply worker config overrides")
-                self.assertIn("Refuse implicit K3s server-to-worker conversion", tasks_text)
-                self.assertNotIn("provision_inputs.pod_cidr", tasks_text)
-            else:
-                self.assertIn("provision_inputs.server_endpoint", tasks_text, msg="raspberry_pi_3bplus must use structured K3s inputs")
-                self.assertIn("provision_inputs.k3s_config", tasks_text, msg="raspberry_pi_3bplus must support full config overrides")
-                self.assertIn("Set kernel values required by K3s protected defaults", tasks_text)
-                self.assertIn("Refuse implicit K3s agent-to-server conversion", tasks_text)
-                self.assertNotIn("node-role.kubernetes.io/control-plane=true", tasks_text)
+        role = "raspberry_pi"
+        tasks_text = (repo_root / "roles" / role / "tasks" / "main.yml").read_text(encoding="utf-8")
+        self.assertIn("- tailscale", tasks_text, msg=f"{role} must tag tailscale tasks")
+        self.assertIn("- baseline", tasks_text, msg=f"{role} must tag baseline tasks")
+        self.assertIn("- kubernetes", tasks_text, msg=f"{role} must tag kubernetes tasks")
+        self.assertIn("Resolve Tailscale provisioning inputs", tasks_text, msg=f"{role} must consume provision_inputs")
+        self.assertIn("provision_inputs.server_endpoint", tasks_text, msg=f"{role} must use structured K3s inputs")
+        self.assertIn("provision_inputs.k3s_config", tasks_text, msg=f"{role} must support full config overrides")
+        self.assertIn("Set kernel values required by K3s protected defaults", tasks_text)
+        self.assertIn("Refuse implicit K3s agent-to-server conversion", tasks_text)
+        self.assertIn("Refuse implicit K3s server-to-worker conversion", tasks_text)
+        self.assertNotIn("provision_inputs.pod_cidr", tasks_text)
+        self.assertNotIn("node-role.kubernetes.io/control-plane=true", tasks_text)
 
     def test_prepare_script_escapes_embedded_runtime_vars(self) -> None:
         script_text = read_sd_script()

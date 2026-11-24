@@ -2,59 +2,6 @@
 @use "../../abstracts/mixins";
 @use "../../abstracts/palette";
 
-.hero-badges {
-  display: flex;
-  gap: 0.45rem;
-  flex-wrap: wrap;
-  margin-top: 0.35rem;
-}
-
-.hero-badge {
-  @include mixins.inline-center(0.28rem);
-  padding: 0.32rem 0.6rem;
-  border-radius: tokens.$radius-pill;
-  border: 1px solid #99f6e4;
-  @include mixins.state-colors(palette.$teal-100, palette.$teal-800);
-  font-size: 0.78rem;
-  font-weight: 700;
-  animation: badge-float 3.2s ease-in-out infinite;
-}
-
-.hero-badge:nth-child(2) {
-  animation-delay: 0.25s;
-}
-
-.hero-badge:nth-child(3) {
-  animation-delay: 0.45s;
-}
-
-.hero-badge.secondary {
-  border-color: palette.$slate-200;
-  @include mixins.state-colors(palette.$slate-50, palette.$slate-600);
-}
-
-.hero-vibe {
-  margin-top: 0.65rem;
-  @include mixins.inline-center(0.4rem);
-  border-radius: tokens.$radius-pill;
-  padding: 0.36rem 0.74rem;
-  border: 1px solid palette.$orange-200;
-  background: linear-gradient(90deg, palette.$orange-50 0%, palette.$orange-100 100%);
-  color: palette.$orange-800;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.hero-callout {
-  margin-top: 0.75rem;
-  padding: 0.75rem 0.9rem;
-  border-radius: 0.8rem;
-  border: 1px solid palette.$amber-200;
-  background: linear-gradient(90deg, #fffdf2 0%, palette.$amber-100 100%);
-  color: palette.$amber-800;
-  font-size: 0.95rem;
-}
-
 .segment-card {
   @include mixins.outlined(tokens.$radius-control);
   background: linear-gradient(180deg, palette.$slate-50 0%, palette.$white 100%);
@@ -151,12 +98,6 @@
   0% { transform: scale(0.99); box-shadow: 0 0 0 rgba(palette.$teal-700, 0); }
   60% { transform: scale(1.01); box-shadow: 0 6px 16px rgba(palette.$teal-700, 0.16); }
   100% { transform: scale(1); box-shadow: 0 0 0 rgba(palette.$teal-700, 0); }
-}
-
-@keyframes badge-float {
-  0% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-  100% { transform: translateY(0); }
 }
 
 @keyframes pulse-chip {

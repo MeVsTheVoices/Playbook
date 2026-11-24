@@ -27,10 +27,10 @@ function renderSourceOfTruth() {
 
   const counts = sourceOfTruthState.counts || {};
   const kpis = [
-    ["Nodes In Monitor", counts.nodes_in_monitor],
-    ["Nodes With Hardware", counts.nodes_with_hardware],
-    ["Catalog Available", `${counts.catalog_available || 0} / ${counts.catalog_entries || 0}`],
-    ["Image History Records", counts.image_history_records],
+    ["🖥️ Nodes In Monitor", counts.nodes_in_monitor],
+    ["🔩 Nodes With Hardware", counts.nodes_with_hardware],
+    ["💿 Catalog Available", `${counts.catalog_available || 0} / ${counts.catalog_entries || 0}`],
+    ["🗃️ Image History Records", counts.image_history_records],
   ];
   sotKpisEl.innerHTML = "";
   for (const [label, value] of kpis) {

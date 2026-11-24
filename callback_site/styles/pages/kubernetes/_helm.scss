@@ -45,64 +45,121 @@
 }
 
 .tailnet-api-status {
-  display: grid;
+  display: inline-grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 0.3rem 1rem;
-  margin: 0.75rem 0;
+  align-items: center;
+  gap: 0.3rem 0.75rem;
+  margin: 0.9rem 0 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid rgba(palette.$slate-400, 0.35);
+  border-radius: 999px;
+  background: palette.$slate-50;
 
   dt {
     color: var(--muted);
+    @include mixins.eyebrow;
   }
 
   dd {
     margin: 0;
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
 }
 
 .tailnet-api-prereqs {
-  margin-bottom: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--accent-2);
+  border-radius: 0 tokens.$radius-control tokens.$radius-control 0;
+  background: palette.$sky-50;
+
+  > summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
 
   ol {
-    margin: 0.5rem 0 0;
+    margin: 0.6rem 0 0.2rem;
     padding-left: 1.3rem;
+    line-height: 1.5;
   }
 
   li + li {
-    margin-top: 0.3rem;
+    margin-top: 0.4rem;
   }
 }
 
-.tailnet-api-form label {
-  display: grid;
-  gap: 0.35rem;
-  margin-bottom: 0.75rem;
-}
+.tailnet-api-form {
+  gap: 0.9rem 1rem;
+  align-items: start;
 
-.tailnet-api-form .tailnet-api-check {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  label {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .tailnet-api-check {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    @include mixins.outlined(tokens.$radius-control);
+    background: palette.$slate-50;
+    font-weight: 500;
+    cursor: pointer;
+
+    input {
+      flex: none;
+      width: auto;
+      margin: 0;
+    }
+  }
 }
 
 .tailnet-api-panel {
   @include mixins.outlined(tokens.$radius-chip);
   margin: 0.75rem 0;
-  padding: 0.5rem 0.85rem;
+  padding: 0.65rem 1rem;
 
   > summary {
     cursor: pointer;
     font-weight: 600;
-    padding: 0.25rem 0;
+    padding: 0.2rem 0;
   }
 
   &[open] > summary {
-    margin-bottom: 0.6rem;
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px dashed var(--line);
+  }
+
+  > .kube-actions {
+    margin: 1rem 0 0.2rem;
   }
 
   .tailnet-api-verdict {
-    margin: 0 0 0.5rem;
+    margin: 0 0 0.6rem;
     font-weight: 600;
+  }
+}
+
+.tailnet-api-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+
+  > .status {
+    flex: 1 1 18rem;
+    margin: 0;
+  }
+
+  > .status:empty {
+    display: none;
   }
 }
 

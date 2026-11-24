@@ -17,6 +17,11 @@
       <div class="wrap">
         <div class="panel hero">
           <h1>Hardware Monitor 🖥️</h1>
+          <div class="hero-badges">
+            <span class="hero-badge">📡 Callbacks in</span>
+            <span class="hero-badge secondary">🏓 ICMP, then TCP fallback</span>
+            <span class="hero-badge secondary">🔐 Certificates on hand</span>
+          </div>
           <p>Unified operations cockpit for hardware callbacks, node reachability, provision outcomes, and cloud-init/security state.</p>
           <div class="actions-row controls-inline">
             <button id="refresh-summary" type="button">Refresh</button>
@@ -28,10 +33,10 @@
             <span class="note" id="monitor-status">Idle.</span>
           </div>
           <div id="fleet-kpis" class="kpi-grid" style="margin-top: 0.8rem;">
-            <div class="kpi"><div class="label">Nodes Visible</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Hardware Fresh</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Certificates Present</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Last Check Failed</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🧠 Nodes Visible</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🌡️ Hardware Fresh</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🔐 Certificates Present</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🚨 Last Check Failed</div><div class="value">-</div></div>
           </div>
         </div>
 
@@ -39,16 +44,16 @@
           <div class="section-head">
             <div class="section-copy">
               <p class="section-kicker">Shared State</p>
-              <h2>Single Source of Truth</h2>
+              <h2>Single Source of Truth 📚</h2>
               <p class="note">Unified state for what is downloaded, where to get it, what is provisioned, and how each node is configured.</p>
             </div>
             <div class="section-meta">Inventory + callbacks + image state</div>
           </div>
           <div id="sot-kpis" class="kpi-grid">
-            <div class="kpi"><div class="label">Nodes In Monitor</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Nodes With Hardware</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Catalog Available</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Image History Records</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🖥️ Nodes In Monitor</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🔩 Nodes With Hardware</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">💿 Catalog Available</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🗃️ Image History Records</div><div class="value">-</div></div>
           </div>
           <div class="table-note">This table is the quickest place to compare each node's active address, applied profile set, most recent check result, and current image provenance.</div>
           <div class="table-wrap" style="margin-top: 0.75rem;">
@@ -74,20 +79,20 @@
           <div class="section-head">
             <div class="section-copy">
               <p class="section-kicker">Config Coverage</p>
-              <h2>Cloud-Init Coverage And Security Profile</h2>
+              <h2>Cloud-Init Coverage And Security Profile 🛡️</h2>
               <p class="note">Shows which nodes currently carry cloud-init option assignments, how many options are staged per node, and which reusable option templates are actually in circulation.</p>
             </div>
             <div class="section-meta">Assignment visibility</div>
           </div>
           <div id="cloud-init-coverage-kpis" class="kpi-grid" style="margin-bottom: 0.75rem;">
-            <div class="kpi"><div class="label">Nodes With Assignments</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Nodes Without Assignments</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Cataloged Options</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Total Active Assignments</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🧷 Nodes With Assignments</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🪹 Nodes Without Assignments</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">📖 Cataloged Options</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🔢 Total Active Assignments</div><div class="value">-</div></div>
           </div>
           <div class="split">
             <div>
-              <h3 style="margin-bottom: 0.4rem;">Node Option Assignments</h3>
+              <h3 style="margin-bottom: 0.4rem;">Node Option Assignments 🧷</h3>
               <p class="note" style="margin-bottom: 0.55rem;">Use this to spot nodes that never received optional hardening/bootstrap toggles or nodes carrying more custom state than expected.</p>
               <div class="table-wrap">
                 <table>
@@ -106,7 +111,7 @@
               </div>
             </div>
             <div>
-              <h3 style="margin-bottom: 0.4rem;">Known Cloud-Init Options</h3>
+              <h3 style="margin-bottom: 0.4rem;">Known Cloud-Init Options 📖</h3>
               <p class="note" style="margin-bottom: 0.55rem;">Cataloged options below are the reusable monitor-side templates that can be assigned to nodes; the usage count shows how widely each one is referenced.</p>
               <div class="table-wrap">
                 <table>
@@ -130,16 +135,16 @@
           <div class="section-head">
             <div class="section-copy">
               <p class="section-kicker">Execution Feedback</p>
-              <h2>Latest Provision Check Outcomes</h2>
+              <h2>Latest Provision Check Outcomes ✅</h2>
               <p class="note">Saved profile check statuses load automatically when this page opens, including short command output snippets from the latest run. Use Refresh to reload them without running new checks.</p>
             </div>
             <div class="section-meta">Recent check signals</div>
           </div>
           <div id="latest-check-kpis" class="kpi-grid" style="margin-bottom: 0.75rem;">
-            <div class="kpi"><div class="label">Nodes With Checks</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Healthy</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Needs Attention</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Step Results Shown</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🩺 Nodes With Checks</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🟢 Healthy</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🟠 Needs Attention</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🧾 Step Results Shown</div><div class="value">-</div></div>
           </div>
           <div class="table-wrap">
             <table class="latest-checks-table">
@@ -163,14 +168,14 @@
           <div class="section-head">
             <div class="section-copy">
               <p class="section-kicker">Operations</p>
-              <h2>Live Node Checks</h2>
+              <h2>Live Node Checks 🩺</h2>
               <p class="note">Run active node probes from here without leaving the monitor view.</p>
             </div>
             <div class="section-meta">Interactive tools</div>
           </div>
           <div class="ops-grid">
             <div class="card">
-              <h3 style="margin-bottom: 0.35rem;">Get Hardware Profile</h3>
+              <h3 style="margin-bottom: 0.35rem;">Get Hardware Profile 🔍</h3>
               <p class="note">Select a discovered node and trigger a hardware profile run so the hardware monitor refreshes with the latest callback data.</p>
               <div class="actions-row controls-inline">
                 <label for="monitor-node-select" style="margin: 0; min-width: 240px;">
@@ -183,7 +188,7 @@
               <p class="note" id="monitor-check-status">Select a discovered node to trigger a hardware profile run.</p>
             </div>
             <div class="card">
-              <h3 style="margin-bottom: 0.35rem;">Certificate Pull</h3>
+              <h3 style="margin-bottom: 0.35rem;">Certificate Pull 🔐</h3>
               <p class="note">Pull the latest certificate details reported by a node in its callback.</p>
               <div class="actions-row">
                 <label for="cert-node" style="margin:0;">Node</label>
@@ -200,16 +205,16 @@
           <div class="section-head">
             <div class="section-copy">
               <p class="section-kicker">Hardware Snapshot</p>
-              <h2>Hardware Status</h2>
+              <h2>Hardware Status 🌡️</h2>
               <p class="note">Populated from hardware-check callbacks and integrated with callback/provision metadata.</p>
             </div>
             <div class="section-meta">Callback-derived facts</div>
           </div>
           <div id="hardware-kpis" class="kpi-grid" style="margin-bottom: 0.75rem;">
-            <div class="kpi"><div class="label">Hardware Reports</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Nodes With Storage</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Report Links</div><div class="value">-</div></div>
-            <div class="kpi"><div class="label">Certificates Seen</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">📟 Hardware Reports</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">💾 Nodes With Storage</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">🔗 Report Links</div><div class="value">-</div></div>
+            <div class="kpi"><div class="label">📜 Certificates Seen</div><div class="value">-</div></div>
           </div>
           <div class="table-note">Expand a node row to inspect the normalized hardware profile beside the raw callback data captured from the node.</div>
           <table>
@@ -235,7 +240,7 @@
             <div class="section-head">
               <div class="section-copy">
                 <p class="section-kicker">Registry</p>
-                <h2>Node Registry</h2>
+                <h2>Node Registry 🗃️</h2>
                 <p class="note">Add or annotate managed nodes here. Nodes discovered via callbacks appear automatically.</p>
               </div>
               <div class="section-meta">Manual annotations</div>

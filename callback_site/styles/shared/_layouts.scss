@@ -13,6 +13,11 @@
   @include mixins.auto-grid(min(240px, 100%), 0.8rem);
 }
 
+// A checkbox takes a whole row, so the input cells around it never end up offset.
+:where(.form-grid, .crud-form, .helm-fields, .module-options) > :is(.checkbox-row, .module-toggle, .tailnet-api-check, :has(> .checkbox-row)) {
+  grid-column: 1 / -1;
+}
+
 .stat-card, .module-card, .meta-card, .kube-card, .card {
   @include mixins.outlined;
   padding: 0.8rem;

@@ -109,10 +109,10 @@ function renderHardwareKpis() {
   const reportLinks = hwNodes.filter((node) => String(node.hardware?.node_report_id || "").trim()).length;
   const certsSeen = hwNodes.filter((node) => Boolean(node.cert?.cert_present)).length;
   const cards = [
-    ["Hardware Reports", `${hwNodes.length}/${nodes.length || 0}`],
-    ["Nodes With Storage", nodesWithStorage],
-    ["Report Links", reportLinks],
-    ["Certificates Seen", certsSeen],
+    ["📟 Hardware Reports", `${hwNodes.length}/${nodes.length || 0}`],
+    ["💾 Nodes With Storage", nodesWithStorage],
+    ["🔗 Report Links", reportLinks],
+    ["📜 Certificates Seen", certsSeen],
   ];
   hardwareKpisEl.innerHTML = "";
   for (const [label, value] of cards) {
@@ -232,10 +232,10 @@ function renderFleetKpis() {
   const certPresent = nodes.filter((n) => n.cert && n.cert.cert_present).length;
   const failedChecks = nodes.filter((n) => n.latest_check && n.latest_check.ok === false).length;
   const cards = [
-    ["Nodes Visible", nodes.length],
-    ["Hardware Fresh", `${hardwareFresh}/${nodes.length || 0}`],
-    ["Certificates Present", `${certPresent}/${nodes.length || 0}`],
-    ["Last Check Failed", failedChecks],
+    ["🧠 Nodes Visible", nodes.length],
+    ["🌡️ Hardware Fresh", `${hardwareFresh}/${nodes.length || 0}`],
+    ["🔐 Certificates Present", `${certPresent}/${nodes.length || 0}`],
+    ["🚨 Last Check Failed", failedChecks],
   ];
   fleetKpisEl.innerHTML = "";
   for (const [label, value] of cards) {

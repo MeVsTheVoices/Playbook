@@ -80,9 +80,9 @@ check(!requests.some(r => r.method === "DELETE"), "no permanent node deletion in
 
     def test_catalog_health_and_source_share_one_panel(self) -> None:
         text = self.client.get("/settings").get_data(as_text=True)
-        start = text.index("<summary>Image Catalog Health</summary>")
+        start = text.index("Image Catalog Health</summary>")
         end = text.index('<details class="settings-utility">', start)
-        self.assertIn("<summary>Catalog Source Of Truth</summary>", text[start:end])
+        self.assertIn("Catalog Source Of Truth</summary>", text[start:end])
         self.assertNotIn("<h2>Catalog Source Of Truth</h2>", text)
 
     def test_utilities_share_one_panel_and_expand_independently(self) -> None:
@@ -108,7 +108,7 @@ sections[0].querySelector("summary").click();
 check(sections[0].open && !sections[1].open && !sections[2].open, "rack expands independently");
 sections[1].querySelector("summary").click();
 check(sections[0].open && sections[1].open, "opening catalog preserves rack form");
-check(sections[1].querySelector(":scope > details > summary").textContent === "Catalog Source Of Truth",
+check(sections[1].querySelector(":scope > details > summary").textContent.includes("Catalog Source Of Truth"),
   "catalog source remains a nested disclosure");
 check(document.querySelector("#rack-name").value === "test-rack", "rack settings still populate");
 """)

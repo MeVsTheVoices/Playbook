@@ -52,8 +52,8 @@ must use the new credentials. Use protected files and avoid exposing secrets
 in command history, process arguments, or logs. Kubernetes Secret access is
 sensitive; restrict RBAC and enable encryption at rest as appropriate.
 
-The qBittorrent OAuth client secret exposed during earlier diagnostics still
-needs rotation separately; the proxy uses its own scoped auth key.
+The proxy uses its own scoped auth key, separate from the qBittorrent OAuth
+credential.
 
 ## Client example
 

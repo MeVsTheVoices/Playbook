@@ -19,6 +19,21 @@ startup completes, and readiness reflects exit-node availability. Initial
 Mullvad registration can take several minutes. Application DNS queries use
 cluster DNS, whose upstream may not use Mullvad.
 
+The sidecar reads `client_secret` from the `tailscale-mullvad-oauth` Secret
+in the `servarr` namespace. Its OAuth credential requires Auth Keys write
+access and the `tag:needs-exit` tag. The Secret also stores `client_id`.
+Keep both values out of Git and command arguments. To create or replace the
+Secret using protected files without trailing newlines:
+
+```sh
+kubectl create secret generic tailscale-mullvad-oauth -n servarr \
+  --from-file=client_id=PATH --from-file=client_secret=PATH \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Restart qBittorrent after rotating the credential so the sidecar loads it;
+revoke the old credential in Tailscale. Restarting briefly interrupts service.
+
 To apply this local qBittorrent overlay:
 
 ```sh

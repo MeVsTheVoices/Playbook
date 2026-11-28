@@ -30,6 +30,20 @@ from services.network import (
 )
 from services.storage import CONNECTION_PROFILES_FILE, _atomic_write_text, _ensure_data_file
 
+
+def _kubernetes_node_ip(node_name: str) -> str:
+    """InternalIP of the node when it is Ready in the cluster; empty unless the Kubernetes module is enabled."""
+    from modules import enabled_modules
+
+    try:
+        if "kubernetes" not in enabled_modules():
+            return ""
+    except RuntimeError:
+        return ""
+    from services.kubernetes import _kubernetes_node_addresses
+
+    return _kubernetes_node_addresses().get(str(node_name or "").strip().lower(), "")
+
 DEFAULT_STRATEGY = "prefer_tailnet"
 REFRESH_SECONDS = 300
 logger = logging.getLogger(__name__)
@@ -77,7 +91,7 @@ def describe_route(address: str) -> Dict[str, str]:
 @dataclass
 class ConnectionProfile:
     id: str
-    kind: str  # callback | inventory | tailnet | tailnet_fqdn | dns | hostname
+    kind: str  # callback | inventory | kubernetes | tailnet | tailnet_fqdn | dns | hostname
     address: str
     source: str  # label shown to the operator: callback, inventory, tailscale, tailscale_fqdn, callback_recent, ...
     tailnet: bool = False
@@ -133,6 +147,11 @@ def gather_profiles(node_name: str, inventory_address: str = "", callback_source
         tailnet = _is_tailscale_ip(inventory_address)
         usable = tailnet or not _is_transit_hop_ip(inventory_address)
         profiles.append(ConnectionProfile("inventory", "inventory", inventory_address, "inventory" if usable else "inventory_transit", tailnet, usable, **extra))
+    # A Ready cluster node is connected now, even when its callback/inventory address went stale.
+    kube_ip = _kubernetes_node_ip(node_name)
+    if kube_ip:
+        tailnet = _is_tailscale_ip(kube_ip)
+        profiles.append(ConnectionProfile("kubernetes", "kubernetes", kube_ip, "kubernetes", tailnet, tailnet or not _is_transit_hop_ip(kube_ip), **extra))
     peer = _tailscale_peer_ip(node_name)
     tailnet_address = next((p.address for p in profiles if p.tailnet), peer)
     fqdn_name = inventory_address if inventory_address.lower().rstrip(".").endswith(".ts.net") else node_name
@@ -146,7 +165,7 @@ def gather_profiles(node_name: str, inventory_address: str = "", callback_source
         profiles.append(ConnectionProfile("tailnet_fqdn", "tailnet_fqdn", fqdn, "tailscale_fqdn", True, _name_resolves(fqdn), fqdn=fqdn, **extra))
 
     # DNS only matters when nothing better is known, and a lookup costs time on every poll.
-    if not any(p.kind == "callback" or p.tailnet or (p.kind == "inventory" and p.usable) for p in profiles):
+    if not any(p.kind == "callback" or p.tailnet or (p.kind in {"inventory", "kubernetes"} and p.usable) for p in profiles):
         resolved, resolved_source = _resolve_lan_ip_from_names(node_name)
         if resolved:
             profiles.append(ConnectionProfile("dns", "dns", resolved, resolved_source or "dns", False, True, **extra))
@@ -160,7 +179,7 @@ def _prefer_tailnet_rank(profile: ConnectionProfile) -> int:
         return 3 if profile.usable else 10
     if profile.tailnet:
         return {"callback": 0, "inventory": 1}.get(profile.kind, 2)
-    if profile.kind == "callback":
+    if profile.kind in {"callback", "kubernetes"}:
         return 4 if profile.usable else 6
     if profile.kind == "inventory":
         return 5 if profile.usable else 8

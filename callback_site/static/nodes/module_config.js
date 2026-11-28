@@ -69,6 +69,18 @@ function appendModuleFieldHint(spec, parent = moduleDetailEl) {
   parent.appendChild(hint);
 }
 
+// Longer guidance shown on hover/focus of an ⓘ beside the label.
+function appendModuleFieldTooltip(spec, label) {
+  if (!spec || !spec.tooltip) return;
+  const tip = document.createElement("span");
+  tip.className = "module-tip";
+  tip.textContent = "ⓘ";
+  tip.tabIndex = 0;
+  tip.title = String(spec.tooltip);
+  tip.setAttribute("aria-label", String(spec.tooltip));
+  label.append(" ", tip);
+}
+
 // Live reads: what is actually set on the node, shown beside each saved value.
 const liveConfigCache = {};
 let liveConfigInFlight = "";
@@ -428,8 +440,9 @@ function renderModuleSection() {
   if (profile.id === "kubernetes") {
     const roleHint = document.createElement("p");
     roleHint.className = "module-callout";
-    const boardName = selectedNode.group === "rpi_3bplus_active" ? "Pi 3B+" : (selectedNode.group === "rpi4_active" ? "Pi 4" : "Pi 5");
-    roleHint.textContent = `Rack layout: new nodes join any existing K3s server. This ${selectedNode.group === "rpi_3bplus_active" ? "Pi 3B+ defaults to 'light-worker' (a tainted K3s agent; it is too small to carry etcd)" : boardName + " defaults to 'worker'"}. Any Pi can instead be 'utility' (no Kubernetes) or 'control-plane' (a K3s server and etcd voter; keep the number of servers odd${selectedNode.group === "rpi4_active" ? "; boot a Pi 4 control-plane from an SSD, not an SD card" : ""}).`;
+    const boardName = { rpi_3bplus_active: "Pi 3B+", rpi4_active: "Pi 4", linux_x64_active: "x86_64 node" }[selectedNode.group] || "Pi 5";
+    const defaultRole = selectedNode.group === "rpi_3bplus_active" ? "light-worker" : "worker";
+    roleHint.textContent = `Rack layout: new nodes join any existing K3s server. This ${boardName} defaults to '${defaultRole}'.`;
     moduleDetailEl.appendChild(roleHint);
   }
   if (profile.id === "longhorn") {
@@ -504,6 +517,7 @@ function renderModuleSection() {
     const label = document.createElement("label");
     label.htmlFor = `module-field-${fieldId}`;
     label.innerHTML = `${escapeHtml(spec.label || fieldId)}${requiredMark}`;
+    appendModuleFieldTooltip(spec, label);
     fieldHost.appendChild(label);
 
     const configuredSecret = Boolean(spec.sensitive) && savedValue === CONFIGURED_SECRET_MARKER;

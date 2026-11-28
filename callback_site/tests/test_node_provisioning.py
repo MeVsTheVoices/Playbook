@@ -210,6 +210,7 @@ check(!("action" in collectModuleInputs()), "reboot action cannot be saved as mo
         self.assertIn('spec.input_type || "text"', text)
         self.assertIn('"light-worker" : "worker"', text)
         self.assertIn("Rack layout:", text)
+        self.assertIn("appendModuleFieldTooltip(spec, label)", text)
 
     def test_node_ops_page_exposes_longhorn_storage_guidance(self) -> None:
         response = self.client.get("/nodes")

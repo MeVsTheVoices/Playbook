@@ -126,6 +126,17 @@ tr.module-row-selected td:first-child {
   line-height: 1.4;
 }
 
+.module-tip {
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: help;
+}
+
+.module-tip:hover,
+.module-tip:focus {
+  color: var(--accent-2);
+}
+
 .module-warning {
   margin: 0.4rem 0 0;
   padding: 0.35rem 0.6rem;

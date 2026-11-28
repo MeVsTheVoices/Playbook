@@ -104,6 +104,26 @@ class ConnectionProfileTests(BaseCallbackSiteTest):
         self.assertEqual(peers["rack-beta"], "100.100.2.3")
         self.assertEqual(fqdns["rack-beta"], "rack-beta.tail.ts.net")
 
+    def test_magicdns_supplies_tailnet_ip_only_for_tailscale_range_answers(self) -> None:
+        network._MAGICDNS_CACHE.clear()
+        self.addCleanup(network._MAGICDNS_CACHE.clear)
+
+        def answer(name, *_args):
+            ip = {"rack-delta.tail.ts.net": "100.101.18.28", "rack-lan.tail.ts.net": "192.168.8.217"}.get(name)
+            if not ip:
+                raise OSError("nxdomain")
+            return [(2, 1, 6, "", (ip, 0))]
+
+        with patch.object(network, "_configured_tailnet_suffix", return_value="tail.ts.net"), \
+             patch.object(network.socket, "getaddrinfo", side_effect=answer) as lookup:
+            self.assertEqual(network._magicdns_peer_ip("rack-delta"), "100.101.18.28")
+            self.assertEqual(network._magicdns_peer_ip("rack-delta"), "100.101.18.28")
+            self.assertEqual(network._magicdns_peer_ip("rack-lan"), "")
+            self.assertEqual(network._magicdns_peer_ip("bad.name"), "")
+        self.assertEqual(lookup.call_count, 2)
+        with patch.object(network, "_configured_tailnet_suffix", return_value=""):
+            self.assertEqual(network._magicdns_peer_ip("rack-other"), "")
+
     def test_tailnet_fqdn_uses_cached_reverse_dns_without_local_tailscale(self) -> None:
         network._TAILNET_REVERSE_CACHE.clear()
         self.addCleanup(network._TAILNET_REVERSE_CACHE.clear)
@@ -137,6 +157,34 @@ class ConnectionProfileTests(BaseCallbackSiteTest):
         self.assertTrue(all(p.fqdn == "rack-beta.tail.ts.net" for p in profiles if p.tailnet))
         self.assertEqual(cp.select_profile(profiles).id, "callback")
         self.assertFalse(next(p for p in profiles if p.kind == "tailnet_fqdn").usable)
+
+    def test_ready_cluster_node_address_beats_a_stale_callback_ip(self) -> None:
+        with patch_in("_kubernetes_node_ip", ["services.connection_profiles"], return_value="100.79.199.26"):
+            profiles = cp.gather_profiles("rack-charlie", "192.168.8.240", "192.168.8.240")
+        kube = next(p for p in profiles if p.kind == "kubernetes")
+        self.assertTrue(kube.tailnet and kube.usable)
+        self.assertEqual(cp.select_profile(profiles).id, "kubernetes")
+
+    def test_kubernetes_node_addresses_match_k3s_node_id_names_and_skip_not_ready(self) -> None:
+        import services.kubernetes as kube
+
+        def node(name, ready, ip):
+            return {
+                "metadata": {"name": name},
+                "status": {
+                    "conditions": [{"type": "Ready", "status": "True" if ready else "False"}],
+                    "addresses": [{"type": "InternalIP", "address": ip}],
+                },
+            }
+
+        doc = {"items": [node("rack-charlie-06aa7736", True, "100.79.199.26"), node("rack-alpha-9dd49125", False, "100.118.79.56")]}
+        self.addCleanup(kube._NODE_ADDRESS_CACHE.update, {"at": -1e9, "addresses": {}})
+        kube._NODE_ADDRESS_CACHE.update({"at": -1e9, "addresses": {}})
+        with patch.object(kube, "_run_kubectl_json", return_value=(doc, "")) as run:
+            self.assertEqual(kube._kubernetes_node_addresses()["rack-charlie"], "100.79.199.26")
+            self.assertEqual(kube._kubernetes_node_addresses()["rack-charlie-06aa7736"], "100.79.199.26")
+            self.assertNotIn("rack-alpha", kube._kubernetes_node_addresses())
+        run.assert_called_once()
 
     def test_tailnet_reverse_dns_wait_is_bounded_and_timeout_is_cached(self) -> None:
         network._TAILNET_REVERSE_CACHE.clear()

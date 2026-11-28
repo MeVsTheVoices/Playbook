@@ -479,7 +479,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
     {
         "id": "kubernetes",
         "label": "Kubernetes",
-        "description": "Kubernetes role and join settings. Pi 5, Pi 4 and x86_64: worker, control-plane or utility (no Kubernetes). Pi 3B+: light-worker, utility, or (not recommended) control-plane.",
+        "description": "Kubernetes role and join settings.",
         "tags": ["kubernetes"],
         "groups": ["rpi5_active", "rpi4_active", "rpi_3bplus_active", "linux_x64_active"],
         "input_specs": [
@@ -490,7 +490,8 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "options": ["worker"],
                 **node_role_spec_parts(),
                 "default": "worker",
-                "hint": "Pi 5, Pi 4 and x86_64: worker, control-plane or utility. Pi 3B+: light-worker (tainted agent), utility, or control-plane (not recommended). A Pi 4 control-plane needs an SSD: K3s says SD cards cannot handle etcd. Keep the number of K3s servers (control-plane nodes, wherever they run) odd: three tolerates one failure.",
+                "hint": "Pi 5/4, x86_64: worker, control-plane or utility. Pi 3B+: light-worker or utility.",
+                "tooltip": "utility runs no Kubernetes. light-worker is a tainted K3s agent; a Pi 3B+ control-plane is possible but not recommended. A Pi 4 control-plane needs an SSD: K3s says SD cards cannot handle etcd. Keep the number of K3s servers (control-plane nodes, wherever they run) odd: three tolerates one failure.",
                 "required": True,
             },
             {
@@ -499,6 +500,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "placeholder": K3S_API_ENDPOINT_DEFAULT,
                 "input_type": "text",
                 "default": K3S_API_ENDPOINT_DEFAULT,
+                "tooltip": "https://<any K3s server's Tailscale IP>:6443. List servers with: kubectl get nodes -o wide (control-plane rows). The default is set by K3S_API_ENDPOINT in the portal's .env (fallback: the nucbox's Tailscale IP); 'Draw from existing settings' below copies it from another node.",
                 "required": True,
                 "optional_for_roles": ["utility"],
             },
@@ -508,6 +510,7 @@ NODE_PROVISION_PROFILES: List[Dict[str, Any]] = [
                 "placeholder": "K10...::server:...",
                 "input_type": "text",
                 "sensitive": True,
+                "tooltip": "On any K3s server run: sudo cat /var/lib/rancher/k3s/server/node-token. Or use 'Draw from existing settings' below to copy it from a node that already joined.",
                 "required": True,
                 "optional_for_roles": ["utility"],
             },

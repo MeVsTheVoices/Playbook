@@ -218,6 +218,41 @@ def _node_row(item: Dict[str, Any]) -> Dict[str, Any]:
 NODE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
 
 
+# K3s `--with-node-id` registers hosts as <hostname>-<8 hex>.
+K3S_NODE_ID_SUFFIX_RE = re.compile(r"-[0-9a-f]{8}$")
+
+
+NODE_ADDRESS_CACHE_SECONDS = 20
+
+
+_NODE_ADDRESS_LOCK = threading.Lock()
+
+
+_NODE_ADDRESS_CACHE: Dict[str, Any] = {"at": -1e9, "addresses": {}}
+
+
+def _kubernetes_node_addresses() -> Dict[str, str]:
+    """InternalIPs of Ready cluster nodes keyed by lowercase name and by hostname without the K3s node-id suffix."""
+    with _NODE_ADDRESS_LOCK:
+        if time.monotonic() - float(_NODE_ADDRESS_CACHE["at"]) < NODE_ADDRESS_CACHE_SECONDS:
+            return dict(_NODE_ADDRESS_CACHE["addresses"])
+        doc, _ = _run_kubectl_json(["get", "nodes", "--request-timeout=5s"])
+        items = doc.get("items", []) if isinstance(doc, dict) and isinstance(doc.get("items"), list) else []
+        addresses: Dict[str, str] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            row = _node_row(item)
+            name = row["name"].strip().lower()
+            if not (row["ready"] and name and row["internal_ip"]):
+                continue
+            addresses[name] = row["internal_ip"]
+            addresses.setdefault(K3S_NODE_ID_SUFFIX_RE.sub("", name), row["internal_ip"])
+        _NODE_ADDRESS_CACHE.update({"at": time.monotonic(), "addresses": addresses})
+        return dict(addresses)
+
+
+
 DEFAULT_STALE_MINUTES = 10
 
 

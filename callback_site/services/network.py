@@ -6,6 +6,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -171,7 +172,50 @@ def _tailscale_peers() -> Dict[str, str]:
 
 
 def _tailscale_peer_ip(node_name: str) -> str:
-    return _tailscale_peers().get(str(node_name or "").strip().lower(), "")
+    name = str(node_name or "").strip().lower()
+    peers = _tailscale_peers()
+    if peers or not name:
+        return peers.get(name, "")
+    return _magicdns_peer_ip(name)
+
+
+_MAGICDNS_CACHE: Dict[str, Tuple[float, str]] = {}
+
+
+def _configured_tailnet_suffix() -> str:
+    from services.settings import _tailscale_policy_defaults
+
+    try:
+        suffix = str(_tailscale_policy_defaults().get("tailnet", "")).strip().strip(".").lower()
+    except OSError:
+        return ""
+    return suffix if suffix.endswith(".ts.net") else ""
+
+
+def _magicdns_peer_ip(node_name: str) -> str:
+    """Tailnet IP from MagicDNS when no local tailscaled can list peers (e.g. Docker Desktop's VM)."""
+    suffix = _configured_tailnet_suffix()
+    if not suffix or not re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?", node_name):
+        return ""
+    fqdn = f"{node_name}.{suffix}"
+    cached = _MAGICDNS_CACHE.get(fqdn)
+    if cached and time.monotonic() - cached[0] < TAILNET_CACHE_SECONDS:
+        return cached[1]
+    found: List[str] = []
+
+    def lookup() -> None:
+        try:
+            infos = socket.getaddrinfo(fqdn, None, socket.AF_INET)
+        except OSError:
+            return
+        found.extend(str(info[4][0]) for info in infos if _is_tailscale_ip(str(info[4][0])))
+
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(2.0)
+    address = found[0] if found else ""
+    _MAGICDNS_CACHE[fqdn] = (time.monotonic(), address)
+    return address
 
 
 _TAILNET_REVERSE_CACHE: Dict[str, Tuple[float, str]] = {}

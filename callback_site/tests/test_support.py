@@ -175,3 +175,7 @@ function finish(result) {
         fqdn_guard = patch_in("_tailscale_peer_fqdn", return_value="")
         fqdn_guard.start()
         self.addCleanup(fqdn_guard.stop)
+        # Likewise a reachable cluster would add a kubernetes profile to every node.
+        kube_guard = patch_in("_kubernetes_node_ip", return_value="")
+        kube_guard.start()
+        self.addCleanup(kube_guard.stop)

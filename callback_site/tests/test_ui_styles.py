@@ -211,6 +211,16 @@ function measure(frame) {
             const bounds = element.getBoundingClientRect(), parent = element.parentElement.getBoundingClientRect();
             return !bounds.width || (bounds.left >= parent.left - 1 && bounds.right <= parent.right + 1);
           }) : null,
+      targetGridColumns: doc.querySelector("#sd-target-settings > .target-settings-grid")
+        ? style(doc.querySelector("#sd-target-settings > .target-settings-grid")).gridTemplateColumns.split(" ").length : null,
+      targetCallbackSpansGrid: (() => {
+        const grid = doc.querySelector("#sd-target-settings > .target-settings-grid");
+        const callback = doc.querySelector("#callback_url")?.parentElement;
+        if (!grid || !callback) return null;
+        const gridBounds = grid.getBoundingClientRect(), callbackBounds = callback.getBoundingClientRect();
+        return Math.abs(gridBounds.left - callbackBounds.left) <= 1
+          && Math.abs(gridBounds.right - callbackBounds.right) <= 1;
+      })(),
       sidebarWidth: doc.querySelector(".sidebar").getBoundingClientRect().width,
       sidebarToggleWidth: doc.querySelector("#sidebar-toggle").getBoundingClientRect().width,
       sidebarToggleFitsHeader: (() => {
@@ -280,6 +290,8 @@ function measure(frame) {
                 if snapshot["path"] == "/" and snapshot["state"] == "expanded":
                     self.assertEqual(snapshot["cloudGridColumns"], 1 if snapshot["viewport"] <= 900 else 2)
                     self.assertTrue(snapshot["cloudFieldsFit"])
+                    self.assertEqual(snapshot["targetGridColumns"], 1 if snapshot["viewport"] <= 760 else 2)
+                    self.assertTrue(snapshot["targetCallbackSpansGrid"])
                 self.assertEqual(snapshot["sidebarBrandVisible"],
                                  snapshot["viewport"] <= 760 or snapshot["state"] == "default")
                 if snapshot["path"] == "/tailscale-acl":

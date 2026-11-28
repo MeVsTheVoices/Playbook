@@ -27,7 +27,7 @@ let activeJobId = null;
 let pollTimer = null;
 let checksCatalog = [];
 let callbackTargets = [];
-let activeCategory = "All tasks";
+let activeCategory = "Non-Kubernetes";
 let jobRunning = false;
 let routeRequestId = 0;
 let routeTimer = null;
@@ -448,18 +448,20 @@ function useSelectedHost() {
 function renderChecks() {
   const current = checkIdEl.value;
   checkIdEl.innerHTML = "";
-  const categories = [...new Set(checksCatalog.map((item) => item.category))];
+  const categories = [...new Set(checksCatalog.map(taskCategory))];
   for (const category of categories) {
     const group = document.createElement("optgroup");
     group.label = category;
-    for (const item of checksCatalog.filter((check) => check.category === category)) {
+    for (const item of checksCatalog.filter((check) => taskCategory(check) === category)) {
       group.append(new Option(item.label, item.id));
     }
     checkIdEl.append(group);
   }
   if (checksCatalog.some((item) => item.id === current)) checkIdEl.value = current;
   taskCategoriesEl.replaceChildren();
-  for (const category of ["All tasks", ...categories]) {
+  const nonKubernetesCategories = categories.filter((category) => category !== "Kubernetes");
+  const categoryButtons = ["Non-Kubernetes", "Kubernetes", "All tasks", ...nonKubernetesCategories];
+  for (const category of categoryButtons.filter((category, index, list) => list.indexOf(category) === index)) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = category;
@@ -475,10 +477,16 @@ function renderChecks() {
   renderTaskCards();
 }
 
+function taskCategory(item) {
+  return String(item.category || "").startsWith("Kubernetes · ") ? "Kubernetes" : item.category;
+}
+
 function renderTaskCards() {
   const query = taskSearchEl.value.trim().toLowerCase();
   const visible = checksCatalog.filter((item) =>
-    (activeCategory === "All tasks" || item.category === activeCategory)
+    (activeCategory === "All tasks"
+      || (activeCategory === "Non-Kubernetes" && taskCategory(item) !== "Kubernetes")
+      || taskCategory(item) === activeCategory)
     && `${item.label} ${item.description} ${item.category}`.toLowerCase().includes(query));
   taskCardsEl.replaceChildren();
   for (const item of visible) {
@@ -489,7 +497,7 @@ function renderTaskCards() {
     card.setAttribute("aria-pressed", String(item.id === checkIdEl.value));
     const category = document.createElement("span");
     category.className = "eyebrow";
-    category.textContent = item.category;
+    category.textContent = taskCategory(item);
     const title = document.createElement("strong");
     title.textContent = item.label;
     const description = document.createElement("span");

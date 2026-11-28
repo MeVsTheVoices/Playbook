@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+nameSuffix: -seattle
+patches:
+  - target:
+      kind: Deployment
+      name: mullvad-proxy
+    patch: |-
+      - op: replace
+        path: /spec/selector/matchLabels/exit
+        value: seattle
+      - op: replace
+        path: /spec/template/metadata/labels/exit
+        value: seattle
+      - op: replace
+        path: /spec/template/spec/containers/0/env/4/value
+        value: --advertise-tags=tag:needs-exit --exit-node=100.96.176.46

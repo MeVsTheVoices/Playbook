@@ -52,6 +52,14 @@
   transform: rotate(180deg);
 }
 
+#sd-target-settings > .target-settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#sd-target-settings > .target-settings-grid > :last-child {
+  grid-column: 1/-1;
+}
+
 #cloud-init-optional-settings > .form-grid {
   margin-top: 1rem;
 }
@@ -153,6 +161,11 @@
 
 @media (max-width: 900px) {
   #cloud-init-optional-settings .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  #sd-target-settings > .target-settings-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

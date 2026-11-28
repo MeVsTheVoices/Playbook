@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servarr-qbittorrent
+  namespace: servarr
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: vpn-network-guard
+          image: tailscale/tailscale:latest
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              ip rule add priority 5260 to 10.43.0.10/32 lookup main
+              ip rule add priority 5261 to 10.42.0.0/16 lookup main
+              ip -6 rule add priority 5275 unreachable
+              iptables -P OUTPUT DROP
+              iptables -A OUTPUT -o lo -j ACCEPT
+              iptables -A OUTPUT -o tailscale0 -j ACCEPT
+              iptables -A OUTPUT -d 10.42.0.0/16 -j ACCEPT
+              iptables -A OUTPUT -d 10.43.0.10/32 -p udp --dport 53 -j ACCEPT
+              iptables -A OUTPUT -d 10.43.0.10/32 -p tcp --dport 53 -j ACCEPT
+              iptables -A OUTPUT -m owner --uid-owner 1000 -j DROP
+              iptables -A OUTPUT -m mark --mark 0x80000/0xff0000 -j ACCEPT
+              iptables -A OUTPUT -m owner --uid-owner 0 -p tcp --dport 443 -j ACCEPT
+      containers:
+        - name: tailscale
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -ec
+                  - |
+                    attempts=0
+                    until tailscale status --json | grep -A 6 '"ExitNodeStatus"[[:space:]]*:[[:space:]]*{' | grep -Eq '"Online"[[:space:]]*:[[:space:]]*true'; do
+                      attempts=$((attempts + 1))
+                      if [ "$attempts" -ge 300 ]; then
+                        echo "Tailscale exit node did not become available" >&2
+                        exit 1
+                      fi
+                      sleep 1
+                    done
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  tailscale status --json | grep -A 6 '"ExitNodeStatus"[[:space:]]*:[[:space:]]*{' | grep -Eq '"Online"[[:space:]]*:[[:space:]]*true'
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3

@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mullvad-proxy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mullvad-proxy
+      exit: unconfigured
+  template:
+    metadata:
+      labels:
+        app: mullvad-proxy
+        exit: unconfigured
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+        - name: network-guard
+          image: tailscale/tailscale@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          command: ["/bin/sh", "/guard/network-guard.sh"]
+          volumeMounts:
+            - name: network-guard
+              mountPath: /guard
+              readOnly: true
+            - name: proxy-credentials
+              mountPath: /credentials
+              readOnly: true
+      containers:
+        - name: tailscale
+          image: tailscale/tailscale@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: mullvad-proxy-tailscale
+                  key: authkey
+            - name: TS_KUBE_SECRET
+              value: ""
+            - name: TS_USERSPACE
+              value: "false"
+            - name: TS_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TS_EXTRA_ARGS
+              value: "--advertise-tags=tag:needs-exit"
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  tailscale status --json | grep -A 6 '"ExitNodeStatus"[[:space:]]*:[[:space:]]*{' | grep -Eq '"Online"[[:space:]]*:[[:space:]]*true'
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+        - name: proxy
+          image: ghcr.io/tarampampam/3proxy:2.7.0
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: PROXY_LOGIN
+              valueFrom:
+                secretKeyRef:
+                  name: mullvad-proxy-auth
+                  key: username
+            - name: PROXY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mullvad-proxy-auth
+                  key: password
+            - name: PRIMARY_RESOLVER
+              value: "1.1.1.1"
+            - name: SECONDARY_RESOLVER
+              value: "1.0.0.1"
+            - name: PROXY_EXTRA_ARGS
+              value: "-4"
+            - name: SOCKS_EXTRA_ARGS
+              value: "-4"
+          ports:
+            - name: http
+              containerPort: 3128
+            - name: socks
+              containerPort: 1080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          volumeMounts:
+            - name: proxy-config
+              mountPath: /etc/3proxy
+      volumes:
+        - name: network-guard
+          configMap:
+            name: mullvad-proxy-guard
+        - name: proxy-credentials
+          secret:
+            secretName: mullvad-proxy-auth
+        - name: proxy-config
+          emptyDir: {}

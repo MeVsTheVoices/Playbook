@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from services.events import _read_events
 from services.network import _is_usable_callback_ip, _normalize_ip
+from services.connection_profiles import gather_profiles
 from services.node_inventory import _node_ops_inventory_view
 from services.node_state import _node_aliases
 from services.node_archive import active_nodes
@@ -341,7 +342,19 @@ def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
         if not isinstance(node, dict):
             continue
         node_name = str(node.get("name", "") or "").strip()
+        profiles = gather_profiles(
+            node_name,
+            str(node.get("address", "") or "").strip(),
+            str(node.get("callback_connect_ip", "") or node.get("callback_source_ip", "") or "").strip(),
+            user=str(node.get("node_username", "") or "").strip(),
+            key=str(node.get("certificate", "") or "").strip(),
+        ) if node_name else []
         node_address = _terminal_preferred_host_for_node(node)
+        fallback_profile = next((profile for profile in profiles if profile.tailnet and profile.usable), None)
+        if fallback_profile is None:
+            fallback_profile = next((profile for profile in profiles if profile.tailnet), None)
+        if not node_address and fallback_profile:
+            node_address = fallback_profile.address
         callback_ip = str(node.get("callback_source_ip", "") or "").strip()
         if not node_name or not node_address:
             continue
@@ -350,6 +363,8 @@ def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
             source = "source_ip"
         elif normalized_source == "callback":
             source = "source_ip"
+        elif fallback_profile and node_address == fallback_profile.address:
+            source = fallback_profile.source
         else:
             source = normalized_source
         event_like = {
@@ -363,6 +378,18 @@ def _test_terminal_targets(limit: int = 2000) -> list[Dict[str, Any]]:
             "port": str(node.get("ssh_port", "") or "").strip(),
         }
         _append_terminal_target(targets, seen, host=node_address, source=source, event=event_like, connect_host=node_address)
+
+        for profile in profiles:
+            if not profile.tailnet:
+                continue
+            _append_terminal_target(
+                targets,
+                seen,
+                host=profile.address,
+                source=profile.source,
+                event=event_like,
+                connect_host=profile.address,
+            )
 
     for event in events:
         if not isinstance(event, dict):

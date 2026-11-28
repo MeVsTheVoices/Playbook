@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servarr-qbittorrent
+  namespace: servarr
+  labels:
+    app.kubernetes.io/instance: servarr
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: qbittorrent
+    app.kubernetes.io/version: 1.3.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: servarr
+      app.kubernetes.io/name: qbittorrent
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: servarr
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: qbittorrent
+        app.kubernetes.io/version: 1.3.0
+    spec:
+      serviceAccountName: servarr-qbittorrent
+      containers:
+        - name: tailscale
+          image: tailscale/tailscale:latest
+          securityContext:
+            capabilities:
+              add: [NET_ADMIN]
+          env:
+            - name: OAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-mullvad-oauth
+                  key: client_secret
+            - name: TS_AUTHKEY
+              value: "$(OAUTH_SECRET)?ephemeral=true&preauthorized=true"
+            - name: TS_KUBE_SECRET
+              value: ""
+            - name: TS_HOSTNAME
+              value: k8s-qbittorrent
+            - name: TS_USERSPACE
+              value: "false"
+            - name: TS_EXTRA_ARGS
+              value: "--advertise-tags=tag:needs-exit --exit-node=100.92.247.43"
+        - name: servarr
+          image: lscr.io/linuxserver/qbittorrent:4.6.7
+          imagePullPolicy: IfNotPresent
+          securityContext: {}
+          env:
+            - name: PGID
+              value: "1000"
+            - name: PUID
+              value: "1000"
+            - name: TZ
+              value: America/Los_Angeles
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: bittorrent-tcp
+              containerPort: 6881
+              protocol: TCP
+            - name: bittorrent-udp
+              containerPort: 6881
+              protocol: UDP
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: media
+              mountPath: /media/downloads
+              subPath: downloads
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: servarr-qbittorrent
+        - name: media
+          persistentVolumeClaim:
+            claimName: servarr-jellyfin-media

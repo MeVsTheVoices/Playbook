@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - qbittorrent-base.yaml
 patches:
-  - path: qbittorrent-vpn.patch.yaml
+  - path: upstream/qbittorrent-vpn.patch.yaml

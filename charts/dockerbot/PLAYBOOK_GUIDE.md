@@ -27,6 +27,11 @@
 
 This image does not include Audio cog support. See the full chart README for
 manual installation, migration, backups, and storage options.
+The default image tag is mutable; select a tested tag for repeatable updates.
+Helm can delete a chart-managed PVC on uninstall or if an upgrade stops
+rendering it. Back up bot data before changing persistence or uninstalling;
+use `persistence.existingClaim` for a separately managed PVC. Disabling
+persistence loses bot data when the pod is replaced.
 
 Discord's official guide: https://docs.discord.com/developers/quick-start/getting-started
 Red's user guide: https://docs.discord.red/en/stable/getting_started.html

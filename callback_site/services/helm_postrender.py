@@ -1,17 +1,68 @@
 #!/usr/bin/env python3
-"""Apply opt-in Tailscale exposure to a Helm-rendered Service."""
+"""Apply opt-in Servarr VPN and Tailscale Service exposure to Helm output."""
 
 import json
 import re
 import sys
+from pathlib import Path
 
 import yaml
+
+
+def _servarr(documents, chunks, config):
+    from services.helm import _servarr_vpn
+
+    vpn = _servarr_vpn(config["servarr_vpn"])
+    name = f"{config['release']}-qbittorrent"
+    matches = [
+        doc for doc in documents if isinstance(doc, dict) and doc.get("apiVersion") == "apps/v1"
+        and doc.get("kind") == "Deployment" and (doc.get("metadata") or {}).get("name") == name
+        and (doc.get("metadata") or {}).get("namespace", config["namespace"]) == config["namespace"]
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"VPN requires exactly one Deployment named {name}.")
+    deployment = matches[0]
+    pod = deployment["spec"]["template"]["spec"]
+    containers = pod.get("containers", [])
+    if len(containers) != 1 or containers[0].get("name") != "servarr" or pod.get("initContainers"):
+        raise ValueError("VPN requires the unmodified upstream qBittorrent container and no other containers.")
+    app = containers[0]
+    image = app.get("image", "").split(":")[0]
+    env = {item.get("name"): item for item in app.get("env", [])}
+    security = app.get("securityContext") or {}
+    if (image not in {"lscr.io/linuxserver/qbittorrent", "linuxserver/qbittorrent"}
+            or env.get("PUID", {}).get("value") != vpn["puid"]
+            or pod.get("hostNetwork") or pod.get("shareProcessNamespace")
+            or app.get("command") or app.get("args")
+            or security.get("privileged") or "NET_ADMIN" in (security.get("capabilities") or {}).get("add", [])):
+        raise ValueError("VPN requires the LinuxServer image, matching PUID, and an unprivileged pod without host networking.")
+    assets = Path(config["chart"]) / "playbook-vpn"
+    sidecar = yaml.safe_load((assets / "qbittorrent-sidecar.yaml").read_text(encoding="utf-8"))["spec"]["template"]["spec"]["containers"][0]
+    patch = yaml.safe_load((assets / "qbittorrent-vpn.patch.yaml").read_text(encoding="utf-8"))["spec"]["template"]["spec"]
+    sidecar.update(patch["containers"][0] | {"name": "tailscale"})
+    sidecar_env = {item["name"]: item for item in sidecar["env"]}
+    sidecar_env["OAUTH_SECRET"]["valueFrom"]["secretKeyRef"]["name"] = vpn["secret_name"]
+    sidecar_env["TS_HOSTNAME"]["value"] = vpn["hostname"]
+    sidecar_env["TS_EXTRA_ARGS"]["value"] = f"--advertise-tags={vpn['tag']} --exit-node={vpn['exit_node']}"
+    guard = patch["initContainers"][0]
+    script = guard["command"][-1]
+    for old, new in (("10.42.0.0/16", vpn["pod_cidr"]), ("10.43.0.10", vpn["cluster_dns"]), ("1000", vpn["puid"])):
+        script = script.replace(old, new)
+    guard["command"][-1] = script
+    pod["initContainers"] = [guard]
+    containers.insert(0, sidecar)
+    index = next(index for index, doc in enumerate(documents) if doc is deployment)
+    chunks[index] = "\n" + yaml.safe_dump(deployment, sort_keys=False)
 
 
 def render(text, config):
     chunks = re.split(r"^---[ \t]*(?:\#.*)?\r?$", text, flags=re.MULTILINE)
     documents = [yaml.safe_load(chunk) for chunk in chunks]
     namespace = config["namespace"]
+    if (config.get("servarr_vpn") or {}).get("enabled"):
+        _servarr(documents, chunks, config)
+    if config["mode"] == "off":
+        return "---".join(chunks)
     rendered_services = [
         doc for doc in documents
         if isinstance(doc, dict) and doc.get("apiVersion") == "v1" and doc.get("kind") == "Service"
@@ -82,7 +133,7 @@ def main():
             config = json.load(file)
         sys.stdout.write(render(sys.stdin.read(), config))
     except (ValueError, KeyError, TypeError, OSError, yaml.YAMLError) as exc:
-        print(f"Tailscale post-render failed: {exc}", file=sys.stderr)
+        print(f"Helm post-render failed: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

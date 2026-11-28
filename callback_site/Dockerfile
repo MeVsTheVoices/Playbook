@@ -52,6 +52,7 @@ COPY collections/requirements.yml /tmp/collections-requirements.yml
 COPY callback_site/ /app/callback_site/
 COPY flash_helper/ /app/flash_helper/
 COPY charts/ /app/charts/
+COPY deployments/servarr/upstream/ /app/deployments/servarr/upstream/
 COPY scripts/ /app/scripts/
 COPY roles/ /app/roles/
 COPY library/ /app/library/

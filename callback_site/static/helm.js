@@ -8,10 +8,14 @@
   let dirty = false;
   let busy = false;
   const tailscaleFields = ["mode", "service", "hostname", "port", "proxy-class", "proxy-group", "tags"];
+  const servarrFields = ["secret-name", "hostname", "tag", "exit-node", "pod-cidr", "cluster-dns", "puid"];
 
   function buttons() {
     element("save").disabled = busy || !current;
     element("preview").disabled = busy || !current || dirty;
+    element("refresh-source").disabled = busy || !current || dirty;
+    element("release-status").disabled = busy || !current || dirty;
+    element("servarr-diff").disabled = busy || !current || dirty;
     element("deploy").disabled = busy || !current || dirty;
     element("dockerbot-token-save").disabled = busy || !current || dirty;
     element("import").disabled = busy || !!current;
@@ -28,6 +32,7 @@
     element("chart-path").readOnly = !!record;
     element("repository-fields").hidden = !!record?.bundled || element("selection").value.startsWith("bundled:");
     element("manifest").textContent = "Preview before deploying.";
+    element("release-status-text").textContent = "";
     if (record) {
       for (const name of ["name", "release", "namespace", "values"]) element(name).value = record[name];
       const tailscale = record.tailscale || { mode: "off" };
@@ -38,6 +43,14 @@
       element("guide").value = record.guide || "No setup guide was included with this chart. Consult the chart's upstream documentation.";
       element("dockerbot-token-panel").hidden = !(record.bundled === "dockerbot" ||
         ((record.repository || "").toLowerCase() === "https://github.com/mevsthevoices/playbook" && record.chart_path === "charts/dockerbot"));
+      element("servarr-panel").hidden = record.bundled !== "servarr";
+      element("servarr-diff").hidden = record.bundled !== "servarr" || record.deploy_method !== "kubectl";
+      element("release-status").hidden = record.deploy_method === "kubectl";
+      if (record.bundled === "servarr") {
+        element("servarr-method").value = record.deploy_method;
+        element("servarr-enabled").value = record.servarr_vpn.enabled ? "on" : "off";
+        for (const name of servarrFields) element(`servarr-${name}`).value = record.servarr_vpn[name.replaceAll("-", "_")];
+      }
       const submission = record.last_submission;
       element("submission").textContent = submission
         ? `Last submission: ${submission.status} · ${submission.context} (${submission.server}) · ${submission.namespace}/${submission.release} · saved revision ${submission.revision}${submission.error ? ` · ${submission.error}` : ""}`
@@ -111,7 +124,8 @@
     show(null);
     element("status").textContent = "";
   });
-  for (const name of ["name", "release", "namespace", "values", ...tailscaleFields.map((field) => `ts-${field}`)]) {
+  for (const name of ["name", "release", "namespace", "values", ...tailscaleFields.map((field) => `ts-${field}`),
+    "servarr-method", "servarr-enabled", ...servarrFields.map((field) => `servarr-${field}`)]) {
     element(name).addEventListener("input", () => {
       dirty = true;
       element("status").textContent = "Unsaved changes. Save before previewing or deploying.";
@@ -119,6 +133,20 @@
     });
   }
   form.addEventListener("submit", (event) => event.preventDefault());
+  element("servarr-kubby").addEventListener("click", () => {
+    if (!window.confirm("Replace the editor values and target with the reconstructed Kubby preset? Unsaved edits will be lost.")) return;
+    element("release").value = "servarr";
+    element("namespace").value = "servarr";
+    element("values").value = current.kubby_values;
+    element("servarr-method").value = "kubectl";
+    element("servarr-enabled").value = current.kubby_vpn.enabled ? "on" : "off";
+    for (const name of servarrFields) element(`servarr-${name}`).value = current.kubby_vpn[name.replaceAll("-", "_")];
+    element("ts-mode").value = "off";
+    for (const name of tailscaleFields.slice(1)) element(`ts-${name}`).value = "";
+    dirty = true;
+    element("status").textContent = "Kubby preset loaded. Save and review the preview before applying.";
+    buttons();
+  });
   element("import").addEventListener("click", () => operation("Importing chart and default values...", async () => {
     const selection = element("selection").value;
     const payload = selection.startsWith("bundled:")
@@ -132,6 +160,11 @@
     const payload = { revision: current.revision };
     for (const name of ["name", "release", "namespace", "values"]) payload[name] = element(name).value;
     payload.tailscale = Object.fromEntries(tailscaleFields.map((name) => [name.replaceAll("-", "_"), element(`ts-${name}`).value]));
+    if (current.bundled === "servarr") {
+      payload.deploy_method = element("servarr-method").value;
+      payload.servarr_vpn = { enabled: element("servarr-enabled").value === "on",
+        ...Object.fromEntries(servarrFields.map((name) => [name.replaceAll("-", "_"), element(`servarr-${name}`).value])) };
+    }
     const data = await request(`/${current.id}`, "PUT", payload);
     await refresh(data.configuration.id);
     element("status").textContent = "Configuration saved. No cluster changes made.";
@@ -141,6 +174,26 @@
     element("manifest").textContent = data.manifest;
     element("manifest").closest("details").open = true;
     element("status").textContent = "Manifests rendered. No cluster changes made.";
+  }));
+  element("refresh-source").addEventListener("click", () => {
+    if (!window.confirm("Refresh this configuration from the latest chart source? Saved values and release are kept. Preview and review changes before deploying; this does not change the cluster.")) return;
+    operation("Refreshing chart source and pinned dependencies...", async () => {
+      const data = await request(`/${current.id}/refresh-source`, "POST", { revision: current.revision, confirm: true });
+      await refresh(data.configuration.id);
+      element("status").textContent = "Chart source refreshed. Values were preserved; preview and review before deploying.";
+    });
+  });
+  element("release-status").addEventListener("click", () => operation("Checking the Helm release...", async () => {
+    const data = await request(`/${current.id}/status`, "POST", { revision: current.revision });
+    const status = data.status;
+    element("release-status-text").textContent = `Live release: ${status.status} · ${status.namespace}/${status.release} · Helm revision ${status.helm_revision}${status.description ? ` · ${status.description}` : ""}`;
+    element("status").textContent = "Live Helm release status checked. No cluster changes made.";
+  }));
+  element("servarr-diff").addEventListener("click", () => operation("Comparing rendered resources with the cluster...", async () => {
+    const data = await request(`/${current.id}/diff`, "POST", { revision: current.revision });
+    element("manifest").textContent = data.diff;
+    element("manifest").closest("details").open = true;
+    element("status").textContent = data.changed ? "Differences found. Review before applying." : "No differences. No cluster changes made.";
   }));
   element("dockerbot-token-save").addEventListener("click", () => {
     if (!window.confirm(`Create or update the Dockerbot Secret in ${current.namespace} on the configured cluster?`)) return;
@@ -156,15 +209,22 @@
     });
   });
   element("deploy").addEventListener("click", () => {
-    if (!window.confirm(`Deploy / upgrade ${current.release} in ${current.namespace} on the configured cluster? This may create or change resources and run chart hooks.`)) return;
-    operation("Submitting saved configuration (may take up to two minutes)...", async () => {
+    const kubectl = current.bundled === "servarr" && current.deploy_method === "kubectl";
+    const action = kubectl ? "Apply rendered manifests without pruning (no Helm release)" : "Deploy / upgrade the Helm release";
+    if (!window.confirm(`${action}: ${current.release} in ${current.namespace} on the configured cluster? This may create or change resources${kubectl ? "." : " and run chart hooks."}`)) return;
+    let direct = false;
+    if (current.bundled === "servarr" && !current.servarr_vpn.enabled) {
+      if (!window.confirm("The qBittorrent VPN is OFF. Deploying may remove an existing VPN guard and allow direct network egress. Continue?")) return;
+      direct = true;
+    }
+    operation(`Submitting saved configuration (${current.servarr_vpn?.enabled && !kubectl ? "may take up to six minutes" : "may take up to two minutes"})...`, async () => {
       const id = current.id;
       try {
-        await request(`/${id}/deploy`, "POST", { revision: current.revision, confirm: true });
+        await request(`/${id}/deploy`, "POST", { revision: current.revision, confirm: true, confirm_direct_egress: direct });
       } finally {
         await refresh(id);
       }
-      element("status").textContent = "Helm release deployed. Configuration and submitted values retained.";
+      element("status").textContent = kubectl ? "Manifests applied without pruning. Check workload rollouts and VPN egress." : "Helm release deployed. Configuration and submitted values retained.";
       loadKubernetesSummary();
     });
   });

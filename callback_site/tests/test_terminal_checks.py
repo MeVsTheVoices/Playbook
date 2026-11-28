@@ -293,6 +293,69 @@ class TerminalCheckTests(BaseCallbackSiteTest):
         self.assertIsNotNone(manual_target)
         self.assertEqual(manual_target.get("connect_host"), "192.168.174.238")
 
+    def test_test_terminal_targets_include_tailscale_profiles(self) -> None:
+        from services.connection_profiles import ConnectionProfile
+
+        node = {
+            "name": "rack-tailnet-01",
+            "address": "",
+            "address_source": "inventory",
+        }
+        profiles = [
+            ConnectionProfile("tailnet", "tailnet", "100.101.2.3", "tailscale", tailnet=True),
+            ConnectionProfile("tailnet_fqdn", "tailnet_fqdn", "rack-tailnet-01.example.ts.net", "tailscale_fqdn", tailnet=True),
+        ]
+        with patch_in("_node_ops_inventory_view", ["services.terminal_checks"], return_value=[node]), \
+             patch_in("_read_events", ["services.terminal_checks"], return_value=[]), \
+             patch_in("gather_profiles", ["services.terminal_checks"], return_value=profiles):
+            targets = self.client.get("/api/test-terminal/targets").json["targets"]
+
+        target_details = {(item["host"], item["hostname"], item["source"]) for item in targets}
+        self.assertIn(("100.101.2.3", "rack-tailnet-01", "tailscale"), target_details)
+        self.assertIn(("rack-tailnet-01.example.ts.net", "rack-tailnet-01", "tailscale_fqdn"), target_details)
+
+    def test_terminal_task_browser_groups_kubernetes_and_defaults_to_other_tasks(self) -> None:
+        checks = self.browser_probe("/test-terminal", ["test_terminal.js"], """
+window.fetch = async (url) => {
+  const payloads = {
+    "/api/ssh/keys": {ok: true, keys: []},
+    "/api/test-terminal/targets": {ok: true, targets: [
+      {host: "100.101.2.3", connect_host: "100.101.2.3", hostname: "rack-tailnet-01", source: "tailscale"},
+      {host: "rack-tailnet-01.example.ts.net", connect_host: "rack-tailnet-01.example.ts.net",
+        hostname: "rack-tailnet-01", source: "tailscale_fqdn"},
+    ]},
+    "/api/test-terminal/checks": {ok: true, checks: [
+      {id: "identity", label: "Identity", category: "System", description: "System task", command: "hostname"},
+      {id: "inventory", label: "Inventory", category: "Inventory", description: "Inventory task", command: "lsblk"},
+      {id: "kube_nodes", label: "Kubernetes nodes", category: "Kubernetes · Cluster", description: "Cluster task", command: "kubectl get nodes"},
+      {id: "kube_pods", label: "Kubernetes pods", category: "Kubernetes · Workloads", description: "Workload task", command: "kubectl get pods"},
+    ]},
+  };
+  return {ok: true, json: async () => payloads[url] || {ok: true}};
+};
+""", """
+await tick();
+const visibleIds = () => [...taskCardsEl.querySelectorAll("[data-task-id]")].map(card => card.dataset.taskId);
+const activeFilter = () => [...taskCategoriesEl.children]
+  .find(button => button.getAttribute("aria-pressed") === "true")?.textContent;
+check(activeFilter() === "Non-Kubernetes", "non-Kubernetes filter is selected by default");
+check(visibleIds().join(",") === "identity,inventory", "default view omits Kubernetes tasks");
+const targetOptions = [...hostSelectEl.querySelectorAll("option")];
+check(targetOptions.some(option => option.value === "100.101.2.3")
+  && targetOptions.some(option => option.value === "rack-tailnet-01.example.ts.net"),
+  "node host picker lists both Tailscale IP and FQDN endpoints");
+const buttons = [...taskCategoriesEl.children];
+check(buttons.filter(button => button.textContent === "Kubernetes").length === 1
+  && !buttons.some(button => button.textContent.startsWith("Kubernetes · ")), "Kubernetes categories are consolidated");
+buttons.find(button => button.textContent === "Kubernetes").click();
+check(visibleIds().join(",") === "kube_nodes,kube_pods", "Kubernetes filter includes each Kubernetes category");
+check([...taskCardsEl.children].every(card => card.querySelector(".eyebrow").textContent === "Kubernetes"),
+  "Kubernetes tasks share one visible category label");
+check([...checkIdEl.querySelectorAll("optgroup")].filter(group => group.label === "Kubernetes").length === 1,
+  "selected-task dropdown also groups Kubernetes tasks");
+""");
+        self.assertEqual(len(checks), 7)
+
     def test_test_terminal_start_rejects_invalid_check_id(self) -> None:
         response = self.client.post(
             "/api/test-terminal/start",

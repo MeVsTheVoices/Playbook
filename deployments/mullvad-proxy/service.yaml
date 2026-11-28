@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mullvad-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app: mullvad-proxy
+  ports:
+    - name: http
+      port: 3128
+      targetPort: http
+      protocol: TCP
+    - name: socks
+      port: 1080
+      targetPort: socks
+      protocol: TCP

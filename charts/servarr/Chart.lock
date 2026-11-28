@@ -1,0 +1,6 @@
+dependencies:
+- name: servarr
+  repository: https://charts.kubito.dev
+  version: 1.5.2
+digest: sha256:9732752af31e6d283a3db4ce11023af5fb46fe1c11289567b465f46968e29dcf
+generated: "2026-11-28T02:45:57.755614965-08:00"

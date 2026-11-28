@@ -28,10 +28,20 @@ def register_helm_routes(app: Any) -> None:
                 result = {"configuration": helm.import_chart(payload)}
             elif request.method == "PUT":
                 result = {"configuration": helm.save_configuration(record_id, payload)}
-            elif action in {"preview", "deploy"}:
+            elif action in {"preview", "diff", "deploy"}:
                 if action == "deploy" and payload.get("confirm") is not True:
                     raise ValueError("Deployment requires explicit confirmation.")
-                result = helm.run_configuration(record_id, payload.get("revision"), deploy=action == "deploy")
+                result = helm.run_configuration(
+                    record_id, payload.get("revision"), deploy=action == "deploy",
+                    compare=action == "diff",
+                    confirm_direct_egress=payload.get("confirm_direct_egress") is True,
+                )
+            elif action == "refresh-source":
+                if payload.get("confirm") is not True:
+                    raise ValueError("Refreshing the chart source requires explicit confirmation.")
+                result = {"configuration": helm.refresh_source(record_id, payload.get("revision"))}
+            elif action == "status":
+                result = {"status": helm.release_status(record_id, payload.get("revision"))}
             elif action == "dockerbot-token":
                 helm.set_dockerbot_token(record_id, payload)
                 result = {}

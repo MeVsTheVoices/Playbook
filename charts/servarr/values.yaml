@@ -1,0 +1,2 @@
+# Upstream options are nested under servarr. See the upstream chart values.
+servarr: {}

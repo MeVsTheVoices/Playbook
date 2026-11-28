@@ -10,6 +10,8 @@
 **/htmlcov
 callback_site/data
 callback_site/logs
+deployments/servarr/upstream/charts/
+charts/servarr/charts/
 **/*.log
 **/vault.yml
 **/vault.yaml

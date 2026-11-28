@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servarr-qbittorrent
+  namespace: servarr
+spec:
+  template:
+    spec:
+      containers:
+        - name: tailscale
+          image: tailscale/tailscale:latest
+          securityContext:
+            capabilities:
+              add: [NET_ADMIN]
+          env:
+            - name: OAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-mullvad-oauth
+                  key: client_secret
+            - name: TS_AUTHKEY
+              value: "$(OAUTH_SECRET)?ephemeral=true&preauthorized=true"
+            - name: TS_KUBE_SECRET
+              value: ""
+            - name: TS_HOSTNAME
+              value: k8s-qbittorrent
+            - name: TS_USERSPACE
+              value: "false"
+            - name: TS_EXTRA_ARGS
+              value: "--advertise-tags=tag:needs-exit --exit-node=100.92.247.43"

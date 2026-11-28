@@ -10,8 +10,9 @@ recommended by Kubernetes for the archived Kubernetes Dashboard.
 2. Set Namespace to headlamp, keep the generated Release name, and save.
    Create the namespace with `kubectl create namespace headlamp` using the
    intended cluster context. Preview, review the resources, then explicitly
-   deploy. The locked upstream chart is downloaded during preview/deployment;
-   this requires access to the Headlamp Helm repository and GitHub.
+   deploy. A new import or source refresh downloads the locked upstream chart
+   and stores it in the snapshot; this requires access to the Headlamp Helm
+   repository. Older saved configurations may fetch it during preview.
 3. Keep Tailscale workload exposure Off for local access. On a trusted machine
    with kubectl connected to that cluster, run:
 

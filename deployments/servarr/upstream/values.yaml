@@ -1,0 +1,112 @@
+jellyfin:
+  persistence:
+    config:
+      existingClaim: servarr-jellyfin-config
+    media:
+      existingClaim: servarr-jellyfin-media
+  extraEnvVars:
+    - name: TZ
+      value: America/Los_Angeles
+  tailscale:
+    enabled: true
+    sidecar:
+      enabled: false
+    ingress:
+      enabled: true
+      host: jellyfin
+
+sonarr:
+  env:
+    TZ: America/Los_Angeles
+  persistence:
+    existingClaim: servarr-sonarr
+  ingress:
+    enabled: true
+    className: tailscale
+    hosts:
+      - host: sonarr
+        paths: [{path: /, pathType: Prefix}]
+    tls:
+      - hosts: [sonarr]
+        secretName: sonarr-tls
+
+radarr:
+  env:
+    TZ: America/Los_Angeles
+  persistence:
+    existingClaim: servarr-radarr
+  ingress:
+    enabled: true
+    className: tailscale
+    hosts:
+      - host: radarr
+        paths: [{path: /, pathType: Prefix}]
+    tls:
+      - hosts: [radarr]
+        secretName: radarr-tls
+
+prowlarr:
+  env:
+    TZ: America/Los_Angeles
+  persistence:
+    existingClaim: servarr-prowlarr
+  ingress:
+    enabled: true
+    className: tailscale
+    hosts:
+      - host: prowlarr
+        paths: [{path: /, pathType: Prefix}]
+    tls:
+      - hosts: [prowlarr]
+        secretName: prowlarr-tls
+
+qbittorrent:
+  env:
+    TZ: America/Los_Angeles
+  persistence:
+    existingClaim: servarr-qbittorrent
+  ingress:
+    enabled: true
+    className: tailscale
+    hosts:
+      - host: qbittorrent
+        paths: [{path: /, pathType: Prefix}]
+    tls:
+      - hosts: [qbittorrent]
+        secretName: qbittorrent-tls
+
+bazarr:
+  env:
+    TZ: America/Los_Angeles
+  persistence:
+    existingClaim: servarr-bazarr
+
+seerr:
+  persistence:
+    existingClaim: servarr-seerr
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+    runAsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+  ingress:
+    enabled: true
+    className: tailscale
+    hosts:
+      - host: seerr
+        paths: [{path: /, pathType: Prefix}]
+    tls:
+      - hosts: [seerr]
+        secretName: seerr-tls
+
+lidarr:
+  enabled: false
+cleanuparr:
+  enabled: false

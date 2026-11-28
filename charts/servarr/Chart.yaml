@@ -1,0 +1,10 @@
+apiVersion: v2
+name: playbook-servarr
+description: Upstream Servarr with optional Playbook qBittorrent VPN integration
+type: application
+version: 0.1.0
+appVersion: "1.5.2"
+dependencies:
+  - name: servarr
+    version: "1.5.2"
+    repository: https://charts.kubito.dev

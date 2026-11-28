@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -27,12 +28,20 @@ logger = logging.getLogger(__name__)
 CONFIG_FILE = APPDATA_DIR / "helm_configurations.json"
 BUNDLED_CHARTS = {
     name: Path(__file__).resolve().parents[2] / "charts" / name
-    for name in ("dockerbot", "headlamp")
+    for name in ("dockerbot", "headlamp", "servarr")
 }
 BUNDLED = [
     {"id": "dockerbot", "name": "Dockerbot (Red Discord Bot)"},
     {"id": "headlamp", "name": "Headlamp (Kubernetes web UI)"},
+    {"id": "servarr", "name": "Servarr (media suite)"},
 ]
+SERVARR_ASSETS = Path(__file__).resolve().parents[2] / "deployments" / "servarr" / "upstream"
+SERVARR_VPN_DEFAULTS = {
+    "enabled": False, "secret_name": "tailscale-mullvad-oauth",
+    "exit_node": "100.92.247.43", "pod_cidr": "10.42.0.0/16",
+    "cluster_dns": "10.43.0.10", "puid": "1000", "hostname": "k8s-qbittorrent",
+    "tag": "tag:needs-exit",
+}
 LOCK = threading.Lock()
 EXAMPLES = [
     {"name": "Hello World (NGINX)", "repository": "https://github.com/helm/examples", "chart_path": "charts/hello-world"},
@@ -183,10 +192,48 @@ def _tailscale(raw: Any) -> dict[str, str]:
     return result
 
 
+def _servarr_vpn(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict) or type(raw.get("enabled")) is not bool:
+        raise ValueError("Servarr VPN enabled must be true or false.")
+    result = {"enabled": raw["enabled"]}
+    for key in ("secret_name", "exit_node", "pod_cidr", "cluster_dns", "puid", "hostname", "tag"):
+        value = raw.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Servarr VPN {key} is required.")
+        result[key] = value.strip()
+    name = result["secret_name"]
+    if len(name) > 253 or not all(re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", part) for part in name.split(".")):
+        raise ValueError("Servarr VPN Secret must be a Kubernetes DNS name.")
+    if len(result["hostname"]) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", result["hostname"]):
+        raise ValueError("Servarr VPN hostname must be a lowercase DNS label.")
+    if not re.fullmatch(r"tag:[a-zA-Z][a-zA-Z0-9-]*", result["tag"]) or len(result["tag"]) > 63:
+        raise ValueError("Servarr VPN tag must be a Tailscale tag:name.")
+    try:
+        exit_node = ipaddress.IPv4Address(result["exit_node"])
+        pod_cidr = ipaddress.IPv4Network(result["pod_cidr"], strict=True)
+        dns = ipaddress.IPv4Address(result["cluster_dns"])
+    except ValueError as exc:
+        raise ValueError("Servarr VPN requires valid IPv4 exit node, pod CIDR, and DNS addresses.") from exc
+    if exit_node not in ipaddress.IPv4Network("100.64.0.0/10") or pod_cidr.prefixlen == 0 or dns.is_unspecified:
+        raise ValueError("Servarr VPN requires a Tailscale exit IP and specific pod and DNS networks.")
+    if not re.fullmatch(r"[1-9][0-9]{0,9}", result["puid"]) or int(result["puid"]) > 2147483647:
+        raise ValueError("Servarr VPN PUID must be a non-root numeric user ID.")
+    return result
+
+
 def _prepare_dependencies(chart: Path) -> None:
     metadata = yaml.safe_load((chart / "Chart.yaml").read_text(encoding="utf-8"))
     if isinstance(metadata, dict) and metadata.get("dependencies"):
         dependencies = metadata["dependencies"]
+        lock_path = chart / "Chart.lock"
+        lock = None
+        if lock_path.is_file():
+            lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+            if not isinstance(lock, dict) or not isinstance(lock.get("dependencies"), list):
+                raise ValueError("Chart.lock has an invalid dependency list.")
+            if len(lock["dependencies"]) != len(dependencies):
+                raise ValueError("Chart.lock does not match the chart dependency list.")
+            dependencies = lock["dependencies"]
         if all(
             isinstance(dep, dict) and isinstance(dep.get("name"), str)
             and ((chart / "charts" / dep["name"] / "Chart.yaml").is_file()
@@ -194,11 +241,8 @@ def _prepare_dependencies(chart: Path) -> None:
             for dep in dependencies
         ):
             return
-        if not (chart / "Chart.lock").is_file():
+        if lock is None:
             raise ValueError("Chart dependencies require a committed Chart.lock to pin dependency versions.")
-        lock = yaml.safe_load((chart / "Chart.lock").read_text(encoding="utf-8"))
-        if not isinstance(lock, dict) or not isinstance(lock.get("dependencies"), list):
-            raise ValueError("Chart.lock has an invalid dependency list.")
         with tempfile.TemporaryDirectory(prefix="helm-repositories-") as directory:
             flags = ["--repository-config", str(Path(directory) / "repositories.yaml"),
                      "--repository-cache", str(Path(directory) / "cache")]
@@ -230,20 +274,28 @@ def configurations() -> list[dict[str, Any]]:
         return _load()
 
 
-def import_chart(payload: dict[str, Any]) -> dict[str, Any]:
+def _import_source(payload: dict[str, Any], record_id: str) -> dict[str, Any]:
     bundled = payload.get("bundled")
     if bundled is not None and not isinstance(bundled, str):
         raise ValueError("Bundled chart must be a name.")
     if bundled and bundled not in BUNDLED_CHARTS:
         raise ValueError("Unknown bundled chart.")
     repository = "" if bundled else _repository(payload.get("repository"))
-    record_id = uuid.uuid4().hex[:12]
     with tempfile.TemporaryDirectory(prefix="helm-import-") as directory:
         root = Path(directory) / "repository"
         if bundled:
             chart = _chart(BUNDLED_CHARTS[bundled].parent, bundled)
             relative = f"charts/{bundled}"
-            commit = _chart_digest(chart)
+            if bundled == "servarr":
+                shutil.copytree(chart, root, ignore=shutil.ignore_patterns("charts"))
+                assets = root / "playbook-vpn"
+                assets.mkdir()
+                for name in ("qbittorrent-sidecar.yaml", "qbittorrent-vpn.patch.yaml", "values.yaml"):
+                    source = SERVARR_ASSETS / name
+                    if source.is_symlink() or not source.is_file():
+                        raise ValueError(f"Missing or unsafe Servarr asset: {name}.")
+                    shutil.copyfile(source, assets / name)
+                chart = root
         else:
             commit = _checkout(repository, root)
             paths = sorted(
@@ -256,23 +308,35 @@ def import_chart(payload: dict[str, Any]) -> dict[str, Any]:
                     raise ValueError(f"Select a chart path. Found: {', '.join(paths) or 'no Helm charts'}.")
                 relative = paths[0]
             chart = _chart(root, relative)
+        if chart != root or not bundled:
+            staged = Path(directory) / "chart"
+            shutil.copytree(chart, staged, ignore=shutil.ignore_patterns(".git") if not bundled else None)
+            chart = staged
         metadata = yaml.safe_load(_command(["helm", "show", "chart", str(chart)]))
         if not isinstance(metadata, dict) or metadata.get("type", "application") != "application":
             raise ValueError("Select an application chart, not a library chart.")
         defaults = _values(_command(["helm", "show", "values", str(chart)]))
         guide = _guide(chart)
+        preset = None
+        if bundled == "servarr":
+            preset = yaml.safe_load((chart / "playbook-vpn" / "values.yaml").read_text(encoding="utf-8"))
+            if not isinstance(preset, dict):
+                raise ValueError("The bundled Kubby preset must be a YAML mapping.")
+        _prepare_dependencies(chart)
+        digest = _chart_digest(chart)
         if bundled:
-            snapshot = _snapshot_path(record_id)
-            snapshot.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            try:
-                shutil.copytree(chart, snapshot)
-            except OSError:
-                if snapshot.exists():
-                    shutil.rmtree(snapshot)
-                raise
-            if _chart_digest(snapshot) != commit:
+            commit = digest
+        snapshot = _snapshot_path(record_id)
+        snapshot.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            shutil.copytree(chart, snapshot)
+        except OSError:
+            if snapshot.exists():
                 shutil.rmtree(snapshot)
-                raise RuntimeError("Bundled chart changed during import; try again.")
+            raise
+        if _chart_digest(snapshot) != digest:
+            shutil.rmtree(snapshot)
+            raise RuntimeError("Chart changed during import; try again.")
     release = re.sub(r"[^a-z0-9-]", "-", str(metadata.get("name") or "chart").lower()).strip("-")[:35] or "chart"
     record = {
         "id": record_id, "name": str(metadata.get("name") or "chart"),
@@ -282,18 +346,64 @@ def import_chart(payload: dict[str, Any]) -> dict[str, Any]:
         "defaults": defaults, "values": defaults, "revision": 1,
         "tailscale": {"mode": "off"},
         "guide": guide, "bundled": bundled or "",
+        "snapshot_id": record_id, "snapshot_digest": digest,
         "saved_at": _now(), "last_submission": None,
     }
+    if bundled == "servarr":
+        record["servarr_vpn"] = dict(SERVARR_VPN_DEFAULTS)
+        record["kubby_vpn"] = {**SERVARR_VPN_DEFAULTS, "enabled": True}
+        record["deploy_method"] = "helm"
+        record["kubby_values"] = yaml.safe_dump({"servarr": preset}, sort_keys=False)
+    return record
+
+
+def import_chart(payload: dict[str, Any]) -> dict[str, Any]:
+    record_id = uuid.uuid4().hex[:12]
+    record = _import_source(payload, record_id)
     try:
         with LOCK:
             records = _load()
             records.append(record)
             _write(records)
     except (OSError, RuntimeError):
-        if bundled:
-            shutil.rmtree(snapshot)
+        shutil.rmtree(_snapshot_path(record_id))
         raise
     return record
+
+
+def refresh_source(record_id: str, revision: Any) -> dict[str, Any]:
+    with LOCK:
+        current = _find(_load(), record_id)
+        if revision != current["revision"]:
+            raise ValueError("This configuration changed. Reopen it before refreshing.")
+        payload = {"bundled": current["bundled"]} if current.get("bundled") else {
+            "repository": current["repository"], "chart_path": current["chart_path"],
+        }
+    new_id = uuid.uuid4().hex[:12]
+    candidate = _import_source(payload, new_id)
+    try:
+        with LOCK:
+            records = _load()
+            current = _find(records, record_id)
+            if revision != current["revision"]:
+                raise ValueError("This configuration changed. Reopen it before refreshing.")
+            current["previous_source"] = {
+                key: current.get(key) for key in ("commit", "chart_name", "chart_version", "snapshot_id", "snapshot_digest")
+            }
+            if not current["previous_source"]["snapshot_id"] and current.get("bundled"):
+                current["previous_source"]["snapshot_id"] = record_id
+            for key in ("commit", "chart_name", "chart_version", "defaults", "guide", "snapshot_id", "snapshot_digest"):
+                current[key] = candidate[key]
+            if current.get("bundled") == "servarr":
+                current["kubby_values"] = candidate["kubby_values"]
+                current["kubby_vpn"] = candidate["kubby_vpn"]
+            current["revision"] += 1
+            current["saved_at"] = _now()
+            _write(records)
+            return current
+    except (OSError, RuntimeError, ValueError, KeyError):
+        shutil.rmtree(_snapshot_path(new_id))
+        raise
 
 
 def save_configuration(record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -310,11 +420,18 @@ def save_configuration(record_id: str, payload: dict[str, Any]) -> dict[str, Any
         records = _load()
         record = _find(records, record_id)
         tailscale = _tailscale(payload.get("tailscale", record.get("tailscale")))
+        if record.get("bundled") == "servarr":
+            vpn = _servarr_vpn(payload.get("servarr_vpn", record["servarr_vpn"]))
+            method = payload.get("deploy_method", record["deploy_method"])
+            if not isinstance(method, str) or method not in {"helm", "kubectl"}:
+                raise ValueError("Choose Helm or kubectl apply for Servarr.")
         if payload.get("revision") != record["revision"]:
             raise ValueError("This configuration changed. Reopen it before saving.")
         if any(item["id"] != record_id and item["release"] == release and item["namespace"] == namespace for item in records):
             raise ValueError("Another configuration already uses that release and namespace.")
         record.update(name=name, release=release, namespace=namespace, values=values, tailscale=tailscale, revision=record["revision"] + 1, saved_at=_now())
+        if record.get("bundled") == "servarr":
+            record.update(servarr_vpn=vpn, deploy_method=method)
         _write(records)
         return record
 
@@ -369,7 +486,29 @@ def set_dockerbot_token(record_id: str, payload: dict[str, Any]) -> None:
             raise RuntimeError("Kubernetes rejected the Secret. Check namespace, permissions, and field ownership; no token was saved by Playbook.")
 
 
-def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) -> dict[str, Any]:
+def release_status(record_id: str, revision: Any) -> dict[str, Any]:
+    with LOCK:
+        record = _find(_load(), record_id)
+        if revision != record["revision"]:
+            raise ValueError("This configuration changed. Reopen it before checking the release.")
+        if record.get("deploy_method") == "kubectl":
+            raise ValueError("kubectl-applied configurations are not Helm releases; use Compare live.")
+        output = _command([
+            "helm", "status", record["release"], "--namespace", record["namespace"],
+            *_helm_connection(), "--output", "json",
+        ])
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Helm returned invalid release status JSON.") from exc
+        info = data.get("info") or {}
+        return {
+            "status": info.get("status", "unknown"), "description": info.get("description", ""),
+            "helm_revision": data.get("version"), "release": record["release"], "namespace": record["namespace"],
+        }
+
+
+def run_configuration(record_id: str, revision: Any, *, deploy: bool = False, compare: bool = False, confirm_direct_egress: bool = False) -> dict[str, Any]:
     with LOCK:
         records = _load()
         record = _find(records, record_id)
@@ -377,11 +516,12 @@ def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) ->
             raise ValueError("This configuration changed. Reopen it before continuing.")
         with tempfile.TemporaryDirectory(prefix="helm-run-") as directory:
             root = Path(directory) / "repository"
-            if record.get("bundled"):
-                snapshot = _snapshot_path(record_id)
-                chart = _chart(snapshot.parent, record_id)
-                if _chart_digest(chart) != record["commit"]:
-                    raise RuntimeError("Bundled chart snapshot changed; import a new configuration.")
+            if record.get("snapshot_id") or record.get("bundled"):
+                snapshot_id = record.get("snapshot_id", record_id)
+                snapshot = _snapshot_path(snapshot_id)
+                chart = _chart(snapshot.parent, snapshot_id)
+                if _chart_digest(chart) != record.get("snapshot_digest", record["commit"]):
+                    raise RuntimeError("Chart snapshot changed; import a new configuration.")
                 shutil.copytree(chart, root)
                 chart = root
             else:
@@ -392,11 +532,32 @@ def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) ->
             values_file.write_text(record["values"], encoding="utf-8")
             args = [record["release"], str(chart), "--namespace", record["namespace"], "--values", str(values_file)]
             tailscale = _tailscale(record.get("tailscale"))
-            if tailscale["mode"] != "off":
+            vpn = _servarr_vpn(record["servarr_vpn"]) if record.get("bundled") == "servarr" else None
+            if deploy and vpn and not vpn["enabled"] and confirm_direct_egress is not True:
+                raise ValueError("Confirm that qBittorrent may use direct network egress without the VPN.")
+            if tailscale["mode"] != "off" or (vpn and vpn["enabled"]):
                 renderer_config = Path(directory) / "tailscale.json"
-                renderer_config.write_text(json.dumps({**tailscale, "namespace": record["namespace"], "release": record["release"]}), encoding="utf-8")
+                renderer_config.write_text(json.dumps({**tailscale, "namespace": record["namespace"], "release": record["release"],
+                                                       "servarr_vpn": vpn, "chart": str(chart)}), encoding="utf-8")
                 args += ["--post-renderer", str(Path(__file__).with_name("helm_postrender.py")), "--post-renderer-args", str(renderer_config)]
             manifest = _command(["helm", "template", *args])
+            if compare:
+                if record.get("bundled") != "servarr" or record.get("deploy_method") != "kubectl":
+                    raise ValueError("Live diff is available for Servarr kubectl apply configurations.")
+                connection = _helm_connection()
+                kubectl = ["kubectl"] if shutil.which("kubectl") else ["k3s", "kubectl"]
+                manifest_file = Path(directory) / "manifest.yaml"
+                _check_servarr_apply(manifest, record["namespace"], kubectl, connection, manifest_file)
+                try:
+                    diff = subprocess.run(
+                        [*kubectl, *connection, "-n", record["namespace"], "diff", "-f", str(manifest_file)],
+                        capture_output=True, text=True, timeout=120, check=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError(f"Could not compare Servarr resources: {exc}") from exc
+                if diff.returncode not in (0, 1):
+                    raise RuntimeError(f"Servarr comparison failed: {(diff.stderr or diff.stdout).strip()[:3000]}")
+                return {"changed": diff.returncode == 1, "diff": diff.stdout or "No differences."}
             if not deploy:
                 return {"manifest": manifest}
             if tailscale["mode"] != "off":
@@ -414,26 +575,63 @@ def run_configuration(record_id: str, revision: Any, *, deploy: bool = False) ->
             clusters = target.get("clusters") or []
             if not context or not clusters:
                 raise RuntimeError("The Kubernetes context is not configured.")
+            if vpn and vpn["enabled"]:
+                secret_check = _command([
+                    *kubectl, *connection, "-n", record["namespace"], "get", "secret", vpn["secret_name"],
+                    "-o", 'go-template={{if index .data "client_secret"}}present{{end}}',
+                ]).strip()
+                if secret_check != "present":
+                    raise ValueError("The Servarr VPN Secret must contain a nonempty client_secret key.")
             submission = {
                 "submitted_at": _now(), "revision": record["revision"],
                 "context": context, "server": clusters[0]["cluster"]["server"],
                 "release": record["release"], "namespace": record["namespace"],
                 "repository": record["repository"], "commit": record["commit"],
                 "chart_path": record["chart_path"], "values": record["values"], "tailscale": tailscale, "status": "pending",
+                "snapshot_id": record.get("snapshot_id"), "snapshot_digest": record.get("snapshot_digest"),
             }
+            if vpn is not None:
+                submission.update(servarr_vpn=vpn, deploy_method=record["deploy_method"])
+            manifest_file = Path(directory) / "manifest.yaml"
+            if record.get("deploy_method") == "kubectl":
+                _check_servarr_apply(manifest, record["namespace"], kubectl, connection, manifest_file)
             record["last_submission"] = submission
             _write(records)
             try:
-                output = _command(
-                    ["helm", "upgrade", "--install", *args, *connection,
-                     "--create-namespace", "--wait", "--timeout", "120s", "--output", "json"],
-                    timeout=150,
-                )
-                result = json.loads(output)
-                submission.update(status="deployed", helm_revision=result.get("version"))
+                if record.get("deploy_method") == "kubectl":
+                    _command([*kubectl, *connection, "-n", record["namespace"], "apply", "-f", str(manifest_file)], timeout=150)
+                    submission.update(status="applied")
+                else:
+                    timeout = 390 if vpn and vpn["enabled"] else 150
+                    output = _command(
+                        ["helm", "upgrade", "--install", *args, *connection,
+                         "--create-namespace", "--wait", "--timeout", "360s" if timeout == 390 else "120s", "--output", "json"],
+                        timeout=timeout,
+                    )
+                    result = json.loads(output)
+                    submission.update(status="deployed", helm_revision=result.get("version"))
             except (RuntimeError, json.JSONDecodeError) as exc:
                 submission.update(status="failed", error=str(exc))
                 _write(records)
                 raise RuntimeError(f"Helm submission failed; the attempt was saved: {exc}") from exc
             _write(records)
             return {"configuration": record}
+
+
+def _check_servarr_apply(manifest: str, namespace: str, kubectl: list[str], connection: list[str], path: Path) -> None:
+    allowed = {"Deployment", "Service", "ServiceAccount", "Ingress", "Role", "RoleBinding", "HorizontalPodAutoscaler"}
+    objects = [item for item in yaml.safe_load_all(manifest) if item is not None]
+    for item in objects:
+        if not isinstance(item, dict) or item.get("kind") not in allowed:
+            raise ValueError("kubectl apply permits only Servarr workloads, Services, ingresses and related RBAC; use existing PVCs and Secrets.")
+        if (item.get("metadata") or {}).get("namespace", namespace) != namespace:
+            raise ValueError("kubectl apply cannot modify resources outside the selected namespace.")
+    if not objects:
+        raise ValueError("Servarr rendered no resources.")
+    path.write_text(manifest, encoding="utf-8")
+    existing = json.loads(_command([*kubectl, *connection, "-n", namespace, "get", "--ignore-not-found", "-f", str(path), "-o", "json"]))
+    items = existing.get("items", [existing])
+    for item in items:
+        annotations = (item.get("metadata") or {}).get("annotations") or {}
+        if "meta.helm.sh/release-name" in annotations or "meta.helm.sh/release-namespace" in annotations:
+            raise ValueError("kubectl apply cannot change Helm-owned resources; use their existing Helm release.")

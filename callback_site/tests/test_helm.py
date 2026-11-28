@@ -44,6 +44,15 @@ class HelmConfigurationTests(BaseCallbackSiteTest):
 
     def command(self, args, **kwargs):
         self.commands.append(args)
+        if args[:3] == ["helm", "repo", "add"]:
+            return ""
+        if args[:3] == ["helm", "dependency", "build"]:
+            chart = Path(args[3])
+            charts = chart / "charts"
+            charts.mkdir(exist_ok=True)
+            for dependency in yaml.safe_load((chart / "Chart.lock").read_text())["dependencies"]:
+                (charts / f"{dependency['name']}-{dependency['version']}.tgz").write_text("test dependency")
+            return ""
         if args[:3] == ["helm", "show", "chart"]:
             return "name: hello-world\nversion: 0.1.0\ntype: application\n"
         if args[:3] == ["helm", "show", "values"]:
@@ -87,20 +96,150 @@ class HelmConfigurationTests(BaseCallbackSiteTest):
         self.assertEqual(helm._chart_digest(snapshot), record["commit"])
         self.assertIn("port-forward", record["guide"])
         self.assertIn("short-lived token", record["guide"])
+        self.assertTrue((snapshot / "charts" / "headlamp-0.46.0.tgz").is_file())
+        self.commands.clear()
+        with patch.object(helm, "_checkout", side_effect=AssertionError("bundled import must not fetch Git")):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/preview", json={"revision": 1})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertFalse(any(args[:3] == ["helm", "dependency", "build"] for args in self.commands))
+        self.assertFalse(any("upgrade" in args for args in self.commands))
+
+    def test_servarr_import_snapshots_vpn_assets_and_kubby_preset(self):
+        record = self.bundled("servarr")
+        self.assertIn("servarr", [item["id"] for item in self.client.get("/api/helm/configurations").json["bundled"]])
+        self.assertFalse(record["servarr_vpn"]["enabled"])
+        self.assertEqual(record["deploy_method"], "helm")
+        preset = yaml.safe_load(record["kubby_values"])["servarr"]
+        self.assertEqual(preset["qbittorrent"]["persistence"]["existingClaim"], "servarr-qbittorrent")
+        snapshot = helm._snapshot_path(record["id"])
+        self.assertEqual(helm._chart_digest(snapshot), record["commit"])
+        self.assertEqual(
+            (snapshot / "playbook-vpn" / "qbittorrent-vpn.patch.yaml").read_text(),
+            (helm.SERVARR_ASSETS / "qbittorrent-vpn.patch.yaml").read_text(),
+        )
+        self.assertEqual(yaml.safe_load((snapshot / "Chart.lock").read_text())["dependencies"],
+                         yaml.safe_load((snapshot / "Chart.yaml").read_text())["dependencies"])
+
+    def test_servarr_import_excludes_local_dependency_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            chart = Path(directory) / "servarr"
+            shutil.copytree(helm.BUNDLED_CHARTS["servarr"], chart)
+            (chart / "charts").mkdir()
+            (chart / "charts" / "untracked.tgz").write_text("local cache")
+            with patch.dict(helm.BUNDLED_CHARTS, {"servarr": chart}):
+                record = self.bundled("servarr")
+        self.assertFalse((helm._snapshot_path(record["id"]) / "charts" / "untracked.tgz").exists())
+        self.assertTrue((helm._snapshot_path(record["id"]) / "charts" / "servarr-1.5.2.tgz").exists())
+
+    def test_servarr_apply_preflight_rejects_storage_and_helm_ownership(self):
+        service = "apiVersion: v1\nkind: Service\nmetadata:\n  name: app\n"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.yaml"
+            for kind in ("PersistentVolumeClaim", "Secret"):
+                with self.assertRaisesRegex(ValueError, "PVCs and Secrets"):
+                    helm._check_servarr_apply(service.replace("kind: Service", f"kind: {kind}"), "apps", ["kubectl"], [], path)
+            with patch.object(helm, "_command", return_value=json.dumps({"items": [{
+                "metadata": {"annotations": {"meta.helm.sh/release-name": "other"}}
+            }]})):
+                with self.assertRaisesRegex(ValueError, "Helm-owned"):
+                    helm._check_servarr_apply(service, "apps", ["kubectl"], [], path)
+            with patch.object(helm, "_command", return_value='{"items": []}'):
+                helm._check_servarr_apply(service, "apps", ["kubectl"], [], path)
+
+    def test_servarr_direct_egress_requires_separate_confirmation(self):
+        record = self.bundled("servarr")
+        with patch.object(helm, "_prepare_dependencies"):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/deploy",
+                                        json={"revision": 1, "confirm": True})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("direct network egress", response.json["error"])
+        self.assertFalse(any(args[:3] == ["helm", "upgrade", "--install"] for args in self.commands))
+
+    def test_servarr_apply_uses_secret_preflight_and_never_takes_helm_ownership(self):
+        record = self.bundled("servarr")
+        response = self.client.put(f"/api/helm/configurations/{record['id']}", json={
+            "name": record["name"], "release": "servarr", "namespace": "servarr", "revision": 1,
+            "values": record["kubby_values"], "deploy_method": "kubectl",
+            "servarr_vpn": {**record["servarr_vpn"], "enabled": True},
+        })
+        self.assertEqual(response.status_code, 200, response.json)
         commands = []
 
         def command(args, **kwargs):
             commands.append(args)
-            if args[:3] == ["helm", "repo", "add"] or args[:3] == ["helm", "dependency", "build"]:
-                return ""
+            if "secret" in args:
+                return "present"
+            if "get" in args and "-f" in args:
+                return '{"items":[]}'
+            if "apply" in args:
+                return "configured"
             return self.command(args, **kwargs)
 
-        with patch.object(helm, "_command", side_effect=command), \
-             patch.object(helm, "_checkout", side_effect=AssertionError("bundled import must not fetch Git")):
-            response = self.client.post(f"/api/helm/configurations/{record['id']}/preview", json={"revision": 1})
+        with patch.object(helm, "_prepare_dependencies"), patch.object(helm, "_helm_connection", return_value=[]), \
+             patch.object(helm, "_command", side_effect=command):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/deploy",
+                                        json={"revision": 2, "confirm": True})
         self.assertEqual(response.status_code, 200, response.json)
-        self.assertTrue(any(args[:3] == ["helm", "dependency", "build"] for args in commands))
-        self.assertFalse(any("upgrade" in args for args in self.commands))
+        self.assertEqual(response.json["configuration"]["last_submission"]["status"], "applied")
+        apply = next(args for args in commands if "apply" in args)
+        self.assertNotIn("--prune", apply)
+        self.assertFalse(any("--take-ownership" in args for args in commands))
+        self.assertFalse(any(args[:3] == ["helm", "upgrade", "--install"] for args in commands))
+
+    def test_servarr_live_diff_is_read_only_and_reports_differences(self):
+        record = self.bundled("servarr")
+        response = self.client.put(f"/api/helm/configurations/{record['id']}", json={
+            "name": record["name"], "release": "servarr", "namespace": "servarr", "revision": 1,
+            "values": record["kubby_values"], "deploy_method": "kubectl", "servarr_vpn": record["servarr_vpn"],
+        })
+        self.assertEqual(response.status_code, 200, response.json)
+        with patch.object(helm, "_prepare_dependencies"), patch.object(helm, "_helm_connection", return_value=[]), \
+             patch.object(helm, "_check_servarr_apply"), \
+             patch.object(helm.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "changed", "")) as run:
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/diff", json={"revision": 2})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(response.json["diff"], "changed")
+        self.assertTrue(response.json["changed"])
+        self.assertIn("diff", run.call_args.args[0])
+        self.assertIsNone(helm.configurations()[0]["last_submission"])
+
+    def test_servarr_helm_vpn_requires_secret_and_waits_for_exit(self):
+        record = self.bundled("servarr")
+        response = self.client.put(f"/api/helm/configurations/{record['id']}", json={
+            "name": record["name"], "release": "servarr", "namespace": "servarr", "revision": 1,
+            "values": record["values"], "deploy_method": "helm",
+            "servarr_vpn": {**record["servarr_vpn"], "enabled": True},
+        })
+        self.assertEqual(response.status_code, 200, response.json)
+        secret = ""
+        calls = []
+
+        def command(args, **kwargs):
+            calls.append((args, kwargs))
+            if "secret" in args:
+                return secret
+            return self.command(args, **kwargs)
+
+        with patch.object(helm, "_prepare_dependencies"), patch.object(helm, "_helm_connection", return_value=[]), \
+             patch.object(helm, "_command", side_effect=command):
+            path = f"/api/helm/configurations/{record['id']}/deploy"
+            response = self.client.post(path, json={"revision": 2, "confirm": True})
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("client_secret", response.json["error"])
+            secret = "present"
+            response = self.client.post(path, json={"revision": 2, "confirm": True})
+        self.assertEqual(response.status_code, 200, response.json)
+        upgrade, options = next((args, kwargs) for args, kwargs in calls if args[:3] == ["helm", "upgrade", "--install"])
+        self.assertIn("--post-renderer", upgrade)
+        self.assertEqual(upgrade[upgrade.index("--timeout") + 1], "360s")
+        self.assertGreater(options["timeout"], 360)
+
+    def test_servarr_rejects_unsafe_vpn_settings(self):
+        for field, value in (("puid", "0"), ("pod_cidr", "0.0.0.0/0"),
+                             ("exit_node", "8.8.8.8"), ("cluster_dns", "bad; touch /tmp/x"),
+                             ("secret_name", "../secret")):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                helm._servarr_vpn({**helm.SERVARR_VPN_DEFAULTS, "enabled": True, field: value})
 
     def test_bundled_chart_snapshots_guide_and_detects_changes(self):
         record = self.bundled()
@@ -180,6 +319,77 @@ class HelmConfigurationTests(BaseCallbackSiteTest):
         saved = self.client.get("/api/helm/configurations").json
         self.assertEqual(saved["configurations"], [record])
         self.assertEqual(saved["examples"], helm.EXAMPLES)
+
+    def test_refresh_source_keeps_values_target_and_previous_snapshot(self):
+        record = self.bundled("dockerbot")
+        edited = self.client.put(f"/api/helm/configurations/{record['id']}", json={
+            "name": "My bot", "release": "my-bot", "namespace": "bots",
+            "values": "bot:\n  prefix: '!'\n", "revision": 1,
+        }).json["configuration"]
+        path = f"/api/helm/configurations/{record['id']}/refresh-source"
+        self.assertEqual(self.client.post(path, json={"revision": 2}).status_code, 400)
+        with tempfile.TemporaryDirectory() as directory:
+            chart = Path(directory) / "dockerbot"
+            shutil.copytree(helm.BUNDLED_CHARTS["dockerbot"], chart)
+            (chart / "PLAYBOOK_GUIDE.md").write_text("updated guide")
+            with patch.dict(helm.BUNDLED_CHARTS, {"dockerbot": chart}):
+                response = self.client.post(path, json={"revision": 2, "confirm": True})
+        self.assertEqual(response.status_code, 200, response.json)
+        refreshed = response.json["configuration"]
+        self.assertEqual(refreshed["revision"], 3)
+        for key in ("name", "release", "namespace", "values", "tailscale", "last_submission"):
+            self.assertEqual(refreshed[key], edited[key])
+        self.assertEqual(refreshed["guide"], "updated guide")
+        self.assertEqual(refreshed["previous_source"]["commit"], record["commit"])
+        self.assertTrue(helm._snapshot_path(refreshed["previous_source"]["snapshot_id"]).exists())
+        self.assertNotEqual(refreshed["snapshot_id"], record["snapshot_id"])
+        self.assertEqual(self.client.post(path, json={"revision": 2, "confirm": True}).status_code, 400)
+        self.assertFalse(any(args[:3] == ["helm", "upgrade", "--install"] for args in self.commands))
+
+    def test_github_snapshot_and_refresh_pins_new_commit(self):
+        record = self.imported()
+        snapshot = helm._snapshot_path(record["snapshot_id"])
+        self.assertEqual(helm._chart_digest(snapshot), record["snapshot_digest"])
+        with patch.object(helm, "_checkout", side_effect=AssertionError("snapshot must not fetch Git")):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/preview", json={"revision": 1})
+        self.assertEqual(response.status_code, 200, response.json)
+        def latest(repository, root, commit=""):
+            self.checkout(repository, root, commit)
+            return "b" * 40
+        with patch.object(helm, "_checkout", side_effect=latest):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/refresh-source",
+                                        json={"revision": 1, "confirm": True})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(response.json["configuration"]["commit"], "b" * 40)
+        self.assertEqual(response.json["configuration"]["values"], record["values"])
+
+    def test_root_chart_snapshot_excludes_git_metadata(self):
+        def checkout(repository, root, commit=""):
+            root.mkdir()
+            (root / "Chart.yaml").write_text("apiVersion: v2\nname: root\nversion: 1.0.0\n")
+            (root / ".git").mkdir()
+            (root / ".git" / "config").write_text("repository metadata")
+            return "a" * 40
+        with patch.object(helm, "_checkout", side_effect=checkout):
+            response = self.client.post("/api/helm/configurations/import", json={
+                "repository": "https://github.com/example/root", "chart_path": ".",
+            })
+        self.assertEqual(response.status_code, 200, response.json)
+        snapshot = helm._snapshot_path(response.json["configuration"]["snapshot_id"])
+        self.assertFalse((snapshot / ".git").exists())
+
+    def test_release_status_reports_live_status_without_changing_configuration(self):
+        record = self.bundled("dockerbot")
+        def command(args, **kwargs):
+            if args[:2] == ["helm", "status"]:
+                return json.dumps({"info": {"status": "failed", "description": "timeout"}, "version": 2})
+            return self.command(args, **kwargs)
+        with patch.object(helm, "_command", side_effect=command), patch.object(helm, "_helm_connection", return_value=[]):
+            response = self.client.post(f"/api/helm/configurations/{record['id']}/status", json={"revision": 1})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(response.json["status"]["status"], "failed")
+        self.assertEqual(response.json["status"]["helm_revision"], 2)
+        self.assertEqual(helm.configurations()[0], record)
 
     def test_save_reopen_and_preview_keeps_imported_defaults(self):
         record = self.imported()
@@ -406,6 +616,83 @@ check(document.getElementById("helm-dockerbot-token-panel").hidden, "Dockerbot t
 check(document.getElementById("helm-submission").textContent.includes("Not submitted"), "import does not deploy");
 """)
 
+    def test_browser_refresh_and_check_release(self):
+        record = {"id": "saved", "name": "headlamp", "release": "headlamp", "namespace": "apps",
+                  "values": "headlamp: {}", "repository": "", "chart_path": "charts/headlamp",
+                  "chart_name": "headlamp", "chart_version": "1", "commit": "abc", "revision": 1,
+                  "bundled": "headlamp", "guide": "guide", "last_submission": None}
+        self.browser_probe("/kubernetes", ["helm.js"], """
+let record = %s;
+const requests = [];
+window.confirm = () => true;
+window.fetch = async (url, options = {}) => {
+  requests.push({url, options});
+  if (url.includes("tailscale-operator")) return {ok: true, json: async () => ({ok: true, status: {}})};
+  if (url.endsWith("/status")) return {ok: true, json: async () => ({ok: true, status: {
+    status: "failed", description: "timeout", helm_revision: 2, namespace: "apps", release: "headlamp"}})};
+  if (url.endsWith("/refresh-source")) {
+    record = {...record, revision: 2, commit: "def"};
+    return {ok: true, json: async () => ({ok: true, configuration: record})};
+  }
+  return {ok: true, json: async () => ({ok: true, configurations: [record], examples: [], bundled: []})};
+};
+""" % json.dumps(record), """
+await tick();
+const select = document.getElementById("helm-selection");
+select.value = record.id; select.dispatchEvent(new Event("change"));
+document.getElementById("helm-release-status").click();
+await tick();
+check(document.getElementById("helm-release-status-text").textContent.includes("failed"), "live status displayed");
+document.getElementById("helm-refresh-source").click();
+await tick();
+const request = requests.find(item => item.url.endsWith("/refresh-source"));
+check(JSON.parse(request.options.body).confirm, "refresh explicitly confirmed");
+check(document.getElementById("helm-source").textContent.includes("def"), "refreshed source displayed");
+check(document.getElementById("helm-values").value === record.values, "values retained");
+check(!requests.some(item => item.url.endsWith("/deploy")), "refresh never deploys");
+""")
+
+    def test_browser_servarr_preset_and_direct_egress_confirmation(self):
+        record = {
+            "id": "servarr-saved", "name": "servarr", "release": "example", "namespace": "apps",
+            "values": "servarr: {}", "repository": "", "chart_path": "charts/servarr",
+            "chart_name": "playbook-servarr", "chart_version": "0.1.0", "commit": "abc",
+            "revision": 1, "bundled": "servarr", "guide": "Servarr guide", "last_submission": None,
+            "deploy_method": "helm", "servarr_vpn": helm.SERVARR_VPN_DEFAULTS,
+            "kubby_vpn": {**helm.SERVARR_VPN_DEFAULTS, "enabled": True},
+            "kubby_values": "servarr:\n  qbittorrent: {}\n",
+        }
+        self.browser_probe("/kubernetes", ["helm.js"], """
+const record = %s;
+const requests = [];
+window.confirm = () => true;
+window.fetch = async (url, options = {}) => {
+  requests.push({url, options});
+  if (url.includes("tailscale-operator")) return {ok: true, json: async () => ({ok: true, status: {}})};
+  return {ok: true, json: async () => ({ok: true, configurations: [record], examples: [], bundled: []})};
+};
+""" % json.dumps(record), """
+await tick();
+const select = document.getElementById("helm-selection");
+select.value = record.id; select.dispatchEvent(new Event("change"));
+check(!document.getElementById("helm-servarr-panel").hidden, "Servarr controls shown");
+check(document.getElementById("helm-servarr-enabled").value === "off", "VPN off by default");
+document.getElementById("helm-servarr-kubby").click();
+check(document.getElementById("helm-release").value === "servarr", "Kubby release selected");
+check(document.getElementById("helm-namespace").value === "servarr", "Kubby namespace selected");
+check(document.getElementById("helm-values").value === record.kubby_values, "Kubby values loaded");
+check(document.getElementById("helm-servarr-method").value === "kubectl", "Kubby uses non-pruning apply");
+check(document.getElementById("helm-servarr-enabled").value === "on", "Kubby VPN enabled");
+check(document.getElementById("helm-deploy").disabled, "unsaved preset cannot deploy");
+select.value = record.id; select.dispatchEvent(new Event("change"));
+let confirmations = [];
+window.confirm = (message) => { confirmations.push(message); return confirmations.length === 1; };
+document.getElementById("helm-deploy").click();
+await tick();
+check(confirmations.length === 2 && confirmations[1].includes("direct network egress"), "direct egress warning shown");
+check(!requests.some(item => item.url.endsWith("/deploy")), "declining warning prevents deployment");
+""")
+
     def test_tailscale_settings_are_saved_and_checked_before_deployment(self):
         record = self.imported()
         exposure = {"mode": "https", "service": "web", "hostname": "n8n", "port": "5678", "tags": "tag:k8s"}
@@ -456,6 +743,16 @@ check(document.getElementById("helm-submission").textContent.includes("Not submi
             with self.assertRaisesRegex(ValueError, "Chart.lock"):
                 helm._prepare_dependencies(chart)
 
+    def test_vendored_locked_version_range_is_not_redownloaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            chart = Path(directory)
+            (chart / "Chart.yaml").write_text("dependencies:\n- name: example\n  version: ^1.0.0\n")
+            (chart / "Chart.lock").write_text("dependencies:\n- name: example\n  version: 1.2.3\n  repository: https://example.org/charts\n")
+            (chart / "charts").mkdir()
+            (chart / "charts" / "example-1.2.3.tgz").write_text("resolved dependency")
+            with patch.object(helm, "_command", side_effect=AssertionError("must use snapshot")):
+                helm._prepare_dependencies(chart)
+
 
 class HelmTailscaleRendererTests(BaseCallbackSiteTest):
     SERVICE = """apiVersion: v1
@@ -503,6 +800,46 @@ spec:
         other_namespace = self.SERVICE.replace("  name: app", "  name: app\n  namespace: other")
         with self.assertRaisesRegex(ValueError, "renders no Services"):
             helm_postrender.render(other_namespace, self.config(service="missing"))
+
+    def test_servarr_vpn_patches_only_the_expected_workload_and_composes_with_exposure(self):
+        workload = """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-qbittorrent
+spec:
+  template:
+    spec:
+      containers:
+      - name: servarr
+        image: lscr.io/linuxserver/qbittorrent:4.6.7
+        env:
+        - name: PUID
+          value: "1000"
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            assets = Path(directory) / "playbook-vpn"
+            shutil.copytree(helm.SERVARR_ASSETS, assets, ignore=shutil.ignore_patterns("charts"))
+            vpn = {**helm.SERVARR_VPN_DEFAULTS, "enabled": True, "secret_name": "my-oauth",
+                   "pod_cidr": "10.44.0.0/16", "cluster_dns": "10.45.0.10", "puid": "1234"}
+            config = self.config(servarr_vpn=vpn, chart=directory)
+            text = self.SERVICE + "---\n" + workload.replace('"1000"', '"1234"')
+            docs = list(yaml.safe_load_all(helm_postrender.render(text, config)))
+            pod = docs[1]["spec"]["template"]["spec"]
+            self.assertEqual([container["name"] for container in pod["containers"]], ["tailscale", "servarr"])
+            guard = pod["initContainers"][0]["command"][-1]
+            self.assertIn("--uid-owner 1234 -j DROP", guard)
+            self.assertIn("10.44.0.0/16", guard)
+            self.assertIn("10.45.0.10/32", guard)
+            env = {item["name"]: item for item in pod["containers"][0]["env"]}
+            self.assertEqual(env["OAUTH_SECRET"]["valueFrom"]["secretKeyRef"]["name"], "my-oauth")
+            self.assertIn("readinessProbe", pod["containers"][0])
+            self.assertEqual(docs[2]["kind"], "Ingress")
+            off = list(yaml.safe_load_all(helm_postrender.render(text, {**config, "mode": "off", "servarr_vpn": {"enabled": False}})))
+            self.assertEqual(len(off[1]["spec"]["template"]["spec"]["containers"]), 1)
+            for unsafe in (text.replace('"1234"', '"0"'), text.replace("lscr.io/linuxserver/qbittorrent", "untrusted/image"),
+                           text.replace("name: demo-qbittorrent", "name: wrong")):
+                with self.subTest(unsafe=unsafe), self.assertRaises(ValueError):
+                    helm_postrender.render(unsafe, config)
 
 
 class KubernetesClientRuntimeTests(BaseCallbackSiteTest):

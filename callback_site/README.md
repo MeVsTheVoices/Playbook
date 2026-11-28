@@ -1022,6 +1022,16 @@ preview before explicitly deploying. Alloy is not an LGTM backend: configure
 its pipelines and destinations in the chart values. Configure n8n's external
 URL and webhook settings for its chosen HTTPS address. Charts with external
 dependencies need a committed `Chart.lock`; vendored dependencies are supported.
+New imports snapshot the chart and its resolved dependencies together, so
+preview and redeployment reuse the same bytes. Existing configurations retain
+their original behavior until refreshed. **Refresh chart source** explicitly
+fetches the latest GitHub default-branch commit or the current bundled chart
+and its locked dependencies while preserving values, release and namespace.
+It does not deploy. Preview and review changes before deploying; the previous
+snapshot is retained, but rollback is not automated. **Check release** reads
+the current Helm status rather than relying on the last submission record.
+Image tags may still be mutable, and refreshed chart versions can change
+resources or storage; back up data and review carefully.
 
 The bundled Dockerbot chart is distributed with Playbook and imported as a
 content-verified snapshot, so saved configurations remain reproducible across
@@ -1032,13 +1042,30 @@ Reimport an older configuration to pick up a guide.
 
 The bundled **Headlamp (Kubernetes web UI)** option installs upstream Headlamp
 only when explicitly deployed after the cluster is ready. Its wrapper pins the
-upstream Helm dependency with a `Chart.lock`; preview/deployment downloads that
-dependency. It defaults to a private ClusterIP Service, no ingress or storage,
+upstream Helm dependency with a `Chart.lock`; import/refresh downloads and
+snapshots that dependency. It defaults to a private ClusterIP Service, no ingress or storage,
 and no cluster-admin binding or login bypass. The included guide covers local
 port-forwarding, an optional read-only login account, and private Tailscale HTTPS
 access. Headlamp settings are nested under `headlamp:` in the values editor.
 Login tokens must not be stored in Helm values. This is separate from Playbook's
 Kubernetes page and replaces the archived upstream Kubernetes Dashboard.
+
+The bundled **Servarr (media suite)** wraps the public Kubito chart, pinned by
+`Chart.lock`. Import, configure, save and preview it like the other Helm
+charts. Upstream values are nested under `servarr:`. The qBittorrent Tailscale
+VPN sidecar and network guard are optional and off by default; deployment with
+the VPN off requires a separate direct-egress confirmation. The VPN needs an
+existing Kubernetes Secret and cluster-specific network settings; see the
+included guide. Do not put credentials in the values editor.
+
+For Kubby's existing suite, **Load existing Kubby preset** fills its reconstructed
+settings and enables the VPN. Save, preview, and use **Compare live** before
+applying. Its **kubectl apply** method does not create a Helm release, does not
+prune, and refuses Helm-owned resources or rendered PVCs and Secrets. It is
+for an existing kubectl-managed suite; use Helm for normal Helm releases.
+Application configuration and data are separate. See the
+[Servarr deployment guide](../deployments/servarr/README.md) for VPN limitations,
+verification and updating the pinned upstream chart.
 
 For Dockerbot, save the target namespace and values, create that namespace,
 then use **Create / update Secret** to submit the token directly to the cluster.

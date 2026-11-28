@@ -181,6 +181,33 @@
               <label>Values YAML (imported chart defaults)
                 <textarea id="helm-values" rows="14" spellcheck="false"></textarea>
               </label>
+              <div id="helm-servarr-panel" class="tailnet-api-panel" hidden>
+                <strong>Servarr deployment and qBittorrent VPN</strong>
+                <p class="kube-subtle">The Kubby preset restores the reconstructed existing settings, not application data. Review and save before previewing. kubectl apply does not create a Helm release or prune resources and refuses Helm-owned resources, PVCs and Secrets.</p>
+                <button type="button" class="kube-btn" id="helm-servarr-kubby">Load existing Kubby preset</button>
+                <div class="helm-fields">
+                  <label>Deployment method
+                    <select id="helm-servarr-method">
+                      <option value="helm">Helm install / upgrade</option>
+                      <option value="kubectl">kubectl apply (existing unmanaged suite)</option>
+                    </select>
+                  </label>
+                  <label>qBittorrent VPN
+                    <select id="helm-servarr-enabled">
+                      <option value="off">Off (direct networking)</option>
+                      <option value="on">On (Tailscale sidecar and guard)</option>
+                    </select>
+                  </label>
+                  <label>Existing OAuth Secret <input id="helm-servarr-secret-name"></label>
+                  <label>Tailscale hostname <input id="helm-servarr-hostname"></label>
+                  <label>Tailscale tag <input id="helm-servarr-tag"></label>
+                  <label>Mullvad exit Tailscale IPv4 <input id="helm-servarr-exit-node"></label>
+                  <label>Pod IPv4 CIDR <input id="helm-servarr-pod-cidr"></label>
+                  <label>Cluster DNS IPv4 <input id="helm-servarr-cluster-dns"></label>
+                  <label>qBittorrent PUID <input id="helm-servarr-puid" inputmode="numeric"></label>
+                </div>
+                <p class="kube-subtle">Without the VPN, qBittorrent may use direct network egress. The guard assumes the LinuxServer image and matching PUID; cluster DNS upstream may bypass Mullvad. Create the Secret separately and verify egress after deployment.</p>
+              </div>
               <div id="helm-dockerbot-token-panel" class="tailnet-api-panel" hidden>
                 <strong>Discord bot token</strong>
                 <p class="kube-subtle">Save the namespace and values first. The namespace must already exist. The token is sent to the configured cluster as a Kubernetes Secret, not saved in Playbook or Helm values. Use a trusted HTTPS connection. Restart the bot after rotating its token.</p>
@@ -210,10 +237,14 @@
               </details>
               <div class="kube-actions">
                 <button type="button" class="kube-btn" id="helm-save">Save configuration</button>
+                <button type="button" class="kube-btn" id="helm-refresh-source">Refresh chart source</button>
                 <button type="button" class="kube-btn" id="helm-preview">Preview manifests</button>
+                <button type="button" class="kube-btn" id="helm-servarr-diff" hidden>Compare live (kubectl)</button>
+                <button type="button" class="kube-btn" id="helm-release-status">Check release</button>
                 <button type="button" class="kube-btn" id="helm-deploy">Deploy / upgrade</button>
               </div>
               <p class="kube-subtle" id="helm-submission"></p>
+              <p class="kube-subtle" id="helm-release-status-text"></p>
               <details><summary>Rendered manifests</summary><pre class="kube-raw" id="helm-manifest" data-format="yaml">Preview before deploying.</pre></details>
             </div>
             </details>
